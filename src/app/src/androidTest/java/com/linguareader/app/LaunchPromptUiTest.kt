@@ -46,13 +46,13 @@ class LaunchPromptUiTest {
     fun updateDialogShowsOneTimeReleaseNotes() {
         composeRule.setContent {
             LaunchPromptDialog(
-                prompt = LaunchPromptUi.UpdatePrompt(updateNoteFor(4, "1.1.0")),
+                prompt = LaunchPromptUi.UpdatePrompt(updateNoteFor(5, "1.2.0")),
                 onDismiss = {}
             )
         }
 
-        composeRule.onNodeWithText("版本更新 1.1.0").assertIsDisplayed()
+        composeRule.onNodeWithText("版本更新 1.2.0").assertIsDisplayed()
         composeRule.onNodeWithText("知道了").assertIsDisplayed()
-        composeRule.onNodeWithText("· 新增复习提醒", substring = true).assertExists()
+        composeRule.onNodeWithText("· 新增深夜时段", substring = true).assertExists()
     }
 }

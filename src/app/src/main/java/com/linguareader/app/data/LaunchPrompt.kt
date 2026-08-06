@@ -59,6 +59,15 @@ fun updateNoteFor(versionCode: Int, versionName: String): UpdateNote = when (ver
             "勤学模式支持本地到期通知（可拒绝权限）"
         )
     )
+    5 -> UpdateNote(
+        versionCode = 5,
+        versionName = "1.2.0",
+        title = "版本更新 1.2.0",
+        items = listOf(
+            "启动问候升级为四时段情景卡",
+            "新增深夜时段问候"
+        )
+    )
     else -> UpdateNote(
         versionCode = versionCode,
         versionName = versionName,

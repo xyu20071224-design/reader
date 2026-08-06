@@ -74,9 +74,9 @@ Using `artifacts/TheLanternLibrary.epub`:
 ## Artifact
 
 - APK: `artifacts/LinguaReader-debug.apk`
-- Version: 1.1.0 (version code 4)
+- Version: 1.2.0 (version code 5)
 - Size: approximately 53 MB
-- SHA-256: `055456f84251acf55b2919d7327ce83e71f6425c59700d37fbd3f1c30422a8dc`（2026-08-06 F-122 修复后刷新）
+- SHA-256: `60815E4E4A941CD24DD656DABBA0F043F77E8C0DECAA0BBEE84F63A11833BE03`（2026-08-07 更新说明精简后重建刷新）
 
 The APK is debug-signed for direct installation and evaluation. A Play Store
 release still requires a production signing key and release configuration.

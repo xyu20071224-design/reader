@@ -8,9 +8,9 @@ import kotlin.test.assertTrue
 class LaunchPromptTest {
     @Test
     fun updateNoteShowsOnlyWhenInstalledVersionIsNewer() {
-        assertTrue(LaunchPromptPolicy.shouldShowUpdateNote(installedVersion = 4, lastSeenVersion = 3))
-        assertFalse(LaunchPromptPolicy.shouldShowUpdateNote(installedVersion = 4, lastSeenVersion = 4))
-        assertFalse(LaunchPromptPolicy.shouldShowUpdateNote(installedVersion = 3, lastSeenVersion = 4))
+        assertTrue(LaunchPromptPolicy.shouldShowUpdateNote(installedVersion = 5, lastSeenVersion = 4))
+        assertFalse(LaunchPromptPolicy.shouldShowUpdateNote(installedVersion = 5, lastSeenVersion = 5))
+        assertFalse(LaunchPromptPolicy.shouldShowUpdateNote(installedVersion = 4, lastSeenVersion = 5))
     }
 
     @Test
@@ -49,13 +49,13 @@ class LaunchPromptTest {
     }
 
     @Test
-    fun knownUpdateNoteDescribesOneDotOne() {
-        val note = updateNoteFor(4, "1.1.0")
+    fun knownUpdateNoteDescribesOneDotTwo() {
+        val note = updateNoteFor(5, "1.2.0")
 
-        assertEquals("1.1.0", note.versionName)
-        assertEquals(5, note.items.size)
-        assertTrue(note.items.any { it.contains("PDF") })
-        assertTrue(note.items.any { it.contains("复习提醒") })
+        assertEquals("1.2.0", note.versionName)
+        assertEquals(2, note.items.size)
+        assertTrue(note.items.any { it.contains("深夜") })
+        assertTrue(note.items.any { it.contains("情景卡") })
     }
 
     @Test
