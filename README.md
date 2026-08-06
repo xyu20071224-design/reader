@@ -2,7 +2,15 @@
 
 一个面向中文母语学习者的 Android 英文阅读器原型。用户可以导入无 DRM 的 EPUB、TXT、FB2 或带文字层的 PDF，在分页阅读时点击单词查看离线英汉释义和当前句。
 
-可直接安装的调试 APK 位于 `artifacts/LinguaReader-debug.apk`，配套测试电子书位于 `artifacts/TheLanternLibrary.epub`。完整验证结果见 `VALIDATION.md`。
+可直接安装的调试 APK 请从 [Releases 页面](https://github.com/xyu20071224-design/reader/releases) 下载，配套测试电子书为 [测试电子书-TheLanternLibrary.epub](测试电子书-TheLanternLibrary.epub)。完整验证结果见 [VALIDATION.md](VALIDATION.md)。
+
+## 界面预览
+
+![生词本](验证截图/生词本.png)
+![短语优先](验证截图/短语优先.png)
+![词形还原与义项排序](验证截图/词形还原与义项排序.png)
+![复习正面](验证截图/复习正面.png)
+![复习答案](验证截图/复习答案.png)
 
 ## 已完成功能
 
@@ -79,8 +87,12 @@
 
 ## 当前范围
 
-1.0 版本已经形成“导入英文 EPUB → 点击语境查词 → 收藏例句 → 间隔复习 → CSV 导出”的完整本地学习闭环。当前版本支持无 DRM、可重排版的 EPUB、TXT、FB2 与带文字层的 PDF（扫描版/图片型 PDF 需 OCR，暂不支持）；固定排版 EPUB、MOBI、DRM 和云同步属于其他产品范围。语境排序采用可解释的本地规则，不调用云端大模型。
+当前版本已经形成“导入图书 → 点击语境查词 → 收藏例句 → 间隔复习 → CSV 导出”的完整本地学习闭环，支持无 DRM、可重排版的 EPUB、TXT、FB2 与带文字层的 PDF；扫描版/图片型 PDF（需 OCR）、MOBI/AZW3、DRM 和云同步属于其他产品范围。语境排序采用可解释的本地规则，不调用云端大模型。
 
 ## 第三方数据
 
-离线释义来自 [ECDICT](https://github.com/skywind3000/ECDICT)，按其 MIT License 使用。完整许可见 `app/src/main/assets/dictionary/LICENSE-ECDICT.txt`。
+离线释义来自 [ECDICT](https://github.com/skywind3000/ECDICT)，按其 MIT License 使用，完整许可见 `src/app/src/main/assets/dictionary/LICENSE-ECDICT.txt`。
+
+## 许可证
+
+应用代码采用 MIT License，见 [LICENSE](LICENSE)。离线词典数据来自 ECDICT（MIT License），许可见 `src/app/src/main/assets/dictionary/LICENSE-ECDICT.txt`。

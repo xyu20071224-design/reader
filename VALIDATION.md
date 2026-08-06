@@ -51,7 +51,7 @@ Validated on 2026-07-30 with an Android 15 / API 35 ARM64 Pixel 6 emulator.
 
 ## Manual emulator checks
 
-Using `artifacts/TheLanternLibrary.epub`:
+Using [`测试电子书-TheLanternLibrary.epub`](测试电子书-TheLanternLibrary.epub):
 
 1. Imported through Android's system file picker.
 2. Verified title, author, three chapters and generated bookshelf card.
@@ -73,7 +73,7 @@ Using `artifacts/TheLanternLibrary.epub`:
 
 ## Artifact
 
-- APK: `artifacts/LinguaReader-debug.apk`
+- APK: [GitHub Releases](https://github.com/xyu20071224-design/reader/releases)（本地副本：`artifacts/LinguaReader-1.2.0-debug.apk`）
 - Version: 1.2.0 (version code 5)
 - Size: approximately 53 MB
 - SHA-256: `60815E4E4A941CD24DD656DABBA0F043F77E8C0DECAA0BBEE84F63A11833BE03`（2026-08-07 更新说明精简后重建刷新）
