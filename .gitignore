@@ -1,0 +1,25 @@
+# Gradle / Android build outputs
+.gradle/
+build/
+
+# Local machine configuration
+local.properties
+*.local
+
+# Android build artifacts
+*.apk
+*.ap_
+*.aab
+*.dex
+
+# Keystores (keep debug keystore)
+*.keystore
+!debug.keystore
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# Local artifact copies
+artifacts/
