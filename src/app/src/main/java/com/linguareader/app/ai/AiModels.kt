@@ -89,7 +89,8 @@ data class AiLookupRequest(
     val paragraph: String,
     val localSenses: List<String>,
     val localDefinitions: List<String>,
-    val matchedPhrase: String?
+    val matchedPhrase: String?,
+    val glossary: List<GlossaryEntry> = emptyList()
 )
 
 /** Contextual answer shown as an enhancement above the local dictionary. */
@@ -106,10 +107,17 @@ data class AiSettings(
     val enabled: Boolean = false,
     val apiKey: String = "",
     val baseUrl: String = "https://api.deepseek.com",
-    val model: String = "deepseek-chat"
+    val model: String = "deepseek-chat",
+    val azureTranslationEnabled: Boolean = false,
+    val azureKey: String = "",
+    val azureRegion: String = "",
+    val azureEndpoint: String = "https://api.cognitive.microsofttranslator.com"
 ) {
     /** Remote AI is only used when the user enabled it and supplied a key. */
     val remoteReady: Boolean get() = enabled && apiKey.isNotBlank()
+
+    /** Azure sentence translation is independent from the DeepSeek profile. */
+    val azureReady: Boolean get() = azureTranslationEnabled && azureKey.isNotBlank()
 }
 
 /** Per-book generation status shown in the UI. */
@@ -121,3 +129,110 @@ data class AiBookStatus(
 
 /** Thrown when the remote AI provider fails. */
 class AiRequestException(message: String) : Exception(message)
+
+/** One book-specific glossary entry, editable by the user. */
+data class GlossaryEntry(
+    val term: String,
+    val translation: String = "",
+    val kind: String = "custom",
+    val note: String = "",
+    val enabled: Boolean = true,
+    val origin: String = "manual",
+    val updatedAt: Long = 0L
+) {
+    /** Stable key: one entry per lowercase term. */
+    val key: String get() = term.lowercase()
+
+    fun toJson(): JSONObject = JSONObject()
+        .put("term", term)
+        .put("translation", translation)
+        .put("kind", kind)
+        .put("note", note)
+        .put("enabled", enabled)
+        .put("origin", origin)
+        .put("updatedAt", updatedAt)
+
+    companion object {
+        fun fromJson(json: JSONObject) = GlossaryEntry(
+            term = json.optString("term"),
+            translation = json.optString("translation"),
+            kind = json.optString("kind", "custom"),
+            note = json.optString("note"),
+            enabled = json.optBoolean("enabled", true),
+            origin = json.optString("origin", "manual"),
+            updatedAt = json.optLong("updatedAt")
+        )
+    }
+}
+
+/** Per-book glossary, stored separately from the AI context profile. */
+data class BookGlossary(
+    val bookId: String,
+    val entries: List<GlossaryEntry> = emptyList()
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("bookId", bookId)
+        .put("entries", JSONArray().apply { entries.forEach { put(it.toJson()) } })
+
+    companion object {
+        fun fromJson(json: JSONObject): BookGlossary {
+            val array = json.optJSONArray("entries") ?: return BookGlossary(json.optString("bookId"))
+            return BookGlossary(
+                bookId = json.optString("bookId"),
+                entries = (0 until array.length()).map { GlossaryEntry.fromJson(array.getJSONObject(it)) }
+            )
+        }
+    }
+}
+
+/** A glossary term found inside a sentence, with its original surface text. */
+data class GlossaryMatch(
+    val entry: GlossaryEntry,
+    val text: String,
+    val start: Int,
+    val endExclusive: Int
+)
+
+/**
+ * Longest-first, non-overlapping matches of enabled glossary entries.
+ *
+ * Azure's dynamic dictionary markup is case-sensitive, so we keep the exact
+ * surface text from the sentence while matching case-insensitively.
+ */
+fun BookGlossary.matchesIn(sentence: String): List<GlossaryMatch> {
+    val lower = sentence.lowercase()
+    val occupied = mutableListOf<IntRange>()
+    return entries.asSequence()
+        .filter { it.enabled && it.term.isNotBlank() }
+        .sortedByDescending { it.term.length }
+        .mapNotNull { entry ->
+            val termLower = entry.term.lowercase()
+            var searchFrom = 0
+            while (true) {
+                val index = lower.indexOf(termLower, searchFrom)
+                if (index < 0) break
+                val end = index + termLower.length
+                val range = index until end
+                if (occupied.none { index < it.last + 1 && end > it.first } &&
+                    boundaryOk(sentence, index, end)
+                ) {
+                    occupied += range
+                    return@mapNotNull GlossaryMatch(
+                        entry = entry,
+                        text = sentence.substring(index, end),
+                        start = index,
+                        endExclusive = end
+                    )
+                }
+                searchFrom = index + 1
+            }
+            null
+        }
+        .toList()
+}
+
+private fun boundaryOk(sentence: String, start: Int, end: Int): Boolean {
+    val before = if (start == 0) ' ' else sentence[start - 1]
+    val after = if (end >= sentence.length) ' ' else sentence[end]
+    return !before.isLetter() && !after.isLetter()
+}

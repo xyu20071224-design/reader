@@ -58,6 +58,7 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 | F-143 | 页码跳转 | 已实现，模拟器回归通过 |
 | F-144 | 启动问候与更新提示 | 已实现（模拟器验证通过） |
 | F-150 | 听书（整章/全书连续朗读） | 已实现（1.3.0） |
+| F-151 | 外置 TTS：Azure 云 TTS / OpenAI 兼容自建服务器 | 已实现（1.3.0） |
 
 ## 3. 功能详细规约
 
@@ -244,6 +245,18 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 - 提供方抽象为 `AiTranslator` 接口（`DeepSeekTranslator` / `LocalGlossaryTranslator`），接口地址与模型可在设置中修改，兼容 OpenAI 风格 `/chat/completions` 接口。
 - API Key 仅保存在应用私有 SharedPreferences，不写入代码或构建产物；AI 设置页需用户显式填写 Key 才会启用联网请求。
 
+#### F-127 本书术语表与 Azure 整句翻译（可选）
+
+行为：
+
+- 每本书一份独立术语表，存储于 `files/ai/glossary/<bookId>.json`，与语境档案分离；重新生成 AI 档案只补充新条目，不覆盖手动条目。
+- 条目字段：英文术语、中文译法、类别（角色/地点/术语/自定义）、说明、启用开关、来源（AI 自动/本地词频/手动）、更新时间；同一词条以英文小写为唯一键。
+- 术语来源：AI 档案生成后自动导入角色/地点/术语（直接启用）；本地轻量模式导入无译法的词频条目（标记“本地词频”，不参与 Azure 翻译，仅点词提示）；用户可在书级“术语表”入口手动新增、编辑、删除、开关。手动条目优先级最高，译法留空表示“保留原文不译”。
+- 点词查词时，术语表条目优先于档案内嵌术语参与 DeepSeek/本地查询，保证用户修改立即生效。
+- 整句翻译独立于点词语境释义，提供方抽象为 `SentenceTranslator` 接口，由 `SentenceTranslatorFactory` 按设置选择：Azure AI Translator 优先（设置中单独填写 Azure Translator Key，可选区域）；未配置 Azure 时若已启用 DeepSeek，则回退到 DeepSeek 提示词翻译。
+- Azure 请求为 `POST {endpoint}/translate?api-version=3.0&from=en&to=zh-Hans`，句中出现且启用的术语按“最长优先、不重叠”匹配，并用 `<mstrans:dictionary translation="…">…</mstrans:dictionary>` 动态词典标记包裹（区分大小写，保留句中原文大小写）；译法为空时标记为原文以保持不译。
+- 未配置任何整句翻译提供方或请求失败时，按钮提示/忽略结果，不影响本地查词与 AI 语境释义。
+
 ### 3.4 生词本与复习
 
 #### F-130 生词本
@@ -322,7 +335,7 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 
 行为：
 
-- 应用默认不发起任何网络请求；清单声明 `INTERNET` 权限仅供用户显式启用的 AI 语境翻译使用（未启用或未填 Key 时不发送任何文本）；`usesCleartextTraffic=false`；`allowBackup=false`，图书、词典、生词与复习记录默认均不离开设备。
+- 应用默认不发起任何网络请求；清单声明 `INTERNET` 权限仅供用户显式启用的可选功能使用：AI 语境翻译与云 TTS（F-151），未启用或未填 Key 时不发送任何文本；`usesCleartextTraffic=false`；`allowBackup=false`，图书、词典、生词与复习记录默认均不离开设备。
 - WebView 禁止 DOM Storage、禁止内容访问、禁止缩放；仅允许访问本地 `file` 与 `about` 协议；`http/https` 请求被拦截并返回空响应。
 - 应用私有数据全部位于 `files/` 下；旧版 `library.json` 首次启动时自动迁移为每书一个 `metadata.json`。
 
@@ -489,6 +502,32 @@ v1 范围（当前章节内跳转）：
 - 停止后重新打开同一本书，从上次句子继续；切换书后互不影响。
 - 语速调节立即生效；听书时点词不弹释义，停止后恢复查词。
 
+### 3.11 外置 TTS（F-151，已实现）
+
+目标与架构：
+
+- 在系统 TTS 之外提供两个可选云端/自建后端：Azure Speech（世纪互联中国区）与“OpenAI 兼容自建服务器”（Fish Speech S2 / GPT-SoVITS 等可通过 SGLang-Omni、vLLM-Omni 或兼容适配层暴露 `/v1/audio/speech` 的服务）。
+- 播放层只依赖 `TtsSynthesizer` + `CloudTtsBackend` 接口：缓存、预生成、进度、失败回退与 UI 均不绑定具体厂商；新增后端只需实现 `CloudTtsBackend` 并在工厂注册。
+- 默认仍为系统 TTS；云 TTS 是用户手动开启的可选项，Key/Token 用 Android Keystore 加密后存储。
+
+行为：
+
+- **引擎选择**：阅读设置 → 听书设置，可选“系统语音 / Azure 云 TTS / 自建服务器（OpenAI 兼容）”。
+- **Azure 配置**：Region（默认 `chinanorth3`，终结点 `https://<region>.tts.speech.azure.cn`）、API Key、英文/中文/多语言音色；音色列表通过 `voices/list` 接口实时拉取，默认英文 `en-US-AriaNeural`、中文 `zh-CN-XiaoxiaoNeural`，存在可用多语言音色时默认开启“中英混读音色”。
+- **自建服务器配置**：服务器地址（自动补 `/v1/audio/speech`）、模型名、可选 Bearer Token、音色名（Fish Speech 通常为 `default`）。
+- **整章预生成**：首次播放某章时并发（最多 3 路）合成整章并写入 `files/tts_cache/<bookId>/<chapter>/<voice>/<序号>.mp3`；首句就绪即开始播放，其余后台继续；语速调整在播放端变速，不重新合成。
+- **失败回退**：网络失败、HTTP 错误、Key/Token 无效等导致章节合成失败时，自动切换系统 TTS 继续播放，并在播放条状态中标明“云 TTS 失败”；设置页可测试连接。
+- **配置变更**：播放中修改引擎配置会重建合成器并重播当前句。
+- **缓存清理**：无总量上限；删除书籍时同步删除该书 `tts_cache/<bookId>`。
+- **权限与隐私**：新增 `INTERNET`（由可选 AI/云功能共用）；启用云 TTS 后朗读文本会发送到对应服务，设置页明确提示；默认系统 TTS 不联网。
+
+验收要点：
+
+- 三引擎可切换且配置持久化；Key/Token 不以明文落盘。
+- Azure 中国北部 3 可拉取音色列表并合成；自建 OpenAI 兼容服务器可合成。
+- 首句就绪即播、其余后台生成；生成中断网/报错时自动回退系统语音且播放不中断。
+- 删除书籍后云 TTS 缓存一并清除。
+
 ## 4. 数据与存储规约
 
 ### 4.1 文件布局
@@ -502,6 +541,7 @@ v1 范围（当前章节内跳转）：
 | `library.json` | 旧版（v1）图书元数据，启动时自动迁移后删除 |
 | `vocabulary.json` | 生词与复习状态数组 |
 | `dictionary/ecdict-v2.sqlite` | 首次查词时从资产复制出来的只读词典 |
+| `tts_cache/<bookId>/<chapter>/<voice>/<序号>.mp3` | 云 TTS 章节音频缓存（删除书籍时一并清除） |
 | SharedPreferences `reader_preferences` | 阅读外观偏好 |
 
 ### 4.2 Book / Chapter JSON
@@ -617,8 +657,10 @@ CREATE TABLE forms (
 | 1.4.3 | 2026-08-06 | F-138 自定义节奏实现：记忆曲线取点（约 70%–95% 保留率 ↔ ×0.5–×2.0 倍率）、首次复习四档、更多选项（每日上限/单次词数）、`review_mode_custom` JSON 持久化；单元测试/Lint/构建通过，Android 15 模拟器 30/30 |
 | 1.4.4 | 2026-08-06 | 修复 F-122 短语识别边界：短语优先仅由“首个实义词或紧随动词的小品词”触发，词组后部宾语/补足语回退单词释义；点击词与短语词条按词形对齐（支持 `have got to` 等变形词条）；同位置多候选优先核心命中；点击词定位以表面词为准防偏移漂移。单元测试（59 个）/Lint/构建通过，Android 15 模拟器 32/32 通过 |
 | 1.6.0 | 2026-08-10 | 新增 F-150 听书：系统 TTS 整章/全书连续朗读（中英支持）、句级高亮与点击跟读、后台播放（前台媒体服务 + 通知/媒体控件）、语速 0.5×–2.0×、每书收听进度持久化（`ttsChapterIndex`/`ttsSentenceIndex`，旧数据兼容）；播放层预留 `TtsSynthesizer` 云 TTS 接口；版本升至 1.3.0（versionCode 6） |
+| 1.6.1 | 2026-08-10 | 新增 F-151 外置 TTS：Azure Speech（世纪互联中国区，`chinanorth3`）与 OpenAI 兼容自建服务器（Fish Speech S2 / GPT-SoVITS 等）双后端；整章预生成 + 首句即播 + 本地缓存 + 失败回退系统语音；Key/Token Keystore 加密；听书设置三引擎切换与测试连接 |
 | 1.6.1 | 2026-08-10 | F-111 增加上下滑动翻页：上滑下一页、下滑上一页；阈值与横滑一致（位移 ≥ 45px、纵向位移 > 横向位移 × 1.5、700ms 内完成）；新增 ReaderScriptsTest 覆盖 |
 | 1.6.2 | 2026-08-10 | F-111 新增卷轴滑动模式：慢速纵向拖动进入并保持，正文连续滚动并显示章节进度；快滑/点“分页”退出并把滚动比例映射回页码；旋转保持模式与比例；新增 ReaderScriptsTest 覆盖 |
+| 1.6.3 | 2026-08-10 | 新增 F-126 AI 语境翻译（DeepSeek 书级档案 + 本地轻量语境）、F-127 本书术语表与 Azure 整句翻译（`SentenceTranslator` 接口：Azure 优先、DeepSeek 兜底）；生词本保存 AI 释义（`aiMeaning/aiSource/aiExplanation`） |
 
 ## 7. 已知不一致（待处理）
 

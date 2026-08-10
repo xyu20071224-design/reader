@@ -135,12 +135,15 @@ internal fun ReaderScreen(
     var toolbarVisible by remember { mutableStateOf(true) }
     var showContents by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showListeningSettings by remember { mutableStateOf(false) }
     var showPageJump by remember { mutableStateOf(false) }
     var lookup by remember { mutableStateOf<WordLookup?>(null) }
     var dictionaryResult by remember { mutableStateOf<DictionaryLookupResult?>(null) }
     var dictionaryLoading by remember { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
     var aiLoading by remember { mutableStateOf(false) }
+    var sentenceTranslation by remember { mutableStateOf<String?>(null) }
+    var sentenceTranslationLoading by remember { mutableStateOf(false) }
     var showingRelatedPhrase by remember { mutableStateOf(false) }
     var reviewDeck by remember { mutableStateOf<List<SavedWord>?>(null) }
     var showReviewSettings by remember { mutableStateOf(false) }
@@ -336,6 +339,8 @@ internal fun ReaderScreen(
         dictionaryLoading = true
         aiResult = null
         aiLoading = false
+        sentenceTranslation = null
+        sentenceTranslationLoading = false
         dictionaryResult = viewModel.lookup(request)
         showingRelatedPhrase = false
         dictionaryLoading = false
@@ -607,9 +612,17 @@ internal fun ReaderScreen(
                 showSettings = false
                 showReviewSettings = true
             },
+            onOpenListeningSettings = {
+                showSettings = false
+                showListeningSettings = true
+            },
             onChange = ::persistPreferences,
             onDismiss = { showSettings = false }
         )
+    }
+
+    if (showListeningSettings) {
+        ListeningSettingsSheet(onDismiss = { showListeningSettings = false })
     }
 
     if (showPageJump) {
@@ -642,18 +655,21 @@ internal fun ReaderScreen(
         )
     }
 
-    lookup?.let {
+    lookup?.let { currentLookup ->
         val displayedEntry = if (showingRelatedPhrase) dictionaryResult?.relatedPhrase
         else dictionaryResult?.entry
         val savedId = (displayedEntry?.matchedPhrase ?: displayedEntry?.headword)
             ?.lowercase(Locale.ROOT)
         LookupSheet(
-            lookup = it,
+            lookup = currentLookup,
             entry = displayedEntry,
             relatedPhrase = dictionaryResult?.relatedPhrase,
             loading = dictionaryLoading,
             aiContext = aiResult,
             aiLoading = aiLoading,
+            azureReady = aiSettings.azureReady,
+            sentenceTranslation = sentenceTranslation,
+            sentenceTranslationLoading = sentenceTranslationLoading,
             isSaved = savedId != null && savedWords.any { word -> word.id == savedId },
             isPhraseView = showingRelatedPhrase,
             showReviewEntry = reminders.contextHighlight,
@@ -667,7 +683,7 @@ internal fun ReaderScreen(
             onShowPhrase = { showingRelatedPhrase = true },
             onShowWord = { showingRelatedPhrase = false },
             onSpeak = {
-                onSpeak(displayedEntry?.matchedPhrase ?: displayedEntry?.headword ?: it.word)
+                onSpeak(displayedEntry?.matchedPhrase ?: displayedEntry?.headword ?: currentLookup.word)
             },
             onToggleSave = {
                 val entry = displayedEntry ?: return@LookupSheet
@@ -677,10 +693,20 @@ internal fun ReaderScreen(
                     viewModel.saveWord(
                         book,
                         book.chapters[chapterIndex].title,
-                        it,
+                        currentLookup,
                         entry,
                         aiResult
                     )
+                }
+            },
+            onTranslateSentence = {
+                if (sentenceTranslationLoading) return@LookupSheet
+                scope.launch {
+                    sentenceTranslationLoading = true
+                    sentenceTranslation = runCatching {
+                        viewModel.translateSentence(book, currentLookup.sentence)
+                    }.getOrNull()
+                    sentenceTranslationLoading = false
                 }
             },
             onDismiss = {
@@ -734,6 +760,7 @@ private fun SettingsSheet(
     preferences: ReaderPreferences,
     reviewPace: ReviewPace,
     onOpenReviewSettings: () -> Unit,
+    onOpenListeningSettings: () -> Unit,
     onChange: (ReaderPreferences) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -834,6 +861,20 @@ private fun SettingsSheet(
                     Text("${reviewPace.label} ›", color = Accent)
                 }
             }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "听书设置",
+                    modifier = Modifier.weight(1f),
+                    color = Ink,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                TextButton(onClick = onOpenListeningSettings) {
+                    Text("›", color = Accent)
+                }
+            }
         }
     }
 }
@@ -913,6 +954,9 @@ private fun LookupSheet(
     loading: Boolean,
     aiContext: AiLookupResult?,
     aiLoading: Boolean,
+    azureReady: Boolean,
+    sentenceTranslation: String?,
+    sentenceTranslationLoading: Boolean,
     isSaved: Boolean,
     isPhraseView: Boolean,
     showReviewEntry: Boolean,
@@ -921,6 +965,7 @@ private fun LookupSheet(
     onShowWord: () -> Unit,
     onSpeak: () -> Unit,
     onToggleSave: () -> Unit,
+    onTranslateSentence: () -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
@@ -1057,6 +1102,46 @@ private fun LookupSheet(
                         color = Ink.copy(alpha = .72f)
                     )
                 }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = onTranslateSentence,
+                    enabled = !sentenceTranslationLoading
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = if (azureReady) Accent else InkFaint
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("整句翻译", color = if (azureReady) Accent else InkFaint)
+                }
+                if (sentenceTranslationLoading) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .width(72.dp)
+                            .height(4.dp),
+                        color = Accent,
+                        trackColor = Accent.copy(alpha = .12f)
+                    )
+                }
+            }
+            if (!azureReady && sentenceTranslation == null && !sentenceTranslationLoading) {
+                Text(
+                    "未启用 Azure 整句翻译（AI 设置）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkFaint
+                )
+            }
+            if (sentenceTranslation != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "整句翻译（Azure）：$sentenceTranslation",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Ink
+                )
             }
             Spacer(Modifier.height(14.dp))
             when {

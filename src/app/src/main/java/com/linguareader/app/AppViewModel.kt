@@ -9,7 +9,11 @@ import com.linguareader.app.ai.AiLookupRequest
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.AiSettingsStore
+import com.linguareader.app.ai.BookGlossary
+import com.linguareader.app.ai.BookGlossaryRepository
 import com.linguareader.app.ai.BookContextRepository
+import com.linguareader.app.ai.GlossaryEntry
+import com.linguareader.app.ai.SentenceTranslatorFactory
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
@@ -31,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 sealed interface LaunchPromptUi {
     data class GreetingPrompt(val greeting: Greeting) : LaunchPromptUi
@@ -64,6 +69,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val launchPrefs = application.getSharedPreferences("launch_promo", android.content.Context.MODE_PRIVATE)
     private val aiSettingsStore = AiSettingsStore(application)
     private val aiRepository = BookContextRepository(application, aiSettingsStore)
+    private val glossaryRepository = BookGlossaryRepository(application)
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
@@ -173,6 +179,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             library.deleteBook(book)
             aiRepository.delete(book.id)
+            glossaryRepository.delete(book.id)
+            // Cloud TTS chapter audio cache is per book; remove it with the book.
+            File(getApplication<Application>().filesDir, "tts_cache/${book.id}")
+                .deleteRecursively()
             refresh()
         }
     }
@@ -194,7 +204,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             setAiStatus(book.id, AiBookStatus(generating = true))
             runCatching { aiRepository.generate(book) }
-                .onSuccess { setAiStatus(book.id, AiBookStatus(ready = true)) }
+                .onSuccess { profile ->
+                    glossaryRepository.importFromProfile(book.id, profile)
+                    setAiStatus(book.id, AiBookStatus(ready = true))
+                }
                 .onFailure {
                     setAiStatus(
                         book.id,
@@ -210,7 +223,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             setAiStatus(book.id, AiBookStatus(generating = true))
             runCatching { aiRepository.generate(book, force = true) }
-                .onSuccess { setAiStatus(book.id, AiBookStatus(ready = true)) }
+                .onSuccess { profile ->
+                    glossaryRepository.importFromProfile(book.id, profile)
+                    setAiStatus(book.id, AiBookStatus(ready = true))
+                }
                 .onFailure {
                     setAiStatus(
                         book.id,
@@ -276,9 +292,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             paragraph = lookup.paragraph,
             localSenses = entry?.senses?.map { it.text }.orEmpty(),
             localDefinitions = entry?.definitions.orEmpty(),
-            matchedPhrase = entry?.matchedPhrase
+            matchedPhrase = entry?.matchedPhrase,
+            glossary = glossaryRepository.load(book.id).entries
         )
         return aiRepository.translate(book, request)
+    }
+
+    // --- per-book glossary ---------------------------------------------------
+
+    suspend fun glossary(bookId: String): BookGlossary = glossaryRepository.load(bookId)
+
+    suspend fun addGlossaryEntry(bookId: String, term: String, translation: String): BookGlossary =
+        glossaryRepository.addOrUpdate(bookId, term, translation)
+
+    suspend fun updateGlossaryEntry(bookId: String, entry: GlossaryEntry): BookGlossary =
+        glossaryRepository.update(bookId, entry)
+
+    suspend fun removeGlossaryEntry(bookId: String, term: String): BookGlossary =
+        glossaryRepository.remove(bookId, term)
+
+    // --- Azure sentence translation -------------------------------------------
+
+    /**
+     * Translates a sentence with Azure AI Translator, applying the book's
+     * enabled glossary terms as dynamic dictionary markup.
+     */
+    suspend fun translateSentence(book: Book, sentence: String): String {
+        val settings = mutableState.value.aiSettings
+        val translator = SentenceTranslatorFactory.from(settings)
+            ?: error("未启用整句翻译（需要 Azure Translator Key 或 DeepSeek API Key）")
+        val glossary = glossaryRepository.load(book.id)
+        return translator.translateSentence(sentence, glossary)
     }
 
     fun saveWord(

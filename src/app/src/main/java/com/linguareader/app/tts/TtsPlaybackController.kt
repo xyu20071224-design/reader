@@ -64,4 +64,7 @@ object TtsPlaybackController {
 
     fun onReaderPositionChanged(bookId: String, chapterIndex: Int, blockText: String) =
         TtsPlaybackService.onReaderPositionChanged(bookId, chapterIndex, blockText)
+
+    fun onCloudSettingsChanged(context: Context) =
+        TtsPlaybackService.onCloudSettingsChanged(context)
 }

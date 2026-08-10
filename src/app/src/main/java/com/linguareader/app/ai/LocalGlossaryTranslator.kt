@@ -81,7 +81,15 @@ class LocalGlossaryTranslator : AiTranslator {
     ): AiLookupResult? {
         val wanted = request.headword.lowercase()
         val surface = request.surfaceWord.lowercase()
-        val term = (profile.characters + profile.places + profile.glossary)
+        val candidates = (
+            if (request.glossary.isNotEmpty()) {
+                request.glossary.map { TermCandidate(it.term, it.translation, it.note) }
+            } else {
+                (profile.characters + profile.places + profile.glossary)
+                    .map { TermCandidate(it.term, it.translation, it.note) }
+            }
+            )
+        val term = candidates
             .firstOrNull {
                 val key = it.term.lowercase()
                 key == wanted || key == surface ||
@@ -104,6 +112,12 @@ class LocalGlossaryTranslator : AiTranslator {
     }
 
     companion object {
+        private data class TermCandidate(
+            val term: String,
+            val translation: String,
+            val note: String
+        )
+
         private val WORD_PATTERN = Regex("""[A-Za-zÀ-ÖØ-öø-ÿ]+(?:['’\-][A-Za-zÀ-ÖØ-öø-ÿ]+)*""")
         private val SENTENCE_PATTERN = Regex("""[^.!?…]+[.!?…]+|[^.!?…]+$""")
         private val BIGRAM_PATTERN = Regex(

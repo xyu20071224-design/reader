@@ -69,6 +69,7 @@ class TtsPlaybackService : Service() {
     private var chapterReadyDeferred: CompletableDeferred<Int>? = null
     private var consecutiveErrors = 0
     private var progressSaveJob: Job? = null
+    private var preparedChapterKey: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -96,6 +97,7 @@ class TtsPlaybackService : Service() {
             ACTION_PREVIOUS -> previousSentence()
             ACTION_STOP -> stopPlayback()
             ACTION_RATE -> intent.getFloatExtra(EXTRA_RATE, speechRate).let(::setRate)
+            ACTION_RECONFIGURE -> reconfigureSynthesizer()
         }
         return START_NOT_STICKY
     }
@@ -154,6 +156,7 @@ class TtsPlaybackService : Service() {
         book = newBook
         chapterIndex = requestedChapter.coerceIn(0, newBook.chapters.lastIndex.coerceAtLeast(0))
         sentenceIndex = requestedSentence.coerceAtLeast(0)
+        preparedChapterKey = null
         val readerChapter = readerChapterByBook
         lastLoadedChapter = if (readerChapter?.first == newBook.id) readerChapter.second else null
         playing = true
@@ -167,7 +170,8 @@ class TtsPlaybackService : Service() {
             sentenceCount = 0,
             currentSentence = "",
             isPlaying = true,
-            speechRate = speechRate
+            speechRate = speechRate,
+            engineLabel = engineLabelFor(CloudTtsSettings.load(applicationContext))
         )
         mediaSession?.isActive = true
         updateMediaSession()
@@ -245,6 +249,7 @@ class TtsPlaybackService : Service() {
         chapter = null
         chapterIndex = 0
         sentenceIndex = 0
+        preparedChapterKey = null
         lastLoadedChapter = null
         requestedChapter = null
         chapterReadyDeferred?.complete(-1)
@@ -267,6 +272,29 @@ class TtsPlaybackService : Service() {
         stopPlayback()
     }
 
+    /** Rebuilds the synthesizer after cloud TTS settings change. */
+    private fun reconfigureSynthesizer() {
+        val wasPlaying = playing
+        synthesizer?.stop()
+        synthesizer?.shutdown()
+        synthesizer = null
+        pendingReady.clear()
+        preparedChapterKey = null
+        val settings = CloudTtsSettings.load(applicationContext)
+        _state.update {
+            it.copy(
+                engineLabel = engineLabelFor(settings),
+                isPreparing = false,
+                preparedCount = 0,
+                preparedTotal = 0
+            )
+        }
+        if (wasPlaying && book != null) {
+            playing = true
+            ensureSynthesizer { loadAndSpeakCurrent() }
+        }
+    }
+
     // ── Queue / synthesis ─────────────────────────────────────────────────
 
     private fun ensureSynthesizer(onReady: () -> Unit) {
@@ -280,6 +308,12 @@ class TtsPlaybackService : Service() {
             object : TtsSynthesizerListener {
                 override fun onReady() {
                     scope.launch {
+                        _state.update {
+                            it.copy(
+                                engineLabel = (synthesizer as? CloudTtsSynthesizer)?.engineLabel
+                                    ?: "系统语音"
+                            )
+                        }
                         pendingReady.toList().forEach { it() }
                         pendingReady.clear()
                     }
@@ -327,6 +361,43 @@ class TtsPlaybackService : Service() {
                 sentenceIndex = 0
                 loadAndSpeakCurrent()
                 return@launch
+            }
+            val preparer = synthesizer as? ChapterTtsPreparer
+            val chapterKey = "${currentBook.id}:${chapterIndex}"
+            if (preparer != null && preparedChapterKey != chapterKey) {
+                preparedChapterKey = chapterKey
+                _state.update {
+                    it.copy(
+                        isPreparing = true,
+                        preparedCount = 0,
+                        preparedTotal = loadedChapter.sentenceCount
+                    )
+                }
+                preparer.prepareChapter(
+                    currentBook,
+                    loadedChapter,
+                    onProgress = { done, total ->
+                        _state.update {
+                            it.copy(
+                                isPreparing = true,
+                                preparedCount = done,
+                                preparedTotal = total
+                            )
+                        }
+                    },
+                    onComplete = { success ->
+                        _state.update {
+                            it.copy(
+                                isPreparing = false,
+                                preparedCount = loadedChapter.sentenceCount,
+                                preparedTotal = loadedChapter.sentenceCount
+                            )
+                        }
+                        if (!success) fallbackToSystemTts()
+                    }
+                )
+            } else if (preparer == null) {
+                _state.update { it.copy(isPreparing = false) }
             }
             _state.update {
                 it.copy(
@@ -380,7 +451,7 @@ class TtsPlaybackService : Service() {
     private fun speakNow(text: String) {
         val currentBook = book ?: return
         consecutiveErrors = 0
-        val utteranceId = "$chapterIndex:$sentenceIndex"
+        val utteranceId = utteranceIdFor(chapterIndex, sentenceIndex)
         _state.update {
             it.copy(
                 bookId = currentBook.id,
@@ -396,6 +467,23 @@ class TtsPlaybackService : Service() {
         updateNotification()
         scheduleProgressSave()
         synthesizer?.speak(text, speechRate, utteranceId)
+    }
+
+    private fun fallbackToSystemTts() {
+        if (synthesizer is SystemTtsSynthesizer) return
+        synthesizer?.stop()
+        synthesizer?.shutdown()
+        synthesizer = null
+        pendingReady.clear()
+        _state.update {
+            it.copy(
+                engineLabel = "系统语音（云 TTS 失败）",
+                isPreparing = false,
+                preparedCount = 0,
+                preparedTotal = 0
+            )
+        }
+        ensureSynthesizer { loadAndSpeakCurrent() }
     }
 
     private fun handleUtteranceStart(utteranceId: String) {
@@ -436,6 +524,7 @@ class TtsPlaybackService : Service() {
         if (book?.id != bookId) return
         chapterIndex = selectedChapter.coerceIn(0, book?.chapters?.lastIndex?.coerceAtLeast(0) ?: 0)
         sentenceIndex = 0
+        preparedChapterKey = null
         lastLoadedChapter = null
         chapter = null
         _state.update {
@@ -611,7 +700,14 @@ class TtsPlaybackService : Service() {
         )
     }
 
-    private fun utteranceIdFor(chapter: Int, sentence: Int): String = "$chapter:$sentence"
+    private fun utteranceIdFor(chapter: Int, sentence: Int): String =
+        "${book?.id.orEmpty()}:$chapter:$sentence"
+
+    private fun engineLabelFor(settings: CloudTtsSettings): String = when (settings.mode) {
+        TtsEngineMode.AZURE -> "Azure 云 TTS"
+        TtsEngineMode.OPENAI_COMPAT -> "自建服务器（OpenAI 兼容）"
+        TtsEngineMode.SYSTEM -> "系统语音"
+    }
 
     companion object {
         @Volatile
@@ -631,6 +727,7 @@ class TtsPlaybackService : Service() {
         private const val ACTION_PREVIOUS = "com.linguareader.app.tts.PREVIOUS"
         private const val ACTION_STOP = "com.linguareader.app.tts.STOP"
         private const val ACTION_RATE = "com.linguareader.app.tts.RATE"
+        private const val ACTION_RECONFIGURE = "com.linguareader.app.tts.RECONFIGURE"
 
         private const val EXTRA_BOOK_JSON = "book_json"
         private const val EXTRA_CHAPTER = "chapter"
@@ -743,6 +840,15 @@ class TtsPlaybackService : Service() {
         /** Called after a manual page turn so the queue follows the reader. */
         fun onReaderPositionChanged(bookId: String, chapterIndex: Int, blockText: String) {
             companionInstance?.onReaderPositionChanged(bookId, chapterIndex, blockText)
+        }
+
+        /** Called by the settings sheet after cloud TTS configuration changes. */
+        fun onCloudSettingsChanged(context: Context) {
+            if (_state.value.bookId != null) {
+                context.startService(
+                    Intent(context, TtsPlaybackService::class.java).setAction(ACTION_RECONFIGURE)
+                )
+            }
         }
     }
 }

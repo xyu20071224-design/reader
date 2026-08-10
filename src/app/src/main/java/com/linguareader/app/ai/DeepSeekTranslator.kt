@@ -13,7 +13,7 @@ import java.net.URL
  * The endpoint is OpenAI-compatible, so [AiSettings.baseUrl] and [AiSettings.model]
  * are configurable; the default points at https://api.deepseek.com.
  */
-class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator {
+class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, SentenceTranslator {
     override val id = "deepseek"
     override val displayName = "DeepSeek"
     override val offline = false
@@ -56,6 +56,33 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator {
                 ?: request.matchedPhrase,
             source = displayName
         )
+    }
+
+    override suspend fun translateSentence(
+        sentence: String,
+        glossary: BookGlossary
+    ): String {
+        val user = buildString {
+            if (glossary.entries.isNotEmpty()) {
+                appendLine("本书术语表（词条 | 译法 | 说明）：")
+                glossary.entries.filter { it.enabled }.forEach { entry ->
+                    appendLine("${entry.term} | ${entry.translation.ifBlank { "保留原文" }} | ${entry.note}")
+                }
+                appendLine()
+            }
+            appendLine("请把下面这句英文翻译成简体中文，严格按照术语表译法处理专名与术语：")
+            appendLine(sentence)
+            appendLine()
+            appendLine("只输出 JSON：{\"translation\":\"整句中文翻译\"}")
+        }
+        val answer = chat(
+            system = SENTENCE_SYSTEM_PROMPT,
+            user = user,
+            jsonMode = true
+        )
+        return answer.optString("translation").trim().ifBlank {
+            throw AiRequestException("DeepSeek 未返回整句翻译")
+        }
     }
 
     // --- book context -------------------------------------------------------
@@ -179,14 +206,17 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator {
         if (profile.styleNotes.isNotEmpty()) {
             appendLine("文体说明：${profile.styleNotes.joinToString("；")}")
         }
-        val terms = buildList {
-            addAll(profile.characters)
-            addAll(profile.places)
-            addAll(profile.glossary)
-        }.distinctBy { it.term.lowercase() }.take(80)
+        val terms = (
+            if (request.glossary.isNotEmpty()) {
+                request.glossary.map { Triple(it.term, it.translation, it.note) }
+            } else {
+                (profile.characters + profile.places + profile.glossary)
+                    .map { Triple(it.term, it.translation, it.note) }
+            }
+            ).distinctBy { it.first.lowercase() }.take(80)
         if (terms.isNotEmpty()) {
             appendLine("本书术语（词条 | 译法 | 说明）：")
-            terms.forEach { appendLine("${it.term} | ${it.translation} | ${it.note}") }
+            terms.forEach { appendLine("${it.first} | ${it.second} | ${it.third}") }
         }
         appendLine()
         appendLine("点击词：${request.surfaceWord}")
@@ -288,5 +318,10 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator {
                 "优先从用户提供的本地词典义项中挑选；若点击词是书中专名或术语，给出本书中的固定译法。" +
                 "只输出 JSON 对象，不要输出其他内容：{\"meaning\":\"中文释义（必填）\",\"explanation\":\"为什么这个义项贴合本句（可选，1-2句）\",\"phrase\":\"命中短语（可选）\"}。" +
                 "meaning 要简短，像词典义项一样可以直接用于学习。"
+
+        private const val SENTENCE_SYSTEM_PROMPT =
+            "你是一个英语阅读辅助工具。把用户提供的英文句子翻译成自然、通顺的简体中文。" +
+                "用户给出的术语表译法必须优先采用；译法为“保留原文”的词保持英文不译。" +
+                "只输出 JSON 对象：{\"translation\":\"整句中文翻译\"}。"
     }
 }

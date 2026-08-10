@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -35,7 +36,9 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -45,10 +48,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,11 +68,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.ai.AiBookStatus
 import com.linguareader.app.ai.AiSettings
+import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.data.Book
+import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
@@ -80,6 +88,10 @@ internal fun BookshelfScreen(
     onOpen: (Book) -> Unit,
     onDelete: (Book) -> Unit,
     onAiSettingsChange: (AiSettings) -> Unit,
+    onLoadGlossary: suspend (String) -> BookGlossary,
+    onAddGlossary: suspend (String, String, String) -> BookGlossary,
+    onUpdateGlossary: suspend (String, GlossaryEntry) -> BookGlossary,
+    onRemoveGlossary: suspend (String, String) -> BookGlossary,
     onRemoveWord: (String) -> Unit,
     onReviewModeChange: (ReviewMode) -> Unit,
     onCustomReviewChange: (ReviewPace) -> Unit,
@@ -95,6 +107,7 @@ internal fun BookshelfScreen(
     var deleteCandidate by remember { mutableStateOf<Book?>(null) }
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
     var showAiSettings by rememberSaveable { mutableStateOf(false) }
+    var glossaryBook by remember { mutableStateOf<Book?>(null) }
 
     Scaffold(
         containerColor = Paper,
@@ -203,6 +216,7 @@ internal fun BookshelfScreen(
                             aiEnabled = state.aiSettings.enabled,
                             aiStatus = state.aiStatuses[book.id],
                             onOpen = { onOpen(book) },
+                            onGlossary = { glossaryBook = book },
                             onLongPressDelete = { deleteCandidate = book }
                         )
                     }
@@ -260,6 +274,17 @@ internal fun BookshelfScreen(
             onDismiss = { showAiSettings = false }
         )
     }
+
+    glossaryBook?.let { book ->
+        GlossaryDialog(
+            book = book,
+            onLoad = onLoadGlossary,
+            onAdd = onAddGlossary,
+            onUpdate = onUpdateGlossary,
+            onRemove = onRemoveGlossary,
+            onDismiss = { glossaryBook = null }
+        )
+    }
 }
 
 @Composable
@@ -272,6 +297,10 @@ private fun AiSettingsDialog(
     var apiKey by remember(settings) { mutableStateOf(settings.apiKey) }
     var baseUrl by remember(settings) { mutableStateOf(settings.baseUrl) }
     var model by remember(settings) { mutableStateOf(settings.model) }
+    var azureEnabled by remember(settings) { mutableStateOf(settings.azureTranslationEnabled) }
+    var azureKey by remember(settings) { mutableStateOf(settings.azureKey) }
+    var azureRegion by remember(settings) { mutableStateOf(settings.azureRegion) }
+    var azureEndpoint by remember(settings) { mutableStateOf(settings.azureEndpoint) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -282,7 +311,11 @@ private fun AiSettingsDialog(
                         enabled = enabled,
                         apiKey = apiKey,
                         baseUrl = baseUrl,
-                        model = model
+                        model = model,
+                        azureTranslationEnabled = azureEnabled,
+                        azureKey = azureKey,
+                        azureRegion = azureRegion,
+                        azureEndpoint = azureEndpoint
                     )
                 )
                 onDismiss()
@@ -343,6 +376,59 @@ private fun AiSettingsDialog(
                         color = InkSoft
                     )
                 }
+                HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Azure 整句翻译",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = azureEnabled,
+                        onCheckedChange = { azureEnabled = it }
+                    )
+                }
+                if (azureEnabled) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = azureKey,
+                        onValueChange = { azureKey = it },
+                        label = { Text("Azure Translator Key") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = azureRegion,
+                        onValueChange = { azureRegion = it },
+                        label = { Text("区域（如 eastasia，可留空）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = azureEndpoint,
+                        onValueChange = { azureEndpoint = it },
+                        label = { Text("接口地址") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "整句翻译会把当前句发送到 Azure AI Translator；本书术语表条目会用动态词典标记" +
+                            "（<mstrans:dictionary>）随请求生效，保证专名译法一致。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkSoft
+                    )
+                } else {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "关闭时查词面板不显示整句翻译。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkSoft
+                    )
+                }
             }
         },
         containerColor = CardSurface,
@@ -389,6 +475,7 @@ private fun BookCard(
     aiEnabled: Boolean,
     aiStatus: AiBookStatus?,
     onOpen: () -> Unit,
+    onGlossary: () -> Unit,
     onLongPressDelete: () -> Unit
 ) {
     Column(modifier = Modifier.clickable(onClick = onOpen)) {
@@ -480,15 +567,193 @@ private fun BookCard(
                 maxLines = 1
             )
         }
-        TextButton(onClick = onLongPressDelete, modifier = Modifier.height(30.dp)) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = InkFaint
+        Row {
+            TextButton(onClick = onGlossary, modifier = Modifier.height(30.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.MenuBook,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = Accent
+                )
+                Spacer(Modifier.width(3.dp))
+                Text("术语表", style = MaterialTheme.typography.labelSmall, color = Accent)
+            }
+            TextButton(onClick = onLongPressDelete, modifier = Modifier.height(30.dp)) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = InkFaint
+                )
+                Spacer(Modifier.width(3.dp))
+                Text("移除", style = MaterialTheme.typography.labelSmall, color = InkFaint)
+            }
+        }
+    }
+}
+
+@Composable
+private fun GlossaryDialog(
+    book: Book,
+    onLoad: suspend (String) -> BookGlossary,
+    onAdd: suspend (String, String, String) -> BookGlossary,
+    onUpdate: suspend (String, GlossaryEntry) -> BookGlossary,
+    onRemove: suspend (String, String) -> BookGlossary,
+    onDismiss: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var entries by remember(book.id) { mutableStateOf<List<GlossaryEntry>>(emptyList()) }
+    var loading by remember(book.id) { mutableStateOf(true) }
+    var newTerm by remember { mutableStateOf("") }
+    var newTranslation by remember { mutableStateOf("") }
+
+    LaunchedEffect(book.id) {
+        entries = onLoad(book.id).entries
+        loading = false
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        },
+        title = { Text("术语表 · ${book.title}") },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newTerm,
+                        onValueChange = { newTerm = it },
+                        label = { Text("英文术语") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    OutlinedTextField(
+                        value = newTranslation,
+                        onValueChange = { newTranslation = it },
+                        label = { Text("译法（留空=保留原文）") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1.3f)
+                    )
+                    IconButton(onClick = {
+                        val term = newTerm.trim()
+                        if (term.isBlank()) return@IconButton
+                        scope.launch {
+                            entries = onAdd(book.id, term, newTranslation).entries
+                            newTerm = ""
+                            newTranslation = ""
+                        }
+                    }) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "添加术语",
+                            tint = Accent
+                        )
+                    }
+                }
+                Text(
+                    "手动条目优先于 AI 自动条目；开关控制是否参与 Azure 整句翻译，关闭后仅用于点词提示。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSoft
+                )
+                Spacer(Modifier.height(8.dp))
+                if (loading) {
+                    CircularProgressIndicator(color = Accent, modifier = Modifier.size(28.dp))
+                } else if (entries.isEmpty()) {
+                    Text("还没有术语条目。", color = InkSoft)
+                } else {
+                    entries.forEach { entry ->
+                        GlossaryEntryRow(
+                            entry = entry,
+                            onUpdate = { updated ->
+                                scope.launch {
+                                    entries = onUpdate(book.id, updated).entries
+                                }
+                            },
+                            onRemove = {
+                                scope.launch {
+                                    entries = onRemove(book.id, entry.term).entries
+                                }
+                            }
+                        )
+                        HorizontalDivider(color = InkFaint.copy(alpha = .25f))
+                    }
+                }
+            }
+        },
+        containerColor = CardSurface,
+        shape = CardShape
+    )
+}
+
+@Composable
+private fun GlossaryEntryRow(
+    entry: GlossaryEntry,
+    onUpdate: (GlossaryEntry) -> Unit,
+    onRemove: () -> Unit
+) {
+    var translation by remember(entry.key, entry.translation) {
+        mutableStateOf(entry.translation)
+    }
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(entry.term, fontWeight = FontWeight.Medium)
+                Text(
+                    buildString {
+                        append(
+                            when (entry.origin) {
+                                "manual" -> "手动"
+                                "auto" -> "AI 自动"
+                                else -> "本地词频"
+                            }
+                        )
+                        if (entry.translation.isBlank()) append(" · 保留原文")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkFaint
+                )
+            }
+            Switch(
+                checked = entry.enabled,
+                onCheckedChange = { enabled -> onUpdate(entry.copy(enabled = enabled)) }
             )
-            Spacer(Modifier.width(3.dp))
-            Text("移除", style = MaterialTheme.typography.labelSmall, color = InkFaint)
+            IconButton(onClick = onRemove) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "删除术语",
+                    tint = InkFaint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = translation,
+                onValueChange = { translation = it },
+                label = { Text("译法（留空=保留原文）") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(6.dp))
+            TextButton(onClick = {
+                onUpdate(entry.copy(translation = translation.trim(), origin = "manual"))
+            }) { Text("保存") }
+        }
+        if (entry.note.isNotBlank()) {
+            Text(
+                entry.note,
+                style = MaterialTheme.typography.labelSmall,
+                color = InkSoft,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

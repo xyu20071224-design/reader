@@ -9,7 +9,11 @@ data class TtsPlaybackState(
     val sentenceCount: Int = 0,
     val currentSentence: String = "",
     val isPlaying: Boolean = false,
-    val speechRate: Float = 1f
+    val speechRate: Float = 1f,
+    val engineLabel: String = "系统语音",
+    val isPreparing: Boolean = false,
+    val preparedCount: Int = 0,
+    val preparedTotal: Int = 0
 ) {
     val isActive: Boolean get() = bookId != null
 }

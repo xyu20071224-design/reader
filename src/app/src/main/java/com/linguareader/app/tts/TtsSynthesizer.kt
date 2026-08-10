@@ -105,10 +105,20 @@ class SystemTtsSynthesizer(
 }
 
 /**
- * Backend factory. Currently always returns the system engine; swapping in a
- * cloud engine later only requires a configuration check here.
+ * Backend factory. Returns the Azure cloud engine when the user has enabled
+ * and configured it (F-151), otherwise the Android system TTS engine.
  */
 object TtsSynthesizerFactory {
-    fun create(context: Context, listener: TtsSynthesizerListener): TtsSynthesizer =
-        SystemTtsSynthesizer(context, listener)
+    fun create(context: Context, listener: TtsSynthesizerListener): TtsSynthesizer {
+        val settings = CloudTtsSettings.load(context)
+        return when {
+            settings.mode == TtsEngineMode.AZURE && settings.isConfigured ->
+                CloudTtsSynthesizer(context, AzureTtsBackend(settings, context), listener)
+
+            settings.mode == TtsEngineMode.OPENAI_COMPAT && settings.isConfigured ->
+                CloudTtsSynthesizer(context, OpenAiCompatTtsBackend(settings), listener)
+
+            else -> SystemTtsSynthesizer(context, listener)
+        }
+    }
 }

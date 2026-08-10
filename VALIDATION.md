@@ -35,6 +35,15 @@
 - `assembleDebug`：通过。
 - `connectedDebugAndroidTest`（Android 15 / API 35 模拟器）：32/32 通过；ReaderAcceptanceTest 翻页/跳页/点词回归通过（模拟器预热后全量通过）。
 
+## 2026-08-10 F-151 外置 TTS（增量验证）
+
+- 新增三引擎听书设置：系统语音（默认）/ Azure 云 TTS（世纪互联 `chinanorth3`，音色列表实时拉取）/ 自建 OpenAI 兼容服务器（`/v1/audio/speech`，可接 Fish Speech S2、GPT-SoVITS 适配服务）。
+- 整章首次预生成（并发 3 路）并缓存到 `files/tts_cache/`，首句就绪即播、其余后台生成；语速本地变速不重复合成；失败自动回退系统语音；Key/Token 经 Android Keystore AES-GCM 加密存储；删除书籍时清理对应缓存。
+- `testDebugUnitTest`：通过（100 个），新增 Azure 音色 JSON 解析/默认音色选择/SSML 转义、OpenAI 兼容请求体与音色回退用例。
+- `lintDebug`：通过，0 错误；`assembleDebug`：通过。
+- `connectedDebugAndroidTest`（Android 15 / API 35 模拟器）：32/32 通过（预热后全量；冷启动首轮偶发 2 条 ReaderAcceptanceTest 超时，重跑即绿，与云 TTS 改动无关）。
+- 说明：云 TTS 合成依赖真实服务器，仪器测试仅覆盖现有离线链路；Azure/自建服务器联调需真实 Key/服务器后人工验证。
+
 # Validation report
 
 Validated on 2026-07-30 with an Android 15 / API 35 ARM64 Pixel 6 emulator.
