@@ -20,6 +20,24 @@ class ReaderScriptsTest {
     }
 
     @Test
+    fun wordLookupUsesOneNormalizedCoordinateSpaceForSentenceOffset() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // Sentence segmentation and the clicked-word offset must both run on
+        // the trimmed, whitespace-normalized paragraph. Mixing raw and
+        // normalized offsets drifts the tapped word when the HTML has
+        // indentation or line breaks (and repeated words get mislocated).
+        assertContains(script, "const segments = sentenceSegments(paragraph);")
+        assertContains(script, "inBlock - leadingWhitespace")
+        // A word at the exact start of the next sentence belongs to that
+        // sentence, not to the previous one.
+        assertContains(script, "inBlock < segmentEnd")
+        // The displayed context must always contain the tapped word; if the
+        // segmented sentence ever misses it, fall back to the paragraph.
+        assertContains(script, "sentence.toLowerCase().indexOf(word.toLowerCase())")
+    }
+
+    @Test
     fun preferencesAreEncodedIntoCssVariables() {
         val script = ReaderScripts.preferenceScript(
             ReaderPreferences(fontPercent = 125, theme = ReaderTheme.DARK)

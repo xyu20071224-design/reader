@@ -222,14 +222,24 @@ object ReaderScripts {
             const element = range.startContainer.parentElement;
             const block = element && element.closest('p, li, blockquote, h1, h2, h3, h4, td, figcaption, div');
             const rawParagraph = (block && block.innerText) || text;
-            const paragraph = rawParagraph.replace(/\s+/g, ' ').trim();
+            const normalizedParagraph = rawParagraph.replace(/\s+/g, ' ');
+            const paragraph = normalizedParagraph.trim();
             let inBlock = start;
             if (block) {
               const prefix = document.createRange();
               prefix.selectNodeContents(block);
               prefix.setEnd(range.startContainer, start);
-              inBlock = prefix.toString().length;
+              inBlock = prefix.toString().replace(/\s+/g, ' ').length;
+            } else {
+              inBlock = text.slice(0, start).replace(/\s+/g, ' ').length;
             }
+            // The paragraph/block text is trimmed, so align the normalized
+            // offset to the same trimmed coordinate space. Keeping sentence
+            // segmentation and offsets on one normalized string prevents the
+            // tapped word from drifting to a different occurrence when the
+            // source HTML has indentation or line breaks.
+            const leadingWhitespace = (normalizedParagraph.match(/^\s*/) || [''])[0].length;
+            inBlock = Math.max(0, inBlock - leadingWhitespace);
 
             function sentenceSegments(value) {
               if (typeof Intl !== 'undefined' && Intl.Segmenter) {
@@ -259,17 +269,28 @@ object ReaderScripts {
               return result;
             }
 
-            let sentence = rawParagraph.trim();
+            let sentence = paragraph;
             let sentenceOffset = Math.max(0, inBlock);
-            const segments = sentenceSegments(rawParagraph);
+            const segments = sentenceSegments(paragraph);
             for (const segment of segments) {
               const segmentEnd = segment.index + segment.text.length;
-              if (inBlock >= segment.index && inBlock <= segmentEnd) {
+              // A word at the exact start of the next sentence belongs to that
+              // sentence, so the boundary is exclusive.
+              if (inBlock >= segment.index && inBlock < segmentEnd) {
                 const leading = (segment.text.match(/^\s*/) || [''])[0].length;
                 sentence = segment.text.trim();
                 sentenceOffset = Math.max(0, inBlock - segment.index - leading);
                 break;
               }
+            }
+            // Defensive fallback: the context shown for a word must always
+            // contain that word. If sentence segmentation ever yields a
+            // sentence without it, fall back to the whole paragraph (which
+            // definitely contains the tapped surface word) and keep the
+            // paragraph-level offset so the lookup stays correct.
+            if (sentence.toLowerCase().indexOf(word.toLowerCase()) < 0) {
+              sentence = paragraph;
+              sentenceOffset = inBlock;
             }
             const selected = document.createRange();
             selected.setStart(range.startContainer, start);
