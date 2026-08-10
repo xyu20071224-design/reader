@@ -1,8 +1,14 @@
+# macOS
+.DS_Store
+
 # Gradle / Android build outputs
 .gradle/
 build/
+captures/
+.externalNativeBuild/
+.cxx/
 
-# Local machine configuration
+# Local machine configuration (SDK paths etc.)
 local.properties
 *.local
 
@@ -13,6 +19,7 @@ local.properties
 *.dex
 
 # Keystores (keep debug keystore)
+*.jks
 *.keystore
 !debug.keystore
 
@@ -20,6 +27,19 @@ local.properties
 .idea/
 *.iml
 .vscode/
+*.code-workspace
 
-# Local artifact copies
-artifacts/
+# Kotlin
+.kotlin/
+
+# Python (dictionary build scripts)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Logs
+*.log
