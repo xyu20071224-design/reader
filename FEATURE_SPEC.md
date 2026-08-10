@@ -58,7 +58,7 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 | F-143 | 页码跳转 | 已实现，模拟器回归通过 |
 | F-144 | 启动问候与更新提示 | 已实现（模拟器验证通过） |
 | F-150 | 听书（整章/全书连续朗读） | 已实现（1.3.0） |
-| F-151 | 外置 TTS：Azure 云 TTS / OpenAI 兼容自建服务器 | 已实现（1.3.0） |
+| F-151 | 外置 TTS：Azure 云 TTS / OpenAI 兼容自建服务器 / 火山引擎（豆包语音） | 已实现（1.3.0） |
 
 ## 3. 功能详细规约
 
@@ -506,14 +506,15 @@ v1 范围（当前章节内跳转）：
 
 目标与架构：
 
-- 在系统 TTS 之外提供两个可选云端/自建后端：Azure Speech（世纪互联中国区）与“OpenAI 兼容自建服务器”（Fish Speech S2 / GPT-SoVITS 等可通过 SGLang-Omni、vLLM-Omni 或兼容适配层暴露 `/v1/audio/speech` 的服务）。
+- 在系统 TTS 之外提供三个可选云端/自建后端：Azure Speech（世纪互联中国区）、“OpenAI 兼容自建服务器”（Fish Speech S2 / GPT-SoVITS 等可通过 SGLang-Omni、vLLM-Omni 或兼容适配层暴露 `/v1/audio/speech` 的服务）与火山引擎豆包语音（V3 HTTP SSE 单向流式）。
 - 播放层只依赖 `TtsSynthesizer` + `CloudTtsBackend` 接口：缓存、预生成、进度、失败回退与 UI 均不绑定具体厂商；新增后端只需实现 `CloudTtsBackend` 并在工厂注册。
 - 默认仍为系统 TTS；云 TTS 是用户手动开启的可选项，Key/Token 用 Android Keystore 加密后存储。
 
 行为：
 
-- **引擎选择**：阅读设置 → 听书设置，可选“系统语音 / Azure 云 TTS / 自建服务器（OpenAI 兼容）”。
+- **引擎选择**：阅读设置 → 听书设置，可选“系统语音 / Azure 云 TTS / 火山引擎（豆包语音）/ 自建服务器（OpenAI 兼容）”。
 - **Azure 配置**：Region（默认 `chinanorth3`，终结点 `https://<region>.tts.speech.azure.cn`）、API Key、英文/中文/多语言音色；音色列表通过 `voices/list` 接口实时拉取，默认英文 `en-US-AriaNeural`、中文 `zh-CN-XiaoxiaoNeural`，存在可用多语言音色时默认开启“中英混读音色”。
+- **火山引擎配置**：终结点固定为 `https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse`（SSE 流式，音频帧 `data` 为 base64）；鉴权二选一：新版控制台 API Key（`X-Api-Key`，推荐）或旧版控制台 App ID + Access Token（`X-Api-App-Id` + `X-Api-Access-Key`）；Resource ID 默认 `seed-tts-2.0`（豆包语音合成模型 2.0，也可选 `seed-tts-1.0` / `seed-tts-1.0-concurr` 以使用 `BV*_streaming` 音色）；中英文音色分别配置，默认中文 `zh_female_shuangkuaisisi_uranus_bigtts`、英文 `en_female_dacey_uranus_bigtts`，支持自定义声音复刻 speaker ID；按句含中文则走中文音色、否则走英文音色。
 - **自建服务器配置**：服务器地址（自动补 `/v1/audio/speech`）、模型名、可选 Bearer Token、音色名（Fish Speech 通常为 `default`）。
 - **整章预生成**：首次播放某章时并发（最多 3 路）合成整章并写入 `files/tts_cache/<bookId>/<chapter>/<voice>/<序号>.mp3`；首句就绪即开始播放，其余后台继续；语速调整在播放端变速，不重新合成。
 - **失败回退**：网络失败、HTTP 错误、Key/Token 无效等导致章节合成失败时，自动切换系统 TTS 继续播放，并在播放条状态中标明“云 TTS 失败”；设置页可测试连接。
@@ -523,8 +524,9 @@ v1 范围（当前章节内跳转）：
 
 验收要点：
 
-- 三引擎可切换且配置持久化；Key/Token 不以明文落盘。
+- 四引擎可切换且配置持久化；Key/Token 不以明文落盘。
 - Azure 中国北部 3 可拉取音色列表并合成；自建 OpenAI 兼容服务器可合成。
+- 火山引擎豆包语音 V3 SSE 可合成：新版 `X-Api-Key` 与旧版 AppID+Token 两种鉴权均可用；SSE 音频帧解码、结束帧（code 20000000）与错误帧处理正确；中英文按句路由音色。
 - 首句就绪即播、其余后台生成；生成中断网/报错时自动回退系统语音且播放不中断。
 - 删除书籍后云 TTS 缓存一并清除。
 
@@ -658,6 +660,7 @@ CREATE TABLE forms (
 | 1.4.4 | 2026-08-06 | 修复 F-122 短语识别边界：短语优先仅由“首个实义词或紧随动词的小品词”触发，词组后部宾语/补足语回退单词释义；点击词与短语词条按词形对齐（支持 `have got to` 等变形词条）；同位置多候选优先核心命中；点击词定位以表面词为准防偏移漂移。单元测试（59 个）/Lint/构建通过，Android 15 模拟器 32/32 通过 |
 | 1.6.0 | 2026-08-10 | 新增 F-150 听书：系统 TTS 整章/全书连续朗读（中英支持）、句级高亮与点击跟读、后台播放（前台媒体服务 + 通知/媒体控件）、语速 0.5×–2.0×、每书收听进度持久化（`ttsChapterIndex`/`ttsSentenceIndex`，旧数据兼容）；播放层预留 `TtsSynthesizer` 云 TTS 接口；版本升至 1.3.0（versionCode 6） |
 | 1.6.1 | 2026-08-10 | 新增 F-151 外置 TTS：Azure Speech（世纪互联中国区，`chinanorth3`）与 OpenAI 兼容自建服务器（Fish Speech S2 / GPT-SoVITS 等）双后端；整章预生成 + 首句即播 + 本地缓存 + 失败回退系统语音；Key/Token Keystore 加密；听书设置三引擎切换与测试连接 |
+| 1.6.2 | 2026-08-10 | F-151 新增火山引擎豆包语音后端（V3 HTTP SSE 单向流式，`openspeech.bytedance.com/api/v3/tts/unidirectional/sse`）：新版 `X-Api-Key` 与旧版 AppID+Token 双鉴权、Resource ID 与中英文音色可配、SSE 音频帧流式解码；听书设置升级为四引擎并新增“测试连接”（中英文各合成一次）；新增 10 个火山后端单元测试 |
 | 1.6.1 | 2026-08-10 | F-111 增加上下滑动翻页：上滑下一页、下滑上一页；阈值与横滑一致（位移 ≥ 45px、纵向位移 > 横向位移 × 1.5、700ms 内完成）；新增 ReaderScriptsTest 覆盖 |
 | 1.6.2 | 2026-08-10 | F-111 新增卷轴滑动模式：慢速纵向拖动进入并保持，正文连续滚动并显示章节进度；快滑/点“分页”退出并把滚动比例映射回页码；旋转保持模式与比例；新增 ReaderScriptsTest 覆盖 |
 | 1.6.3 | 2026-08-10 | 新增 F-126 AI 语境翻译（DeepSeek 书级档案 + 本地轻量语境）、F-127 本书术语表与 Azure 整句翻译（`SentenceTranslator` 接口：Azure 优先、DeepSeek 兜底）；生词本保存 AI 释义（`aiMeaning/aiSource/aiExplanation`） |

@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Optional hook for synthesizers that can pre-generate a whole chapter.
- * The system TTS engine does not implement this; the Azure cloud engine does.
+ * The system TTS engine does not implement this; the cloud engines do.
  */
 interface ChapterTtsPreparer {
     fun prepareChapter(
@@ -36,7 +36,7 @@ interface ChapterTtsPreparer {
 }
 
 /**
- * Azure Speech cloud synthesizer (F-151).
+ * Cloud synthesizer (F-151).
  *
  * Pre-generates a whole chapter on first play, writes MP3s into the app cache
  * and plays them with [MediaPlayer]. Playback speed is applied locally, so

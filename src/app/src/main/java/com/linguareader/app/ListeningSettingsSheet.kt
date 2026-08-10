@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.tts.AzureSpeechClient
 import com.linguareader.app.tts.AzureVoice
@@ -46,6 +47,7 @@ import com.linguareader.app.tts.CloudVoiceStore
 import com.linguareader.app.tts.OpenAiCompatTtsBackend
 import com.linguareader.app.tts.TtsEngineMode
 import com.linguareader.app.tts.TtsPlaybackController
+import com.linguareader.app.tts.VolcanoTtsBackend
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -107,6 +109,39 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
         }
     }
 
+    fun testVolcano() {
+        if (!settings.isConfigured) {
+            status = "请填写 API Key，或 App ID + Access Token"
+            return
+        }
+        busy = true
+        status = null
+        scope.launch {
+            val backend = VolcanoTtsBackend(settings)
+            val zhProbe = File(context.cacheDir, "tts_probe_zh.mp3")
+            val enProbe = File(context.cacheDir, "tts_probe_en.mp3")
+            val zh = backend.synthesize(
+                "你好，世界。",
+                backend.voiceFor("你好，世界。"),
+                zhProbe
+            )
+            val en = backend.synthesize(
+                "Hello world.",
+                backend.voiceFor("Hello world."),
+                enProbe
+            )
+            zhProbe.delete()
+            enProbe.delete()
+            if (zh.isSuccess && en.isSuccess) {
+                status = "连接成功，中英文音色均可合成"
+            } else {
+                status = (zh.exceptionOrNull() ?: en.exceptionOrNull())
+                    ?.message ?: "连接失败"
+            }
+            busy = false
+        }
+    }
+
     fun save() {
         if (settings.mode != TtsEngineMode.SYSTEM && !settings.isConfigured) {
             status = "启用云 TTS 前请先完成对应配置"
@@ -141,11 +176,19 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.AZURE) }
                 )
             }
-            EngineChoice(
-                label = "自建服务器（OpenAI 兼容）",
-                selected = settings.mode == TtsEngineMode.OPENAI_COMPAT,
-                onSelect = { settings = settings.copy(mode = TtsEngineMode.OPENAI_COMPAT) }
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EngineChoice(
+                    label = "火山引擎（豆包语音）",
+                    selected = settings.mode == TtsEngineMode.VOLC,
+                    onSelect = { settings = settings.copy(mode = TtsEngineMode.VOLC) }
+                )
+                Spacer(Modifier.weight(1f))
+                EngineChoice(
+                    label = "自建服务器（OpenAI 兼容）",
+                    selected = settings.mode == TtsEngineMode.OPENAI_COMPAT,
+                    onSelect = { settings = settings.copy(mode = TtsEngineMode.OPENAI_COMPAT) }
+                )
+            }
 
             if (settings.mode == TtsEngineMode.AZURE) {
                 Spacer(Modifier.height(16.dp))
@@ -282,6 +325,68 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                 }
             }
 
+            if (settings.mode == TtsEngineMode.VOLC) {
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = settings.volcApiKey,
+                    onValueChange = { settings = settings.copy(volcApiKey = it.trim()) },
+                    label = { Text("API Key（新版控制台，推荐）") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = settings.volcAppId,
+                    onValueChange = { settings = settings.copy(volcAppId = it.trim()) },
+                    label = { Text("App ID（旧版控制台）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = settings.volcToken,
+                    onValueChange = { settings = settings.copy(volcToken = it.trim()) },
+                    label = { Text("Access Token（旧版控制台）") },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                PresetField(
+                    label = "Resource ID / 模型",
+                    value = settings.volcResourceId,
+                    onValueChange = { settings = settings.copy(volcResourceId = it.trim()) },
+                    presets = volcResourcePresets,
+                    supportingText = "2.0 音色配 seed-tts-2.0；1.0 音色配 seed-tts-1.0"
+                )
+                Spacer(Modifier.height(10.dp))
+                PresetField(
+                    label = "中文音色",
+                    value = settings.volcZhVoice,
+                    onValueChange = { settings = settings.copy(volcZhVoice = it.trim()) },
+                    presets = volcZhVoicePresets(settings.volcResourceId)
+                )
+                Spacer(Modifier.height(10.dp))
+                PresetField(
+                    label = "英文音色",
+                    value = settings.volcEnVoice,
+                    onValueChange = { settings = settings.copy(volcEnVoice = it.trim()) },
+                    presets = volcEnVoicePresets(settings.volcResourceId)
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = ::testVolcano, enabled = !busy) {
+                    Text("测试连接")
+                }
+                status?.let {
+                    Text(
+                        it,
+                        color = if (it.startsWith("连接成功")) Success else Danger,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+
             if (settings.mode != TtsEngineMode.SYSTEM) {
                 Spacer(Modifier.height(14.dp))
                 Text(
@@ -309,6 +414,85 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
         }
     }
 }
+
+@Composable
+private fun PresetField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    presets: List<Pair<String, String>>,
+    supportingText: String? = null
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                label = { Text(label) },
+                supportingText = supportingText?.let { supporting ->
+                    { Text(supporting) }
+                },
+                visualTransformation = VisualTransformation.None,
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            Box {
+                TextButton(onClick = { expanded = true }) { Text("预设") }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    presets.forEach { (preset, name) ->
+                        DropdownMenuItem(
+                            text = { Text("$name（$preset）") },
+                            onClick = {
+                                onValueChange(preset)
+                                expanded = false
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val volcResourcePresets = listOf(
+    "seed-tts-2.0" to "豆包语音合成模型 2.0（推荐）",
+    "seed-tts-1.0" to "豆包语音合成模型 1.0",
+    "seed-tts-1.0-concurr" to "豆包语音合成模型 1.0（并发版）"
+)
+
+private fun volcZhVoicePresets(resourceId: String): List<Pair<String, String>> =
+    if (resourceId.startsWith("seed-tts-2.0")) {
+        listOf(
+            "zh_female_shuangkuaisisi_uranus_bigtts" to "爽快思思 2.0",
+            "zh_female_cancan_uranus_bigtts" to "灿灿 2.0",
+            "zh_female_vv_uranus_bigtts" to "VV 2.0",
+            "zh_female_xiaohe_uranus_bigtts" to "晓荷 2.0",
+            "zh_male_m191_uranus_bigtts" to "云舟 2.0",
+            "zh_male_taocheng_uranus_bigtts" to "小田 2.0",
+            "zh_female_kefunvsheng_uranus_bigtts" to "暖阳女声 2.0"
+        )
+    } else {
+        listOf(
+            "BV001_streaming" to "通用女声",
+            "BV002_streaming" to "通用男声",
+            "BV700_streaming" to "灿灿",
+            "BV701_streaming" to "青苍（有声书）"
+        )
+    }
+
+private fun volcEnVoicePresets(resourceId: String): List<Pair<String, String>> =
+    if (resourceId.startsWith("seed-tts-2.0")) {
+        listOf(
+            "en_female_dacey_uranus_bigtts" to "Dacey（英文女声）",
+            "en_male_tim_uranus_bigtts" to "Tim（英文男声）"
+        )
+    } else {
+        listOf("BV503_streaming" to "Ariana（英文女声）")
+    }
 
 @Composable
 private fun EngineChoice(

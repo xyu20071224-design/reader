@@ -44,6 +44,14 @@
 - `connectedDebugAndroidTest`（Android 15 / API 35 模拟器）：32/32 通过（预热后全量；冷启动首轮偶发 2 条 ReaderAcceptanceTest 超时，重跑即绿，与云 TTS 改动无关）。
 - 说明：云 TTS 合成依赖真实服务器，仪器测试仅覆盖现有离线链路；Azure/自建服务器联调需真实 Key/服务器后人工验证。
 
+## 2026-08-10 F-151 火山引擎（豆包语音）增量验证
+
+- 新增第四引擎“火山引擎（豆包语音）”：V3 HTTP SSE 单向流式接口 `https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse`；鉴权支持新版控制台 API Key（`X-Api-Key`，推荐）与旧版 App ID + Access Token（`X-Api-App-Id` + `X-Api-Access-Key`）；Resource ID 默认 `seed-tts-2.0`（也可选 `seed-tts-1.0` / `seed-tts-1.0-concurr` 使用 `BV*_streaming` 音色）；中文/英文音色分别配置，支持声音复刻 speaker ID；设置页“测试连接”中英文各合成一次。
+- `testDebugUnitTest`：通过（113 个），新增火山引擎用例 10 个：请求体（文本/音色/采样率/mp3 参数）、中英文语音路由、配置校验（新版 API Key 或旧版 AppID+Token）、SSE 多帧音频 base64 解码、结束帧（code 20000000）停止、错误帧/HTTP 错误失败、新版/旧版鉴权头与请求 ID。
+- `lintDebug`：通过，0 错误；`assembleDebug`：通过。
+- `connectedDebugAndroidTest`（Android 15 / API 35 模拟器）：32/32 通过（首轮 2 条 ReaderAcceptanceTest 冷启动偶发超时，预热后单独重跑 3/3 通过，与火山改动无关）。
+- 说明：火山引擎联调需用户提供真实 API Key（或 App ID + Access Token）后人工验证；仪器测试仍只覆盖离线链路。
+
 # Validation report
 
 Validated on 2026-07-30 with an Android 15 / API 35 ARM64 Pixel 6 emulator.

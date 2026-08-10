@@ -105,8 +105,9 @@ class SystemTtsSynthesizer(
 }
 
 /**
- * Backend factory. Returns the Azure cloud engine when the user has enabled
- * and configured it (F-151), otherwise the Android system TTS engine.
+ * Backend factory. Returns the configured cloud engine (Azure, Volcano or
+ * OpenAI-compatible self-hosted) when enabled (F-151), otherwise the Android
+ * system TTS engine.
  */
 object TtsSynthesizerFactory {
     fun create(context: Context, listener: TtsSynthesizerListener): TtsSynthesizer {
@@ -117,6 +118,9 @@ object TtsSynthesizerFactory {
 
             settings.mode == TtsEngineMode.OPENAI_COMPAT && settings.isConfigured ->
                 CloudTtsSynthesizer(context, OpenAiCompatTtsBackend(settings), listener)
+
+            settings.mode == TtsEngineMode.VOLC && settings.isConfigured ->
+                CloudTtsSynthesizer(context, VolcanoTtsBackend(settings), listener)
 
             else -> SystemTtsSynthesizer(context, listener)
         }
