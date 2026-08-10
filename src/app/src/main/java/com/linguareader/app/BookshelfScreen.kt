@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -34,7 +37,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -53,8 +58,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.linguareader.app.ai.AiBookStatus
+import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
@@ -71,6 +79,7 @@ internal fun BookshelfScreen(
     onImport: (android.net.Uri) -> Unit,
     onOpen: (Book) -> Unit,
     onDelete: (Book) -> Unit,
+    onAiSettingsChange: (AiSettings) -> Unit,
     onRemoveWord: (String) -> Unit,
     onReviewModeChange: (ReviewMode) -> Unit,
     onCustomReviewChange: (ReviewPace) -> Unit,
@@ -85,6 +94,7 @@ internal fun BookshelfScreen(
     }
     var deleteCandidate by remember { mutableStateOf<Book?>(null) }
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
+    var showAiSettings by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         containerColor = Paper,
@@ -113,6 +123,16 @@ internal fun BookshelfScreen(
                         Text(if (showVocabulary) "书架" else "生词本 ${state.savedWords.size}")
                     }
                     if (!showVocabulary) {
+                        TextButton(onClick = { showAiSettings = true }) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = if (state.aiSettings.enabled) Accent else InkSoft
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (state.aiSettings.enabled) "AI 已启用" else "AI 设置")
+                        }
                         Button(
                             onClick = {
                                 launcher.launch(
@@ -180,6 +200,8 @@ internal fun BookshelfScreen(
                     items(state.books, key = { it.id }) { book ->
                         BookCard(
                             book = book,
+                            aiEnabled = state.aiSettings.enabled,
+                            aiStatus = state.aiStatuses[book.id],
                             onOpen = { onOpen(book) },
                             onLongPressDelete = { deleteCandidate = book }
                         )
@@ -230,6 +252,102 @@ internal fun BookshelfScreen(
             shape = CardShape
         )
     }
+
+    if (showAiSettings) {
+        AiSettingsDialog(
+            settings = state.aiSettings,
+            onSave = onAiSettingsChange,
+            onDismiss = { showAiSettings = false }
+        )
+    }
+}
+
+@Composable
+private fun AiSettingsDialog(
+    settings: AiSettings,
+    onSave: (AiSettings) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var enabled by remember(settings) { mutableStateOf(settings.enabled) }
+    var apiKey by remember(settings) { mutableStateOf(settings.apiKey) }
+    var baseUrl by remember(settings) { mutableStateOf(settings.baseUrl) }
+    var model by remember(settings) { mutableStateOf(settings.model) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                onSave(
+                    settings.copy(
+                        enabled = enabled,
+                        apiKey = apiKey,
+                        baseUrl = baseUrl,
+                        model = model
+                    )
+                )
+                onDismiss()
+            }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+        title = { Text("AI 语境翻译") },
+        text = {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("启用", modifier = Modifier.weight(1f))
+                    Switch(checked = enabled, onCheckedChange = { enabled = it })
+                }
+                if (enabled) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text("DeepSeek API Key") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text("接口地址") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = { model = it },
+                        label = { Text("模型") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "启用后，书籍章节文本与点击的词句会发送到 DeepSeek 以生成/更新本书语境档案；" +
+                            "未填 API Key 时自动使用不联网的本地轻量语境。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkSoft
+                    )
+                } else {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "关闭时查词保持纯本地词典，不发送任何文本。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkSoft
+                    )
+                }
+            }
+        },
+        containerColor = CardSurface,
+        shape = CardShape
+    )
 }
 
 @Composable
@@ -268,6 +386,8 @@ private fun EmptyBookshelf(onImport: () -> Unit) {
 @Composable
 private fun BookCard(
     book: Book,
+    aiEnabled: Boolean,
+    aiStatus: AiBookStatus?,
     onOpen: () -> Unit,
     onLongPressDelete: () -> Unit
 ) {
@@ -346,6 +466,20 @@ private fun BookCard(
             color = InkSoft,
             maxLines = 1
         )
+        if (aiEnabled) {
+            val statusLabel = when {
+                aiStatus == null -> "AI 语境：待生成"
+                aiStatus.generating -> "AI 语境：生成中…"
+                aiStatus.ready -> "AI 语境：就绪"
+                else -> "AI 语境：生成失败"
+            }
+            Text(
+                statusLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (aiStatus?.ready == true) Success else InkFaint,
+                maxLines = 1
+            )
+        }
         TextButton(onClick = onLongPressDelete, modifier = Modifier.height(30.dp)) {
             Icon(
                 Icons.Default.Delete,

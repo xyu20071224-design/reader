@@ -24,6 +24,17 @@
 - P7 实测（adb）：清数据模拟旧版本升级后首次启动显示“版本更新 1.1.0”说明，点“知道了”后重启仅显示时间问候，更新说明不再出现。
 - `PdfImporterInstrumentedTest`：3 个用例全部通过（带书签 PDF 导入、无文字层拒绝、元数据缺失时用文件名做书名）。
 
+## 2026-08-10 F-150 听书（增量验证）
+
+- 新增听书：整章/全书连续朗读（系统 TTS，中英句级切分），朗读时当前句在阅读页高亮并自动翻到所在页；点击句子从此句开始听，手动切章/翻页后播放位置跟随。
+- 播放控制：暂停/继续、上一句/下一句、0.5×–2.0× 语速（滑块 6 档）、停止；前台媒体服务支持后台播放，通知栏提供上一句/播放暂停/下一句/停止。
+- 进度记忆：`metadata.json` 新增 `ttsChapterIndex`/`ttsSentenceIndex`，旧数据缺失按 0 兼容；停止/暂停/切章时保存。
+- 架构：播放层仅依赖 `TtsSynthesizer` 接口，`TtsSynthesizerFactory` 为云端 TTS 预留替换点；当前实现为 Android 系统 TTS，不申请联网权限。
+- `testDebugUnitTest`：通过（77 个），新增中英句切分（缩写/引号/省略号/中文无空格边界）、章节文本提取与句定位、听书进度 JSON 兼容、阅读器脚本高亮/点击跟读桥接用例。
+- `lintDebug`：通过，0 错误（仅原有 `allowBackup` 弃用提示）。
+- `assembleDebug`：通过。
+- `connectedDebugAndroidTest`（Android 15 / API 35 模拟器）：32/32 通过；ReaderAcceptanceTest 翻页/跳页/点词回归通过（模拟器预热后全量通过）。
+
 # Validation report
 
 Validated on 2026-07-30 with an Android 15 / API 35 ARM64 Pixel 6 emulator.

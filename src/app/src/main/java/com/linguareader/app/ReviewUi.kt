@@ -169,6 +169,16 @@ internal fun ReviewSheet(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (word.aiMeaning.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            if (word.aiSource.isBlank()) "本书语境：${word.aiMeaning}"
+                            else "本书语境（${word.aiSource}）：${word.aiMeaning}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Accent,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     Spacer(Modifier.height(18.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         TextButton(onClick = { finish(false) }, enabled = !busy) {

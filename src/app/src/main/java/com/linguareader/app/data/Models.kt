@@ -30,7 +30,10 @@ data class Book(
     val chapterIndex: Int = 0,
     val pageIndex: Int = 0,
     val progress: Float = 0f,
-    val sourceFormat: String = "epub"
+    val sourceFormat: String = "epub",
+    /** Last listened position: chapter and sentence index inside that chapter. */
+    val ttsChapterIndex: Int = 0,
+    val ttsSentenceIndex: Int = 0
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -44,6 +47,8 @@ data class Book(
         .put("pageIndex", pageIndex)
         .put("progress", progress.toDouble())
         .put("sourceFormat", sourceFormat)
+        .put("ttsChapterIndex", ttsChapterIndex)
+        .put("ttsSentenceIndex", ttsSentenceIndex)
 
     companion object {
         fun fromJson(json: JSONObject): Book {
@@ -61,7 +66,9 @@ data class Book(
                 chapterIndex = json.optInt("chapterIndex"),
                 pageIndex = json.optInt("pageIndex"),
                 progress = json.optDouble("progress").toFloat(),
-                sourceFormat = json.optString("sourceFormat", "epub").ifBlank { "epub" }
+                sourceFormat = json.optString("sourceFormat", "epub").ifBlank { "epub" },
+                ttsChapterIndex = json.optInt("ttsChapterIndex"),
+                ttsSentenceIndex = json.optInt("ttsSentenceIndex")
             )
         }
     }
@@ -81,6 +88,10 @@ data class SavedWord(
     val headword: String,
     val phonetic: String,
     val meaning: String,
+    /** Book-specific AI meaning saved alongside the local dictionary sense. */
+    val aiMeaning: String = "",
+    val aiSource: String = "",
+    val aiExplanation: String = "",
     val sentence: String,
     val bookId: String,
     val bookTitle: String,
@@ -95,6 +106,9 @@ data class SavedWord(
         .put("headword", headword)
         .put("phonetic", phonetic)
         .put("meaning", meaning)
+        .put("aiMeaning", aiMeaning)
+        .put("aiSource", aiSource)
+        .put("aiExplanation", aiExplanation)
         .put("sentence", sentence)
         .put("bookId", bookId)
         .put("bookTitle", bookTitle)
@@ -110,6 +124,9 @@ data class SavedWord(
             headword = json.getString("headword"),
             phonetic = json.optString("phonetic"),
             meaning = json.optString("meaning"),
+            aiMeaning = json.optString("aiMeaning"),
+            aiSource = json.optString("aiSource"),
+            aiExplanation = json.optString("aiExplanation"),
             sentence = json.optString("sentence"),
             bookId = json.optString("bookId"),
             bookTitle = json.optString("bookTitle"),

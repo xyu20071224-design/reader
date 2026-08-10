@@ -71,6 +71,7 @@ private fun LinguaReaderApp(viewModel: AppViewModel) {
                 onImport = viewModel::importBook,
                 onOpen = viewModel::openBook,
                 onDelete = viewModel::deleteBook,
+                onAiSettingsChange = viewModel::setAiSettings,
                 onRemoveWord = viewModel::removeSavedWord,
                 onReviewModeChange = viewModel::setReviewMode,
                 onCustomReviewChange = viewModel::setCustomReview,
@@ -84,6 +85,7 @@ private fun LinguaReaderApp(viewModel: AppViewModel) {
             ReaderScreen(
                 book = currentBook,
                 viewModel = viewModel,
+                aiSettings = state.aiSettings,
                 savedWords = state.savedWords,
                 reviewPace = state.reviewPace,
                 reviewPreset = state.reviewPreset,

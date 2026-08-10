@@ -4,6 +4,12 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.linguareader.app.ai.AiBookStatus
+import com.linguareader.app.ai.AiLookupRequest
+import com.linguareader.app.ai.AiLookupResult
+import com.linguareader.app.ai.AiSettings
+import com.linguareader.app.ai.AiSettingsStore
+import com.linguareader.app.ai.BookContextRepository
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
@@ -42,7 +48,9 @@ data class AppUiState(
     val reminders: ReviewReminders = ReviewReminders.DEFAULT,
     val launchPrompt: LaunchPromptUi? = null,
     val message: String? = null,
-    val messageTitle: String = "提示"
+    val messageTitle: String = "提示",
+    val aiSettings: AiSettings = AiSettings(),
+    val aiStatuses: Map<String, AiBookStatus> = emptyMap()
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -54,6 +62,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val vocabulary = VocabularyRepository(application)
     private val reviewPrefs = application.getSharedPreferences("review_settings", android.content.Context.MODE_PRIVATE)
     private val launchPrefs = application.getSharedPreferences("launch_promo", android.content.Context.MODE_PRIVATE)
+    private val aiSettingsStore = AiSettingsStore(application)
+    private val aiRepository = BookContextRepository(application, aiSettingsStore)
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
@@ -85,7 +95,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             reviewPreset = preset,
             customReview = custom,
             reminders = reminders,
-            launchPrompt = prompt
+            launchPrompt = prompt,
+            aiSettings = aiSettingsStore.load()
         )
         refresh()
     }
@@ -139,6 +150,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openBook(book: Book) {
         mutableState.value = mutableState.value.copy(currentBook = book)
+        ensureBookContext(book)
     }
 
     fun closeBook() {
@@ -160,8 +172,58 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteBook(book: Book) {
         viewModelScope.launch {
             library.deleteBook(book)
+            aiRepository.delete(book.id)
             refresh()
         }
+    }
+
+    fun setAiSettings(settings: AiSettings) {
+        aiSettingsStore.save(settings)
+        mutableState.value = mutableState.value.copy(aiSettings = settings)
+        if (settings.enabled) {
+            mutableState.value.currentBook?.let { ensureBookContext(it) }
+        }
+    }
+
+    /** Generates the per-book context profile once when AI is enabled. */
+    fun ensureBookContext(book: Book) {
+        val settings = mutableState.value.aiSettings
+        if (!settings.enabled) return
+        val current = mutableState.value.aiStatuses[book.id]
+        if (current?.generating == true || current?.ready == true) return
+        viewModelScope.launch {
+            setAiStatus(book.id, AiBookStatus(generating = true))
+            runCatching { aiRepository.generate(book) }
+                .onSuccess { setAiStatus(book.id, AiBookStatus(ready = true)) }
+                .onFailure {
+                    setAiStatus(
+                        book.id,
+                        AiBookStatus(error = it.message ?: "语境档案生成失败")
+                    )
+                }
+        }
+    }
+
+    /** Regenerates a book profile from scratch (used by settings/debug UI). */
+    fun regenerateBookContext(book: Book) {
+        if (!mutableState.value.aiSettings.enabled) return
+        viewModelScope.launch {
+            setAiStatus(book.id, AiBookStatus(generating = true))
+            runCatching { aiRepository.generate(book, force = true) }
+                .onSuccess { setAiStatus(book.id, AiBookStatus(ready = true)) }
+                .onFailure {
+                    setAiStatus(
+                        book.id,
+                        AiBookStatus(error = it.message ?: "语境档案生成失败")
+                    )
+                }
+        }
+    }
+
+    private fun setAiStatus(bookId: String, status: AiBookStatus) {
+        mutableState.value = mutableState.value.copy(
+            aiStatuses = mutableState.value.aiStatuses + (bookId to status)
+        )
     }
 
     fun setReviewMode(mode: ReviewMode) {
@@ -195,16 +257,42 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun lookup(lookup: WordLookup): DictionaryLookupResult = dictionary.lookup(lookup)
 
+    /**
+     * Contextual AI enhancement on top of the local lookup result.
+     * Returns null quickly when AI is disabled or no profile exists yet.
+     */
+    suspend fun aiLookup(
+        book: Book,
+        lookup: WordLookup,
+        entry: ContextualDictionaryEntry?
+    ): AiLookupResult? {
+        if (!mutableState.value.aiSettings.enabled) return null
+        val request = AiLookupRequest(
+            bookId = book.id,
+            bookTitle = book.title,
+            surfaceWord = lookup.word,
+            headword = entry?.headword ?: lookup.word,
+            sentence = lookup.sentence,
+            paragraph = lookup.paragraph,
+            localSenses = entry?.senses?.map { it.text }.orEmpty(),
+            localDefinitions = entry?.definitions.orEmpty(),
+            matchedPhrase = entry?.matchedPhrase
+        )
+        return aiRepository.translate(book, request)
+    }
+
     fun saveWord(
         book: Book,
         chapterTitle: String,
         lookup: WordLookup,
-        entry: ContextualDictionaryEntry
+        entry: ContextualDictionaryEntry,
+        aiResult: AiLookupResult? = null
     ) {
         viewModelScope.launch {
             val words = vocabulary.save(
                 book, chapterTitle, lookup, entry,
-                pace = mutableState.value.reviewPace
+                pace = mutableState.value.reviewPace,
+                aiResult = aiResult
             )
             mutableState.value = mutableState.value.copy(savedWords = words)
             rescheduleReviewReminders()

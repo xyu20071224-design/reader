@@ -24,7 +24,11 @@ private class ReaderBridge(
     private val pageChangedCallback: (Int, Int) -> Unit,
     private val chapterRequestedCallback: (Int) -> Unit,
     private val wordCallback: (WordLookup) -> Unit,
-    private val toolbarRequestedCallback: () -> Unit
+    private val toolbarRequestedCallback: () -> Unit,
+    private val sentenceTappedCallback: (String, Int) -> Unit,
+    private val ttsPageCallback: (Int) -> Unit,
+    private val scrollModeChangedCallback: (Boolean) -> Unit,
+    private val scrollProgressCallback: (Float, Int, Int) -> Unit
 ) {
     private fun post(action: () -> Unit): Unit {
         webView.post(action)
@@ -68,6 +72,30 @@ private class ReaderBridge(
 
     @JavascriptInterface
     fun onToolbarRequested(): Unit = post(toolbarRequestedCallback)
+
+    @JavascriptInterface
+    fun onSentenceTapped(block: String, blockOffset: Int): Unit = post {
+        sentenceTappedCallback(block.take(20_000), blockOffset.coerceIn(0, 20_000))
+    }
+
+    @JavascriptInterface
+    fun onTtsPage(page: Int): Unit = post {
+        ttsPageCallback(page.coerceAtLeast(0))
+    }
+
+    @JavascriptInterface
+    fun onScrollModeChanged(active: Boolean): Unit = post {
+        scrollModeChangedCallback(active)
+    }
+
+    @JavascriptInterface
+    fun onScrollProgress(progress: Float, page: Int, pageCount: Int): Unit = post {
+        scrollProgressCallback(
+            progress.coerceIn(0f, 1f),
+            page.coerceAtLeast(0),
+            pageCount.coerceAtLeast(1)
+        )
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -75,6 +103,9 @@ private class ReaderBridge(
 fun EpubPage(
     chapterFile: File,
     initialPage: Int,
+    initialScrollMode: Boolean = false,
+    initialScrollRatio: Float = 0f,
+    initialScrollPageCount: Int = 1,
     preferences: ReaderPreferences,
     savedWords: List<String> = emptyList(),
     controller: ReaderController,
@@ -83,7 +114,11 @@ fun EpubPage(
     onPageChanged: (Int, Int) -> Unit,
     onChapterRequested: (Int) -> Unit,
     onWord: (WordLookup) -> Unit,
-    onToolbarRequested: () -> Unit
+    onToolbarRequested: () -> Unit,
+    onSentenceTapped: (String, Int) -> Unit = { _, _ -> },
+    onTtsPage: (Int) -> Unit = {},
+    onScrollModeChanged: (Boolean) -> Unit = {},
+    onScrollProgress: (Float, Int, Int) -> Unit = { _, _, _ -> }
 ) {
     val latestPreferences by rememberUpdatedState(preferences)
     val latestReady by rememberUpdatedState(onReady)
@@ -91,6 +126,13 @@ fun EpubPage(
     val latestChapterRequested by rememberUpdatedState(onChapterRequested)
     val latestWord by rememberUpdatedState(onWord)
     val latestToolbarRequested by rememberUpdatedState(onToolbarRequested)
+    val latestSentenceTapped by rememberUpdatedState(onSentenceTapped)
+    val latestTtsPage by rememberUpdatedState(onTtsPage)
+    val latestInitialScrollMode by rememberUpdatedState(initialScrollMode)
+    val latestInitialScrollRatio by rememberUpdatedState(initialScrollRatio)
+    val latestInitialScrollPageCount by rememberUpdatedState(initialScrollPageCount)
+    val latestScrollModeChanged by rememberUpdatedState(onScrollModeChanged)
+    val latestScrollProgress by rememberUpdatedState(onScrollProgress)
     val latestSavedWords by rememberUpdatedState(savedWords)
 
     AndroidView(
@@ -120,7 +162,13 @@ fun EpubPage(
                         pageChangedCallback = { page, count -> latestPageChanged(page, count) },
                         chapterRequestedCallback = { latestChapterRequested(it) },
                         wordCallback = { latestWord(it) },
-                        toolbarRequestedCallback = { latestToolbarRequested() }
+                        toolbarRequestedCallback = { latestToolbarRequested() },
+                        sentenceTappedCallback = { block, offset -> latestSentenceTapped(block, offset) },
+                        ttsPageCallback = { page -> latestTtsPage(page) },
+                        scrollModeChangedCallback = { active -> latestScrollModeChanged(active) },
+                        scrollProgressCallback = { progress, page, count ->
+                            latestScrollProgress(progress, page, count)
+                        }
                     ),
                     "ReaderBridge"
                 )
@@ -128,7 +176,13 @@ fun EpubPage(
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String?) {
                         view.evaluateJavascript(
-                            ReaderScripts.bootstrap(initialPage, latestPreferences),
+                            ReaderScripts.bootstrap(
+                                initialPage,
+                                latestPreferences,
+                                initialScrollMode = latestInitialScrollMode,
+                                initialScrollRatio = latestInitialScrollRatio,
+                                initialScrollPageCount = latestInitialScrollPageCount.coerceAtLeast(1)
+                            ),
                             null
                         )
                         view.evaluateJavascript(

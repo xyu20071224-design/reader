@@ -35,6 +35,18 @@ class ReaderScriptsTest {
         // The displayed context must always contain the tapped word; if the
         // segmented sentence ever misses it, fall back to the paragraph.
         assertContains(script, "sentence.toLowerCase().indexOf(word.toLowerCase())")
+        // The TTS tap offset shares the same trimmed paragraph coordinates.
+        assertContains(script, "block: paragraph, blockOffset: inBlock")
+    }
+
+    @Test
+    fun ttsHighlightSkipsLeadingWhitespaceWhenMappingRanges() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // block.text is trimmed before sentence matching, so the DOM range
+        // walker must skip leading whitespace instead of shifting offsets.
+        assertContains(script, "Leading whitespace is trimmed from block.text")
+        assertContains(script, "if (!sawContent)")
     }
 
     @Test
@@ -82,6 +94,61 @@ class ReaderScriptsTest {
     }
 
     @Test
+    fun bootstrapContainsVerticalSwipeToTurnPages() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // A quick vertical drag also turns the page (up = next, down = previous)
+        // with the same dominance and speed thresholds as the horizontal swipe.
+        assertContains(script, "window.lrTurn(rawDy < 0 ? 1 : -1)")
+        assertContains(script, "dy >= 45")
+        assertContains(script, "dy > dx * 1.5")
+    }
+
+    @Test
+    fun bootstrapContainsScrollModeLayoutAndBridge() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // Slow drags switch the horizontal pager to a vertical scroll layout and
+        // report mode/progress back to Kotlin through the bridge.
+        assertContains(script, "lrEnterScrollMode")
+        assertContains(script, "lrExitScrollMode")
+        assertContains(script, "ReaderBridge.onScrollModeChanged")
+        assertContains(script, "ReaderBridge.onScrollProgress")
+        assertContains(script, "overflowY = 'auto'")
+        assertContains(script, "columnCount = '1'")
+        assertContains(script, "scrollRatio * max")
+    }
+
+    @Test
+    fun bootstrapContainsSlowDragScrollDetection() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // A slow vertical drag (longer than 450ms or slower than 0.12px/ms) is
+        // claimed while moving; fast swipes are still resolved on pointerup.
+        assertContains(script, "pointermove")
+        assertContains(script, "dragScrollActive")
+        assertContains(script, "dy >= 24")
+        assertContains(script, "elapsed > 450")
+        assertContains(script, "dy / Math.max(1, elapsed) < 0.12")
+    }
+
+    @Test
+    fun bootstrapRestoresScrollModeWhenRequested() {
+        val script = ReaderScripts.bootstrap(
+            initialPage = 0,
+            preferences = ReaderPreferences(),
+            initialScrollMode = true,
+            initialScrollRatio = 0.42f,
+            initialScrollPageCount = 8
+        )
+
+        assertContains(script, "let scrollMode = true")
+        assertContains(script, "pageCount = scrollPageCount")
+        assertContains(script, "applyScrollLayout()")
+        assertContains(script, "ReaderBridge.onScrollModeChanged(true)")
+    }
+
+    @Test
     fun paginationScrollsThroughWrappedScroller() {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())
 
@@ -126,5 +193,18 @@ class ReaderScriptsTest {
         assertContains(script, "\"carry\"")
         assertContains(script, "\"look forward to\"")
         assertFalse(script.contains("carry,carry"))
+    }
+
+    @Test
+    fun bootstrapContainsTtsHighlightAndListenModeBridge() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "lrHighlightSentence")
+        assertContains(script, "lrClearHighlight")
+        assertContains(script, "lrFirstVisibleBlock")
+        assertContains(script, "lrSetListenMode")
+        assertContains(script, "ReaderBridge.onSentenceTapped")
+        assertContains(script, "ReaderBridge.onTtsPage")
+        assertContains(script, "TTS_BLOCK_SELECTOR")
     }
 }

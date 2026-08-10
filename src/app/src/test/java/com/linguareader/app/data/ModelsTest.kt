@@ -20,7 +20,9 @@ class ModelsTest {
             addedAt = 1234L,
             chapterIndex = 1,
             pageIndex = 3,
-            progress = .72f
+            progress = .72f,
+            ttsChapterIndex = 1,
+            ttsSentenceIndex = 4
         )
 
         val restored = Book.fromJson(original.toJson())
@@ -63,5 +65,26 @@ class ModelsTest {
         json.remove("sourceFormat")
 
         assertEquals("epub", Book.fromJson(json).sourceFormat)
+    }
+
+    @Test
+    fun bookJsonDefaultsMissingListeningPositionToZero() {
+        val book = Book(
+            id = "book-3",
+            title = "Legacy Book",
+            author = "Old Reader",
+            extractedDir = "/tmp/legacy",
+            coverRelativePath = null,
+            chapters = listOf(Chapter("Only", "only.xhtml")),
+            addedAt = 1L
+        )
+        val json = book.toJson()
+        json.remove("ttsChapterIndex")
+        json.remove("ttsSentenceIndex")
+
+        val restored = Book.fromJson(json)
+
+        assertEquals(0, restored.ttsChapterIndex)
+        assertEquals(0, restored.ttsSentenceIndex)
     }
 }

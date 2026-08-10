@@ -80,6 +80,7 @@ internal fun VocabularyScreen(
         query.isBlank() ||
             it.headword.contains(query, ignoreCase = true) ||
             it.meaning.contains(query, ignoreCase = true) ||
+            it.aiMeaning.contains(query, ignoreCase = true) ||
             it.sentence.contains(query, ignoreCase = true)
     }
     val exportLauncher = rememberLauncherForActivityResult(
@@ -214,6 +215,16 @@ internal fun VocabularyScreen(
                                 maxLines = 3,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            if (word.aiMeaning.isNotBlank()) {
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    if (word.aiSource.isBlank()) "本书语境：${word.aiMeaning}"
+                                    else "本书语境（${word.aiSource}）：${word.aiMeaning}",
+                                    color = Accent,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 word.sentence,

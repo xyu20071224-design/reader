@@ -2,6 +2,7 @@ package com.linguareader.app.data
 
 import android.content.Context
 import android.net.Uri
+import com.linguareader.app.ai.AiLookupResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -79,15 +80,17 @@ class VocabularyRepository(private val context: Context) {
         chapterTitle: String,
         lookup: WordLookup,
         entry: ContextualDictionaryEntry,
-        mode: ReviewMode = ReviewMode.GENTLE
-    ): List<SavedWord> = save(book, chapterTitle, lookup, entry, mode.toPace())
+        mode: ReviewMode = ReviewMode.GENTLE,
+        aiResult: AiLookupResult? = null
+    ): List<SavedWord> = save(book, chapterTitle, lookup, entry, mode.toPace(), aiResult)
 
     suspend fun save(
         book: Book,
         chapterTitle: String,
         lookup: WordLookup,
         entry: ContextualDictionaryEntry,
-        pace: ReviewPace
+        pace: ReviewPace,
+        aiResult: AiLookupResult? = null
     ): List<SavedWord> = withContext(Dispatchers.IO) {
         mutex.withLock {
             val current = read()
@@ -100,6 +103,9 @@ class VocabularyRepository(private val context: Context) {
                 headword = headword,
                 phonetic = entry.phonetic,
                 meaning = entry.senses.take(3).joinToString("\n") { it.text },
+                aiMeaning = aiResult?.contextualMeaning.orEmpty(),
+                aiSource = aiResult?.source.orEmpty(),
+                aiExplanation = aiResult?.explanation.orEmpty(),
                 sentence = lookup.sentence.ifBlank { lookup.paragraph },
                 bookId = book.id,
                 bookTitle = book.title,
@@ -163,13 +169,15 @@ class VocabularyRepository(private val context: Context) {
 
     companion object {
         fun csv(words: List<SavedWord>): String = buildString {
-            appendLine("word,phonetic,meaning,sentence,book,chapter,review_count,next_review_at")
+            appendLine("word,phonetic,meaning,ai_meaning,ai_source,sentence,book,chapter,review_count,next_review_at")
             words.forEach { word ->
                 appendLine(
                     listOf(
                         word.headword,
                         word.phonetic,
                         word.meaning,
+                        word.aiMeaning,
+                        word.aiSource,
                         word.sentence,
                         word.bookTitle,
                         word.chapterTitle,

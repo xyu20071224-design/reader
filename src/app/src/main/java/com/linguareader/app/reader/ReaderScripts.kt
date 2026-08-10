@@ -5,10 +5,20 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object ReaderScripts {
-    fun bootstrap(initialPage: Int, preferences: ReaderPreferences): String = """
+    fun bootstrap(
+        initialPage: Int,
+        preferences: ReaderPreferences,
+        initialScrollMode: Boolean = false,
+        initialScrollRatio: Float = 0f,
+        initialScrollPageCount: Int = 1
+    ): String = """
         (function() {
           if (window.__linguaReaderInstalled) {
-            window.lrSetPage($initialPage);
+            if ($initialScrollMode && window.lrEnterScrollMode) {
+              window.lrEnterScrollMode($initialScrollRatio, $initialScrollPageCount);
+            } else {
+              window.lrSetPage($initialPage);
+            }
             ${preferenceScript(preferences, syncCurrentPage = false)}
             return;
           }
@@ -16,6 +26,11 @@ object ReaderScripts {
           let page = Math.max(0, $initialPage);
           let pageCount = 1;
           let restoreTarget = page;
+          let scrollMode = $initialScrollMode;
+          let scrollRatio = Math.max(0, Math.min(1, Number($initialScrollRatio) || 0));
+          let scrollPageCount = Math.max(1, Number($initialScrollPageCount) || 1);
+          let dragScrollActive = false;
+          let lastScrollY = 0;
 
           function clamp(value, min, max) {
             return Math.min(Math.max(value, min), max);
@@ -112,6 +127,16 @@ object ReaderScripts {
               spacer.id = 'lr-spacer';
               content.appendChild(spacer);
             }
+            if (!scroller.__lrScrollBound) {
+              scroller.__lrScrollBound = true;
+              scroller.addEventListener('scroll', function() {
+                if (!scrollMode) return;
+                scrollRatio = currentScrollRatio();
+                page = pageFromRatio(scrollRatio);
+                updateEndHint();
+                ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+              });
+            }
             return { scroller: scroller, content: content, spacer: spacer };
           }
 
@@ -130,6 +155,16 @@ object ReaderScripts {
             scroller.style.width = window.innerWidth + 'px';
             scroller.style.height = columnHeight + 'px';
             content.style.width = innerW + 'px';
+            if (scrollMode) {
+              // Scroll mode lays the chapter out as one vertical flow; keep the
+              // reading ratio stable across remeasurements (fonts/images/resize).
+              const max = scroller.scrollHeight - scroller.clientHeight;
+              scroller.scrollTop = max > 0 ? scrollRatio * max : 0;
+              page = pageFromRatio(scrollRatio);
+              updateEndHint();
+              ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+              return;
+            }
             content.style.height = '100%';
             // Pin column metrics to the same JS value as the container width so
             // column starts land on window.innerWidth multiples without drift.
@@ -151,6 +186,130 @@ object ReaderScripts {
             ReaderBridge.onReady(page, pageCount);
           }
 
+          function currentRatio() {
+            if (scrollMode) return currentScrollRatio();
+            return pageCount > 1 ? page / (pageCount - 1) : 0;
+          }
+
+          function currentScrollRatio() {
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller) return 0;
+            const max = scroller.scrollHeight - scroller.clientHeight;
+            return max > 0 ? clamp(scroller.scrollTop / max, 0, 1) : 0;
+          }
+
+          function pageFromRatio(ratio) {
+            const last = Math.max(1, pageCount) - 1;
+            return clamp(Math.round(ratio * last), 0, last);
+          }
+
+          function applyScrollLayout() {
+            const layout = ensureLayout();
+            const scroller = layout.scroller;
+            const content = layout.content;
+            const spacer = layout.spacer;
+            scroller.style.overflowX = 'hidden';
+            scroller.style.overflowY = 'auto';
+            content.style.height = 'auto';
+            content.style.columnWidth = 'auto';
+            content.style.columnCount = '1';
+            content.style.columnGap = '0';
+            spacer.style.display = 'none';
+          }
+
+          function applyPageLayout() {
+            const layout = ensureLayout();
+            const scroller = layout.scroller;
+            const content = layout.content;
+            const spacer = layout.spacer;
+            const innerW = Math.max(1, window.innerWidth - 56);
+            scroller.style.overflowX = 'auto';
+            scroller.style.overflowY = 'hidden';
+            content.style.height = '100%';
+            content.style.columnWidth = innerW + 'px';
+            content.style.columnCount = 'auto';
+            content.style.columnGap = '56px';
+            spacer.style.display = '';
+          }
+
+          function syncScroll() {
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller || !scrollMode) return;
+            const max = scroller.scrollHeight - scroller.clientHeight;
+            scroller.scrollTop = max > 0 ? scrollRatio * max : 0;
+            page = pageFromRatio(scrollRatio);
+            updateEndHint();
+            ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+          }
+
+          function enterScrollMode(ratio, count) {
+            if (scrollMode) return;
+            scrollMode = true;
+            scrollRatio = ratio == null ? currentRatio() : clamp(Number(ratio) || 0, 0, 1);
+            if (count != null && Number(count) > 0) pageCount = Math.max(1, Number(count));
+            applyScrollLayout();
+            syncScroll();
+            ReaderBridge.onScrollModeChanged(true);
+          }
+
+          function exitScrollMode() {
+            if (!scrollMode) return;
+            const ratio = currentScrollRatio();
+            scrollMode = false;
+            scrollRatio = ratio;
+            applyPageLayout();
+            updateMetrics();
+            page = pageFromRatio(scrollRatio);
+            restoreTarget = page;
+            applyPage();
+            hideEndHint();
+            ReaderBridge.onScrollModeChanged(false);
+          }
+
+          function hideEndHint() {
+            const hint = document.getElementById('lr-scroll-hint');
+            if (hint) hint.style.display = 'none';
+          }
+
+          function updateEndHint() {
+            if (!scrollMode) {
+              hideEndHint();
+              return;
+            }
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller) return;
+            const max = scroller.scrollHeight - scroller.clientHeight;
+            const atTop = scroller.scrollTop <= 2;
+            const atBottom = max > 0 && scroller.scrollTop >= max - 2;
+            let hint = document.getElementById('lr-scroll-hint');
+            if (!hint) {
+              hint = document.createElement('div');
+              hint.id = 'lr-scroll-hint';
+              hint.style.cssText =
+                'position:fixed;left:50%;transform:translateX(-50%);bottom:80px;' +
+                'background:rgba(0,0,0,.58);color:#fff;padding:8px 16px;' +
+                'border-radius:18px;font-size:13px;line-height:1.4;' +
+                'white-space:nowrap;z-index:2147483646;pointer-events:auto;' +
+                'box-shadow:0 2px 8px rgba(0,0,0,.18);';
+              hint.addEventListener('click', function() {
+                const direction = Number(hint.getAttribute('data-direction')) || 0;
+                if (direction !== 0) window.lrTurn(direction);
+              });
+              document.body.appendChild(hint);
+            }
+            if (atBottom) {
+              hint.textContent = '已到本章末尾 · 快滑或点击进入下一章';
+              hint.setAttribute('data-direction', '1');
+              hint.style.display = '';
+            } else if (atTop) {
+              hint.textContent = '已到本章开头 · 快滑或点击返回上一章';
+              hint.setAttribute('data-direction', '-1');
+              hint.style.display = '';
+            } else {
+              hint.style.display = 'none';
+            }
+          }
+
           function applyPage() {
             const scroller = document.getElementById('lr-scroller');
             if (scroller) scroller.scrollLeft = page * window.innerWidth;
@@ -158,12 +317,14 @@ object ReaderScripts {
           }
 
           window.lrSetPage = function(value) {
+            if (scrollMode) exitScrollMode();
             page = Number(value) || 0;
             restoreTarget = page;
             requestAnimationFrame(updateMetrics);
           };
 
           window.lrGetPage = function() {
+            if (scrollMode) return pageFromRatio(currentScrollRatio());
             const scroller = document.getElementById('lr-scroller');
             if (scroller) {
               return Math.round(scroller.scrollLeft / Math.max(1, window.innerWidth));
@@ -171,14 +332,22 @@ object ReaderScripts {
             return Math.round(window.scrollX / Math.max(1, window.innerWidth));
           };
 
+          window.lrEnterScrollMode = enterScrollMode;
+          window.lrExitScrollMode = exitScrollMode;
+
           // Re-apply the current page after a preference change (font size,
           // line height, theme): the page index stays the same, only the
           // scroll offset has to be recomputed against the new metrics.
           window.lrSyncPage = function() {
-            if (window.lrSetPage) window.lrSetPage(window.lrGetPage());
+            if (scrollMode) {
+              requestAnimationFrame(updateMetrics);
+            } else if (window.lrSetPage) {
+              window.lrSetPage(window.lrGetPage());
+            }
           };
 
           window.lrTurn = function(direction) {
+            if (scrollMode) exitScrollMode();
             const candidate = page + Number(direction);
             if (candidate >= 0 && candidate < pageCount) {
               page = candidate;
@@ -298,6 +467,7 @@ object ReaderScripts {
             const rect = selected.getBoundingClientRect();
             return {
               word, sentence, paragraph, sentenceOffset,
+              block: paragraph, blockOffset: inBlock,
               x: rect.left + rect.width / 2, y: rect.bottom
             };
           }
@@ -306,6 +476,38 @@ object ReaderScripts {
           let down = null;
           document.addEventListener('pointerdown', function(event) {
             down = { x: event.clientX, y: event.clientY, time: Date.now() };
+            dragScrollActive = false;
+            lastScrollY = event.clientY;
+          }, true);
+
+          document.addEventListener('pointermove', function(event) {
+            if (!down) return;
+            if (dragScrollActive) {
+              const scroller = document.getElementById('lr-scroller');
+              if (scroller) {
+                scroller.scrollTop -= (event.clientY - lastScrollY);
+                lastScrollY = event.clientY;
+                scrollRatio = currentScrollRatio();
+                page = pageFromRatio(scrollRatio);
+                updateEndHint();
+                ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+              }
+              event.preventDefault();
+              return;
+            }
+            const rawDx = event.clientX - down.x;
+            const rawDy = event.clientY - down.y;
+            const dx = Math.abs(rawDx);
+            const dy = Math.abs(rawDy);
+            const elapsed = Date.now() - down.time;
+            // A slow vertical drag becomes the scroll gesture as it moves; fast
+            // swipes are still resolved on pointerup as discrete page turns.
+            if (dy >= 24 && dy > dx * 1.5 && (elapsed > 450 || dy / Math.max(1, elapsed) < 0.12)) {
+              dragScrollActive = true;
+              lastScrollY = event.clientY;
+              event.preventDefault();
+              enterScrollMode(null, null);
+            }
           }, true);
 
           document.addEventListener('pointerup', function(event) {
@@ -316,6 +518,17 @@ object ReaderScripts {
             const dy = Math.abs(rawDy);
             const elapsed = Date.now() - down.time;
             down = null;
+            if (dragScrollActive) {
+              dragScrollActive = false;
+              event.preventDefault();
+              if (scrollMode) {
+                scrollRatio = currentScrollRatio();
+                page = pageFromRatio(scrollRatio);
+                updateEndHint();
+                ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+              }
+              return;
+            }
             // Horizontal swipe flips the page: a quick drag wins over the word
             // lookup, the edge tap zones and the toolbar toggle.
             if (dx >= 45 && dx > dy * 1.5 && elapsed <= 700) {
@@ -323,12 +536,29 @@ object ReaderScripts {
               window.lrTurn(rawDx < 0 ? 1 : -1);
               return;
             }
+            // Vertical swipe flips the page too: swipe up = next, swipe down =
+            // previous. It shares the horizontal swipe's dominance and speed
+            // thresholds so a slow drag never steals a tap from lookup/toolbar.
+            if (dy >= 45 && dy > dx * 1.5 && elapsed <= 700) {
+              event.preventDefault();
+              window.lrTurn(rawDy < 0 ? 1 : -1);
+              return;
+            }
             if (dx > 12 || dy > 12 || elapsed > 450) return;
 
-            const target = event.target && event.target.closest ? event.target.closest('a') : null;
+            const target = event.target && event.target.closest
+              ? event.target.closest('a, #lr-scroll-hint')
+              : null;
             if (target) return;
             const ratio = event.clientX / window.innerWidth;
             const result = textAtPoint(event.clientX, event.clientY);
+            // In listening mode a tap starts playback from the tapped
+            // sentence instead of opening the word lookup.
+            if (result && window.__lrListenMode) {
+              event.preventDefault();
+              ReaderBridge.onSentenceTapped(result.block, Number(result.blockOffset));
+              return;
+            }
             // Text wins over the page-turn edge zones: tapping a word near the
             // screen edge must look it up instead of flipping the page.
             if (result) {
@@ -337,15 +567,20 @@ object ReaderScripts {
                 result.word, result.sentence, result.paragraph,
                 Number(result.sentenceOffset), Number(result.x), Number(result.y)
               );
-            } else if (ratio < 0.13) {
+            } else if (!scrollMode && ratio < 0.13) {
               event.preventDefault();
               window.lrTurn(-1);
-            } else if (ratio > 0.87) {
+            } else if (!scrollMode && ratio > 0.87) {
               event.preventDefault();
               window.lrTurn(1);
             } else {
               ReaderBridge.onToolbarRequested();
             }
+          }, true);
+
+          document.addEventListener('pointercancel', function() {
+            down = null;
+            dragScrollActive = false;
           }, true);
 
           let savedWords = [];
@@ -426,12 +661,204 @@ object ReaderScripts {
             markSavedWords(content);
             updateMetrics();
           };
+
+          const TTS_BLOCK_SELECTOR =
+            'p, li, h1, h2, h3, h4, h5, h6, blockquote, td, figcaption, pre, ' +
+            'div, section, article, header, footer';
+
+          function normalizeTtsText(value) {
+            return (value || '').replace(/\s+/g, ' ').trim();
+          }
+
+          // Leaf blocks must match TtsTextExtractor's Jsoup selection so a
+          // spoken sentence can be located inside the DOM exactly.
+          function ttsBlocks() {
+            const content = document.getElementById('lingua-reader-content');
+            if (!content) return [];
+            const candidates = Array.from(content.querySelectorAll(TTS_BLOCK_SELECTOR));
+            return candidates
+              .filter(function(el) { return !el.querySelector(TTS_BLOCK_SELECTOR); })
+              .map(function(el) {
+                return { el: el, text: normalizeTtsText(el.innerText) };
+              })
+              .filter(function(block) { return block.text.length > 0; });
+          }
+
+          function rangeFromNormalizedOffset(root, normOffset, length) {
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+            const entries = [];
+            let normPos = 0;
+            let sawContent = false;
+            let node;
+            while ((node = walker.nextNode())) {
+              const raw = node.nodeValue || '';
+              let rawIndex = 0;
+              while (rawIndex < raw.length) {
+                if (/\s/.test(raw[rawIndex])) {
+                  let runEnd = rawIndex + 1;
+                  while (runEnd < raw.length && /\s/.test(raw[runEnd])) runEnd++;
+                  // Leading whitespace is trimmed from block.text, so skip it
+                  // here too; otherwise the highlight range shifts by one.
+                  if (!sawContent) {
+                    rawIndex = runEnd;
+                    continue;
+                  }
+                  entries.push({
+                    node: node, normStart: normPos, normEnd: normPos + 1,
+                    origStart: rawIndex, origEnd: runEnd
+                  });
+                  normPos += 1;
+                  rawIndex = runEnd;
+                } else {
+                  let runEnd = rawIndex + 1;
+                  while (runEnd < raw.length && !/\s/.test(raw[runEnd])) runEnd++;
+                  const segmentLength = runEnd - rawIndex;
+                  sawContent = true;
+                  entries.push({
+                    node: node, normStart: normPos, normEnd: normPos + segmentLength,
+                    origStart: rawIndex, origEnd: runEnd
+                  });
+                  normPos += segmentLength;
+                  rawIndex = runEnd;
+                }
+              }
+            }
+            function positionFor(pos) {
+              for (const entry of entries) {
+                if (pos >= entry.normStart && pos < entry.normEnd) {
+                  return { node: entry.node, offset: entry.origStart + (pos - entry.normStart) };
+                }
+              }
+              for (const entry of entries) {
+                if (pos === entry.normEnd) return { node: entry.node, offset: entry.origEnd };
+              }
+              return null;
+            }
+            if (length <= 0) return null;
+            const start = positionFor(normOffset);
+            const end = positionFor(normOffset + length - 1);
+            if (!start || !end) return null;
+            const range = document.createRange();
+            range.setStart(start.node, start.offset);
+            range.setEnd(end.node, end.offset + 1);
+            return range;
+          }
+
+          function clearTtsOverlay() {
+            const overlay = document.getElementById('lr-tts-overlay');
+            if (overlay) overlay.remove();
+          }
+
+          window.lrClearHighlight = clearTtsOverlay;
+
+          window.lrHighlightSentence = function(text) {
+            clearTtsOverlay();
+            const blocks = ttsBlocks();
+            const globalText = blocks.map(function(block) { return block.text; }).join('\n');
+            const index = globalText.indexOf(text);
+            if (index < 0) return;
+            let cursor = 0;
+            let target = null;
+            for (const block of blocks) {
+              if (index < cursor + block.text.length) {
+                target = block;
+                break;
+              }
+              cursor += block.text.length + 1;
+            }
+            if (!target) return;
+            const range = rangeFromNormalizedOffset(target.el, index - cursor, text.length);
+            if (!range || range.collapsed) return;
+            const overlay = document.createElement('div');
+            overlay.id = 'lr-tts-overlay';
+            overlay.style.cssText =
+              'position:fixed;left:0;top:0;width:0;height:0;' +
+              'pointer-events:none;z-index:2147483647;';
+            document.body.appendChild(overlay);
+            const rects = range.getClientRects();
+            for (let i = 0; i < rects.length; i++) {
+              const rect = rects[i];
+              if (rect.width === 0 && rect.height === 0) continue;
+              const box = document.createElement('div');
+              box.style.cssText =
+                'position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
+                'width:' + rect.width + 'px;height:' + rect.height + 'px;' +
+                'background:rgba(184,132,83,.32);border-radius:3px;' +
+                'pointer-events:none;';
+              overlay.appendChild(box);
+            }
+            const scroller = document.getElementById('lr-scroller');
+            if (scroller && rects.length > 0) {
+              if (scrollMode) {
+                const max = scroller.scrollHeight - scroller.clientHeight;
+                const docY = scroller.scrollTop + rects[0].top;
+                scroller.scrollTop = clamp(docY - 56, 0, Math.max(0, max));
+                scrollRatio = currentScrollRatio();
+                page = pageFromRatio(scrollRatio);
+                ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+              } else {
+                const pageX = scroller.scrollLeft + rects[0].left;
+                const targetPage = clamp(Math.floor(pageX / window.innerWidth), 0, pageCount - 1);
+                scroller.scrollLeft = targetPage * window.innerWidth;
+                ReaderBridge.onTtsPage(targetPage);
+              }
+            }
+          };
+
+          window.lrFirstVisibleBlock = function() {
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller) return null;
+            const blocks = ttsBlocks();
+            if (scrollMode) {
+              const top = scroller.scrollTop;
+              let candidate = null;
+              for (const block of blocks) {
+                const rect = block.el.getBoundingClientRect();
+                const docTop = scroller.scrollTop + rect.top;
+                const docBottom = docTop + rect.height;
+                if (docBottom <= top) continue;
+                candidate = block;
+                if (docTop >= top - 2) break;
+              }
+              return candidate ? candidate.text : null;
+            }
+            const pageLeft = Math.round(scroller.scrollLeft / Math.max(1, window.innerWidth)) *
+              window.innerWidth;
+            const pageRight = pageLeft + window.innerWidth;
+            let candidate = null;
+            for (const block of blocks) {
+              const rect = block.el.getBoundingClientRect();
+              const docLeft = scroller.scrollLeft + rect.left;
+              const docRight = docLeft + rect.width;
+              if (docRight <= pageLeft) continue;
+              if (docLeft >= pageLeft - 2) {
+                candidate = block;
+                break;
+              }
+              candidate = block;
+            }
+            return candidate ? candidate.text : null;
+          };
+
+          window.lrSetListenMode = function(enabled) {
+            window.__lrListenMode = !!enabled;
+          };
           window.addEventListener('resize', function() {
             setTimeout(updateMetrics, 80);
           });
           installStyle();
           ensureLayout();
           ${preferenceScript(preferences, syncCurrentPage = false)}
+          if (scrollMode) {
+            pageCount = scrollPageCount;
+            page = pageFromRatio(scrollRatio);
+            applyScrollLayout();
+            requestAnimationFrame(function() {
+              updateMetrics();
+              ReaderBridge.onScrollModeChanged(true);
+              ReaderBridge.onReady(page, pageCount);
+            });
+          }
           if (document.fonts && document.fonts.ready) {
             document.fonts.ready.then(function() { setTimeout(updateMetrics, 30); });
           } else {

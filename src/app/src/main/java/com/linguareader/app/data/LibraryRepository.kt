@@ -55,6 +55,18 @@ class LibraryRepository(private val context: Context) {
             }
         }
 
+    suspend fun saveListeningProgress(book: Book, chapterIndex: Int, sentenceIndex: Int) =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                writeMetadata(
+                    book.copy(
+                        ttsChapterIndex = chapterIndex.coerceAtLeast(0),
+                        ttsSentenceIndex = sentenceIndex.coerceAtLeast(0)
+                    )
+                )
+            }
+        }
+
     suspend fun deleteBook(book: Book) = withContext(Dispatchers.IO) {
         mutex.withLock {
             // The per-book directory holds both the extracted content and its

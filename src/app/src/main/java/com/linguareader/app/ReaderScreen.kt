@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -72,6 +73,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.linguareader.app.ai.AiLookupResult
+import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
@@ -86,6 +90,8 @@ import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.reader.EpubPage
 import com.linguareader.app.reader.ReaderController
+import com.linguareader.app.tts.TtsPlaybackController
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -96,6 +102,7 @@ import kotlin.math.roundToInt
 internal fun ReaderScreen(
     book: Book,
     viewModel: AppViewModel,
+    aiSettings: AiSettings,
     savedWords: List<SavedWord>,
     reviewPace: ReviewPace,
     reviewPreset: ReviewMode?,
@@ -110,12 +117,18 @@ internal fun ReaderScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val controller = remember { ReaderController() }
+    val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
+    val ttsForThisBook = ttsState.bookId == book.id
+    var ttsPositionReportJob by remember { mutableStateOf<Job?>(null) }
     var chapterIndex by rememberSaveable(book.id) {
         mutableIntStateOf(book.chapterIndex.coerceIn(0, book.chapters.lastIndex))
     }
     var initialPage by rememberSaveable(book.id) { mutableIntStateOf(book.pageIndex) }
     var currentPage by remember { mutableIntStateOf(initialPage) }
     var pageCount by remember { mutableIntStateOf(1) }
+    var scrollMode by rememberSaveable(book.id) { mutableStateOf(false) }
+    var scrollRatio by rememberSaveable(book.id) { mutableFloatStateOf(0f) }
+    var scrollPageCount by rememberSaveable(book.id) { mutableIntStateOf(1) }
     var pendingPage by remember { mutableIntStateOf(initialPage) }
     var pendingCount by remember { mutableIntStateOf(1) }
     var needsSave by remember { mutableStateOf(false) }
@@ -126,6 +139,8 @@ internal fun ReaderScreen(
     var lookup by remember { mutableStateOf<WordLookup?>(null) }
     var dictionaryResult by remember { mutableStateOf<DictionaryLookupResult?>(null) }
     var dictionaryLoading by remember { mutableStateOf(false) }
+    var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
+    var aiLoading by remember { mutableStateOf(false) }
     var showingRelatedPhrase by remember { mutableStateOf(false) }
     var reviewDeck by remember { mutableStateOf<List<SavedWord>?>(null) }
     var showReviewSettings by remember { mutableStateOf(false) }
@@ -206,6 +221,70 @@ internal fun ReaderScreen(
         performClose()
     }
 
+    fun selectChapter(index: Int, fromEnd: Boolean = false, fromTts: Boolean = false) {
+        if (index !in book.chapters.indices) return
+        flushProgressAsync()
+        chapterIndex = index
+        initialPage = if (fromEnd) Int.MAX_VALUE else 0
+        currentPage = 0
+        pageCount = 1
+        scrollMode = false
+        scrollRatio = 0f
+        scrollPageCount = 1
+        pendingPage = 0
+        pendingCount = 1
+        needsSave = false
+        if (ttsForThisBook && !fromTts) {
+            TtsPlaybackController.onReaderChapterSelected(book.id, index)
+        }
+    }
+
+    fun changeChapter(direction: Int) {
+        val next = chapterIndex + direction
+        if (next !in book.chapters.indices) return
+        selectChapter(next, fromEnd = direction < 0)
+    }
+
+    fun reportTtsPositionDelayed() {
+        ttsPositionReportJob?.cancel()
+        ttsPositionReportJob = scope.launch {
+            delay(350)
+            controller.firstVisibleBlock { block ->
+                if (block != null) {
+                    TtsPlaybackController.onReaderPositionChanged(book.id, chapterIndex, block)
+                }
+            }
+        }
+    }
+
+    fun startOrToggleListening() {
+        if (ttsState.isActive && ttsState.bookId == book.id) {
+            TtsPlaybackController.toggle(context)
+            return
+        }
+        val savedChapter = book.ttsChapterIndex.coerceIn(0, book.chapters.lastIndex.coerceAtLeast(0))
+        val hasListeningProgress = book.ttsChapterIndex in book.chapters.indices && book.ttsSentenceIndex > 0 ||
+            book.ttsChapterIndex > 0
+        if (hasListeningProgress) {
+            TtsPlaybackController.startFromChapter(
+                context,
+                book,
+                savedChapter,
+                book.ttsSentenceIndex.coerceAtLeast(0)
+            )
+        } else {
+            controller.firstVisibleBlock { block ->
+                TtsPlaybackController.startFromBlockOffset(
+                    context,
+                    book,
+                    chapterIndex,
+                    block.orEmpty(),
+                    0
+                )
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             delay(800)
@@ -220,17 +299,26 @@ internal fun ReaderScreen(
         }
     }
 
-    fun changeChapter(direction: Int) {
-        val next = chapterIndex + direction
-        if (next !in book.chapters.indices) return
-        flushProgressAsync()
-        chapterIndex = next
-        initialPage = if (direction < 0) Int.MAX_VALUE else 0
-        currentPage = 0
-        pageCount = 1
-        pendingPage = 0
-        pendingCount = 1
-        needsSave = false
+    LaunchedEffect(Unit) {
+        TtsPlaybackController.chapterRequests.collect { requested ->
+            if (requested != chapterIndex) {
+                selectChapter(requested, fromTts = true)
+            }
+        }
+    }
+
+    LaunchedEffect(ttsForThisBook) {
+        controller.setListenMode(ttsForThisBook)
+        if (!ttsForThisBook) controller.clearHighlight()
+    }
+
+    LaunchedEffect(ttsState.currentSentence, ttsState.chapterIndex, chapterIndex) {
+        if (ttsForThisBook &&
+            ttsState.chapterIndex == chapterIndex &&
+            ttsState.currentSentence.isNotBlank()
+        ) {
+            controller.highlightSentence(ttsState.currentSentence)
+        }
     }
 
     BackHandler {
@@ -246,9 +334,18 @@ internal fun ReaderScreen(
     LaunchedEffect(lookup) {
         val request = lookup ?: return@LaunchedEffect
         dictionaryLoading = true
+        aiResult = null
+        aiLoading = false
         dictionaryResult = viewModel.lookup(request)
         showingRelatedPhrase = false
         dictionaryLoading = false
+        if (aiSettings.enabled) {
+            aiLoading = true
+            aiResult = runCatching {
+                viewModel.aiLookup(book, request, dictionaryResult?.entry)
+            }.getOrNull()
+            aiLoading = false
+        }
     }
 
     Box(
@@ -258,6 +355,9 @@ internal fun ReaderScreen(
             EpubPage(
                 chapterFile = File(book.extractedDir, book.chapters[chapterIndex].relativePath),
                 initialPage = initialPage,
+                initialScrollMode = scrollMode,
+                initialScrollRatio = scrollRatio,
+                initialScrollPageCount = scrollPageCount.coerceAtLeast(1),
                 preferences = preferences,
                 savedWords = if (reminders.contextHighlight) savedWords.map { it.headword } else emptyList(),
                 controller = controller,
@@ -269,6 +369,14 @@ internal fun ReaderScreen(
                     pendingPage = page
                     pendingCount = count
                     needsSave = true
+                    TtsPlaybackController.onReaderChapterLoaded(book.id, chapterIndex)
+                    controller.setListenMode(ttsForThisBook)
+                    if (ttsForThisBook &&
+                        ttsState.chapterIndex == chapterIndex &&
+                        ttsState.currentSentence.isNotBlank()
+                    ) {
+                        controller.highlightSentence(ttsState.currentSentence)
+                    }
                 },
                 onPageChanged = { page, count ->
                     initialPage = page
@@ -277,6 +385,9 @@ internal fun ReaderScreen(
                     pendingPage = page
                     pendingCount = count
                     needsSave = true
+                    if (ttsForThisBook && ttsState.isPlaying) {
+                        reportTtsPositionDelayed()
+                    }
                 },
                 onChapterRequested = { direction ->
                     if (reminders.pausePrompt && dueWords.isNotEmpty() && !showReviewPrompt) {
@@ -289,6 +400,35 @@ internal fun ReaderScreen(
                     dictionaryResult = null
                     showingRelatedPhrase = false
                     toolbarVisible = false
+                },
+                onSentenceTapped = { block, offset ->
+                    TtsPlaybackController.startFromBlockOffset(
+                        context,
+                        book,
+                        chapterIndex,
+                        block,
+                        offset
+                    )
+                },
+                onTtsPage = { page ->
+                    if (pageCount > 0) {
+                        val clamped = page.coerceIn(0, pageCount - 1)
+                        initialPage = clamped
+                        currentPage = clamped
+                        pendingPage = clamped
+                        pendingCount = pageCount
+                        needsSave = true
+                    }
+                },
+                onScrollModeChanged = { active -> scrollMode = active },
+                onScrollProgress = { ratio, page, count ->
+                    scrollRatio = ratio
+                    scrollPageCount = count
+                    currentPage = page
+                    pageCount = count
+                    pendingPage = page
+                    pendingCount = count
+                    needsSave = true
                 },
                 onToolbarRequested = { toolbarVisible = !toolbarVisible }
             )
@@ -328,6 +468,16 @@ internal fun ReaderScreen(
                         Spacer(Modifier.width(4.dp))
                         Text("目录")
                     }
+                    TextButton(onClick = ::startOrToggleListening) {
+                        Icon(
+                            Icons.Filled.Headphones,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = if (ttsForThisBook) Accent else InkSoft
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (ttsForThisBook) "听书中" else "听书", color = Ink)
+                    }
                     TextButton(onClick = { showSettings = true }) {
                         Text("Aa", fontWeight = FontWeight.Bold)
                     }
@@ -360,14 +510,31 @@ internal fun ReaderScreen(
                     tint = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
                 )
             }
-            Text(
-                "${chapterIndex + 1}/${book.chapters.size} · ${currentPage + 1}/$pageCount",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
-                modifier = Modifier
-                    .semantics { contentDescription = "页码指示" }
-                    .clickable { showPageJump = true }
-            )
+            if (scrollMode) {
+                Text(
+                    "${chapterIndex + 1}/${book.chapters.size} · 章节进度 ${(scrollRatio * 100).roundToInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
+                    modifier = Modifier
+                        .semantics { contentDescription = "页码指示" }
+                        .clickable { showPageJump = true }
+                )
+                TextButton(onClick = controller::exitScrollMode) {
+                    Text(
+                        "分页",
+                        color = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
+                    )
+                }
+            } else {
+                Text(
+                    "${chapterIndex + 1}/${book.chapters.size} · ${currentPage + 1}/$pageCount",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
+                    modifier = Modifier
+                        .semantics { contentDescription = "页码指示" }
+                        .clickable { showPageJump = true }
+                )
+            }
             IconButton(
                 onClick = controller::nextPage,
                 modifier = Modifier.semantics { contentDescription = "下一页" }
@@ -378,6 +545,21 @@ internal fun ReaderScreen(
                     tint = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
                 )
             }
+        }
+
+        AnimatedVisibility(
+            visible = ttsForThisBook,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            ListeningBar(
+                state = ttsState,
+                modifier = Modifier.padding(bottom = 62.dp),
+                onToggle = { TtsPlaybackController.toggle(context) },
+                onPrevious = { TtsPlaybackController.previous(context) },
+                onNext = { TtsPlaybackController.next(context) },
+                onStop = { TtsPlaybackController.stop(context) },
+                onRateChange = { TtsPlaybackController.setRate(context, it) }
+            )
         }
 
         AnimatedVisibility(
@@ -410,10 +592,7 @@ internal fun ReaderScreen(
             book = book,
             currentChapter = chapterIndex,
             onSelect = {
-                chapterIndex = it
-                initialPage = 0
-                currentPage = 0
-                pageCount = 1
+                selectChapter(it)
                 showContents = false
             },
             onDismiss = { showContents = false }
@@ -473,6 +652,8 @@ internal fun ReaderScreen(
             entry = displayedEntry,
             relatedPhrase = dictionaryResult?.relatedPhrase,
             loading = dictionaryLoading,
+            aiContext = aiResult,
+            aiLoading = aiLoading,
             isSaved = savedId != null && savedWords.any { word -> word.id == savedId },
             isPhraseView = showingRelatedPhrase,
             showReviewEntry = reminders.contextHighlight,
@@ -493,7 +674,13 @@ internal fun ReaderScreen(
                 if (savedId != null && savedWords.any { word -> word.id == savedId }) {
                     viewModel.removeSavedWord(savedId)
                 } else {
-                    viewModel.saveWord(book, book.chapters[chapterIndex].title, it, entry)
+                    viewModel.saveWord(
+                        book,
+                        book.chapters[chapterIndex].title,
+                        it,
+                        entry,
+                        aiResult
+                    )
                 }
             },
             onDismiss = {
@@ -724,6 +911,8 @@ private fun LookupSheet(
     entry: ContextualDictionaryEntry?,
     relatedPhrase: ContextualDictionaryEntry?,
     loading: Boolean,
+    aiContext: AiLookupResult?,
+    aiLoading: Boolean,
     isSaved: Boolean,
     isPhraseView: Boolean,
     showReviewEntry: Boolean,
@@ -818,6 +1007,55 @@ private fun LookupSheet(
                         Spacer(Modifier.width(4.dp))
                         Text(if (isSaved) "移出生词本" else "加入生词本")
                     }
+                }
+            }
+            if (aiLoading) {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .width(72.dp)
+                            .height(4.dp),
+                        color = Accent,
+                        trackColor = Accent.copy(alpha = .12f)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "正在结合本书语境…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = InkSoft
+                    )
+                }
+            }
+            if (!aiLoading && aiContext != null) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "本书语境释义（${aiContext.source}）",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Accent,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    aiContext.contextualMeaning,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                aiContext.phrase?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "短语：$it",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Ink.copy(alpha = .62f)
+                    )
+                }
+                if (aiContext.explanation.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        aiContext.explanation,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Ink.copy(alpha = .72f)
+                    )
                 }
             }
             Spacer(Modifier.height(14.dp))

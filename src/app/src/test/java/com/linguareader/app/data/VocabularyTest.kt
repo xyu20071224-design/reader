@@ -27,6 +27,21 @@ class VocabularyTest {
     }
 
     @Test
+    fun savedWordPreservesAiContext() {
+        val withAi = saved.copy(
+            aiMeaning = "期待",
+            aiSource = "DeepSeek",
+            aiExplanation = "本句表示期待"
+        )
+
+        assertEquals(withAi, SavedWord.fromJson(withAi.toJson()))
+
+        val csv = VocabularyRepository.csv(listOf(withAi))
+        assertContains(csv, "\"期待\"")
+        assertContains(csv, "DeepSeek")
+    }
+
+    @Test
     fun forgottenWordReturnsToFirstReviewInterval() {
         val reviewed = ReviewScheduler.reviewed(
             saved.copy(reviewLevel = 4, reviewCount = 2),
