@@ -149,6 +149,26 @@ class ReaderScriptsTest {
     }
 
     @Test
+    fun scrollModeIsStickyUntilExitButton() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // Once slow-scroll mode is entered it stays active: lrTurn never exits
+        // it, vertical drags always scroll, and only lrExitScrollMode (the
+        // "分页" button) restores pagination.
+        assertContains(script, "Sticky scroll mode")
+        assertContains(script, "chapter-start/end transitions")
+        assertContains(script, "every vertical-dominant drag scrolls")
+        assertContains(script, "only the \"分页\" button")
+        // A fast flick at the chapter edge still continues to the next chapter.
+        assertContains(script, "A fast flick at the chapter edge")
+        // Page jumps inside scroll mode map to a ratio instead of exiting.
+        assertContains(script, "scrollRatio = last > 0 ? clamp(target / last, 0, 1) : 0")
+        // A fresh chapter estimates its scroll page count from the flow height
+        // so sticky scroll mode keeps ratio -> page mapping meaningful.
+        assertContains(script, "Math.ceil(scroller.scrollHeight / Math.max(1, columnHeight))")
+    }
+
+    @Test
     fun paginationScrollsThroughWrappedScroller() {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())
 

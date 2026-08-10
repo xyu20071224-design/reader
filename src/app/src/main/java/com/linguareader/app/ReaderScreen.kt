@@ -224,15 +224,21 @@ internal fun ReaderScreen(
         performClose()
     }
 
-    fun selectChapter(index: Int, fromEnd: Boolean = false, fromTts: Boolean = false) {
+    fun selectChapter(
+        index: Int,
+        fromEnd: Boolean = false,
+        fromTts: Boolean = false,
+        keepScrollMode: Boolean = false
+    ) {
         if (index !in book.chapters.indices) return
         flushProgressAsync()
+        val stayScrolled = keepScrollMode && scrollMode
         chapterIndex = index
         initialPage = if (fromEnd) Int.MAX_VALUE else 0
         currentPage = 0
         pageCount = 1
-        scrollMode = false
-        scrollRatio = 0f
+        scrollMode = stayScrolled
+        scrollRatio = if (stayScrolled && fromEnd) 1f else 0f
         scrollPageCount = 1
         pendingPage = 0
         pendingCount = 1
@@ -242,10 +248,10 @@ internal fun ReaderScreen(
         }
     }
 
-    fun changeChapter(direction: Int) {
+    fun changeChapter(direction: Int, keepScrollMode: Boolean = false) {
         val next = chapterIndex + direction
         if (next !in book.chapters.indices) return
-        selectChapter(next, fromEnd = direction < 0)
+        selectChapter(next, fromEnd = direction < 0, keepScrollMode = keepScrollMode)
     }
 
     fun reportTtsPositionDelayed() {
@@ -398,7 +404,7 @@ internal fun ReaderScreen(
                     if (reminders.pausePrompt && dueWords.isNotEmpty() && !showReviewPrompt) {
                         showReviewPrompt = true
                     }
-                    changeChapter(direction)
+                    changeChapter(direction, keepScrollMode = scrollMode)
                 },
                 onWord = {
                     lookup = it

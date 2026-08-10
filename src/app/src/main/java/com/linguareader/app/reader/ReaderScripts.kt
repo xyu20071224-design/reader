@@ -158,6 +158,10 @@ object ReaderScripts {
             if (scrollMode) {
               // Scroll mode lays the chapter out as one vertical flow; keep the
               // reading ratio stable across remeasurements (fonts/images/resize).
+              // A freshly opened chapter starts with scrollPageCount = 1, so
+              // re-estimate it from the flow height to keep ratio -> page
+              // mapping and the chapter progress meaningful in sticky mode.
+              pageCount = Math.max(1, Math.ceil(scroller.scrollHeight / Math.max(1, columnHeight)));
               const max = scroller.scrollHeight - scroller.clientHeight;
               scroller.scrollTop = max > 0 ? scrollRatio * max : 0;
               page = pageFromRatio(scrollRatio);
@@ -317,7 +321,16 @@ object ReaderScripts {
           }
 
           window.lrSetPage = function(value) {
-            if (scrollMode) exitScrollMode();
+            if (scrollMode) {
+              // Page jumps inside scroll mode map the target page to a scroll
+              // ratio instead of exiting: the mode stays sticky until the
+              // "分页" button calls lrExitScrollMode.
+              const target = Number(value) || 0;
+              const last = Math.max(1, pageCount) - 1;
+              scrollRatio = last > 0 ? clamp(target / last, 0, 1) : 0;
+              syncScroll();
+              return;
+            }
             page = Number(value) || 0;
             restoreTarget = page;
             requestAnimationFrame(updateMetrics);
@@ -347,7 +360,21 @@ object ReaderScripts {
           };
 
           window.lrTurn = function(direction) {
-            if (scrollMode) exitScrollMode();
+            if (scrollMode) {
+              // Sticky scroll mode: a swipe/turn never leaves it, so only
+              // chapter-start/end transitions are forwarded. The only exit is
+              // lrExitScrollMode, which is wired to the "分页" button.
+              const scroller = document.getElementById('lr-scroller');
+              if (scroller) {
+                const max = scroller.scrollHeight - scroller.clientHeight;
+                const atTop = scroller.scrollTop <= 2;
+                const atBottom = max > 0 && scroller.scrollTop >= max - 2;
+                if ((Number(direction) < 0 && atTop) || (Number(direction) > 0 && atBottom)) {
+                  ReaderBridge.onChapterRequested(Number(direction));
+                }
+              }
+              return;
+            }
             const candidate = page + Number(direction);
             if (candidate >= 0 && candidate < pageCount) {
               page = candidate;
@@ -502,7 +529,15 @@ object ReaderScripts {
             const elapsed = Date.now() - down.time;
             // A slow vertical drag becomes the scroll gesture as it moves; fast
             // swipes are still resolved on pointerup as discrete page turns.
-            if (dy >= 24 && dy > dx * 1.5 && (elapsed > 450 || dy / Math.max(1, elapsed) < 0.12)) {
+            if (scrollMode) {
+              // Once scroll mode is active every vertical-dominant drag scrolls
+              // the chapter; only the "分页" button (lrExitScrollMode) leaves it.
+              if (dy >= 24 && dy > dx * 1.5) {
+                dragScrollActive = true;
+                lastScrollY = event.clientY;
+                event.preventDefault();
+              }
+            } else if (dy >= 24 && dy > dx * 1.5 && (elapsed > 450 || dy / Math.max(1, elapsed) < 0.12)) {
               dragScrollActive = true;
               lastScrollY = event.clientY;
               event.preventDefault();
@@ -522,10 +557,24 @@ object ReaderScripts {
               dragScrollActive = false;
               event.preventDefault();
               if (scrollMode) {
+                const scroller = document.getElementById('lr-scroller');
+                const max = scroller ? scroller.scrollHeight - scroller.clientHeight : 0;
+                const atTop = scroller ? scroller.scrollTop <= 2 : true;
+                const atBottom = max > 0 && scroller.scrollTop >= max - 2;
+                // A fast flick at the chapter edge still continues to the next
+                // chapter, but scroll mode itself is sticky: it never exits
+                // until the "分页" button calls lrExitScrollMode.
                 scrollRatio = currentScrollRatio();
                 page = pageFromRatio(scrollRatio);
                 updateEndHint();
                 ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+                // Report progress first so the chapter switch below never gets
+                // its fresh state overwritten by this gesture's old progress.
+                if (dy >= 45 && dy > dx * 1.5 && elapsed <= 700) {
+                  if ((rawDy < 0 && atBottom) || (rawDy > 0 && atTop)) {
+                    ReaderBridge.onChapterRequested(rawDy < 0 ? 1 : -1);
+                  }
+                }
               }
               return;
             }
