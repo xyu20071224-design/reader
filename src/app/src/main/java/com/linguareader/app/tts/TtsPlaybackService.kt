@@ -90,6 +90,7 @@ class TtsPlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_PLAY -> handlePlay(intent)
+            ACTION_STANDBY -> handleStandby(intent)
             ACTION_TOGGLE -> if (playing) pause() else resume()
             ACTION_PAUSE -> pause()
             ACTION_RESUME -> resume()
@@ -100,6 +101,13 @@ class TtsPlaybackService : Service() {
             ACTION_RECONFIGURE -> reconfigureSynthesizer()
         }
         return START_NOT_STICKY
+    }
+
+    private fun handleStandby(intent: Intent) {
+        val json = intent.getStringExtra(EXTRA_BOOK_JSON) ?: return
+        val newBook = runCatching { Book.fromJson(JSONObject(json)) }.getOrNull() ?: return
+        val requestedChapter = intent.getIntExtra(EXTRA_CHAPTER, 0)
+        startStandby(newBook, requestedChapter)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -177,6 +185,36 @@ class TtsPlaybackService : Service() {
         updateMediaSession()
         updateNotification()
         ensureSynthesizer { loadAndSpeakCurrent() }
+    }
+
+    /**
+     * Opens the listening session without starting playback. The reader shows
+     * the listening bar and the user taps a word/sentence to choose where to
+     * start; that tap calls [startFromBlockOffset] which starts real playback.
+     */
+    private fun startStandby(newBook: Book, requestedChapter: Int) {
+        book = newBook
+        chapterIndex = requestedChapter.coerceIn(0, newBook.chapters.lastIndex.coerceAtLeast(0))
+        sentenceIndex = if (newBook.ttsChapterIndex == chapterIndex) {
+            newBook.ttsSentenceIndex.coerceAtLeast(0)
+        } else {
+            0
+        }
+        preparedChapterKey = null
+        val readerChapter = readerChapterByBook
+        lastLoadedChapter = if (readerChapter?.first == newBook.id) readerChapter.second else null
+        playing = false
+        _state.value = TtsPlaybackState(
+            bookId = newBook.id,
+            bookTitle = newBook.title,
+            chapterIndex = chapterIndex,
+            sentenceIndex = sentenceIndex,
+            sentenceCount = 0,
+            currentSentence = "",
+            isPlaying = false,
+            speechRate = speechRate,
+            engineLabel = engineLabelFor(CloudTtsSettings.load(applicationContext))
+        )
     }
 
     private fun resume() {
@@ -721,6 +759,7 @@ class TtsPlaybackService : Service() {
         private const val NOTIFICATION_ID = 0x544553
 
         private const val ACTION_PLAY = "com.linguareader.app.tts.PLAY"
+        private const val ACTION_STANDBY = "com.linguareader.app.tts.STANDBY"
         private const val ACTION_TOGGLE = "com.linguareader.app.tts.TOGGLE"
         private const val ACTION_PAUSE = "com.linguareader.app.tts.PAUSE"
         private const val ACTION_RESUME = "com.linguareader.app.tts.RESUME"
@@ -756,6 +795,19 @@ class TtsPlaybackService : Service() {
                 .putExtra(EXTRA_CHAPTER, chapterIndex)
                 .putExtra(EXTRA_SENTENCE, sentenceIndex)
             ContextCompat.startForegroundService(context, intent)
+        }
+
+        /** Opens listening without playing; the user picks the start point. */
+        fun startStandby(
+            context: Context,
+            book: Book,
+            chapterIndex: Int
+        ) {
+            val intent = Intent(context, TtsPlaybackService::class.java)
+                .setAction(ACTION_STANDBY)
+                .putExtra(EXTRA_BOOK_JSON, book.toJson().toString())
+                .putExtra(EXTRA_CHAPTER, chapterIndex)
+            context.startService(intent)
         }
 
         fun startFromSentence(

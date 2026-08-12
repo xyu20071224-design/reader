@@ -269,30 +269,21 @@ internal fun ReaderScreen(
 
     fun startOrToggleListening() {
         if (ttsState.isActive && ttsState.bookId == book.id) {
-            TtsPlaybackController.toggle(context)
+            if (ttsState.isPlaying) {
+                // Playing: the top button only pauses; it never re-enters the
+                // start-point chooser (that used to restart/confuse playback).
+                TtsPlaybackController.pause(context)
+            } else {
+                choosingStart = true
+                controller.setChoosingStart(true)
+            }
             return
         }
-        val savedChapter = book.ttsChapterIndex.coerceIn(0, book.chapters.lastIndex.coerceAtLeast(0))
-        val hasListeningProgress = book.ttsChapterIndex in book.chapters.indices && book.ttsSentenceIndex > 0 ||
-            book.ttsChapterIndex > 0
-        if (hasListeningProgress) {
-            TtsPlaybackController.startFromChapter(
-                context,
-                book,
-                savedChapter,
-                book.ttsSentenceIndex.coerceAtLeast(0)
-            )
-        } else {
-            controller.firstVisibleBlock { block ->
-                TtsPlaybackController.startFromBlockOffset(
-                    context,
-                    book,
-                    chapterIndex,
-                    block.orEmpty(),
-                    0
-                )
-            }
-        }
+        // Opening listening never auto-plays: enter standby and let the user
+        // tap a word/sentence to choose the start point.
+        TtsPlaybackController.startStandby(context, book, chapterIndex)
+        choosingStart = true
+        controller.setChoosingStart(true)
     }
 
     LaunchedEffect(Unit) {
@@ -318,9 +309,9 @@ internal fun ReaderScreen(
     }
 
     LaunchedEffect(ttsForThisBook) {
-        controller.setListenMode(ttsForThisBook)
         if (!ttsForThisBook) {
             choosingStart = false
+            controller.setChoosingStart(false)
             controller.clearHighlight()
         }
     }
@@ -385,7 +376,7 @@ internal fun ReaderScreen(
                     pendingCount = count
                     needsSave = true
                     TtsPlaybackController.onReaderChapterLoaded(book.id, chapterIndex)
-                    controller.setListenMode(ttsForThisBook)
+                    controller.setChoosingStart(choosingStart)
                     if (ttsForThisBook &&
                         ttsState.chapterIndex == chapterIndex &&
                         ttsState.currentSentence.isNotBlank()
@@ -421,14 +412,19 @@ internal fun ReaderScreen(
                     toolbarVisible = false
                 },
                 onSentenceTapped = { block, offset ->
-                    choosingStart = false
-                    TtsPlaybackController.startFromBlockOffset(
-                        context,
-                        book,
-                        chapterIndex,
-                        block,
-                        offset
-                    )
+                    if (choosingStart) {
+                        // Only the first tap after entering choose mode is
+                        // consumed as the start point.
+                        choosingStart = false
+                        controller.setChoosingStart(false)
+                        TtsPlaybackController.startFromBlockOffset(
+                            context,
+                            book,
+                            chapterIndex,
+                            block,
+                            offset
+                        )
+                    }
                 },
                 onScrollModeChanged = { active -> scrollMode = active },
                 onScrollProgress = { ratio, page, count ->
@@ -570,7 +566,10 @@ internal fun ReaderScreen(
                 onStop = { TtsPlaybackController.stop(context) },
                 onRateChange = { TtsPlaybackController.setRate(context, it) },
                 choosingStart = choosingStart,
-                onChooseStart = { choosingStart = !choosingStart }
+                onChooseStart = {
+                    choosingStart = !choosingStart
+                    controller.setChoosingStart(choosingStart)
+                }
             )
         }
 

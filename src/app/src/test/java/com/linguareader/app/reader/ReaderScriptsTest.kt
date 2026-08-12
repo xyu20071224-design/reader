@@ -222,9 +222,12 @@ class ReaderScriptsTest {
         assertContains(script, "lrHighlightSentence")
         assertContains(script, "lrClearHighlight")
         assertContains(script, "lrFirstVisibleBlock")
-        assertContains(script, "lrSetListenMode")
+        assertContains(script, "lrSetChoosingStart")
         assertContains(script, "ReaderBridge.onSentenceTapped")
         assertContains(script, "TTS_BLOCK_SELECTOR")
+        // The choose-start flag is consumed by the first tap, so normal
+        // playback taps never restart the queue.
+        assertContains(script, "window.__lrChoosingStart = false")
         // The sentence highlight repositions in place; it must never force
         // the reader to scroll to the spoken sentence's page.
         assertFalse(script.contains("ReaderBridge.onTtsPage"))

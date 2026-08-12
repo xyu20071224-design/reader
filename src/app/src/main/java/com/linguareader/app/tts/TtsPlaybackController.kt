@@ -21,6 +21,13 @@ object TtsPlaybackController {
         sentenceIndex: Int
     ) = TtsPlaybackService.startFromChapter(context, book, chapterIndex, sentenceIndex)
 
+    /** Opens the listening session without playing; the user picks the start. */
+    fun startStandby(
+        context: Context,
+        book: Book,
+        chapterIndex: Int
+    ) = TtsPlaybackService.startStandby(context, book, chapterIndex)
+
     fun startFromSentence(
         context: Context,
         book: Book,

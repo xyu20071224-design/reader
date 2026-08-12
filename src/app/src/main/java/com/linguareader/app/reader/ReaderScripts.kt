@@ -601,10 +601,12 @@ object ReaderScripts {
             if (target) return;
             const ratio = event.clientX / window.innerWidth;
             const result = textAtPoint(event.clientX, event.clientY);
-            // In listening mode a tap starts playback from the tapped
-            // sentence instead of opening the word lookup.
-            if (result && window.__lrListenMode) {
+            // Only while "choose start point" is enabled does a text tap start
+            // playback from the tapped sentence. The flag is consumed by the
+            // first tap, so normal playback taps keep doing word lookup.
+            if (result && window.__lrChoosingStart) {
               event.preventDefault();
+              window.__lrChoosingStart = false;
               ReaderBridge.onSentenceTapped(result.block, Number(result.blockOffset));
               return;
             }
@@ -875,8 +877,8 @@ object ReaderScripts {
             return candidate ? candidate.text : null;
           };
 
-          window.lrSetListenMode = function(enabled) {
-            window.__lrListenMode = !!enabled;
+          window.lrSetChoosingStart = function(enabled) {
+            window.__lrChoosingStart = !!enabled;
           };
           window.addEventListener('resize', function() {
             setTimeout(updateMetrics, 80);

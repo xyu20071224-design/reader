@@ -61,6 +61,14 @@
 - `lintDebug`：通过，0 错误；`assembleDebug`：通过。
 - `connectedDebugAndroidTest`（Android 15 / API 35 模拟器）：全量 32/32 通过（首轮与预热轮偶发 1–2 条 ReaderAcceptanceTest 冷启动超时，单跑 1/1 通过，与本次改动无关）。
 
+## 2026-08-12 F-150 起点交互重做（增量验证）
+
+- 打开听书不再自动播放：`TtsPlaybackService` 新增待选起点状态（`ACTION_STANDBY`，[TtsPlaybackService.kt](src/app/src/main/java/com/linguareader/app/tts/TtsPlaybackService.kt)），播放条提示点击正文选择起点；首次正文点击经 `startFromBlockOffset` 从该句开始。
+- 播放条“起点”按钮只消费其后第一次正文点击：JS 端 `lrSetChoosingStart` 标志在首次点击即被消费（[ReaderScripts.kt](src/app/src/main/java/com/linguareader/app/reader/ReaderScripts.kt)），正常播放中点击正文恢复点词查词，不再误触重定位。
+- 顶部“听书”按钮在播放中仅暂停，不再进入选择状态；待选/暂停状态再次点击才重新进入选择。
+- `testDebugUnitTest`：通过（113 个），ReaderScriptsTest 断言“选择起点标志首次点击即消费”。
+- `lintDebug`：通过，0 错误；`assembleDebug`：通过。
+
 # Validation report
 
 Validated on 2026-07-30 with an Android 15 / API 35 ARM64 Pixel 6 emulator.

@@ -48,10 +48,13 @@ class ReaderController {
         webView.get()?.evaluateJavascript(script, null)
     }
 
-    /** Enables "tap a sentence to play from it" instead of word lookup. */
-    fun setListenMode(enabled: Boolean) {
+    /**
+     * Enables "choose start point" mode: while enabled, the next text tap is
+     * consumed as the playback start sentence instead of opening a lookup.
+     */
+    fun setChoosingStart(enabled: Boolean) {
         webView.get()?.evaluateJavascript(
-            "window.lrSetListenMode && window.lrSetListenMode($enabled)",
+            "window.lrSetChoosingStart && window.lrSetChoosingStart($enabled)",
             null
         )
     }
