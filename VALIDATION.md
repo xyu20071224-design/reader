@@ -52,6 +52,15 @@
 - `connectedDebugAndroidTest`（Android 15 / API 35 模拟器）：32/32 通过（首轮 2 条 ReaderAcceptanceTest 冷启动偶发超时，预热后单独重跑 3/3 通过，与火山改动无关）。
 - 说明：火山引擎联调需用户提供真实 API Key（或 App ID + Access Token）后人工验证；仪器测试仍只覆盖离线链路。
 
+## 2026-08-12 F-150 真机问题修复（增量验证）
+
+- 修复手动翻页后旧句高亮残留：`onPageChanged` 时立即清除 `lr-tts-overlay`（[ReaderScreen.kt](src/app/src/main/java/com/linguareader/app/ReaderScreen.kt)），下一句朗读时重新定位高亮。
+- 高亮不再自动滚到对应页：移除 `lrHighlightSentence` 中的滚动逻辑与 `ReaderBridge.onTtsPage` 桥接（[ReaderScripts.kt](src/app/src/main/java/com/linguareader/app/reader/ReaderScripts.kt)、[EpubPage.kt](src/app/src/main/java/com/linguareader/app/reader/EpubPage.kt)），页面始终停留在用户当前位置。
+- 新增“起点”按钮（[ListeningBar.kt](src/app/src/main/java/com/linguareader/app/ListeningBar.kt)）：进入起点模式后点击正文任意单词/句子即从该句开始朗读（只设起点、读到手动停止）。
+- `testDebugUnitTest`：通过（113 个），ReaderScriptsTest 更新为断言“高亮不再自动滚页/不再调用 onTtsPage”。
+- `lintDebug`：通过，0 错误；`assembleDebug`：通过。
+- `connectedDebugAndroidTest`（Android 15 / API 35 模拟器）：全量 32/32 通过（首轮与预热轮偶发 1–2 条 ReaderAcceptanceTest 冷启动超时，单跑 1/1 通过，与本次改动无关）。
+
 # Validation report
 
 Validated on 2026-07-30 with an Android 15 / API 35 ARM64 Pixel 6 emulator.

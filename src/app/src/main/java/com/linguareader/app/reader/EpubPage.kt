@@ -26,7 +26,6 @@ private class ReaderBridge(
     private val wordCallback: (WordLookup) -> Unit,
     private val toolbarRequestedCallback: () -> Unit,
     private val sentenceTappedCallback: (String, Int) -> Unit,
-    private val ttsPageCallback: (Int) -> Unit,
     private val scrollModeChangedCallback: (Boolean) -> Unit,
     private val scrollProgressCallback: (Float, Int, Int) -> Unit
 ) {
@@ -79,11 +78,6 @@ private class ReaderBridge(
     }
 
     @JavascriptInterface
-    fun onTtsPage(page: Int): Unit = post {
-        ttsPageCallback(page.coerceAtLeast(0))
-    }
-
-    @JavascriptInterface
     fun onScrollModeChanged(active: Boolean): Unit = post {
         scrollModeChangedCallback(active)
     }
@@ -116,7 +110,6 @@ fun EpubPage(
     onWord: (WordLookup) -> Unit,
     onToolbarRequested: () -> Unit,
     onSentenceTapped: (String, Int) -> Unit = { _, _ -> },
-    onTtsPage: (Int) -> Unit = {},
     onScrollModeChanged: (Boolean) -> Unit = {},
     onScrollProgress: (Float, Int, Int) -> Unit = { _, _, _ -> }
 ) {
@@ -127,7 +120,6 @@ fun EpubPage(
     val latestWord by rememberUpdatedState(onWord)
     val latestToolbarRequested by rememberUpdatedState(onToolbarRequested)
     val latestSentenceTapped by rememberUpdatedState(onSentenceTapped)
-    val latestTtsPage by rememberUpdatedState(onTtsPage)
     val latestInitialScrollMode by rememberUpdatedState(initialScrollMode)
     val latestInitialScrollRatio by rememberUpdatedState(initialScrollRatio)
     val latestInitialScrollPageCount by rememberUpdatedState(initialScrollPageCount)
@@ -164,7 +156,6 @@ fun EpubPage(
                         wordCallback = { latestWord(it) },
                         toolbarRequestedCallback = { latestToolbarRequested() },
                         sentenceTappedCallback = { block, offset -> latestSentenceTapped(block, offset) },
-                        ttsPageCallback = { page -> latestTtsPage(page) },
                         scrollModeChangedCallback = { active -> latestScrollModeChanged(active) },
                         scrollProgressCallback = { progress, page, count ->
                             latestScrollProgress(progress, page, count)

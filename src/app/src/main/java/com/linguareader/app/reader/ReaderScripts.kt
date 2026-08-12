@@ -836,22 +836,8 @@ object ReaderScripts {
                 'pointer-events:none;';
               overlay.appendChild(box);
             }
-            const scroller = document.getElementById('lr-scroller');
-            if (scroller && rects.length > 0) {
-              if (scrollMode) {
-                const max = scroller.scrollHeight - scroller.clientHeight;
-                const docY = scroller.scrollTop + rects[0].top;
-                scroller.scrollTop = clamp(docY - 56, 0, Math.max(0, max));
-                scrollRatio = currentScrollRatio();
-                page = pageFromRatio(scrollRatio);
-                ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
-              } else {
-                const pageX = scroller.scrollLeft + rects[0].left;
-                const targetPage = clamp(Math.floor(pageX / window.innerWidth), 0, pageCount - 1);
-                scroller.scrollLeft = targetPage * window.innerWidth;
-                ReaderBridge.onTtsPage(targetPage);
-              }
-            }
+            // The highlight only repositions itself; the reader page is never
+            // force-scrolled, so a manual page turn is not yanked back.
           };
 
           window.lrFirstVisibleBlock = function() {

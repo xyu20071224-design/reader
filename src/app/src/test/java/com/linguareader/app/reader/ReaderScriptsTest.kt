@@ -224,7 +224,10 @@ class ReaderScriptsTest {
         assertContains(script, "lrFirstVisibleBlock")
         assertContains(script, "lrSetListenMode")
         assertContains(script, "ReaderBridge.onSentenceTapped")
-        assertContains(script, "ReaderBridge.onTtsPage")
         assertContains(script, "TTS_BLOCK_SELECTOR")
+        // The sentence highlight repositions in place; it must never force
+        // the reader to scroll to the spoken sentence's page.
+        assertFalse(script.contains("ReaderBridge.onTtsPage"))
+        assertFalse(script.contains("targetPage * window.innerWidth"))
     }
 }

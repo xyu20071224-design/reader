@@ -133,6 +133,7 @@ internal fun ReaderScreen(
     var pendingCount by remember { mutableIntStateOf(1) }
     var needsSave by remember { mutableStateOf(false) }
     var toolbarVisible by remember { mutableStateOf(true) }
+    var choosingStart by remember { mutableStateOf(false) }
     var showContents by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showListeningSettings by remember { mutableStateOf(false) }
@@ -318,7 +319,10 @@ internal fun ReaderScreen(
 
     LaunchedEffect(ttsForThisBook) {
         controller.setListenMode(ttsForThisBook)
-        if (!ttsForThisBook) controller.clearHighlight()
+        if (!ttsForThisBook) {
+            choosingStart = false
+            controller.clearHighlight()
+        }
     }
 
     LaunchedEffect(ttsState.currentSentence, ttsState.chapterIndex, chapterIndex) {
@@ -417,6 +421,7 @@ internal fun ReaderScreen(
                     toolbarVisible = false
                 },
                 onSentenceTapped = { block, offset ->
+                    choosingStart = false
                     TtsPlaybackController.startFromBlockOffset(
                         context,
                         book,
@@ -424,16 +429,6 @@ internal fun ReaderScreen(
                         block,
                         offset
                     )
-                },
-                onTtsPage = { page ->
-                    if (pageCount > 0) {
-                        val clamped = page.coerceIn(0, pageCount - 1)
-                        initialPage = clamped
-                        currentPage = clamped
-                        pendingPage = clamped
-                        pendingCount = pageCount
-                        needsSave = true
-                    }
                 },
                 onScrollModeChanged = { active -> scrollMode = active },
                 onScrollProgress = { ratio, page, count ->
@@ -573,7 +568,9 @@ internal fun ReaderScreen(
                 onPrevious = { TtsPlaybackController.previous(context) },
                 onNext = { TtsPlaybackController.next(context) },
                 onStop = { TtsPlaybackController.stop(context) },
-                onRateChange = { TtsPlaybackController.setRate(context, it) }
+                onRateChange = { TtsPlaybackController.setRate(context, it) },
+                choosingStart = choosingStart,
+                onChooseStart = { choosingStart = !choosingStart }
             )
         }
 

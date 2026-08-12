@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Close
@@ -47,7 +48,9 @@ internal fun ListeningBar(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onStop: () -> Unit,
-    onRateChange: (Float) -> Unit
+    onRateChange: (Float) -> Unit,
+    choosingStart: Boolean = false,
+    onChooseStart: () -> Unit = {}
 ) {
     var speedMenuOpen by remember { mutableStateOf(false) }
     val progress = if (state.sentenceCount > 0) {
@@ -100,8 +103,11 @@ internal fun ListeningBar(
                 Icon(Icons.Filled.SkipNext, contentDescription = null, tint = Ink)
             }
             Text(
-                state.currentSentence.ifBlank {
-                    if (state.isPlaying) "正在准备朗读…" else "已暂停"
+                when {
+                    choosingStart -> "点击正文中的单词/句子，从此句开始朗读"
+                    state.currentSentence.isNotBlank() -> state.currentSentence
+                    state.isPlaying -> "正在准备朗读…"
+                    else -> "已暂停"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = InkSoft,
@@ -109,6 +115,17 @@ internal fun ListeningBar(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
             )
+            IconButton(
+                onClick = onChooseStart,
+                modifier = Modifier.semantics { contentDescription = "设置起点" }
+            ) {
+                Icon(
+                    Icons.Filled.Flag,
+                    contentDescription = null,
+                    tint = if (choosingStart) Accent else InkFaint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
             Box {
                 TextButton(
                     onClick = { speedMenuOpen = true },
