@@ -396,6 +396,10 @@ internal fun ReaderScreen(
                     pendingPage = page
                     pendingCount = count
                     needsSave = true
+                    // A manual page turn leaves the fixed-position TTS overlay
+                    // at stale viewport coordinates; clear it here. The next
+                    // spoken sentence re-applies and re-scrolls the highlight.
+                    if (ttsForThisBook) controller.clearHighlight()
                     if (ttsForThisBook && ttsState.isPlaying) {
                         reportTtsPositionDelayed()
                     }
