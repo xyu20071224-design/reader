@@ -1134,13 +1134,6 @@ private fun LookupSheet(
                     )
                 }
             }
-            if (!azureReady && sentenceTranslation == null && !sentenceTranslationLoading) {
-                Text(
-                    "未启用 Azure 整句翻译（AI 设置）",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
-                )
-            }
             if (sentenceTranslation != null) {
                 Spacer(Modifier.height(6.dp))
                 Text(
