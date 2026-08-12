@@ -97,6 +97,27 @@ class TtsTextExtractorTest {
     }
 
     @Test
+    fun sentenceIndexAtRebasesOffsetFromAncestorParagraph() {
+        val book = bookWith(
+            """
+            <html><body>
+              <p>Alpha one. Beta two.</p>
+              <p>Gamma three.</p>
+            </body></html>
+            """.trimIndent()
+        )
+        val chapter = TtsTextExtractor().chapter(book, 0)
+
+        // Exact leaf paragraph: "Beta" starts at normalized offset 11.
+        assertEquals(1, chapter.sentenceIndexAt("Alpha one. Beta two.", 11))
+
+        // The tapped text is an ancestor containing both leaf blocks; the
+        // offset must be rebased onto the leaf that actually contains it.
+        assertEquals(1, chapter.sentenceIndexAt("Alpha one. Beta two. Gamma three.", 11))
+        assertEquals(2, chapter.sentenceIndexAt("Alpha one. Beta two. Gamma three.", 21))
+    }
+
+    @Test
     fun jsoupAndNormalizerProduceWhitespaceCollapsedBlocks() {
         val document = Jsoup.parse(
             """

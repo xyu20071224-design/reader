@@ -50,6 +50,16 @@ class ReaderScriptsTest {
     }
 
     @Test
+    fun tapToStartUsesSameBlockSelectorAsTtsExtractor() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // The tapped paragraph must resolve to the same leaf block that
+        // ttsBlocks()/TtsTextExtractor use; otherwise a tap on a word inside
+        // section/article/pre/h5/h6 falls back to sentence 0 of the chapter.
+        assertContains(script, "element.closest(TTS_BLOCK_SELECTOR)")
+    }
+
+    @Test
     fun preferencesAreEncodedIntoCssVariables() {
         val script = ReaderScripts.preferenceScript(
             ReaderPreferences(fontPercent = 125, theme = ReaderTheme.DARK)

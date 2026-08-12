@@ -26,9 +26,9 @@ data class TtsChapter(
 
     /** Flat sentence index for a tapped position inside one block. */
     fun sentenceIndexAt(blockText: String, blockOffset: Int): Int? {
-        val blockIndex = blockIndexFor(blockText) ?: return null
+        val (blockIndex, offsetInBlock) = locateBlock(blockText, blockOffset) ?: return null
         val prefix = (0 until blockIndex).sumOf { sentencesByBlock[it].size }
-        val offset = blockOffset.coerceIn(0, blocks[blockIndex].length)
+        val offset = offsetInBlock.coerceIn(0, blocks[blockIndex].length)
         var cursor = 0
         sentencesByBlock[blockIndex].forEachIndexed { insideIndex, sentence ->
             val found = blocks[blockIndex].indexOf(sentence, cursor)
@@ -44,7 +44,7 @@ data class TtsChapter(
 
     /** Flat index of the first sentence in a block (used for page-follow sync). */
     fun firstSentenceIndexInBlock(blockText: String): Int? {
-        val blockIndex = blockIndexFor(blockText) ?: return null
+        val (blockIndex, _) = locateBlock(blockText, 0) ?: return null
         return (0 until blockIndex).sumOf { sentencesByBlock[it].size }
     }
 
@@ -58,17 +58,29 @@ data class TtsChapter(
     }
 
     fun sentenceBelongsToBlock(sentenceIndex: Int, blockText: String): Boolean {
-        val blockIndex = blockIndexFor(blockText) ?: return false
+        val (blockIndex, _) = locateBlock(blockText, 0) ?: return false
         return blockIndexForSentence(sentenceIndex) == blockIndex
     }
 
-    private fun blockIndexFor(blockText: String): Int? {
+    /**
+     * Finds the leaf block the tapped paragraph belongs to and rebases the
+     * tapped offset onto that block. Exact leaf match is preferred; when the
+     * tapped text is an ancestor containing several leaves (selector drift or
+     * nested wrappers), the longest contained leaf is used.
+     */
+    private fun locateBlock(blockText: String, blockOffset: Int): Pair<Int, Int>? {
         val normalized = blockText.replace(Regex("\\s+"), " ").trim()
         if (normalized.isEmpty()) return null
-        return blocks.indexOfFirst { it == normalized }
-            .takeIf { it >= 0 }
-            ?: blocks.indexOfFirst { it.contains(normalized) }
-            .takeIf { it >= 0 }
+        blocks.indexOfFirst { it == normalized }.takeIf { it >= 0 }?.let {
+            return it to blockOffset
+        }
+        val contained = blocks.mapIndexedNotNull { index, block ->
+            val at = normalized.indexOf(block)
+            if (at >= 0) Triple(index, at, at + block.length) else null
+        }
+        val hit = contained.firstOrNull { blockOffset in it.second until it.third }
+        val leaf = hit ?: contained.maxByOrNull { blocks[it.first].length } ?: return null
+        return leaf.first to (blockOffset - leaf.second)
     }
 }
 

@@ -416,7 +416,11 @@ object ReaderScripts {
             if (!word || !/[A-Za-z]/.test(word)) return null;
 
             const element = range.startContainer.parentElement;
-            const block = element && element.closest('p, li, blockquote, h1, h2, h3, h4, td, figcaption, div');
+            // Must use the same selector as ttsBlocks()/the Kotlin extractor:
+            // leaf blocks like <section>/<article>/<pre>/<h5>/<h6> were missing
+            // here, so the tapped paragraph never matched and playback fell
+            // back to the first sentence of the chapter.
+            const block = element && element.closest(TTS_BLOCK_SELECTOR);
             const rawParagraph = (block && block.innerText) || text;
             const normalizedParagraph = rawParagraph.replace(/\s+/g, ' ');
             const paragraph = normalizedParagraph.trim();
