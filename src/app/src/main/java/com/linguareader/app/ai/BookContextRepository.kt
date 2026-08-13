@@ -2,12 +2,31 @@ package com.linguareader.app.ai
 
 import android.content.Context
 import com.linguareader.app.data.Book
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+
+/**
+ * Builds a book profile, degrading to the offline glossary when the remote
+ * backend fails (F-126: AI 请求失败/超时自动降级).
+ */
+internal suspend fun buildContextProfile(
+    translator: AiTranslator,
+    bookTitle: String,
+    chapters: List<ChapterText>
+): BookContextProfile {
+    if (chapters.isEmpty()) return BookContextProfile(bookId = "", bookTitle = bookTitle)
+    return try {
+        translator.buildBookContext(bookTitle, chapters)
+    } catch (failure: Throwable) {
+        if (failure is CancellationException || translator.offline) throw failure
+        LocalGlossaryTranslator().buildBookContext(bookTitle, chapters)
+    }
+}
 
 /**
  * Owns per-book context profiles.
@@ -33,11 +52,14 @@ class BookContextRepository(
         val existing = if (force) null else profileFor(book)
         if (existing != null) return existing
 
-        val translator = chooseTranslator()
         val profile = withContext(Dispatchers.IO) {
             val chapters = ChapterTextExtractor().extract(book)
-            translator.buildBookContext(book.title, chapters)
-                .copy(bookId = book.id, bookTitle = book.title)
+            if (chapters.isEmpty()) {
+                BookContextProfile(bookId = book.id, bookTitle = book.title)
+            } else {
+                buildContextProfile(chooseTranslator(), book.title, chapters)
+                    .copy(bookId = book.id, bookTitle = book.title)
+            }
         }
 
         mutex.withLock {
@@ -59,7 +81,18 @@ class BookContextRepository(
         request: AiLookupRequest
     ): AiLookupResult? {
         val profile = profileFor(book) ?: return null
-        return chooseTranslator().translate(profile, request)
+        val settings = settingsStore.load()
+        val translator = if (profile.source == "deepseek" && settings.remoteReady) {
+            DeepSeekTranslator(settings)
+        } else {
+            LocalGlossaryTranslator()
+        }
+        return try {
+            translator.translate(profile, request)
+        } catch (failure: Throwable) {
+            if (failure is CancellationException || translator.offline) throw failure
+            LocalGlossaryTranslator().translate(profile, request)
+        }
     }
 
     fun delete(bookId: String) {

@@ -63,6 +63,29 @@ data class TtsChapter(
     }
 
     /**
+     * Block index, character offset and length of the flat [sentenceIndex]-th
+     * sentence. Highlighting by this location (instead of searching the text)
+     * keeps repeated sentences pointing at the occurrence actually being read.
+     */
+    fun sentenceLocation(sentenceIndex: Int): Triple<Int, Int, Int>? {
+        var remaining = sentenceIndex.coerceAtLeast(0)
+        for ((blockIndex, blockSentences) in sentencesByBlock.withIndex()) {
+            if (remaining < blockSentences.size) {
+                val sentence = blockSentences[remaining]
+                var cursor = 0
+                for (i in 0..remaining) {
+                    val found = blocks[blockIndex].indexOf(sentence, cursor)
+                    if (found < 0) return null
+                    if (i == remaining) return Triple(blockIndex, found, sentence.length)
+                    cursor = found + sentence.length
+                }
+            }
+            remaining -= blockSentences.size
+        }
+        return null
+    }
+
+    /**
      * Finds the leaf block the tapped paragraph belongs to and rebases the
      * tapped offset onto that block. Exact leaf match is preferred; when the
      * tapped text is an ancestor containing several leaves (selector drift or

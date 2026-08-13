@@ -26,6 +26,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +46,8 @@ import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.CloudVoicePicker
 import com.linguareader.app.tts.CloudVoiceStore
 import com.linguareader.app.tts.OpenAiCompatTtsBackend
+import com.linguareader.app.tts.SystemTtsVoices
+import com.linguareader.app.tts.SystemVoiceInfo
 import com.linguareader.app.tts.TtsEngineMode
 import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.VolcanoTtsBackend
@@ -59,8 +62,24 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var settings by remember { mutableStateOf(CloudTtsSettings.load(context)) }
     var voices by remember { mutableStateOf(CloudVoiceStore.load(context)) }
+    var systemVoices by remember { mutableStateOf<List<SystemVoiceInfo>>(emptyList()) }
+    var systemVoicesLoaded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+
+    fun loadSystemVoices(refresh: Boolean = false) {
+        if (systemVoicesLoaded && !refresh) return
+        status = null
+        SystemTtsVoices.load(context) { list ->
+            systemVoices = list
+            systemVoicesLoaded = true
+            status = if (list.isEmpty()) {
+                "未找到可用的系统音色，将使用系统默认"
+            } else {
+                "已获取 ${list.size} 个系统音色"
+            }
+        }
+    }
 
     fun fetchAzureVoices() {
         if (settings.region.isBlank() || settings.apiKey.isBlank()) {
@@ -152,6 +171,11 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
         onDismiss()
     }
 
+    LaunchedEffect(settings.mode) {
+        status = null
+        if (settings.mode == TtsEngineMode.SYSTEM) loadSystemVoices()
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
         Column(
             Modifier
@@ -188,6 +212,51 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                     selected = settings.mode == TtsEngineMode.OPENAI_COMPAT,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.OPENAI_COMPAT) }
                 )
+            }
+
+            if (settings.mode == TtsEngineMode.SYSTEM) {
+                Spacer(Modifier.height(16.dp))
+                Text("系统音色", style = MaterialTheme.typography.labelLarge, color = InkSoft)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "选择手机系统 TTS 引擎中的音色；不选则跟随系统默认。" +
+                        "中文和英文可分别指定。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkFaint
+                )
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = { loadSystemVoices(refresh = true) }) {
+                    Text(if (systemVoices.isEmpty()) "加载音色" else "刷新音色")
+                }
+                status?.let {
+                    Text(
+                        it,
+                        color = if (it.startsWith("已获取")) Success else InkFaint,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                if (systemVoices.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    SystemVoiceDropdown(
+                        label = "中文音色",
+                        voices = systemVoices.filter { it.isChinese },
+                        selected = settings.systemZhVoice,
+                        onSelect = { settings = settings.copy(systemZhVoice = it) }
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    SystemVoiceDropdown(
+                        label = "英文音色",
+                        voices = systemVoices.filter { it.isEnglish },
+                        selected = settings.systemEnVoice,
+                        onSelect = { settings = settings.copy(systemEnVoice = it) }
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "需要联网下载的音色会标记（网络）。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkFaint
+                    )
+                }
             }
 
             if (settings.mode == TtsEngineMode.AZURE) {
@@ -552,6 +621,54 @@ private fun VoiceDropdown(
                         },
                         onClick = {
                             onSelect(voice.shortName)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SystemVoiceDropdown(
+    label: String,
+    voices: List<SystemVoiceInfo>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = InkSoft)
+        Box(Modifier.fillMaxWidth()) {
+            TextButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    voices.firstOrNull { it.name == selected }?.displayName()
+                        ?: "跟随系统默认",
+                    modifier = Modifier.weight(1f),
+                    color = Ink
+                )
+                Text("▾", color = InkSoft)
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("跟随系统默认") },
+                    onClick = {
+                        onSelect("")
+                        expanded = false
+                    }
+                )
+                voices.forEach { voice ->
+                    DropdownMenuItem(
+                        text = { Text(voice.displayName()) },
+                        onClick = {
+                            onSelect(voice.name)
                             expanded = false
                         }
                     )

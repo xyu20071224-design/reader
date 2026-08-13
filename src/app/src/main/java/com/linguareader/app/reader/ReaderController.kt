@@ -59,11 +59,20 @@ class ReaderController {
         )
     }
 
-    /** Highlights [text] in the current chapter and scrolls it into view. */
+    /** Fallback: highlights the first text occurrence in the current chapter. */
     fun highlightSentence(text: String) {
         val encoded = JSONObject.quote(text)
         webView.get()?.evaluateJavascript(
             "window.lrHighlightSentence && window.lrHighlightSentence($encoded)",
+            null
+        )
+    }
+
+    /** Highlights the exact sentence at [blockIndex]/[offset] (see TtsChapter). */
+    fun highlightBlock(blockIndex: Int, offset: Int, length: Int) {
+        if (blockIndex < 0 || length <= 0) return
+        webView.get()?.evaluateJavascript(
+            "window.lrHighlightBlock && window.lrHighlightBlock($blockIndex, $offset, $length)",
             null
         )
     }

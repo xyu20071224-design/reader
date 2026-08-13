@@ -43,7 +43,9 @@ data class BookContextProfile(
     val characters: List<ContextTerm> = emptyList(),
     val places: List<ContextTerm> = emptyList(),
     val glossary: List<ContextTerm> = emptyList(),
-    val styleNotes: List<String> = emptyList()
+    val styleNotes: List<String> = emptyList(),
+    /** Backend that produced this profile ("deepseek" or "local"). */
+    val source: String = "local"
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("bookId", bookId)
@@ -53,6 +55,7 @@ data class BookContextProfile(
         .put("places", JSONArray().apply { places.forEach { put(it.toJson()) } })
         .put("glossary", JSONArray().apply { glossary.forEach { put(it.toJson()) } })
         .put("styleNotes", JSONArray().apply { styleNotes.forEach { put(it) } })
+        .put("source", source)
 
     companion object {
         fun fromJson(json: JSONObject): BookContextProfile {
@@ -73,7 +76,8 @@ data class BookContextProfile(
                 characters = terms("characters"),
                 places = terms("places"),
                 glossary = terms("glossary"),
-                styleNotes = strings("styleNotes")
+                styleNotes = strings("styleNotes"),
+                source = json.optString("source", "local")
             )
         }
     }

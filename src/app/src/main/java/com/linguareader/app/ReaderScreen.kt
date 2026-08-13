@@ -91,12 +91,30 @@ import com.linguareader.app.data.WordLookup
 import com.linguareader.app.reader.EpubPage
 import com.linguareader.app.reader.ReaderController
 import com.linguareader.app.tts.TtsPlaybackController
+import com.linguareader.app.tts.TtsPlaybackState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
+
+/**
+ * Highlights the sentence the player is currently speaking. Prefers the exact
+ * block/offset location published by the service so repeated sentences never
+ * highlight the first occurrence; text search stays as a fallback.
+ */
+private fun highlightCurrentTts(controller: ReaderController, ttsState: TtsPlaybackState) {
+    if (ttsState.highlightBlockIndex >= 0 && ttsState.highlightLength > 0) {
+        controller.highlightBlock(
+            ttsState.highlightBlockIndex,
+            ttsState.highlightOffset,
+            ttsState.highlightLength
+        )
+    } else if (ttsState.currentSentence.isNotBlank()) {
+        controller.highlightSentence(ttsState.currentSentence)
+    }
+}
 
 @Composable
 internal fun ReaderScreen(
@@ -316,12 +334,14 @@ internal fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(ttsState.currentSentence, ttsState.chapterIndex, chapterIndex) {
-        if (ttsForThisBook &&
-            ttsState.chapterIndex == chapterIndex &&
-            ttsState.currentSentence.isNotBlank()
-        ) {
-            controller.highlightSentence(ttsState.currentSentence)
+    LaunchedEffect(
+        ttsState.highlightBlockIndex,
+        ttsState.highlightOffset,
+        ttsState.chapterIndex,
+        chapterIndex
+    ) {
+        if (ttsForThisBook && ttsState.chapterIndex == chapterIndex) {
+            highlightCurrentTts(controller, ttsState)
         }
     }
 
@@ -377,11 +397,8 @@ internal fun ReaderScreen(
                     needsSave = true
                     TtsPlaybackController.onReaderChapterLoaded(book.id, chapterIndex)
                     controller.setChoosingStart(choosingStart)
-                    if (ttsForThisBook &&
-                        ttsState.chapterIndex == chapterIndex &&
-                        ttsState.currentSentence.isNotBlank()
-                    ) {
-                        controller.highlightSentence(ttsState.currentSentence)
+                    if (ttsForThisBook && ttsState.chapterIndex == chapterIndex) {
+                        highlightCurrentTts(controller, ttsState)
                     }
                 },
                 onPageChanged = { page, count ->

@@ -14,11 +14,23 @@ class AiModelsTest {
             characters = listOf(ContextTerm("Harry Potter", "哈利·波特", "主角")),
             places = listOf(ContextTerm("Hogwarts", "霍格沃茨", "魔法学校")),
             glossary = listOf(ContextTerm("wand", "魔杖", "反复出现")),
-            styleNotes = listOf("口语化叙述")
+            styleNotes = listOf("口语化叙述"),
+            source = "deepseek"
         )
 
         val restored = BookContextProfile.fromJson(JSONObject(profile.toJson().toString()))
 
         assertEquals(profile, restored)
+    }
+
+    @Test
+    fun `profile json without source defaults to local`() {
+        val restored = BookContextProfile.fromJson(
+            JSONObject()
+                .put("bookId", "book-1")
+                .put("bookTitle", "Test Book")
+        )
+
+        assertEquals("local", restored.source)
     }
 }

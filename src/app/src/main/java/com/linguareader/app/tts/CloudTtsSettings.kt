@@ -11,7 +11,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Optional cloud TTS configuration (F-151).
+ * TTS engine settings (cloud TTS configuration F-151 plus system voice
+ * preferences).
  *
  * Cloud credentials (Azure API key, self-hosted token, Volcano API key /
  * access token) are encrypted with an AES-GCM key kept in the Android
@@ -32,6 +33,8 @@ data class CloudTtsSettings(
     val zhVoice: String = "",
     val multilingualVoice: String = "",
     val useMultilingual: Boolean = true,
+    val systemZhVoice: String = "",
+    val systemEnVoice: String = "",
     val serverUrl: String = "",
     val serverModel: String = "tts-1",
     val serverToken: String = "",
@@ -68,6 +71,8 @@ data class CloudTtsSettings(
         private const val KEY_ZH_VOICE = "zh_voice"
         private const val KEY_MULTILINGUAL_VOICE = "multilingual_voice"
         private const val KEY_USE_MULTILINGUAL = "use_multilingual"
+        private const val KEY_SYSTEM_ZH_VOICE = "system_zh_voice"
+        private const val KEY_SYSTEM_EN_VOICE = "system_en_voice"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_SERVER_MODEL = "server_model"
         private const val KEY_SERVER_TOKEN = "server_token"
@@ -91,6 +96,8 @@ data class CloudTtsSettings(
                 zhVoice = prefs.getString(KEY_ZH_VOICE, "").orEmpty(),
                 multilingualVoice = prefs.getString(KEY_MULTILINGUAL_VOICE, "").orEmpty(),
                 useMultilingual = prefs.getBoolean(KEY_USE_MULTILINGUAL, true),
+                systemZhVoice = prefs.getString(KEY_SYSTEM_ZH_VOICE, "").orEmpty(),
+                systemEnVoice = prefs.getString(KEY_SYSTEM_EN_VOICE, "").orEmpty(),
                 serverUrl = prefs.getString(KEY_SERVER_URL, "").orEmpty(),
                 serverModel = prefs.getString(KEY_SERVER_MODEL, "tts-1").orEmpty().ifBlank { "tts-1" },
                 serverToken = CloudKeyStore.decrypt(context, prefs.getString(KEY_SERVER_TOKEN, null)).orEmpty(),
@@ -121,6 +128,8 @@ data class CloudTtsSettings(
                 .putString(KEY_ZH_VOICE, settings.zhVoice)
                 .putString(KEY_MULTILINGUAL_VOICE, settings.multilingualVoice)
                 .putBoolean(KEY_USE_MULTILINGUAL, settings.useMultilingual)
+                .putString(KEY_SYSTEM_ZH_VOICE, settings.systemZhVoice)
+                .putString(KEY_SYSTEM_EN_VOICE, settings.systemEnVoice)
                 .putString(KEY_SERVER_URL, settings.serverUrl.trim())
                 .putString(KEY_SERVER_MODEL, settings.serverModel.ifBlank { "tts-1" })
                 .putString(KEY_SERVER_TOKEN, encryptedToken)

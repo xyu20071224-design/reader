@@ -385,7 +385,7 @@ object ReaderScripts {
             }
           };
 
-          function textAtPoint(clientX, clientY) {
+          function textAtPoint(clientX, clientY, allowAnyText) {
             let range = null;
             if (document.caretRangeFromPoint) {
               range = document.caretRangeFromPoint(clientX, clientY);
@@ -402,18 +402,24 @@ object ReaderScripts {
             let offset = clamp(range.startOffset, 0, Math.max(0, text.length - 1));
             const wordChar = /[A-Za-zÀ-ÖØ-öø-ÿ.'’\-]/;
             if (!wordChar.test(text.charAt(offset)) && offset > 0 && wordChar.test(text.charAt(offset - 1))) offset -= 1;
-            if (!wordChar.test(text.charAt(offset))) return null;
+            if (!wordChar.test(text.charAt(offset)) && !allowAnyText) return null;
 
             let start = offset;
             let end = offset + 1;
-            while (start > 0 && wordChar.test(text.charAt(start - 1))) start -= 1;
-            while (end < text.length && wordChar.test(text.charAt(end))) end += 1;
-            let word = text.slice(start, end).replace(/^[-'’.]+|[-'’]+$/g, '');
-            if (word.endsWith('.') && !/^(?:[A-Za-z]\.){2,}$/.test(word)) {
-              word = word.slice(0, -1);
-              end -= 1;
+            let word = '';
+            if (wordChar.test(text.charAt(offset))) {
+              while (start > 0 && wordChar.test(text.charAt(start - 1))) start -= 1;
+              while (end < text.length && wordChar.test(text.charAt(end))) end += 1;
+              word = text.slice(start, end).replace(/^[-'’.]+|[-'’]+$/g, '');
+              if (word.endsWith('.') && !/^(?:[A-Za-z]\.){2,}$/.test(word)) {
+                word = word.slice(0, -1);
+                end -= 1;
+              }
+              if (!word || !/[A-Za-z]/.test(word)) {
+                if (!allowAnyText) return null;
+                word = '';
+              }
             }
-            if (!word || !/[A-Za-z]/.test(word)) return null;
 
             const element = range.startContainer.parentElement;
             // Must use the same selector as ttsBlocks()/the Kotlin extractor:
@@ -604,7 +610,7 @@ object ReaderScripts {
               : null;
             if (target) return;
             const ratio = event.clientX / window.innerWidth;
-            const result = textAtPoint(event.clientX, event.clientY);
+            const result = textAtPoint(event.clientX, event.clientY, !!window.__lrChoosingStart);
             // Only while "choose start point" is enabled does a text tap start
             // playback from the tapped sentence. The flag is consumed by the
             // first tap, so normal playback taps keep doing word lookup.
@@ -806,23 +812,7 @@ object ReaderScripts {
 
           window.lrClearHighlight = clearTtsOverlay;
 
-          window.lrHighlightSentence = function(text) {
-            clearTtsOverlay();
-            const blocks = ttsBlocks();
-            const globalText = blocks.map(function(block) { return block.text; }).join('\n');
-            const index = globalText.indexOf(text);
-            if (index < 0) return;
-            let cursor = 0;
-            let target = null;
-            for (const block of blocks) {
-              if (index < cursor + block.text.length) {
-                target = block;
-                break;
-              }
-              cursor += block.text.length + 1;
-            }
-            if (!target) return;
-            const range = rangeFromNormalizedOffset(target.el, index - cursor, text.length);
+          function showTtsHighlight(range) {
             if (!range || range.collapsed) return;
             const overlay = document.createElement('div');
             overlay.id = 'lr-tts-overlay';
@@ -842,8 +832,35 @@ object ReaderScripts {
                 'pointer-events:none;';
               overlay.appendChild(box);
             }
+          }
+
+          window.lrHighlightSentence = function(text) {
+            clearTtsOverlay();
+            const blocks = ttsBlocks();
+            const globalText = blocks.map(function(block) { return block.text; }).join('\n');
+            const index = globalText.indexOf(text);
+            if (index < 0) return;
+            let cursor = 0;
+            let target = null;
+            for (const block of blocks) {
+              if (index < cursor + block.text.length) {
+                target = block;
+                break;
+              }
+              cursor += block.text.length + 1;
+            }
+            if (!target) return;
+            showTtsHighlight(rangeFromNormalizedOffset(target.el, index - cursor, text.length));
             // The highlight only repositions itself; the reader page is never
             // force-scrolled, so a manual page turn is not yanked back.
+          };
+
+          window.lrHighlightBlock = function(blockIndex, offset, length) {
+            clearTtsOverlay();
+            const blocks = ttsBlocks();
+            const target = blocks[Number(blockIndex)];
+            if (!target || Number(length) <= 0) return;
+            showTtsHighlight(rangeFromNormalizedOffset(target.el, Number(offset), Number(length)));
           };
 
           window.lrFirstVisibleBlock = function() {

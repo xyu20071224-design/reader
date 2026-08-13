@@ -161,7 +161,13 @@ class TtsPlaybackService : Service() {
     }
 
     private fun startPlayback(newBook: Book, requestedChapter: Int, requestedSentence: Int) {
+        // Starting a session for another book must interrupt the previous
+        // book's audio and drop its chapter/extraction state.
+        val switchedBook = book?.id != newBook.id
+        synthesizer?.stop()
+        if (switchedBook) extractor.clear()
         book = newBook
+        chapter = null
         chapterIndex = requestedChapter.coerceIn(0, newBook.chapters.lastIndex.coerceAtLeast(0))
         sentenceIndex = requestedSentence.coerceAtLeast(0)
         preparedChapterKey = null
@@ -193,7 +199,12 @@ class TtsPlaybackService : Service() {
      * start; that tap calls [startFromBlockOffset] which starts real playback.
      */
     private fun startStandby(newBook: Book, requestedChapter: Int) {
+        val switchedBook = book?.id != newBook.id
+        synthesizer?.stop()
+        if (switchedBook) extractor.clear()
         book = newBook
+        chapter = null
+        consecutiveErrors = 0
         chapterIndex = requestedChapter.coerceIn(0, newBook.chapters.lastIndex.coerceAtLeast(0))
         sentenceIndex = if (newBook.ttsChapterIndex == chapterIndex) {
             newBook.ttsSentenceIndex.coerceAtLeast(0)
@@ -241,6 +252,7 @@ class TtsPlaybackService : Service() {
     private fun nextSentence() {
         if (book == null) return
         playing = true
+        synthesizer?.stop()
         sentenceIndex++
         loadAndSpeakCurrent()
     }
@@ -248,6 +260,7 @@ class TtsPlaybackService : Service() {
     private fun previousSentence() {
         val currentBook = book ?: return
         playing = true
+        synthesizer?.stop()
         if (sentenceIndex > 0) {
             sentenceIndex--
             loadAndSpeakCurrent()
@@ -468,6 +481,15 @@ class TtsPlaybackService : Service() {
                 // app is backgrounded the book must keep playing anyway, so a
                 // short grace period lets playback continue without a WebView.
                 val loaded = withTimeoutOrNull(2_000) { deferred.await() }
+                // A newer handshake may have replaced this waiter while it was
+                // pending; only the current waiter may clear the slot or speak,
+                // otherwise a stale sentence is spoken with the new sentence's
+                // utterance id (duplicate audio and queue jumps).
+                if (chapterReadyDeferred !== deferred) return@launch
+                // The session may have moved on while this waiter was pending
+                // (chapter switch or another book); the captured sentence is
+                // no longer the one that should be spoken.
+                if (chapter !== currentChapter) return@launch
                 chapterReadyDeferred = null
                 when {
                     loaded == chapterIndex && playing -> speakNow(text)
@@ -488,8 +510,8 @@ class TtsPlaybackService : Service() {
 
     private fun speakNow(text: String) {
         val currentBook = book ?: return
-        consecutiveErrors = 0
         val utteranceId = utteranceIdFor(chapterIndex, sentenceIndex)
+        val location = chapter?.sentenceLocation(sentenceIndex)
         _state.update {
             it.copy(
                 bookId = currentBook.id,
@@ -498,6 +520,9 @@ class TtsPlaybackService : Service() {
                 sentenceIndex = sentenceIndex,
                 sentenceCount = chapter?.sentenceCount ?: it.sentenceCount,
                 currentSentence = text,
+                highlightBlockIndex = location?.first ?: -1,
+                highlightOffset = location?.second ?: 0,
+                highlightLength = location?.third ?: 0,
                 isPlaying = true
             )
         }
@@ -526,6 +551,10 @@ class TtsPlaybackService : Service() {
 
     private fun handleUtteranceStart(utteranceId: String) {
         if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex)) {
+            // Only a successful start clears the error streak; resetting in
+            // speakNow (before the engine reports back) makes the consecutive
+            // error guard below unreachable.
+            consecutiveErrors = 0
             _state.update { it.copy(isPlaying = true) }
         }
     }
@@ -554,7 +583,6 @@ class TtsPlaybackService : Service() {
         if (book?.id != bookId) return
         lastLoadedChapter = loadedChapter
         chapterReadyDeferred?.complete(loadedChapter)
-        chapterReadyDeferred = null
     }
 
     /** Called when the user manually picks a chapter while playback is active. */
@@ -596,7 +624,10 @@ class TtsPlaybackService : Service() {
             val target = loadedChapter.firstSentenceIndexInBlock(blockText) ?: return@launch
             if (target == sentenceIndex) return@launch
             sentenceIndex = target
-            if (playing) speakCurrent()
+            if (playing) {
+                synthesizer?.stop()
+                speakCurrent()
+            }
         }
     }
 

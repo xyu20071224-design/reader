@@ -558,7 +558,7 @@ private fun BookCard(
                 aiStatus == null -> "AI 语境：待生成"
                 aiStatus.generating -> "AI 语境：生成中…"
                 aiStatus.ready -> "AI 语境：就绪"
-                else -> "AI 语境：生成失败"
+                else -> aiStatus.error?.let { "AI 语境：$it" } ?: "AI 语境：生成失败"
             }
             Text(
                 statusLabel,

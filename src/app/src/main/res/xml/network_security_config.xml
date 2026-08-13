@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The self-hosted OpenAI-compatible TTS backend can point at a LAN server
+  (Fish Speech / GPT-SoVITS) that commonly serves plain HTTP, so cleartext is
+  permitted app-wide. If you later want to lock this down, replace the
+  base-config with per-domain <domain-config> entries.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

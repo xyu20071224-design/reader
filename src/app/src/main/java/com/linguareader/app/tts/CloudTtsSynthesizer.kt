@@ -162,6 +162,14 @@ class CloudTtsSynthesizer(
         }
         if (file.exists() && file.length() > 0) return true
         if (chapterFailed || shutdown) return false
+        // Chapter preparation may simply be slower than the first-sentence
+        // deadline (long sentences, slow self-hosted servers). Waiting for the
+        // in-flight preparation avoids synthesizing the same sentence twice.
+        while (!file.exists() && prepareJob?.isActive == true && !shutdown && !chapterFailed) {
+            delay(100)
+        }
+        if (file.exists() && file.length() > 0) return true
+        if (chapterFailed || shutdown) return false
         return backend.synthesize(text, voice, file).isSuccess
     }
 

@@ -71,7 +71,8 @@ class LocalGlossaryTranslator : AiTranslator {
             summary = "本地轻量语境档案：由词频统计生成，仅提供本书反复出现的专名/术语一致性提示，不做语义推断。",
             characters = terms.take(30),
             glossary = terms.drop(30),
-            styleNotes = emptyList()
+            styleNotes = emptyList(),
+            source = "local"
         )
     }
 

@@ -69,6 +69,14 @@
 - `testDebugUnitTest`：通过（113 个），ReaderScriptsTest 断言“选择起点标志首次点击即消费”。
 - `lintDebug`：通过，0 错误；`assembleDebug`：通过。
 
+## 2026-08-12 F-150 选择起点从本章开头播放（增量验证）
+
+- 根因：JS `textAtPoint` 的 `closest` 选择器漏掉 `section/article/pre/h5/h6` 等叶子块；书内用这些标签作段落时，点词传回的段落文本在 Kotlin `TtsChapter` 中匹配不到，`sentenceIndexAt` 返回 null 并回退第 0 句。
+- 修复：[ReaderScripts.kt](src/app/src/main/java/com/linguareader/app/reader/ReaderScripts.kt) 的 `textAtPoint` 改用与 `ttsBlocks()`/`TtsTextExtractor` 相同的 `TTS_BLOCK_SELECTOR`；[TtsTextExtractor.kt](src/app/src/main/java/com/linguareader/app/tts/TtsTextExtractor.kt) 的 `locateBlock` 增加“祖先段落包含多个叶子块时按点击偏移命中最长叶子并重定位偏移”的回退。
+- `testDebugUnitTest`：通过（127 个），新增 `TtsTextExtractorTest.sentenceIndexAtRebasesOffsetFromAncestorParagraph` 与 `ReaderScriptsTest.tapToStartUsesSameBlockSelectorAsTtsExtractor`。
+- `lintDebug`：通过，0 错误；`assembleDebug`：通过。
+- 说明：本次工作区与另一会话的 AI/系统语音改动并存，文档记录为增量追加；仪器测试沿用既有 32/32 基线（冷启动偶发 1–2 条 ReaderAcceptanceTest 超时，单跑通过）。
+
 # Validation report
 
 Validated on 2026-07-30 with an Android 15 / API 35 ARM64 Pixel 6 emulator.

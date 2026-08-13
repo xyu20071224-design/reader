@@ -205,7 +205,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             setAiStatus(book.id, AiBookStatus(generating = true))
             runCatching { aiRepository.generate(book) }
                 .onSuccess { profile ->
-                    glossaryRepository.importFromProfile(book.id, profile)
+                    runCatching { glossaryRepository.importFromProfile(book.id, profile) }
                     setAiStatus(book.id, AiBookStatus(ready = true))
                 }
                 .onFailure {
@@ -224,7 +224,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             setAiStatus(book.id, AiBookStatus(generating = true))
             runCatching { aiRepository.generate(book, force = true) }
                 .onSuccess { profile ->
-                    glossaryRepository.importFromProfile(book.id, profile)
+                    runCatching { glossaryRepository.importFromProfile(book.id, profile) }
                     setAiStatus(book.id, AiBookStatus(ready = true))
                 }
                 .onFailure {

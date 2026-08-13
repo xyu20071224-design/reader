@@ -24,7 +24,9 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
         bookTitle: String,
         chapters: List<ChapterText>
     ): BookContextProfile {
-        if (chapters.isEmpty()) return BookContextProfile(bookId = "", bookTitle = bookTitle)
+        if (chapters.isEmpty()) {
+            return BookContextProfile(bookId = "", bookTitle = bookTitle, source = "deepseek")
+        }
         val segments = chapterSegments(chapters)
         val partials = segments.map { segment ->
             val answer = chat(
@@ -189,7 +191,8 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
             characters = mergeTerms(partials.map { it.characters }),
             places = mergeTerms(partials.map { it.places }),
             glossary = mergeTerms(partials.map { it.glossary }),
-            styleNotes = styleNotes.take(16)
+            styleNotes = styleNotes.take(16),
+            source = "deepseek"
         )
     }
 
@@ -249,6 +252,18 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
         user: String,
         jsonMode: Boolean
     ): JSONObject = withContext(Dispatchers.IO) {
+        val first = runCatching { request(system, user, jsonMode) }
+        first.getOrElse { error ->
+            if (!jsonMode || !shouldRetryWithoutJsonMode(error)) throw error
+            request(system, user, jsonMode = false)
+        }
+    }
+
+    private fun request(
+        system: String,
+        user: String,
+        jsonMode: Boolean
+    ): JSONObject {
         val url = URL(settings.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = url.openConnection() as HttpURLConnection
         try {
@@ -280,12 +295,16 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
             if (code !in 200..299) {
                 throw AiRequestException("DeepSeek API 返回 HTTP $code：${text.take(300)}")
             }
-            val root = JSONObject(text)
-            val content = root.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-            parseJsonObject(content)
+            val content = try {
+                JSONObject(text)
+                    .getJSONArray("choices")
+                    .getJSONObject(0)
+                    .getJSONObject("message")
+                    .getString("content")
+            } catch (error: Exception) {
+                throw AiRequestException("AI 返回了无法解析的 JSON：${text.take(200)}")
+            }
+            return parseJsonObject(content)
         } finally {
             connection.disconnect()
         }
@@ -304,6 +323,18 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
     }
 
     companion object {
+        /**
+         * Some OpenAI-compatible endpoints (and some DeepSeek models) reject
+         * `response_format={"type":"json_object"}` with a 400/422. Retrying
+         * without it keeps the feature working; the prompt and parser still
+         * recover a JSON object from the reply.
+         */
+        internal fun shouldRetryWithoutJsonMode(error: Throwable): Boolean =
+            error is AiRequestException && (
+                error.message?.contains("response_format", ignoreCase = true) == true ||
+                    error.message?.contains("无法解析的 JSON", ignoreCase = true) == true
+                )
+
         private const val CONTEXT_SYSTEM_PROMPT =
             "你是一个英语阅读辅助工具。阅读用户提供的英文书籍章节，提取翻译语境信息。" +
                 "只输出 JSON 对象，不要输出其他内容。JSON 结构：{\"summary\":\"全书/本节剧情与主题概述（中文，2-4句）\"," +

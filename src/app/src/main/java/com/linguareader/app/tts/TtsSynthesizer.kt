@@ -3,6 +3,7 @@ package com.linguareader.app.tts
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import java.util.Locale
 
 /**
@@ -32,18 +33,27 @@ interface TtsSynthesizerListener {
     fun onError(utteranceId: String)
 }
 
-/** Android system TTS implementation, with per-utterance language detection. */
+/**
+ * Android system TTS implementation, with per-utterance language detection
+ * and optional per-language voices picked by the user.
+ */
 class SystemTtsSynthesizer(
     context: Context,
-    private val listener: TtsSynthesizerListener
+    private val listener: TtsSynthesizerListener,
+    private val zhVoice: String = "",
+    private val enVoice: String = ""
 ) : TtsSynthesizer {
     private var ready = false
     private lateinit var tts: TextToSpeech
+    private val voicesByName = mutableMapOf<String, Voice>()
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ready = true
+                runCatching { tts.voices }
+                    .getOrDefault(emptySet())
+                    .forEach { voicesByName[it.name] = it }
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
                         utteranceId?.let(listener::onStart)
@@ -79,7 +89,12 @@ class SystemTtsSynthesizer(
 
     override fun speak(text: String, rate: Float, utteranceId: String) {
         if (text.isBlank()) return
-        tts.language = localeFor(text)
+        val locale = localeFor(text)
+        val configured = if (locale == Locale.CHINA) zhVoice else enVoice
+        val voice = configured.takeIf { it.isNotBlank() }?.let { voicesByName[it] }
+        if (voice == null || tts.setVoice(voice) != TextToSpeech.SUCCESS) {
+            tts.language = locale
+        }
         tts.setSpeechRate(rate.coerceIn(0.5f, 2f))
         tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
@@ -122,7 +137,12 @@ object TtsSynthesizerFactory {
             settings.mode == TtsEngineMode.VOLC && settings.isConfigured ->
                 CloudTtsSynthesizer(context, VolcanoTtsBackend(settings), listener)
 
-            else -> SystemTtsSynthesizer(context, listener)
+            else -> SystemTtsSynthesizer(
+                context,
+                listener,
+                zhVoice = settings.systemZhVoice,
+                enVoice = settings.systemEnVoice
+            )
         }
     }
 }

@@ -13,7 +13,11 @@ data class TtsPlaybackState(
     val engineLabel: String = "系统语音",
     val isPreparing: Boolean = false,
     val preparedCount: Int = 0,
-    val preparedTotal: Int = 0
+    val preparedTotal: Int = 0,
+    /** Exact DOM location of the sentence being read (-1 = not available). */
+    val highlightBlockIndex: Int = -1,
+    val highlightOffset: Int = 0,
+    val highlightLength: Int = 0
 ) {
     val isActive: Boolean get() = bookId != null
 }
