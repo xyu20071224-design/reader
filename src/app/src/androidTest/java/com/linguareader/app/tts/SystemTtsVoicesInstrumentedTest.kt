@@ -61,4 +61,44 @@ class SystemTtsVoicesInstrumentedTest {
         // still finish with a non-null (possibly empty) list — asserted above
         // by the timeout + orEmpty, and it must never crash.
     }
+
+    @Test
+    fun selectedVoicesAreApplicableViaSetVoice() {
+        // The real question behind "is the feature usable": can the voices the
+        // UI surfaces actually be applied via `setVoice`? This mirrors what
+        // `SystemTtsSynthesizer.speak` does with the user's saved zh/en voice.
+        val loadLatch = CountDownLatch(1)
+        var voices: List<SystemVoiceInfo> = emptyList()
+        SystemTtsVoices.load(context) { voices = it; loadLatch.countDown() }
+        assertTrue("voice list timed out", loadLatch.await(15, TimeUnit.SECONDS))
+
+        val zh = voices.firstOrNull { it.isChinese && !it.isNetwork }
+        val en = voices.firstOrNull { it.isEnglish && !it.isNetwork }
+        assertTrue("no local Chinese voice on device", zh != null)
+        assertTrue("no local English voice on device", en != null)
+
+        val ttsLatch = CountDownLatch(1)
+        lateinit var tts: TextToSpeech
+        var initOk = false
+        var zhSetOk = false
+        var enSetOk = false
+        tts = TextToSpeech(context) { status ->
+            initOk = status == TextToSpeech.SUCCESS
+            if (initOk) {
+                val all = tts.voices.orEmpty()
+                zhSetOk = all.any { it.name == zh!!.name } &&
+                    tts.setVoice(all.first { it.name == zh!!.name }) == TextToSpeech.SUCCESS
+                enSetOk = all.any { it.name == en!!.name } &&
+                    tts.setVoice(all.first { it.name == en!!.name }) == TextToSpeech.SUCCESS
+            }
+            ttsLatch.countDown()
+        }
+        assertTrue("TTS init timed out", ttsLatch.await(10, TimeUnit.SECONDS))
+        runCatching { tts.shutdown() }
+
+        println("initOk=$initOk zh=${zh!!.name} setOk=$zhSetOk en=${en!!.name} setOk=$enSetOk")
+        assertTrue("TTS init should succeed", initOk)
+        assertTrue("selected Chinese voice (${zh!!.name}) should be settable", zhSetOk)
+        assertTrue("selected English voice (${en!!.name}) should be settable", enSetOk)
+    }
 }

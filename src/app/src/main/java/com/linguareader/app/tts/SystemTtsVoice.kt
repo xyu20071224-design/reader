@@ -18,12 +18,24 @@ data class SystemVoiceInfo(
     val isNetwork: Boolean = false
 ) {
     val language: String get() = locale.language.lowercase()
-    val isChinese: Boolean get() = language == "zh"
-    val isEnglish: Boolean get() = language == "en"
+    // Domestic TTS engines often report ISO 639-3 codes (cmn = Mandarin,
+    // yue = Cantonese, etc.) instead of the ISO 639-1 zh/en codes, so a plain
+    // `language == "zh"` check would filter every voice out and leave the
+    // dropdowns with only "跟随系统默认".
+    val isChinese: Boolean get() = language in CHINESE_LANGUAGE_CODES
+    val isEnglish: Boolean get() = language in ENGLISH_LANGUAGE_CODES
 
     fun displayName(): String {
         val networkMark = if (isNetwork) "（网络）" else ""
         return "${locale.displayName} · $name$networkMark"
+    }
+
+    companion object {
+        private val CHINESE_LANGUAGE_CODES = setOf(
+            "zh", "cmn", "yue", "hak", "wuu", "nan",
+            "cjy", "cpx", "gan", "hsn", "lzh", "czh", "czo", "mnp"
+        )
+        private val ENGLISH_LANGUAGE_CODES = setOf("en", "eng")
     }
 }
 

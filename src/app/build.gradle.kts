@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.linguareader.app"
     compileSdk = 35
+    ndkVersion = "26.3.11579264"
 
     defaultConfig {
         applicationId = "com.linguareader.app"
@@ -16,6 +17,26 @@ android {
         versionName = "1.3.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+            }
+        }
+
+        ndk {
+            // arm64 + armeabi-v7a cover real devices; x86_64 covers the
+            // emulator so the native lib runs natively instead of via arm64
+            // translation (which SIGILLs under OpenMP).
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/jni/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildFeatures {

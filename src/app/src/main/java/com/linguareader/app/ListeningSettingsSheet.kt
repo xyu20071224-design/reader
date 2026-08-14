@@ -195,22 +195,39 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                 )
                 Spacer(Modifier.weight(1f))
                 EngineChoice(
+                    label = "本地 Piper",
+                    selected = settings.mode == TtsEngineMode.PIPER,
+                    onSelect = { settings = settings.copy(mode = TtsEngineMode.PIPER) }
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EngineChoice(
                     label = "Azure 云 TTS",
                     selected = settings.mode == TtsEngineMode.AZURE,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.AZURE) }
                 )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.weight(1f))
                 EngineChoice(
                     label = "火山引擎（豆包语音）",
                     selected = settings.mode == TtsEngineMode.VOLC,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.VOLC) }
                 )
-                Spacer(Modifier.weight(1f))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 EngineChoice(
                     label = "自建服务器（OpenAI 兼容）",
                     selected = settings.mode == TtsEngineMode.OPENAI_COMPAT,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.OPENAI_COMPAT) }
+                )
+            }
+
+            if (settings.mode == TtsEngineMode.PIPER) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "本地 Piper 语音：内置离线神经语音，无需联网、无需 API Key；" +
+                        "自动按中英文切换内置音色。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkFaint
                 )
             }
 
@@ -237,16 +254,23 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                 }
                 if (systemVoices.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
+                    // Fall back to the full list when the engine's locale codes
+                    // don't map to zh/en at all (some domestic engines), so the
+                    // dropdowns still offer the voices instead of only
+                    // "跟随系统默认".
+                    val chineseVoices = systemVoices.filter { it.isChinese }
+                    val englishVoices = systemVoices.filter { it.isEnglish }
+                    val hasLanguageSplit = chineseVoices.isNotEmpty() || englishVoices.isNotEmpty()
                     SystemVoiceDropdown(
                         label = "中文音色",
-                        voices = systemVoices.filter { it.isChinese },
+                        voices = if (hasLanguageSplit) chineseVoices else systemVoices,
                         selected = settings.systemZhVoice,
                         onSelect = { settings = settings.copy(systemZhVoice = it) }
                     )
                     Spacer(Modifier.height(6.dp))
                     SystemVoiceDropdown(
                         label = "英文音色",
-                        voices = systemVoices.filter { it.isEnglish },
+                        voices = if (hasLanguageSplit) englishVoices else systemVoices,
                         selected = settings.systemEnVoice,
                         onSelect = { settings = settings.copy(systemEnVoice = it) }
                     )
@@ -456,7 +480,7 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                 }
             }
 
-            if (settings.mode != TtsEngineMode.SYSTEM) {
+            if (settings.mode != TtsEngineMode.SYSTEM && settings.mode != TtsEngineMode.PIPER) {
                 Spacer(Modifier.height(14.dp))
                 Text(
                     "启用后，朗读文本会发送到对应云端/自建服务，按实际服务计费；" +

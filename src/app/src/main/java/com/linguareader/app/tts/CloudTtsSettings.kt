@@ -20,6 +20,7 @@ import javax.crypto.spec.GCMParameterSpec
  */
 enum class TtsEngineMode {
     SYSTEM,
+    PIPER,
     AZURE,
     OPENAI_COMPAT,
     VOLC
@@ -51,6 +52,7 @@ data class CloudTtsSettings(
     val isConfigured: Boolean
         get() = when (mode) {
             TtsEngineMode.SYSTEM -> true
+            TtsEngineMode.PIPER -> true // models are bundled in assets, no config needed
             TtsEngineMode.AZURE -> region.isNotBlank() && apiKey.isNotBlank()
             TtsEngineMode.OPENAI_COMPAT -> serverUrl.isNotBlank()
             TtsEngineMode.VOLC ->

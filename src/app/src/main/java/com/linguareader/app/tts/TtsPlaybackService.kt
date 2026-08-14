@@ -868,6 +868,7 @@ class TtsPlaybackService : Service() {
         TtsEngineMode.AZURE -> "Azure 云 TTS"
         TtsEngineMode.OPENAI_COMPAT -> "自建服务器（OpenAI 兼容）"
         TtsEngineMode.VOLC -> "火山引擎（豆包语音）"
+        TtsEngineMode.PIPER -> "本地 Piper 语音"
         TtsEngineMode.SYSTEM -> "系统语音"
     }
 
