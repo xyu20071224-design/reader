@@ -79,6 +79,17 @@ fun updateNoteFor(versionCode: Int, versionName: String): UpdateNote = when (ver
             "自动记住每本书的收听进度，下次接着听"
         )
     )
+    7 -> UpdateNote(
+        versionCode = 7,
+        versionName = "1.3.1",
+        title = "版本更新 1.3.1",
+        items = listOf(
+            "修复听书待选状态切后台被系统停止的问题",
+            "修复云 TTS 凭证偶发丢失与解密健壮性",
+            "修复朗读高亮在含内联样式的章节中错位",
+            "修复快速切句跳章、进度回退等播放稳定性问题"
+        )
+    )
     else -> UpdateNote(
         versionCode = versionCode,
         versionName = versionName,

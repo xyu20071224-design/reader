@@ -156,7 +156,7 @@ object CloudKeyStore {
         if (plain.isBlank()) return null
         return runCatching {
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, key())
+            cipher.init(Cipher.ENCRYPT_MODE, key)
             val bytes = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
             val iv = cipher.iv
             Base64.encodeToString(iv + bytes, Base64.NO_WRAP)
@@ -167,15 +167,26 @@ object CloudKeyStore {
         if (encoded.isNullOrBlank()) return null
         return runCatching {
             val decoded = Base64.decode(encoded, Base64.NO_WRAP)
+            // A key shorter than the GCM IV (12 bytes) is not a valid encrypted
+            // value; bail out early instead of letting copyOfRange throw inside
+            // runCatching, which would be indistinguishable from "no key set".
+            if (decoded.size < IV_SIZE) return@runCatching null
             val iv = decoded.copyOfRange(0, IV_SIZE)
             val cipherText = decoded.copyOfRange(IV_SIZE, decoded.size)
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(TAG_BITS, iv))
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv))
             String(cipher.doFinal(cipherText), Charsets.UTF_8)
         }.getOrNull()
     }
 
-    private fun key(): SecretKey {
+    // Lazy ensures the key is generated at most once per process. `lazy` default
+    // mode (LazyThreadSafetyMode.SYNCHRONIZED) serializes concurrent first calls,
+    // so two threads can no longer both see a missing alias and generate two
+    // keys that clobber each other and make previously written ciphertext
+    // permanently undecryptable (silent API-key loss).
+    private val key: SecretKey by lazy { generateKey() }
+
+    private fun generateKey(): SecretKey {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (keyStore.getKey(ALIAS, null) as? SecretKey)?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")

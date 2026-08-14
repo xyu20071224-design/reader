@@ -131,6 +131,48 @@ class TtsTextExtractorTest {
         assertEquals("Hello world. Second sentence.", text)
     }
 
+    @Test
+    fun treatsBlockContainingOnlyInlineElementsAsLeaf() {
+        // A <div> wrapping only inline <span> markup is a leaf block, matching
+        // the reader JS `!el.querySelector(TTS_BLOCK_SELECTOR)`. Previously the
+        // extractor required "no element descendants at all", so <div><span>…
+        // was skipped while <span> (not in BLOCK_SELECTOR) contributed nothing,
+        // and block indices / TTS highlighting would drift out of sync with JS.
+        val book = bookWith(
+            """
+            <html><body>
+              <div><span>Inline alpha. Inline beta.</span></div>
+              <p>After the inline block.</p>
+            </body></html>
+            """.trimIndent()
+        )
+
+        val chapter = TtsTextExtractor().chapter(book, 0)
+
+        assertEquals(
+            listOf("Inline alpha. Inline beta.", "After the inline block."),
+            chapter.blocks
+        )
+    }
+
+    @Test
+    fun nestedBlockStillFoundWhenInnerBlockMatchesSelector() {
+        // Regression guard for the leaf rule: an outer block that itself
+        // contains another BLOCK_SELECTOR element is NOT a leaf, so only the
+        // innermost block is emitted (no duplicated outer text).
+        val book = bookWith(
+            """
+            <html><body>
+              <div><span>Inline alpha.</span><p>Inner beta.</p></div>
+            </body></html>
+            """.trimIndent()
+        )
+
+        val chapter = TtsTextExtractor().chapter(book, 0)
+
+        assertEquals(listOf("Inner beta."), chapter.blocks)
+    }
+
     private fun bookWith(html: String): Book {
         val dir = File.createTempFile("tts-chapter", "").let {
             it.delete()

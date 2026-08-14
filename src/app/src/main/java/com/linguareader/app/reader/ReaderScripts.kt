@@ -163,7 +163,15 @@ object ReaderScripts {
               // mapping and the chapter progress meaningful in sticky mode.
               pageCount = Math.max(1, Math.ceil(scroller.scrollHeight / Math.max(1, columnHeight)));
               const max = scroller.scrollHeight - scroller.clientHeight;
-              scroller.scrollTop = max > 0 ? scrollRatio * max : 0;
+              // The first few measurements can run before fonts/images finish,
+              // so scrollHeight is still short and restoring the saved ratio
+              // here would park the view at the wrong (later inflated) offset.
+              // Only place scrollTop once the flow has grown to hold the saved
+              // ratio, leaving the earlier passes to report a stable estimate
+              // without visibly yanking the scroll position.
+              if (max > 0 && scroller.scrollHeight >= (scrollPageCount - 1) * columnHeight) {
+                scroller.scrollTop = scrollRatio * max;
+              }
               page = pageFromRatio(scrollRatio);
               updateEndHint();
               ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
@@ -912,6 +920,10 @@ object ReaderScripts {
             page = pageFromRatio(scrollRatio);
             applyScrollLayout();
             requestAnimationFrame(function() {
+              // updateMetrics enters the scroll branch above and defers the
+              // scrollTop placement until the flow is tall enough, so the saved
+              // ratio is restored at the right offset instead of jumping when
+              // fonts/images finish loading afterwards.
               updateMetrics();
               ReaderBridge.onScrollModeChanged(true);
               ReaderBridge.onReady(page, pageCount);

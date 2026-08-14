@@ -34,6 +34,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
@@ -59,8 +61,15 @@ class TtsPlaybackService : Service() {
     private var mediaSession: MediaSession? = null
     private var book: Book? = null
     private var chapter: TtsChapter? = null
+
+    // Mutated on the Main scope but also read inside coroutines that resume on
+    // other dispatchers (e.g. loadAndSpeakCurrent), so make both volatile.
+    @Volatile
     private var chapterIndex = 0
+
+    @Volatile
     private var sentenceIndex = 0
+
     private var speechRate = 1f
     private var playing = false
     private var isForeground = false
@@ -69,7 +78,15 @@ class TtsPlaybackService : Service() {
     private var chapterReadyDeferred: CompletableDeferred<Int>? = null
     private var consecutiveErrors = 0
     private var progressSaveJob: Job? = null
+
+    @Volatile
+    private var progressWriteVersion = 0
+
+    /** Serializes the version-check + disk write into one critical section. */
+    private val progressWriteMutex = Mutex()
+
     private var preparedChapterKey: String? = null
+    private var speakAttempt = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -226,6 +243,11 @@ class TtsPlaybackService : Service() {
             speechRate = speechRate,
             engineLabel = engineLabelFor(CloudTtsSettings.load(applicationContext))
         )
+        // Standby is a foreground session too: without this the service has no
+        // notification and the system kills it on background/lock. book/playing/
+        // state are set above so the notification renders the standby state.
+        ensureForeground()
+        updateNotification()
     }
 
     private fun resume() {
@@ -268,8 +290,15 @@ class TtsPlaybackService : Service() {
             chapterIndex--
             sentenceIndex = 0
             lastLoadedChapter = null
+            // Capture the chapter this request targets. Rapid taps can launch
+            // several of these coroutines concurrently; a slower (older) one
+            // must not overwrite `chapter` after the queue has moved on again.
+            val targetChapter = chapterIndex
             scope.launch {
-                val previous = withContext(Dispatchers.IO) { extractor.chapter(currentBook, chapterIndex) }
+                val previous = withContext(Dispatchers.IO) { extractor.chapter(currentBook, targetChapter) }
+                // Guard like speakCurrent(): if the session moved to another
+                // chapter or book while we were extracting, drop this result.
+                if (chapterIndex != targetChapter || book !== currentBook) return@launch
                 chapter = previous
                 sentenceIndex = (previous.sentenceCount - 1).coerceAtLeast(0)
                 speakCurrent()
@@ -464,7 +493,15 @@ class TtsPlaybackService : Service() {
     private fun speakCurrent() {
         val currentChapter = chapter ?: return
         if (!playing) return
-        if (sentenceIndex !in currentChapter.sentences.indices) return
+        if (sentenceIndex !in currentChapter.sentences.indices) {
+            // The queue has advanced past the end of this chapter but nobody
+            // triggered the boundary advance yet (e.g. prepareChapter stalled
+            // or onReaderChapterSelected cleared `chapter` before a re-load).
+            // An onDone will never arrive for an index that is out of range,
+            // so advance proactively instead of returning and going silent.
+            loadAndSpeakCurrent()
+            return
+        }
         val text = currentChapter.sentences[sentenceIndex]
         if (text.isBlank()) {
             sentenceIndex++
@@ -510,7 +547,8 @@ class TtsPlaybackService : Service() {
 
     private fun speakNow(text: String) {
         val currentBook = book ?: return
-        val utteranceId = utteranceIdFor(chapterIndex, sentenceIndex)
+        val attempt = ++speakAttempt
+        val utteranceId = utteranceIdFor(chapterIndex, sentenceIndex, attempt)
         val location = chapter?.sentenceLocation(sentenceIndex)
         _state.update {
             it.copy(
@@ -550,7 +588,7 @@ class TtsPlaybackService : Service() {
     }
 
     private fun handleUtteranceStart(utteranceId: String) {
-        if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex)) {
+        if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt)) {
             // Only a successful start clears the error streak; resetting in
             // speakNow (before the engine reports back) makes the consecutive
             // error guard below unreachable.
@@ -560,13 +598,13 @@ class TtsPlaybackService : Service() {
     }
 
     private fun handleUtteranceDone(utteranceId: String) {
-        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex) || !playing) return
+        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt) || !playing) return
         sentenceIndex++
         loadAndSpeakCurrent()
     }
 
     private fun handleUtteranceError(utteranceId: String) {
-        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex) || !playing) return
+        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt) || !playing) return
         consecutiveErrors++
         if (consecutiveErrors >= 25) {
             pause()
@@ -581,8 +619,17 @@ class TtsPlaybackService : Service() {
     /** Called by the reader after a chapter WebView is ready. */
     fun onReaderChapterLoaded(bookId: String, loadedChapter: Int) {
         if (book?.id != bookId) return
-        lastLoadedChapter = loadedChapter
-        chapterReadyDeferred?.complete(loadedChapter)
+        if (loadedChapter == chapterIndex) {
+            lastLoadedChapter = loadedChapter
+        }
+        // Only complete the pending handshake if this callback is the chapter
+        // we are actually waiting for. A stale onReady (e.g. chapter A's
+        // WebView finishing after the queue moved on to chapter B) must not
+        // clobber lastLoadedChapter nor satisfy B's waiter, otherwise B would
+        // be misread as loaded and its audio could be skipped.
+        if (chapterReadyDeferred != null && loadedChapter == chapterIndex) {
+            chapterReadyDeferred?.complete(loadedChapter)
+        }
     }
 
     /** Called when the user manually picks a chapter while playback is active. */
@@ -643,15 +690,35 @@ class TtsPlaybackService : Service() {
         }
     }
 
+    /**
+     * Immediately persists the latest listening position.
+     *
+     * Captures the [Book] reference and the current indices up front on the Main
+     * thread. That is required so callers such as [onDestroy] and [stopPlayback],
+     * which null `book` and reset the indices right after returning, still land
+     * the correct final position.
+     *
+     * Ordering is guaranteed by a monotonic [progressWriteVersion]: each dispatch
+     * is stamped, and only the newest stamp is allowed to reach the disk. The
+     * stamp comparison and the write are serialized under [progressWriteMutex],
+     * so an older write re-checks its stamp while holding the lock and drops
+     * itself if a newer dispatch has already been scheduled — this closes the
+     * check/write gap and guarantees the newest value always wins, eliminating
+     * the original progress-regression (old snapshot landing after a newer one).
+     */
     private fun saveProgressNow() {
         val currentBook = book ?: return
         val chapter = chapterIndex
         val sentence = sentenceIndex
         progressSaveJob?.cancel()
         progressSaveJob = null
+        val version = ++progressWriteVersion
         saveScope.launch {
-            runCatching {
-                repository.saveListeningProgress(currentBook, chapter, sentence)
+            progressWriteMutex.withLock {
+                if (version != progressWriteVersion) return@withLock
+                runCatching {
+                    repository.saveListeningProgress(currentBook, chapter, sentence)
+                }
             }
         }
     }
@@ -769,8 +836,8 @@ class TtsPlaybackService : Service() {
         )
     }
 
-    private fun utteranceIdFor(chapter: Int, sentence: Int): String =
-        "${book?.id.orEmpty()}:$chapter:$sentence"
+    private fun utteranceIdFor(chapter: Int, sentence: Int, attempt: Int): String =
+        "${book?.id.orEmpty()}:$chapter:$sentence:$attempt"
 
     private fun engineLabelFor(settings: CloudTtsSettings): String = when (settings.mode) {
         TtsEngineMode.AZURE -> "Azure 云 TTS"
@@ -838,7 +905,7 @@ class TtsPlaybackService : Service() {
                 .setAction(ACTION_STANDBY)
                 .putExtra(EXTRA_BOOK_JSON, book.toJson().toString())
                 .putExtra(EXTRA_CHAPTER, chapterIndex)
-            context.startService(intent)
+            ContextCompat.startForegroundService(context, intent)
         }
 
         fun startFromSentence(
