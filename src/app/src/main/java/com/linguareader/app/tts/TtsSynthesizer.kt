@@ -1,6 +1,8 @@
 package com.linguareader.app.tts
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -51,12 +53,14 @@ class SystemTtsSynthesizer(
         tts = TextToSpeech(context.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ready = true
-                // `getVoices()` is a platform type that may be null; collapsing
-                // null/binder failures to an empty set keeps `voicesByName`
-                // populated so a selected voice can actually be applied via
-                // `setVoice` in `speak`.
-                runCatching { tts.voices }.getOrNull().orEmpty()
-                    .forEach { voicesByName[it.name] = it }
+                populateVoices()
+                if (voicesByName.isEmpty()) {
+                    // Some engines populate their voice list slightly after the
+                    // init callback fires (getVoices() then returns null/empty).
+                    // Retry once so a selected voice is not silently ignored on
+                    // the first utterance. This mirrors SystemTtsVoices.load().
+                    Handler(Looper.getMainLooper()).postDelayed({ populateVoices() }, 300)
+                }
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
                         utteranceId?.let(listener::onStart)
@@ -94,12 +98,25 @@ class SystemTtsSynthesizer(
         if (text.isBlank()) return
         val locale = localeFor(text)
         val configured = if (locale == Locale.CHINA) zhVoice else enVoice
+        // Lazy fill: if the voice list was still empty when the init callback
+        // (and its 300ms retry) ran, try once more before looking up the
+        // configured voice, otherwise a selected voice silently falls back to
+        // the engine default language.
+        if (voicesByName.isEmpty()) populateVoices()
         val voice = configured.takeIf { it.isNotBlank() }?.let { voicesByName[it] }
         if (voice == null || tts.setVoice(voice) != TextToSpeech.SUCCESS) {
             tts.language = locale
         }
         tts.setSpeechRate(rate.coerceIn(0.5f, 2f))
         tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
+    }
+
+    private fun populateVoices() {
+        // `getVoices()` is a platform type that may be null; collapsing
+        // null/binder failures to an empty set keeps `voicesByName` populated
+        // so a selected voice can actually be applied via `setVoice` in `speak`.
+        runCatching { tts.voices }.getOrNull().orEmpty()
+            .forEach { voicesByName[it.name] = it }
     }
 
     override fun stop() {
