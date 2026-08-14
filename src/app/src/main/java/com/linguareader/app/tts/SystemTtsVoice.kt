@@ -74,5 +74,11 @@ object SystemTtsVoices {
         // instead of letting null reach `.map` and crash.
         runCatching { tts.voices }.getOrNull().orEmpty()
             .map { SystemVoiceInfo(it.name, it.locale, it.isNetworkConnectionRequired) }
+            // Offline playback must never hand the user a voice that requires a
+            // network download: selecting such a voice makes the engine silently
+            // wait to fetch it (or just stay silent), which users report as
+            // "no sound + each sentence advances extremely slowly". Skip them so
+            // the dropdowns only offer already-available voices.
+            .filterNot { it.isNetwork }
             .sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
 }

@@ -276,7 +276,7 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "需要联网下载的音色会标记（网络）。",
+                        "已隐藏需要联网下载的音色，确保离线可正常朗读。",
                         style = MaterialTheme.typography.labelSmall,
                         color = InkFaint
                     )

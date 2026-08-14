@@ -48,6 +48,10 @@ class SystemTtsSynthesizer(
     private var ready = false
     private lateinit var tts: TextToSpeech
     private val voicesByName = mutableMapOf<String, Voice>()
+    // Guards populateVoices() so a slow/empty engine (getVoices() returns
+    // nothing) does not re-query `tts.voices` on every single utterance — that
+    // per-sentence call is what turns "no voice found" into "extremely slow".
+    private var voicesLoaded = false
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
@@ -98,13 +102,9 @@ class SystemTtsSynthesizer(
         if (text.isBlank()) return
         val locale = localeFor(text)
         val configured = if (locale == Locale.CHINA) zhVoice else enVoice
-        // Lazy fill: if the voice list was still empty when the init callback
-        // (and its 300ms retry) ran, try once more before looking up the
-        // configured voice, otherwise a selected voice silently falls back to
-        // the engine default language.
-        if (voicesByName.isEmpty()) populateVoices()
         val voice = configured.takeIf { it.isNotBlank() }?.let { voicesByName[it] }
-        if (voice == null || tts.setVoice(voice) != TextToSpeech.SUCCESS) {
+        val voiceUsable = voice != null && !voice.isNetworkConnectionRequired
+        if (!voiceUsable || tts.setVoice(voice) != TextToSpeech.SUCCESS) {
             tts.language = locale
         }
         tts.setSpeechRate(rate.coerceIn(0.5f, 2f))
@@ -112,10 +112,17 @@ class SystemTtsSynthesizer(
     }
 
     private fun populateVoices() {
+        // Only attempt once: engines whose getVoices() stays empty would
+        // otherwise re-query `tts.voices` (potentially a slow binder call) on
+        // every utterance. There is nothing to lazy-load after init anyway —
+        // voices do not meaningfully change mid-session.
+        if (voicesLoaded) return
+        voicesLoaded = true
         // `getVoices()` is a platform type that may be null; collapsing
         // null/binder failures to an empty set keeps `voicesByName` populated
         // so a selected voice can actually be applied via `setVoice` in `speak`.
         runCatching { tts.voices }.getOrNull().orEmpty()
+            .filterNot { it.isNetworkConnectionRequired }
             .forEach { voicesByName[it.name] = it }
     }
 
