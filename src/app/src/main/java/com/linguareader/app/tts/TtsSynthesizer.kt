@@ -51,10 +51,12 @@ class SystemTtsSynthesizer(
         tts = TextToSpeech(context.applicationContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 ready = true
-                // `getVoices()` is a platform type that may be null; `orEmpty()`
-                // handles null/empty so the selected voice can actually be looked
-                // up and applied via `setVoice` in `speak`.
-                tts.voices.orEmpty().forEach { voicesByName[it.name] = it }
+                // `getVoices()` is a platform type that may be null; collapsing
+                // null/binder failures to an empty set keeps `voicesByName`
+                // populated so a selected voice can actually be applied via
+                // `setVoice` in `speak`.
+                runCatching { tts.voices }.getOrNull().orEmpty()
+                    .forEach { voicesByName[it.name] = it }
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
                         utteranceId?.let(listener::onStart)

@@ -90,6 +90,15 @@ fun updateNoteFor(versionCode: Int, versionName: String): UpdateNote = when (ver
             "修复快速切句跳章、进度回退等播放稳定性问题"
         )
     )
+    8 -> UpdateNote(
+        versionCode = 8,
+        versionName = "1.3.2",
+        title = "版本更新 1.3.2",
+        items = listOf(
+            "修复系统音色列表加载在部分引擎下的崩溃问题",
+            "增强 getVoices() 返回 null 或异常时的健壮性"
+        )
+    )
     else -> UpdateNote(
         versionCode = versionCode,
         versionName = versionName,

@@ -57,9 +57,10 @@ object SystemTtsVoices {
 
     private fun readVoices(tts: TextToSpeech): List<SystemVoiceInfo> =
         // `getVoices()` is a platform type that may be null (e.g. while the
-        // engine is still loading its voice list); `orEmpty()` handles both null
-        // and an empty set instead of letting the null reach `.map` and crash.
-        tts.voices.orEmpty()
+        // engine is still loading its voice list). `getOrNull().orEmpty()`
+        // collapses both a null return and a binder failure to an empty set
+        // instead of letting null reach `.map` and crash.
+        runCatching { tts.voices }.getOrNull().orEmpty()
             .map { SystemVoiceInfo(it.name, it.locale, it.isNetworkConnectionRequired) }
             .sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
 }
