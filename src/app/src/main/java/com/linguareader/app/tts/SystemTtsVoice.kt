@@ -1,6 +1,8 @@
 package com.linguareader.app.tts
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import java.util.Locale
 
@@ -30,16 +32,34 @@ object SystemTtsVoices {
     fun load(context: Context, onResult: (List<SystemVoiceInfo>) -> Unit) {
         lateinit var created: TextToSpeech
         created = TextToSpeech(context.applicationContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                val voices = runCatching { created.voices }
-                    .getOrDefault(emptySet())
-                    .map { SystemVoiceInfo(it.name, it.locale, it.isNetworkConnectionRequired) }
-                    .sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
-                onResult(voices)
-            } else {
+            if (status != TextToSpeech.SUCCESS) {
                 onResult(emptyList())
+                runCatching { created.shutdown() }
+                return@TextToSpeech
             }
-            runCatching { created.shutdown() }
+
+            fun deliver() {
+                onResult(readVoices(created))
+                runCatching { created.shutdown() }
+            }
+
+            val first = readVoices(created)
+            if (first.isNotEmpty()) {
+                deliver()
+            } else {
+                // Some engines populate their voice list slightly after the
+                // init callback fires (getVoices() then returns null/empty the
+                // first time); retry once before reporting "no voices".
+                Handler(Looper.getMainLooper()).postDelayed({ deliver() }, 300)
+            }
         }
     }
+
+    private fun readVoices(tts: TextToSpeech): List<SystemVoiceInfo> =
+        // `getVoices()` is a platform type that may be null (e.g. while the
+        // engine is still loading its voice list); `orEmpty()` handles both null
+        // and an empty set instead of letting the null reach `.map` and crash.
+        tts.voices.orEmpty()
+            .map { SystemVoiceInfo(it.name, it.locale, it.isNetworkConnectionRequired) }
+            .sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
 }

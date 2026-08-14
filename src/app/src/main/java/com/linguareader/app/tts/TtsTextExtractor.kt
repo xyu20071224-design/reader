@@ -132,14 +132,17 @@ class TtsTextExtractor {
 
     private fun leafBlocks(document: Document): List<Element> {
         val candidates = document.select(BLOCK_SELECTOR)
-        // Leaf = no *descendant* matches BLOCK_SELECTOR. Jsoup's
-        // Element.select(css) only searches descendants (it never returns the
-        // element itself), which is exactly equivalent to the reader JS
-        // `!el.querySelector(TTS_BLOCK_SELECTOR)`. Both sides MUST stay in sync:
-        // a block containing only inline markup (e.g. <div><span>text</div>) is
-        // a leaf here and in JS, or block indices / TTS highlighting drift.
+        // Leaf = no *descendant* matches BLOCK_SELECTOR. This must match the
+        // reader JS `!el.querySelector(TTS_BLOCK_SELECTOR)` (querySelector only
+        // looks at descendants, never the element itself).
+        //
+        // NOTE: Jsoup's Element.select(css) DOES include the element itself
+        // when it matches, so `candidate.select(...).isEmpty()` would be false
+        // for every candidate and filter them all out. Check that any match is
+        // only the candidate itself instead, so a block whose descendants are
+        // all inline (e.g. <div><span>text</span></div>) stays a leaf.
         return candidates.filter { candidate ->
-            candidate.select(BLOCK_SELECTOR).isEmpty()
+            candidate.select(BLOCK_SELECTOR).all { it === candidate }
         }
     }
 
