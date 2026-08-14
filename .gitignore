@@ -45,5 +45,8 @@ node_modules/
 Readest/
 readest-src/
 
+# Offline TTS voice models (large ONNX files, downloaded via scripts/download_tts_models.ps1)
+src/app/src/main/assets/sherpa/**/*.onnx
+
 # Logs
 *.log

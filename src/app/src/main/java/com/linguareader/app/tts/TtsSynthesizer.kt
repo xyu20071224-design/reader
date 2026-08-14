@@ -156,7 +156,7 @@ object TtsSynthesizerFactory {
         val settings = CloudTtsSettings.load(context)
         return when {
             settings.mode == TtsEngineMode.PIPER && settings.isConfigured ->
-                PiperTtsSynthesizer(context, listener)
+                SherpaTtsSynthesizer(context, listener)
 
             settings.mode == TtsEngineMode.AZURE && settings.isConfigured ->
                 CloudTtsSynthesizer(context, AzureTtsBackend(settings, context), listener)
