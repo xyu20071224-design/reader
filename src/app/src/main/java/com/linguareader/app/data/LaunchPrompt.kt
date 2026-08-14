@@ -99,6 +99,17 @@ fun updateNoteFor(versionCode: Int, versionName: String): UpdateNote = when (ver
             "增强 getVoices() 返回 null 或异常时的健壮性"
         )
     )
+    9 -> UpdateNote(
+        versionCode = 9,
+        versionName = "1.4.0",
+        title = "版本更新 1.4.0",
+        items = listOf(
+            "全新离线朗读引擎：中文女声与英文男声，无需联网",
+            "修复 Piper 音色对生僻词逐字母朗读的问题",
+            "支持在应用内自由切换离线/系统音色",
+            "重构听书播放状态机，提升播放稳定性"
+        )
+    )
     else -> UpdateNote(
         versionCode = versionCode,
         versionName = versionName,
