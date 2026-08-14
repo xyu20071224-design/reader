@@ -19,36 +19,29 @@ import androidx.core.content.ContextCompat
 import com.linguareader.app.MainActivity
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.LibraryRepository
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 /**
- * Foreground media service that owns the book playback queue.
+ * Foreground media service — a thin Android shell around [TtsPlaybackEngine].
  *
- * - Speaks one sentence at a time with the system TTS (mixed EN/ZH).
- * - Requests chapter switches through [chapterRequests]; the reader screen
- *   confirms via [onReaderChapterLoaded] before the next sentence starts.
- * - Exposes play/pause/next/previous/stop and speech rate to both the reader
- *   UI and the lock-screen / notification controls.
- * - Persists per-book listening progress into book metadata.
+ * Keeps only the Android-specific concerns: the foreground notification, the
+ * media session, intent routing, the IO-backed chapter extractor and the
+ * versioned progress persistence. The sentence queue and all playback state
+ * live in the pure [TtsPlaybackEngine], which is unit-tested in isolation.
  */
 class TtsPlaybackService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -56,28 +49,8 @@ class TtsPlaybackService : Service() {
     private val extractor = TtsTextExtractor()
     private val repository by lazy { LibraryRepository(applicationContext) }
 
-    private var synthesizer: TtsSynthesizer? = null
-    private val pendingReady = mutableListOf<() -> Unit>()
     private var mediaSession: MediaSession? = null
-    private var book: Book? = null
-    private var chapter: TtsChapter? = null
-
-    // Mutated on the Main scope but also read inside coroutines that resume on
-    // other dispatchers (e.g. loadAndSpeakCurrent), so make both volatile.
-    @Volatile
-    private var chapterIndex = 0
-
-    @Volatile
-    private var sentenceIndex = 0
-
-    private var speechRate = 1f
-    private var playing = false
     private var isForeground = false
-    private var lastLoadedChapter: Int? = null
-    private var requestedChapter: Int? = null
-    private var chapterReadyDeferred: CompletableDeferred<Int>? = null
-    private var consecutiveErrors = 0
-    private var progressSaveJob: Job? = null
 
     @Volatile
     private var progressWriteVersion = 0
@@ -85,8 +58,37 @@ class TtsPlaybackService : Service() {
     /** Serializes the version-check + disk write into one critical section. */
     private val progressWriteMutex = Mutex()
 
-    private var preparedChapterKey: String? = null
-    private var speakAttempt = 0
+    private val engine by lazy {
+        TtsPlaybackEngine(
+            synthesizerFactory = { listener ->
+                TtsSynthesizerFactory.create(applicationContext, listener)
+            },
+            chapterLoader = { book, index ->
+                withContext(Dispatchers.IO) { extractor.chapter(book, index) }
+            },
+            isSystemEngine = { it is SystemTtsSynthesizer },
+            engineLabelForSettings = {
+                engineLabelFor(CloudTtsSettings.load(applicationContext))
+            },
+            engineLabelForSynthesizer = { s ->
+                (s as? CloudTtsSynthesizer)?.engineLabel ?: "系统语音"
+            },
+            onChapterRequest = { chapter -> _chapterRequests.tryEmit(chapter) },
+            onBookSwitched = { extractor.clear() },
+            onProgressSave = { book, chapter, sentence ->
+                saveProgressNow(book, chapter, sentence)
+            },
+            onState = { s ->
+                _state.value = s
+                updateMediaSession()
+                updateNotification()
+            },
+            dispatcher = Dispatchers.Main.immediate,
+            readerLoadedChapterFor = { id ->
+                readerChapterByBook?.takeIf { it.first == id }?.second
+            }
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -105,27 +107,24 @@ class TtsPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // PLAY and STANDBY are delivered to this service via
-        // ContextCompat.startForegroundService. The framework requires the
-        // service to call startForeground() soon after, or it throws
-        // ForegroundServiceDidNotStartInTimeException and kills the service.
-        // handlePlay/handleStandby can return early (missing/invalid book JSON),
-        // so satisfy the foreground contract up front on every startForeground
-        // entry point instead of relying on the happy path reaching it.
+        // PLAY and STANDBY are delivered via ContextCompat.startForegroundService.
+        // The framework requires startForeground() soon after, or it kills the
+        // service, so satisfy the foreground contract up front on every
+        // startForeground entry point instead of relying on the happy path.
         when (intent?.action) {
             ACTION_PLAY, ACTION_STANDBY -> ensureForeground()
         }
         when (intent?.action) {
             ACTION_PLAY -> handlePlay(intent)
             ACTION_STANDBY -> handleStandby(intent)
-            ACTION_TOGGLE -> if (playing) pause() else resume()
+            ACTION_TOGGLE -> if (engine.isPlaying) pause() else resume()
             ACTION_PAUSE -> pause()
             ACTION_RESUME -> resume()
             ACTION_NEXT -> nextSentence()
             ACTION_PREVIOUS -> previousSentence()
             ACTION_STOP -> stopPlayback()
-            ACTION_RATE -> intent.getFloatExtra(EXTRA_RATE, speechRate).let(::setRate)
-            ACTION_RECONFIGURE -> reconfigureSynthesizer()
+            ACTION_RATE -> intent.getFloatExtra(EXTRA_RATE, engine.currentSpeechRate).let(::setRate)
+            ACTION_RECONFIGURE -> engine.reconfigure()
         }
         return START_NOT_STICKY
     }
@@ -134,17 +133,13 @@ class TtsPlaybackService : Service() {
         val json = intent.getStringExtra(EXTRA_BOOK_JSON)
         val newBook = json?.let { runCatching { Book.fromJson(JSONObject(it)) }.getOrNull() }
         if (newBook == null) {
-            // The service was started with startForegroundService, so the
-            // foreground contract is already satisfied (see onStartCommand).
-            // Fail cleanly instead of leaving a half-started standby session:
-            // reset any stale static state and stop so the UI doesn't believe
-            // a listening session is active.
+            // Fail cleanly instead of leaving a half-started standby session.
             _state.value = TtsPlaybackState()
             stopSelf()
             return
         }
         val requestedChapter = intent.getIntExtra(EXTRA_CHAPTER, 0)
-        startStandby(newBook, requestedChapter)
+        engine.startStandby(newBook, requestedChapter)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -154,26 +149,19 @@ class TtsPlaybackService : Service() {
     }
 
     override fun onDestroy() {
-        if (book != null) saveProgressNow()
-        // Reset the process-wide static state too. stopPlayback() already does
-        // this, but the service can be destroyed without passing through it
-        // (e.g. reclaimed by the system); leaving a stale bookId would make the
-        // reader show a listening bar for a service that no longer exists.
+        engine.shutdown()
+        // Reset the process-wide static state too, so the reader never shows a
+        // listening bar for a service that no longer exists.
         _state.value = TtsPlaybackState()
-        synthesizer?.shutdown()
-        synthesizer = null
         companionInstance = null
         mediaSession?.isActive = false
         mediaSession?.release()
         mediaSession = null
-        chapterReadyDeferred?.complete(-1)
-        chapterReadyDeferred = null
-        progressSaveJob?.cancel()
         scope.cancel()
         super.onDestroy()
     }
 
-    // ── Playback control ──────────────────────────────────────────────────
+    // ── Playback control (thin wrappers over the engine) ─────────────────
 
     private fun handlePlay(intent: Intent) {
         val json = intent.getStringExtra(EXTRA_BOOK_JSON) ?: return
@@ -189,177 +177,34 @@ class TtsPlaybackService : Service() {
                 val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
                 val index = chapter.sentences.indexOfFirst { it == sentenceText }
                     .takeIf { it >= 0 } ?: 0
-                startPlayback(newBook, requestedChapter, index)
+                engine.startPlayback(newBook, requestedChapter, index)
             }
 
             blockText.isNotEmpty() -> scope.launch {
                 val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
                 val index = chapter.sentenceIndexAt(blockText, blockOffset) ?: 0
-                startPlayback(newBook, requestedChapter, index)
+                engine.startPlayback(newBook, requestedChapter, index)
             }
 
-            else -> startPlayback(newBook, requestedChapter, requestedSentence)
+            else -> engine.startPlayback(newBook, requestedChapter, requestedSentence)
         }
-    }
-
-    private fun startPlayback(newBook: Book, requestedChapter: Int, requestedSentence: Int) {
-        // Starting a session for another book must interrupt the previous
-        // book's audio and drop its chapter/extraction state.
-        val switchedBook = book?.id != newBook.id
-        synthesizer?.stop()
-        if (switchedBook) extractor.clear()
-        book = newBook
-        chapter = null
-        chapterIndex = requestedChapter.coerceIn(0, newBook.chapters.lastIndex.coerceAtLeast(0))
-        sentenceIndex = requestedSentence.coerceAtLeast(0)
-        preparedChapterKey = null
-        val readerChapter = readerChapterByBook
-        lastLoadedChapter = if (readerChapter?.first == newBook.id) readerChapter.second else null
-        playing = true
-        consecutiveErrors = 0
-        ensureForeground()
-        _state.value = TtsPlaybackState(
-            bookId = newBook.id,
-            bookTitle = newBook.title,
-            chapterIndex = chapterIndex,
-            sentenceIndex = sentenceIndex,
-            sentenceCount = 0,
-            currentSentence = "",
-            isPlaying = true,
-            speechRate = speechRate,
-            engineLabel = engineLabelFor(CloudTtsSettings.load(applicationContext))
-        )
-        mediaSession?.isActive = true
-        updateMediaSession()
-        updateNotification()
-        ensureSynthesizer { loadAndSpeakCurrent() }
-    }
-
-    /**
-     * Opens the listening session without starting playback. The reader shows
-     * the listening bar and the user taps a word/sentence to choose where to
-     * start; that tap calls [startFromBlockOffset] which starts real playback.
-     */
-    private fun startStandby(newBook: Book, requestedChapter: Int) {
-        val switchedBook = book?.id != newBook.id
-        synthesizer?.stop()
-        if (switchedBook) extractor.clear()
-        book = newBook
-        chapter = null
-        consecutiveErrors = 0
-        chapterIndex = requestedChapter.coerceIn(0, newBook.chapters.lastIndex.coerceAtLeast(0))
-        sentenceIndex = if (newBook.ttsChapterIndex == chapterIndex) {
-            newBook.ttsSentenceIndex.coerceAtLeast(0)
-        } else {
-            0
-        }
-        preparedChapterKey = null
-        val readerChapter = readerChapterByBook
-        lastLoadedChapter = if (readerChapter?.first == newBook.id) readerChapter.second else null
-        playing = false
-        _state.value = TtsPlaybackState(
-            bookId = newBook.id,
-            bookTitle = newBook.title,
-            chapterIndex = chapterIndex,
-            sentenceIndex = sentenceIndex,
-            sentenceCount = 0,
-            currentSentence = "",
-            isPlaying = false,
-            speechRate = speechRate,
-            engineLabel = engineLabelFor(CloudTtsSettings.load(applicationContext))
-        )
-        // Standby is a foreground session too: without this the service has no
-        // notification and the system kills it on background/lock. book/playing/
-        // state are set above so the notification renders the standby state.
-        ensureForeground()
-        updateNotification()
     }
 
     private fun resume() {
-        val currentBook = book ?: return
-        playing = true
-        _state.update { it.copy(isPlaying = true) }
         ensureForeground()
-        updateMediaSession()
-        updateNotification()
-        ensureSynthesizer { loadAndSpeakCurrent() }
-        scheduleProgressSave()
+        engine.resume()
     }
 
-    private fun pause() {
-        if (book == null) return
-        playing = false
-        synthesizer?.stop()
-        saveProgressNow()
-        _state.update { it.copy(isPlaying = false) }
-        updateMediaSession()
-        updateNotification()
-    }
+    private fun pause() = engine.pause()
 
-    private fun nextSentence() {
-        if (book == null) return
-        playing = true
-        synthesizer?.stop()
-        sentenceIndex++
-        loadAndSpeakCurrent()
-    }
+    private fun nextSentence() = engine.next()
 
-    private fun previousSentence() {
-        val currentBook = book ?: return
-        playing = true
-        synthesizer?.stop()
-        if (sentenceIndex > 0) {
-            sentenceIndex--
-            loadAndSpeakCurrent()
-        } else if (chapterIndex > 0) {
-            chapterIndex--
-            sentenceIndex = 0
-            lastLoadedChapter = null
-            // Capture the chapter this request targets. Rapid taps can launch
-            // several of these coroutines concurrently; a slower (older) one
-            // must not overwrite `chapter` after the queue has moved on again.
-            val targetChapter = chapterIndex
-            scope.launch {
-                val previous = withContext(Dispatchers.IO) { extractor.chapter(currentBook, targetChapter) }
-                // Guard like speakCurrent(): if the session moved to another
-                // chapter or book while we were extracting, drop this result.
-                if (chapterIndex != targetChapter || book !== currentBook) return@launch
-                chapter = previous
-                sentenceIndex = (previous.sentenceCount - 1).coerceAtLeast(0)
-                speakCurrent()
-            }
-        } else {
-            loadAndSpeakCurrent()
-        }
-    }
+    private fun previousSentence() = engine.previous()
 
-    private fun setRate(rate: Float) {
-        val clamped = rate.coerceIn(0.5f, 2f)
-        if (clamped == speechRate) return
-        speechRate = clamped
-        _state.update { it.copy(speechRate = clamped) }
-        updateMediaSession()
-        if (playing && book != null && chapter != null && lastLoadedChapter == chapterIndex) {
-            synthesizer?.stop()
-            speakCurrent()
-        }
-    }
+    private fun setRate(rate: Float) = engine.setRate(rate)
 
     private fun stopPlayback() {
-        saveProgressNow()
-        playing = false
-        synthesizer?.stop()
-        _state.value = TtsPlaybackState(speechRate = speechRate)
-        book = null
-        chapter = null
-        chapterIndex = 0
-        sentenceIndex = 0
-        preparedChapterKey = null
-        lastLoadedChapter = null
-        requestedChapter = null
-        chapterReadyDeferred?.complete(-1)
-        chapterReadyDeferred = null
-        pendingReady.clear()
+        engine.stop()
         mediaSession?.isActive = false
         updateMediaSession()
         if (isForeground) {
@@ -369,381 +214,22 @@ class TtsPlaybackService : Service() {
         stopSelf()
     }
 
-    private fun finishPlayback() {
-        // Keep progress on the last sentence actually spoken instead of the
-        // out-of-range index used to detect the end of the queue.
-        val lastSpoken = (chapter?.sentenceCount ?: 0) - 1
-        if (lastSpoken >= 0) sentenceIndex = lastSpoken
-        stopPlayback()
-    }
-
-    /** Rebuilds the synthesizer after cloud TTS settings change. */
-    private fun reconfigureSynthesizer() {
-        val wasPlaying = playing
-        synthesizer?.stop()
-        synthesizer?.shutdown()
-        synthesizer = null
-        pendingReady.clear()
-        preparedChapterKey = null
-        val settings = CloudTtsSettings.load(applicationContext)
-        _state.update {
-            it.copy(
-                engineLabel = engineLabelFor(settings),
-                isPreparing = false,
-                preparedCount = 0,
-                preparedTotal = 0
-            )
-        }
-        if (wasPlaying && book != null) {
-            playing = true
-            ensureSynthesizer { loadAndSpeakCurrent() }
-        }
-    }
-
-    // ── Queue / synthesis ─────────────────────────────────────────────────
-
-    private fun ensureSynthesizer(onReady: () -> Unit) {
-        val existing = synthesizer
-        if (existing != null) {
-            if (existing.isReady) onReady() else pendingReady += onReady
-            return
-        }
-        val created = TtsSynthesizerFactory.create(
-            applicationContext,
-            object : TtsSynthesizerListener {
-                override fun onReady() {
-                    scope.launch {
-                        _state.update {
-                            it.copy(
-                                engineLabel = (synthesizer as? CloudTtsSynthesizer)?.engineLabel
-                                    ?: "系统语音"
-                            )
-                        }
-                        pendingReady.toList().forEach { it() }
-                        pendingReady.clear()
-                    }
-                }
-
-                override fun onInitFailed(status: Int) {
-                    scope.launch { pause() }
-                }
-
-                override fun onStart(utteranceId: String) {
-                    scope.launch { handleUtteranceStart(utteranceId) }
-                }
-
-                override fun onDone(utteranceId: String) {
-                    scope.launch { handleUtteranceDone(utteranceId) }
-                }
-
-                override fun onError(utteranceId: String) {
-                    scope.launch { handleUtteranceError(utteranceId) }
-                }
-            }
-        )
-        synthesizer = created
-        if (created.isReady) onReady() else pendingReady += onReady
-    }
-
-    private fun loadAndSpeakCurrent() {
-        val currentBook = book ?: return
-        if (!playing) return
-        if (chapterIndex !in currentBook.chapters.indices) {
-            finishPlayback()
-            return
-        }
-        scope.launch {
-            val loadedChapter = withContext(Dispatchers.IO) {
-                extractor.chapter(currentBook, chapterIndex)
-            }
-            chapter = loadedChapter
-            if (sentenceIndex >= loadedChapter.sentenceCount) {
-                if (chapterIndex >= currentBook.chapters.lastIndex) {
-                    finishPlayback()
-                    return@launch
-                }
-                chapterIndex++
-                sentenceIndex = 0
-                loadAndSpeakCurrent()
-                return@launch
-            }
-            val preparer = synthesizer as? ChapterTtsPreparer
-            val chapterKey = "${currentBook.id}:${chapterIndex}"
-            if (preparer != null && preparedChapterKey != chapterKey) {
-                preparedChapterKey = chapterKey
-                _state.update {
-                    it.copy(
-                        isPreparing = true,
-                        preparedCount = 0,
-                        preparedTotal = loadedChapter.sentenceCount
-                    )
-                }
-                preparer.prepareChapter(
-                    currentBook,
-                    loadedChapter,
-                    onProgress = { done, total ->
-                        _state.update {
-                            it.copy(
-                                isPreparing = true,
-                                preparedCount = done,
-                                preparedTotal = total
-                            )
-                        }
-                    },
-                    onComplete = { success ->
-                        _state.update {
-                            it.copy(
-                                isPreparing = false,
-                                preparedCount = loadedChapter.sentenceCount,
-                                preparedTotal = loadedChapter.sentenceCount
-                            )
-                        }
-                        if (!success) fallbackToSystemTts()
-                    }
-                )
-            } else if (preparer == null) {
-                _state.update { it.copy(isPreparing = false) }
-            }
-            _state.update {
-                it.copy(
-                    sentenceCount = loadedChapter.sentenceCount,
-                    chapterIndex = chapterIndex,
-                    sentenceIndex = sentenceIndex
-                )
-            }
-            speakCurrent()
-        }
-    }
-
-    private fun speakCurrent() {
-        val currentChapter = chapter ?: return
-        if (!playing) return
-        if (sentenceIndex !in currentChapter.sentences.indices) {
-            // The queue has advanced past the end of this chapter but nobody
-            // triggered the boundary advance yet (e.g. prepareChapter stalled
-            // or onReaderChapterSelected cleared `chapter` before a re-load).
-            // An onDone will never arrive for an index that is out of range,
-            // so advance proactively instead of returning and going silent.
-            loadAndSpeakCurrent()
-            return
-        }
-        val text = currentChapter.sentences[sentenceIndex]
-        if (text.isBlank()) {
-            sentenceIndex++
-            loadAndSpeakCurrent()
-            return
-        }
-        if (lastLoadedChapter != chapterIndex) {
-            requestedChapter = chapterIndex
-            _chapterRequests.tryEmit(chapterIndex)
-            val deferred = CompletableDeferred<Int>()
-            chapterReadyDeferred = deferred
-            scope.launch {
-                // The reader confirms quickly when it is on screen; when the
-                // app is backgrounded the book must keep playing anyway, so a
-                // short grace period lets playback continue without a WebView.
-                val loaded = withTimeoutOrNull(2_000) { deferred.await() }
-                // A newer handshake may have replaced this waiter while it was
-                // pending; only the current waiter may clear the slot or speak,
-                // otherwise a stale sentence is spoken with the new sentence's
-                // utterance id (duplicate audio and queue jumps).
-                if (chapterReadyDeferred !== deferred) return@launch
-                // The session may have moved on while this waiter was pending
-                // (chapter switch or another book); the captured sentence is
-                // no longer the one that should be spoken.
-                if (chapter !== currentChapter) return@launch
-                chapterReadyDeferred = null
-                when {
-                    loaded == chapterIndex && playing -> speakNow(text)
-                    loaded != chapterIndex && loaded != null && playing -> {
-                        lastLoadedChapter = loaded
-                        loadAndSpeakCurrent()
-                    }
-                    else -> {
-                        lastLoadedChapter = chapterIndex
-                        if (playing) speakNow(text)
-                    }
-                }
-            }
-        } else {
-            speakNow(text)
-        }
-    }
-
-    private fun speakNow(text: String) {
-        val currentBook = book ?: return
-        val attempt = ++speakAttempt
-        val utteranceId = utteranceIdFor(chapterIndex, sentenceIndex, attempt)
-        val location = chapter?.sentenceLocation(sentenceIndex)
-        _state.update {
-            it.copy(
-                bookId = currentBook.id,
-                bookTitle = currentBook.title,
-                chapterIndex = chapterIndex,
-                sentenceIndex = sentenceIndex,
-                sentenceCount = chapter?.sentenceCount ?: it.sentenceCount,
-                currentSentence = text,
-                highlightBlockIndex = location?.first ?: -1,
-                highlightOffset = location?.second ?: 0,
-                highlightLength = location?.third ?: 0,
-                isPlaying = true
-            )
-        }
-        updateMediaSession()
-        updateNotification()
-        scheduleProgressSave()
-        synthesizer?.speak(text, speechRate, utteranceId)
-    }
-
-    private fun fallbackToSystemTts() {
-        if (synthesizer is SystemTtsSynthesizer) return
-        synthesizer?.stop()
-        synthesizer?.shutdown()
-        synthesizer = null
-        pendingReady.clear()
-        _state.update {
-            it.copy(
-                engineLabel = "系统语音（云 TTS 失败）",
-                isPreparing = false,
-                preparedCount = 0,
-                preparedTotal = 0
-            )
-        }
-        ensureSynthesizer { loadAndSpeakCurrent() }
-    }
-
-    private fun handleUtteranceStart(utteranceId: String) {
-        if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt)) {
-            // Only a successful start clears the error streak; resetting in
-            // speakNow (before the engine reports back) makes the consecutive
-            // error guard below unreachable.
-            consecutiveErrors = 0
-            _state.update { it.copy(isPlaying = true) }
-        }
-    }
-
-    private fun handleUtteranceDone(utteranceId: String) {
-        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt) || !playing) return
-        sentenceIndex++
-        loadAndSpeakCurrent()
-    }
-
-    private fun handleUtteranceError(utteranceId: String) {
-        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt) || !playing) return
-        consecutiveErrors++
-        if (consecutiveErrors >= 25) {
-            pause()
-            return
-        }
-        sentenceIndex++
-        loadAndSpeakCurrent()
-    }
-
-    // ── Reader handshake ──────────────────────────────────────────────────
-
-    /** Called by the reader after a chapter WebView is ready. */
-    fun onReaderChapterLoaded(bookId: String, loadedChapter: Int) {
-        if (book?.id != bookId) return
-        if (loadedChapter == chapterIndex) {
-            lastLoadedChapter = loadedChapter
-        }
-        // Only complete the pending handshake if this callback is the chapter
-        // we are actually waiting for. A stale onReady (e.g. chapter A's
-        // WebView finishing after the queue moved on to chapter B) must not
-        // clobber lastLoadedChapter nor satisfy B's waiter, otherwise B would
-        // be misread as loaded and its audio could be skipped.
-        if (chapterReadyDeferred != null && loadedChapter == chapterIndex) {
-            chapterReadyDeferred?.complete(loadedChapter)
-        }
-    }
-
-    /** Called when the user manually picks a chapter while playback is active. */
-    fun onReaderChapterSelected(bookId: String, selectedChapter: Int) {
-        if (book?.id != bookId) return
-        chapterIndex = selectedChapter.coerceIn(0, book?.chapters?.lastIndex?.coerceAtLeast(0) ?: 0)
-        sentenceIndex = 0
-        preparedChapterKey = null
-        lastLoadedChapter = null
-        chapter = null
-        _state.update {
-            it.copy(
-                chapterIndex = chapterIndex,
-                sentenceIndex = 0,
-                sentenceCount = 0,
-                currentSentence = ""
-            )
-        }
-        updateMediaSession()
-        updateNotification()
-        scheduleProgressSave()
-        if (playing) loadAndSpeakCurrent()
-    }
+    // ── Progress persistence ─────────────────────────────────────────────
 
     /**
-     * Called when the reader page changes (manual page turn). If the page now
-     * starts in another paragraph, the queue jumps to that paragraph's first
-     * sentence so reading and listening stay together.
-     */
-    fun onReaderPositionChanged(bookId: String, changedChapter: Int, blockText: String) {
-        val currentBook = book ?: return
-        if (currentBook.id != bookId || !playing || blockText.isBlank()) return
-        if (changedChapter != chapterIndex || waitingForChapter()) return
-        scope.launch {
-            val loadedChapter = withContext(Dispatchers.IO) {
-                extractor.chapter(currentBook, changedChapter)
-            }
-            if (loadedChapter.sentenceBelongsToBlock(sentenceIndex, blockText)) return@launch
-            val target = loadedChapter.firstSentenceIndexInBlock(blockText) ?: return@launch
-            if (target == sentenceIndex) return@launch
-            sentenceIndex = target
-            if (playing) {
-                synthesizer?.stop()
-                speakCurrent()
-            }
-        }
-    }
-
-    private fun waitingForChapter(): Boolean = chapterReadyDeferred != null
-
-    // ── Progress ──────────────────────────────────────────────────────────
-
-    private fun scheduleProgressSave() {
-        progressSaveJob?.cancel()
-        progressSaveJob = scope.launch {
-            delay(5_000)
-            saveProgressNow()
-        }
-    }
-
-    /**
-     * Immediately persists the latest listening position.
+     * Persists the latest listening position with last-write-wins ordering.
      *
-     * Captures the [Book] reference and the current indices up front on the Main
-     * thread. That is required so callers such as [onDestroy] and [stopPlayback],
-     * which null `book` and reset the indices right after returning, still land
-     * the correct final position.
-     *
-     * Ordering is guaranteed by a monotonic [progressWriteVersion]: each dispatch
-     * is stamped, and only the newest stamp is allowed to reach the disk. The
-     * stamp comparison and the write are serialized under [progressWriteMutex],
-     * so an older write re-checks its stamp while holding the lock and drops
-     * itself if a newer dispatch has already been scheduled — this closes the
-     * check/write gap and guarantees the newest value always wins, eliminating
-     * the original progress-regression (old snapshot landing after a newer one).
+     * Each dispatch is stamped with a monotonic [progressWriteVersion] and only
+     * the newest stamp is allowed to reach the disk. The stamp comparison and
+     * the write are serialized under [progressWriteMutex], closing the
+     * check/write gap so an older snapshot can never overwrite a newer one.
      */
-    private fun saveProgressNow() {
-        val currentBook = book ?: return
-        val chapter = chapterIndex
-        val sentence = sentenceIndex
-        progressSaveJob?.cancel()
-        progressSaveJob = null
+    private fun saveProgressNow(book: Book, chapter: Int, sentence: Int) {
         val version = ++progressWriteVersion
         saveScope.launch {
             progressWriteMutex.withLock {
                 if (version != progressWriteVersion) return@withLock
-                runCatching {
-                    repository.saveListeningProgress(currentBook, chapter, sentence)
-                }
+                runCatching { repository.saveListeningProgress(book, chapter, sentence) }
             }
         }
     }
@@ -784,9 +270,9 @@ class TtsPlaybackService : Service() {
     }
 
     private fun notification(): Notification {
-        val currentBook = book
+        val currentBook = engine.currentBook
         val title = currentBook?.title ?: "听书"
-        val detail = chapter?.title
+        val detail = engine.currentChapter?.title
             ?.takeIf { it.isNotBlank() }
             ?: _state.value.currentSentence.ifBlank { "语境阅读" }
         val openApp = PendingIntent.getActivity(
@@ -811,8 +297,8 @@ class TtsPlaybackService : Service() {
                 actionIntent(ACTION_PREVIOUS)
             )
             .addAction(
-                if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
-                if (playing) "暂停" else "播放",
+                if (engine.isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                if (engine.isPlaying) "暂停" else "播放",
                 actionIntent(ACTION_TOGGLE)
             )
             .addAction(
@@ -838,11 +324,11 @@ class TtsPlaybackService : Service() {
 
     private fun updateMediaSession() {
         val session = mediaSession ?: return
-        val currentBook = book
+        val currentBook = engine.currentBook
         session.setMetadata(
             MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, currentBook?.title ?: "听书")
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, chapter?.title ?: "")
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, engine.currentChapter?.title ?: "")
                 .putString(MediaMetadata.METADATA_KEY_ALBUM, "语境阅读")
                 .build()
         )
@@ -853,16 +339,13 @@ class TtsPlaybackService : Service() {
             PlaybackState.Builder()
                 .setActions(actions)
                 .setState(
-                    if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                    if (engine.isPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
                     PlaybackState.PLAYBACK_POSITION_UNKNOWN,
-                    speechRate
+                    engine.currentSpeechRate
                 )
                 .build()
         )
     }
-
-    private fun utteranceIdFor(chapter: Int, sentence: Int, attempt: Int): String =
-        "${book?.id.orEmpty()}:$chapter:$sentence:$attempt"
 
     private fun engineLabelFor(settings: CloudTtsSettings): String = when (settings.mode) {
         TtsEngineMode.AZURE -> "Azure 云 TTS"
@@ -1006,17 +489,17 @@ class TtsPlaybackService : Service() {
         /** Called by the reader whenever a chapter WebView reports ready. */
         fun onReaderChapterLoaded(bookId: String, chapterIndex: Int) {
             readerChapterByBook = bookId to chapterIndex
-            companionInstance?.onReaderChapterLoaded(bookId, chapterIndex)
+            companionInstance?.engine?.onReaderChapterLoaded(bookId, chapterIndex)
         }
 
         /** Called when the user manually switches chapters during playback. */
         fun onReaderChapterSelected(bookId: String, chapterIndex: Int) {
-            companionInstance?.onReaderChapterSelected(bookId, chapterIndex)
+            companionInstance?.engine?.onReaderChapterSelected(bookId, chapterIndex)
         }
 
         /** Called after a manual page turn so the queue follows the reader. */
         fun onReaderPositionChanged(bookId: String, chapterIndex: Int, blockText: String) {
-            companionInstance?.onReaderPositionChanged(bookId, chapterIndex, blockText)
+            companionInstance?.engine?.onReaderPositionChanged(bookId, chapterIndex, blockText)
         }
 
         /** Called by the settings sheet after cloud TTS configuration changes. */
@@ -1029,3 +512,4 @@ class TtsPlaybackService : Service() {
         }
     }
 }
+

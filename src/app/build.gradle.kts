@@ -75,6 +75,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.10")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("org.jsoup:jsoup:1.18.3")
     testImplementation("org.json:json:20240303")
     testImplementation("com.tom-roush:pdfbox-android:2.0.27.0")
