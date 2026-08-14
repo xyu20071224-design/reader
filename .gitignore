@@ -41,5 +41,9 @@ venv/
 # Node
 node_modules/
 
+# Unrelated third-party projects checked out alongside this repo
+Readest/
+readest-src/
+
 # Logs
 *.log
