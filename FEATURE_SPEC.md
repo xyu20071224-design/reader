@@ -671,6 +671,7 @@ CREATE TABLE forms (
 | 1.6.6 | 2026-08-12 | 修复 F-126 AI 语境生成失败：DeepSeek 请求失败/超时自动降级为本地轻量语境；`response_format` 不受支持或返回无法解析 JSON 时去掉 JSON 模式重试；档案 JSON 新增 `source`（`deepseek`/`local`，旧文件缺省按 `local` 兼容）；术语表导入异常不再让状态卡在“生成中” |
 | 1.6.7 | 2026-08-12 | 修复 F-150 选择起点时从本章开头播放：JS 点词定位改用与 `ttsBlocks()`/`TtsTextExtractor` 相同的叶子块选择器（补齐 `section/article/pre/h5/h6` 等），`TtsChapter.locateBlock` 增加祖先段落回退并重定位偏移到实际叶子块，杜绝段落匹配失败回退第 0 句 |
 | 1.6.8 | 2026-08-14 | 听书缺陷修复：上一句/下一句与翻页跟随先停当前语音（修复系统 TTS 排队与音画不同步）；换书/待命时停止旧书音频并重置会话、清理提取器缓存；连续错误熔断改为开播成功时复位；章节握手增加等待者身份校验防止过期等待者造成重复语音/跳句；点击中文正文也可选择起点；句高亮改为按块+偏移精确定位（重复句不再高亮到首次出现处）；自建 OpenAI 兼容 TTS 服务支持 http 明文端点（`network_security_config`）；云预合成较慢时等待进行中的预生成以避免重复合成 |
+| 1.6.9 | 2026-08-15 | 听书稳定性/凭证安全/高亮定位修复，版本升至 1.3.1（versionCode 7）：待选（standby）态前台服务化（`startForegroundService` + `ensureForeground`）避免切后台被杀；收听进度写盘加 `@Volatile` + 单调 `progressWriteVersion` + `Mutex` 防快照覆盖回退；`previousSentence` 加目标章守卫防快速连点跳章；`onReaderChapterLoaded` 仅当章节匹配才写入/complete 防握手白等；`utteranceIdFor` 引入 `speakAttempt` 代际隔离防同名句回拨漏句；`speakCurrent` 句尾越界主动推进防卡死；`CloudKeyStore.key` 改 lazy 单例防 Keystore 并发覆盖密钥；AI 凭证改用 Keystore 加密并兼容旧明文迁移；`decrypt` 校验密文长度；`TtsTextExtractor.leafBlocks` 改为与 JS `!querySelector` 严格等价（`select(BLOCK_SELECTOR).isEmpty()`）修复内联样式章节高亮错位；滚动模式恢复等内容高度就绪再定位防闪跳；新增 1.3.1 更新说明 |
 
 ## 7. 已知不一致（待处理）
 

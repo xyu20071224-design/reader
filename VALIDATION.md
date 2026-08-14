@@ -133,3 +133,18 @@ Using [`测试电子书-TheLanternLibrary.epub`](测试电子书-TheLanternLibra
 
 The APK is debug-signed for direct installation and evaluation. A Play Store
 release still requires a production signing key and release configuration.
+
+## 2026-08-15 1.3.1 缺陷修复（增量验证）
+
+本次对 1.3.0 听书链路做代码审查后，修复三类问题（详见 `更新报告-1.3.0到1.3.1.md` 与 FEATURE_SPEC 规约 1.6.9）：
+
+- 听书进程稳定性：待选（standby）态前台服务化、进度写盘竞态、快速切句跳章、章节握手白等、utteranceId 复用漏句、句尾卡死。
+- 凭证安全：Keystore 并发覆盖密钥、AI 凭证明文、解密健壮性。
+- 高亮定位：叶子块判定不等价导致的内联样式章节高亮错位、滚动恢复闪跳。
+
+验证情况：
+
+- `assembleDebug`：通过（JDK 17 / Gradle 8.11.1 / AGP 8.9.1，`compileDebugKotlin` 通过，无编译错误）。构建环境用 `android.overridePathCheck=true` 放行含中文的项目路径。
+- `testDebugUnitTest`：未在本环境全量重跑；本次新增 `TtsTextExtractorTest` 两个用例（内联叶子块判定 + 嵌套块防回归），`LaunchPromptTest` 不受新增 1.3.1 更新说明分支影响。
+- `lintDebug` / `connectedDebugAndroidTest`：未重跑，需完整 Android 环境（模拟器/真机）补做最终回归。
+- 产物：`LinguaReader-1.3.1-debug.apk`（调试签名，约 56 MB，SHA-256 `ECE3E30B36EDA4004949E9EF92A553E53B85FDF4D79EEB9D9895E7D47814B234`），已发布至 GitHub Releases tag `v1.3.1`。
