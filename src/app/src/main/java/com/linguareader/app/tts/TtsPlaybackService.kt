@@ -105,6 +105,16 @@ class TtsPlaybackService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // PLAY and STANDBY are delivered to this service via
+        // ContextCompat.startForegroundService. The framework requires the
+        // service to call startForeground() soon after, or it throws
+        // ForegroundServiceDidNotStartInTimeException and kills the service.
+        // handlePlay/handleStandby can return early (missing/invalid book JSON),
+        // so satisfy the foreground contract up front on every startForeground
+        // entry point instead of relying on the happy path reaching it.
+        when (intent?.action) {
+            ACTION_PLAY, ACTION_STANDBY -> ensureForeground()
+        }
         when (intent?.action) {
             ACTION_PLAY -> handlePlay(intent)
             ACTION_STANDBY -> handleStandby(intent)
@@ -121,8 +131,18 @@ class TtsPlaybackService : Service() {
     }
 
     private fun handleStandby(intent: Intent) {
-        val json = intent.getStringExtra(EXTRA_BOOK_JSON) ?: return
-        val newBook = runCatching { Book.fromJson(JSONObject(json)) }.getOrNull() ?: return
+        val json = intent.getStringExtra(EXTRA_BOOK_JSON)
+        val newBook = json?.let { runCatching { Book.fromJson(JSONObject(it)) }.getOrNull() }
+        if (newBook == null) {
+            // The service was started with startForegroundService, so the
+            // foreground contract is already satisfied (see onStartCommand).
+            // Fail cleanly instead of leaving a half-started standby session:
+            // reset any stale static state and stop so the UI doesn't believe
+            // a listening session is active.
+            _state.value = TtsPlaybackState()
+            stopSelf()
+            return
+        }
         val requestedChapter = intent.getIntExtra(EXTRA_CHAPTER, 0)
         startStandby(newBook, requestedChapter)
     }
@@ -135,6 +155,11 @@ class TtsPlaybackService : Service() {
 
     override fun onDestroy() {
         if (book != null) saveProgressNow()
+        // Reset the process-wide static state too. stopPlayback() already does
+        // this, but the service can be destroyed without passing through it
+        // (e.g. reclaimed by the system); leaving a stale bookId would make the
+        // reader show a listening bar for a service that no longer exists.
+        _state.value = TtsPlaybackState()
         synthesizer?.shutdown()
         synthesizer = null
         companionInstance = null
