@@ -70,6 +70,35 @@ class LibraryRepository(private val context: Context) {
             }
         }
 
+    suspend fun attachTranslation(
+        book: Book,
+        translationBookId: String,
+        translationTitle: String,
+        alignedAt: Long
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            writeMetadata(
+                book.copy(
+                    translationBookId = translationBookId,
+                    translationTitle = translationTitle,
+                    translationAlignedAt = alignedAt
+                )
+            )
+        }
+    }
+
+    suspend fun removeTranslation(book: Book) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            writeMetadata(
+                book.copy(
+                    translationBookId = "",
+                    translationTitle = "",
+                    translationAlignedAt = 0L
+                )
+            )
+        }
+    }
+
     suspend fun deleteBook(book: Book) = withContext(Dispatchers.IO) {
         mutex.withLock {
             // The per-book directory holds both the extracted content and its

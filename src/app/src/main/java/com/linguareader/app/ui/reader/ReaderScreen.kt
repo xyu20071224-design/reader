@@ -71,7 +71,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.linguareader.app.AppViewModel
@@ -90,6 +95,9 @@ import com.linguareader.app.data.ReviewReminders
 import com.linguareader.app.data.ReaderTheme
 import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.WordLookup
+import com.linguareader.app.translation.TranslationLookupResult
+import com.linguareader.app.translation.TranslationMatchLevel
+import com.linguareader.app.translation.WordAlignment
 import com.linguareader.app.reader.EpubPage
 import com.linguareader.app.reader.ReaderController
 import com.linguareader.app.tts.TtsPlaybackController
@@ -128,6 +136,27 @@ private fun highlightCurrentTts(controller: ReaderController, ttsState: TtsPlayb
         )
     } else if (ttsState.currentSentence.isNotBlank()) {
         controller.highlightSentence(ttsState.currentSentence)
+    }
+}
+
+/** 中译句内高亮词级对照区间；无对齐时原样返回。 */
+private fun highlightedChinese(text: String, alignment: WordAlignment?): AnnotatedString {
+    val wl = alignment
+    if (wl == null || wl.start < 0 || wl.endExclusive <= wl.start || wl.endExclusive > text.length) {
+        return AnnotatedString(text)
+    }
+    return buildAnnotatedString {
+        append(text.substring(0, wl.start))
+        withStyle(
+            SpanStyle(
+                color = Accent,
+                fontWeight = FontWeight.Bold,
+                textDecoration = TextDecoration.Underline
+            )
+        ) {
+            append(text.substring(wl.start, wl.endExclusive))
+        }
+        append(text.substring(wl.endExclusive))
     }
 }
 
@@ -179,6 +208,8 @@ internal fun ReaderScreen(
     var sentenceTranslation by remember { mutableStateOf<String?>(null) }
     var sentenceTranslationError by remember { mutableStateOf<String?>(null) }
     var sentenceTranslationLoading by remember { mutableStateOf(false) }
+    var translationHit by remember { mutableStateOf<TranslationLookupResult?>(null) }
+    var translationLoading by remember { mutableStateOf(false) }
     var showingRelatedPhrase by remember { mutableStateOf(false) }
     var reviewDeck by remember { mutableStateOf<List<SavedWord>?>(null) }
     var showReviewSettings by remember { mutableStateOf(false) }
@@ -375,9 +406,17 @@ internal fun ReaderScreen(
         sentenceTranslation = null
         sentenceTranslationError = null
         sentenceTranslationLoading = false
+        translationHit = null
+        translationLoading = book.hasTranslation
         dictionaryResult = viewModel.lookup(request)
         showingRelatedPhrase = false
         dictionaryLoading = false
+        if (book.hasTranslation) {
+            translationHit = runCatching {
+                viewModel.translationLookup(book, chapterIndex, request)
+            }.getOrNull()
+            translationLoading = false
+        }
         if (aiSettings.enabled) {
             aiLoading = true
             aiResult = runCatching {
@@ -704,6 +743,8 @@ internal fun ReaderScreen(
             loading = dictionaryLoading,
             aiContext = aiResult,
             aiLoading = aiLoading,
+            translation = translationHit,
+            translationLoading = translationLoading,
             azureReady = aiSettings.azureReady,
             sentenceTranslation = sentenceTranslation,
             sentenceTranslationError = sentenceTranslationError,
@@ -995,6 +1036,8 @@ private fun LookupSheet(
     loading: Boolean,
     aiContext: AiLookupResult?,
     aiLoading: Boolean,
+    translation: TranslationLookupResult?,
+    translationLoading: Boolean,
     azureReady: Boolean,
     sentenceTranslation: String?,
     sentenceTranslationError: String?,
@@ -1144,6 +1187,63 @@ private fun LookupSheet(
                         color = Ink.copy(alpha = .72f)
                     )
                 }
+            }
+            if (translationLoading) {
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .width(72.dp)
+                            .height(4.dp),
+                        color = Accent,
+                        trackColor = Accent.copy(alpha = .12f)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        "正在查找译本对照…",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = InkSoft
+                    )
+                }
+            }
+            if (!translationLoading && translation != null) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "译本对照（${translation.translationTitle}）",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Accent,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    translation.english,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Ink.copy(alpha = .72f)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    highlightedChinese(translation.chinese, translation.wordAlignment),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                translation.wordAlignment?.let { wa ->
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        "对应词：${wa.word} · 置信度 ${(wa.confidence * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Accent
+                    )
+                }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    if (translation.matchLevel == TranslationMatchLevel.PARAGRAPH) {
+                        "自动对齐：未切分到对应单句，显示对应段落 · 置信度 ${(translation.confidence * 100).roundToInt()}%"
+                    } else {
+                        "自动对齐句子 · 置信度 ${(translation.confidence * 100).roundToInt()}%"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Ink.copy(alpha = .48f)
+                )
             }
 
             Spacer(Modifier.height(12.dp))

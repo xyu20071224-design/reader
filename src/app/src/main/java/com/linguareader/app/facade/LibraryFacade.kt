@@ -32,6 +32,14 @@ internal class LibraryFacade(
         library.saveProgress(book, chapterIndex, pageIndex, progress)
     }
 
+    suspend fun attachTranslation(book: Book, translationBookId: String, translationTitle: String, alignedAt: Long) {
+        library.attachTranslation(book, translationBookId, translationTitle, alignedAt)
+    }
+
+    suspend fun removeTranslation(book: Book) {
+        library.removeTranslation(book)
+    }
+
     fun deleteBook(book: Book) {
         scope.launch {
             library.deleteBook(book)

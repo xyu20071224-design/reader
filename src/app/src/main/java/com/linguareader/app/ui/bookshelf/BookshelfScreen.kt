@@ -81,6 +81,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
 import com.linguareader.app.AppUiState
+import com.linguareader.app.TranslationStatus
 import com.linguareader.app.ui.vocabulary.VocabularyScreen
 import com.linguareader.app.ui.theme.Accent
 import com.linguareader.app.ui.theme.AccentSoft
@@ -96,6 +97,15 @@ import com.linguareader.app.ui.theme.Success
 
 
 
+private val TRANSLATION_MIME_TYPES = arrayOf(
+    "application/epub+zip",
+    "application/zip",
+    "application/octet-stream",
+    "text/plain",
+    "application/x-fictionbook+xml",
+    "application/pdf"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BookshelfScreen(
@@ -103,6 +113,8 @@ internal fun BookshelfScreen(
     onImport: (android.net.Uri) -> Unit,
     onOpen: (Book) -> Unit,
     onDelete: (Book) -> Unit,
+    onAttachTranslation: (Book, android.net.Uri) -> Unit,
+    onRemoveTranslation: (Book) -> Unit,
     onAiSettingsChange: (AiSettings) -> Unit,
     onLoadGlossary: suspend (String) -> BookGlossary,
     onAddGlossary: suspend (String, String, String) -> BookGlossary,
@@ -120,6 +132,13 @@ internal fun BookshelfScreen(
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         if (it != null) onImport(it)
     }
+    var translationPickerBook by remember { mutableStateOf<Book?>(null) }
+    val translationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val candidate = translationPickerBook
+        translationPickerBook = null
+        if (candidate != null && uri != null) onAttachTranslation(candidate, uri)
+    }
+    var translationDialogBook by remember { mutableStateOf<Book?>(null) }
     var deleteCandidate by remember { mutableStateOf<Book?>(null) }
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
     var showAiSettings by rememberSaveable { mutableStateOf(false) }
@@ -231,8 +250,17 @@ internal fun BookshelfScreen(
                             book = book,
                             aiEnabled = state.aiSettings.enabled,
                             aiStatus = state.aiStatuses[book.id],
+                            translationStatus = state.translationStatuses[book.id],
                             onOpen = { onOpen(book) },
                             onGlossary = { glossaryBook = book },
+                            onTranslation = {
+                                if (book.hasTranslation) {
+                                    translationDialogBook = book
+                                } else {
+                                    translationPickerBook = book
+                                    translationLauncher.launch(TRANSLATION_MIME_TYPES)
+                                }
+                            },
                             onLongPressDelete = { deleteCandidate = book }
                         )
                     }
@@ -288,6 +316,23 @@ internal fun BookshelfScreen(
             settings = state.aiSettings,
             onSave = onAiSettingsChange,
             onDismiss = { showAiSettings = false }
+        )
+    }
+
+    translationDialogBook?.let { book ->
+        TranslationBookDialog(
+            book = book,
+            status = state.translationStatuses[book.id],
+            onReplace = {
+                translationDialogBook = null
+                translationPickerBook = book
+                translationLauncher.launch(TRANSLATION_MIME_TYPES)
+            },
+            onRemove = {
+                translationDialogBook = null
+                onRemoveTranslation(book)
+            },
+            onDismiss = { translationDialogBook = null }
         )
     }
 
@@ -517,8 +562,10 @@ private fun BookCard(
     book: Book,
     aiEnabled: Boolean,
     aiStatus: AiBookStatus?,
+    translationStatus: TranslationStatus?,
     onOpen: () -> Unit,
     onGlossary: () -> Unit,
+    onTranslation: () -> Unit,
     onLongPressDelete: () -> Unit
 ) {
     Column(modifier = Modifier.clickable(onClick = onOpen)) {
@@ -610,6 +657,17 @@ private fun BookCard(
                 maxLines = 1
             )
         }
+        Text(
+            translationLabel(book, translationStatus),
+            style = MaterialTheme.typography.bodySmall,
+            color = when {
+                translationStatus?.generating == true -> InkSoft
+                translationStatus?.error != null -> Danger
+                book.hasTranslation -> Success
+                else -> InkFaint
+            },
+            maxLines = 1
+        )
         Row {
             TextButton(onClick = onGlossary, modifier = Modifier.height(30.dp)) {
                 Icon(
@@ -620,6 +678,20 @@ private fun BookCard(
                 )
                 Spacer(Modifier.width(3.dp))
                 Text("术语表", style = MaterialTheme.typography.labelSmall, color = Accent)
+            }
+            TextButton(onClick = onTranslation, modifier = Modifier.height(30.dp)) {
+                Icon(
+                    Icons.Filled.Translate,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = if (book.hasTranslation) Success else Accent
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    if (book.hasTranslation) "译本" else "加译本",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (book.hasTranslation) Success else Accent
+                )
             }
             TextButton(onClick = onLongPressDelete, modifier = Modifier.height(30.dp)) {
                 Icon(
@@ -633,6 +705,67 @@ private fun BookCard(
             }
         }
     }
+}
+
+private fun translationLabel(book: Book, status: TranslationStatus?): String = when {
+    status?.generating == true -> "译本：对齐中…"
+    status?.error != null -> "译本：对齐失败"
+    book.hasTranslation -> "译本：${book.translationTitle}"
+    else -> "译本：未关联"
+}
+
+@Composable
+private fun TranslationBookDialog(
+    book: Book,
+    status: TranslationStatus?,
+    onReplace: () -> Unit,
+    onRemove: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onReplace) { Text("重新选择译本") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onRemove) { Text("移除译本", color = Danger) }
+                TextButton(onClick = onDismiss) { Text("关闭") }
+            }
+        },
+        title = { Text("中文译本对照") },
+        text = {
+            Column {
+                Text("原书：${book.title}", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(4.dp))
+                Text("译本：${book.translationTitle}", style = MaterialTheme.typography.bodyMedium)
+                if (status?.generating == true) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = Accent,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("正在对齐章节和句子…", color = InkSoft)
+                    }
+                } else if (status?.error != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(status.error, color = Danger, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "阅读时点词即可显示中文译本中对应的句子；所有对齐均在设备本地完成。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSoft
+                    )
+                }
+            }
+        },
+        containerColor = CardSurface,
+        shape = CardShape
+    )
 }
 
 @Composable

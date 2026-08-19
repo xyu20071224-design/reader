@@ -209,6 +209,7 @@
 
 ## 验证方法
 
+- 完整可复现的真机回归步骤见 **[真机验证方案.md](./真机验证方案.md)**。
 - 每个文档的「验证方式」小节给出最小复现步骤，修复后应逐条回归。
 - 引擎层 bug（BUG-001/002/005/006/007）可参考
   `src/app/src/test/java/com/linguareader/app/tts/TtsPlaybackEngineTest.kt`

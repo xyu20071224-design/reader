@@ -25,6 +25,8 @@ import com.linguareader.app.facade.AiFacade
 import com.linguareader.app.facade.LibraryFacade
 import com.linguareader.app.facade.ReviewSettingsFacade
 import com.linguareader.app.facade.VocabularyFacade
+import com.linguareader.app.translation.TranslationLookupResult
+import com.linguareader.app.translation.TranslationMemoryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,11 +50,18 @@ data class AppUiState(
     val message: String? = null,
     val messageTitle: String = "提示",
     val aiSettings: AiSettings = AiSettings(),
-    val aiStatuses: Map<String, AiBookStatus> = emptyMap()
+    val aiStatuses: Map<String, AiBookStatus> = emptyMap(),
+    val translationStatuses: Map<String, TranslationStatus> = emptyMap()
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
 }
+
+data class TranslationStatus(
+    val generating: Boolean = false,
+    val ready: Boolean = false,
+    val error: String? = null
+)
 
 /**
  * 顶层 ViewModel。现状是 thin facade：库/生词/AI/复习偏好分别委托给
@@ -65,6 +74,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val aiFacade = AiFacade(application)
     private val reviewSettingsFacade = ReviewSettingsFacade(application)
     private val dictionary = DictionaryRepository(application)
+    private val translationRepository = TranslationMemoryRepository(application)
 
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
@@ -157,9 +167,68 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteBook(book: Book) {
         viewModelScope.launch {
             libraryFacade.deleteBook(book)
+            translationRepository.remove(book)
             refresh()
         }
     }
+
+    private fun setTranslationStatus(bookId: String, status: TranslationStatus) {
+        mutableState.value = mutableState.value.copy(
+            translationStatuses = mutableState.value.translationStatuses + (bookId to status)
+        )
+    }
+
+    fun attachTranslation(book: Book, uri: Uri) {
+        viewModelScope.launch {
+            setTranslationStatus(book.id, TranslationStatus(generating = true))
+            runCatching { translationRepository.attach(book, uri) }
+                .onSuccess { attached ->
+                    libraryFacade.attachTranslation(
+                        book = book,
+                        translationBookId = attached.translationBook.id,
+                        translationTitle = attached.translationBook.title,
+                        alignedAt = attached.memory.alignedAt
+                    )
+                    val books = libraryFacade.loadBooks()
+                    mutableState.value = mutableState.value.copy(books = books)
+                    setTranslationStatus(book.id, TranslationStatus(ready = true))
+                    mutableState.value = mutableState.value.copy(
+                        message = "中文译本已对齐：共 ${attached.memory.pairs.size} 个句子对照。",
+                        messageTitle = "译本已添加"
+                    )
+                }
+                .onFailure {
+                    setTranslationStatus(
+                        book.id,
+                        TranslationStatus(error = it.message ?: "中文译本对齐失败")
+                    )
+                    mutableState.value = mutableState.value.copy(
+                        message = it.message ?: "中文译本对齐失败",
+                        messageTitle = "无法添加译本"
+                    )
+                }
+        }
+    }
+
+    fun removeTranslation(book: Book) {
+        viewModelScope.launch {
+            translationRepository.remove(book)
+            libraryFacade.removeTranslation(book)
+            val books = libraryFacade.loadBooks()
+            mutableState.value = mutableState.value.copy(books = books)
+            mutableState.value = mutableState.value.copy(
+                message = "已移除中文译本对照。",
+                messageTitle = "译本已移除"
+            )
+        }
+    }
+
+    /** Local lookup into the user-provided Chinese translation memory. */
+    suspend fun translationLookup(
+        book: Book,
+        chapterIndex: Int,
+        lookup: WordLookup
+    ): TranslationLookupResult? = translationRepository.lookup(book, chapterIndex, lookup)
 
     fun setAiSettings(settings: AiSettings) {
         aiFacade.saveSettings(settings)

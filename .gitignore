@@ -53,4 +53,9 @@ src/app/src/main/assets/sherpa/**/*.onnx
 # Logs
 *.log
 
+# Commercial test books (not for distribution) — avoid accidental commits
+测试电子书-魔戒現身-*.epub
+测试电子书-魔戒現身-*.mobi
+src/app/src/androidTest/assets/test-books/
+
 .android/
