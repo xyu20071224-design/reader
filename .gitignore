@@ -59,3 +59,8 @@ src/app/src/main/assets/sherpa/**/*.onnx
 src/app/src/androidTest/assets/test-books/
 
 .android/
+
+# Large binaries stay out of git (TTS models & ffmpeg toolchain)
+tts-server/models/
+artifacts/ffmpeg/
+artifacts/ffmpeg.zip
