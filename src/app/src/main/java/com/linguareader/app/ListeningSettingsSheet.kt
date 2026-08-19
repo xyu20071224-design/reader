@@ -58,6 +58,20 @@ import java.io.File
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+        ListeningSettingsBody(onDismiss = onDismiss, onSaved = onDismiss)
+    }
+}
+
+/**
+ * Reusable body of the listening settings (engine / voices / speed / test).
+ * Shared by the reader's quick sheet and the AI drawer's "听书语音" tab.
+ *
+ * @param onDismiss optional dismiss callback; when null the cancel button is hidden.
+ * @param onSaved invoked after a successful save (e.g. close the sheet).
+ */
+@Composable
+internal fun ListeningSettingsBody(onDismiss: (() -> Unit)?, onSaved: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var settings by remember { mutableStateOf(CloudTtsSettings.load(context)) }
@@ -168,7 +182,8 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
         }
         CloudTtsSettings.save(context, settings)
         TtsPlaybackController.onCloudSettingsChanged(context)
-        onDismiss()
+        status = "已保存"
+        onSaved()
     }
 
     LaunchedEffect(settings.mode) {
@@ -176,15 +191,14 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
         if (settings.mode == TtsEngineMode.SYSTEM) loadSystemVoices()
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 30.dp)
-        ) {
-            Text("听书设置", style = MaterialTheme.typography.headlineSmall)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp)
+            .padding(bottom = 30.dp)
+    ) {
+        Text("听书设置", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(14.dp))
             Text("朗读引擎", style = MaterialTheme.typography.labelLarge, color = InkSoft)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -492,8 +506,10 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
 
             Spacer(Modifier.height(20.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("取消") }
-                Spacer(Modifier.width(8.dp))
+                if (onDismiss != null) {
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                    Spacer(Modifier.width(8.dp))
+                }
                 Button(
                     onClick = ::save,
                     enabled = !busy,
@@ -506,7 +522,6 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
             }
         }
     }
-}
 
 @Composable
 private fun PresetField(

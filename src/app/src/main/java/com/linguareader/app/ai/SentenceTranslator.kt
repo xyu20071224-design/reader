@@ -21,6 +21,8 @@ interface SentenceTranslator {
 /** Picks the active sentence translator from the user's settings. */
 object SentenceTranslatorFactory {
     fun from(settings: AiSettings): SentenceTranslator? = when {
+        // Master power switch: networked AI disabled keeps the app fully offline.
+        !settings.powerEnabled -> null
         settings.azureReady -> AzureSentenceTranslator(settings)
         settings.remoteReady -> DeepSeekTranslator(settings)
         else -> null

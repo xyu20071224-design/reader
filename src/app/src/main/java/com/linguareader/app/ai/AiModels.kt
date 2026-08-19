@@ -115,7 +115,9 @@ data class AiSettings(
     val azureTranslationEnabled: Boolean = false,
     val azureKey: String = "",
     val azureRegion: String = "",
-    val azureEndpoint: String = "https://api.cognitive.microsofttranslator.com"
+    val azureEndpoint: String = "https://api.cognitive.microsofttranslator.com",
+    /** Master switch for all networked AI; when false the app stays fully offline. */
+    val powerEnabled: Boolean = true
 ) {
     /** Remote AI is only used when the user enabled it and supplied a key. */
     val remoteReady: Boolean get() = enabled && apiKey.isNotBlank()

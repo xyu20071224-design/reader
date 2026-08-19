@@ -63,7 +63,7 @@ class SystemTtsSynthesizer(
                     // init callback fires (getVoices() then returns null/empty).
                     // Retry once so a selected voice is not silently ignored on
                     // the first utterance. This mirrors SystemTtsVoices.load().
-                    Handler(Looper.getMainLooper()).postDelayed({ populateVoices() }, 300)
+                    Handler(Looper.getMainLooper()).postDelayed({ populateVoices(force = true) }, 300)
                 }
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
@@ -105,18 +105,23 @@ class SystemTtsSynthesizer(
         val voice = configured.takeIf { it.isNotBlank() }?.let { voicesByName[it] }
         val voiceUsable = voice != null && !voice.isNetworkConnectionRequired
         if (!voiceUsable || tts.setVoice(voice) != TextToSpeech.SUCCESS) {
-            tts.language = locale
+            // setLanguage 返回负值表示引擎缺少该语言音色数据（会静默无声），
+            // 回退到引擎默认音色，避免整段静音。
+            if (tts.setLanguage(locale) < 0) {
+                tts.defaultVoice?.let { runCatching { tts.setVoice(it) } }
+            }
         }
         tts.setSpeechRate(rate.coerceIn(0.5f, 2f))
         tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
-    private fun populateVoices() {
+    private fun populateVoices(force: Boolean = false) {
         // Only attempt once: engines whose getVoices() stays empty would
         // otherwise re-query `tts.voices` (potentially a slow binder call) on
-        // every utterance. There is nothing to lazy-load after init anyway —
-        // voices do not meaningfully change mid-session.
-        if (voicesLoaded) return
+        // every utterance. The init path passes force=true for its one delayed
+        // retry, because the voice list may only become available right after
+        // the init callback has fired.
+        if (voicesLoaded && !force) return
         voicesLoaded = true
         // `getVoices()` is a platform type that may be null; collapsing
         // null/binder failures to an empty set keeps `voicesByName` populated
@@ -158,13 +163,15 @@ object TtsSynthesizerFactory {
             settings.mode == TtsEngineMode.PIPER && settings.isConfigured ->
                 SherpaTtsSynthesizer(context, listener)
 
-            settings.mode == TtsEngineMode.AZURE && settings.isConfigured ->
+            // Networked engines honour the master power switch; when it is off
+            // they fall back to the local engines below (offline-first).
+            settings.networkAiEnabled && settings.mode == TtsEngineMode.AZURE && settings.isConfigured ->
                 CloudTtsSynthesizer(context, AzureTtsBackend(settings, context), listener)
 
-            settings.mode == TtsEngineMode.OPENAI_COMPAT && settings.isConfigured ->
+            settings.networkAiEnabled && settings.mode == TtsEngineMode.OPENAI_COMPAT && settings.isConfigured ->
                 CloudTtsSynthesizer(context, OpenAiCompatTtsBackend(settings), listener)
 
-            settings.mode == TtsEngineMode.VOLC && settings.isConfigured ->
+            settings.networkAiEnabled && settings.mode == TtsEngineMode.VOLC && settings.isConfigured ->
                 CloudTtsSynthesizer(context, VolcanoTtsBackend(settings), listener)
 
             else -> SystemTtsSynthesizer(

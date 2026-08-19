@@ -42,7 +42,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -63,7 +62,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.ai.AiBookStatus
@@ -106,7 +104,7 @@ internal fun BookshelfScreen(
     }
     var deleteCandidate by remember { mutableStateOf<Book?>(null) }
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
-    var showAiSettings by rememberSaveable { mutableStateOf(false) }
+    var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
 
     Scaffold(
@@ -136,7 +134,7 @@ internal fun BookshelfScreen(
                         Text(if (showVocabulary) "书架" else "生词本 ${state.savedWords.size}")
                     }
                     if (!showVocabulary) {
-                        TextButton(onClick = { showAiSettings = true }) {
+                        TextButton(onClick = { showAiDrawer = true }) {
                             Icon(
                                 Icons.Default.Settings,
                                 contentDescription = null,
@@ -144,7 +142,7 @@ internal fun BookshelfScreen(
                                 tint = if (state.aiSettings.enabled) Accent else InkSoft
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text(if (state.aiSettings.enabled) "AI 已启用" else "AI 设置")
+                            Text("AI 中心")
                         }
                         Button(
                             onClick = {
@@ -267,11 +265,16 @@ internal fun BookshelfScreen(
         )
     }
 
-    if (showAiSettings) {
-        AiSettingsDialog(
-            settings = state.aiSettings,
-            onSave = onAiSettingsChange,
-            onDismiss = { showAiSettings = false }
+    if (showAiDrawer) {
+        AiDrawerSheet(
+            books = state.books,
+            aiSettings = state.aiSettings,
+            onAiSettingsChange = onAiSettingsChange,
+            onLoadGlossary = onLoadGlossary,
+            onAddGlossary = onAddGlossary,
+            onUpdateGlossary = onUpdateGlossary,
+            onRemoveGlossary = onRemoveGlossary,
+            onDismiss = { showAiDrawer = false }
         )
     }
 
@@ -285,155 +288,6 @@ internal fun BookshelfScreen(
             onDismiss = { glossaryBook = null }
         )
     }
-}
-
-@Composable
-private fun AiSettingsDialog(
-    settings: AiSettings,
-    onSave: (AiSettings) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var enabled by remember(settings) { mutableStateOf(settings.enabled) }
-    var apiKey by remember(settings) { mutableStateOf(settings.apiKey) }
-    var baseUrl by remember(settings) { mutableStateOf(settings.baseUrl) }
-    var model by remember(settings) { mutableStateOf(settings.model) }
-    var azureEnabled by remember(settings) { mutableStateOf(settings.azureTranslationEnabled) }
-    var azureKey by remember(settings) { mutableStateOf(settings.azureKey) }
-    var azureRegion by remember(settings) { mutableStateOf(settings.azureRegion) }
-    var azureEndpoint by remember(settings) { mutableStateOf(settings.azureEndpoint) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = {
-                onSave(
-                    settings.copy(
-                        enabled = enabled,
-                        apiKey = apiKey,
-                        baseUrl = baseUrl,
-                        model = model,
-                        azureTranslationEnabled = azureEnabled,
-                        azureKey = azureKey,
-                        azureRegion = azureRegion,
-                        azureEndpoint = azureEndpoint
-                    )
-                )
-                onDismiss()
-            }) { Text("保存") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
-        },
-        title = { Text("AI 语境翻译") },
-        text = {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("启用", modifier = Modifier.weight(1f))
-                    Switch(checked = enabled, onCheckedChange = { enabled = it })
-                }
-                if (enabled) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = apiKey,
-                        onValueChange = { apiKey = it },
-                        label = { Text("DeepSeek API Key") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it },
-                        label = { Text("接口地址") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = model,
-                        onValueChange = { model = it },
-                        label = { Text("模型") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "启用后，书籍章节文本与点击的词句会发送到 DeepSeek 以生成/更新本书语境档案；" +
-                            "未填 API Key 时自动使用不联网的本地轻量语境。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
-                    )
-                } else {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "关闭时查词保持纯本地词典，不发送任何文本。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
-                    )
-                }
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Azure 整句翻译",
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Switch(
-                        checked = azureEnabled,
-                        onCheckedChange = { azureEnabled = it }
-                    )
-                }
-                if (azureEnabled) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = azureKey,
-                        onValueChange = { azureKey = it },
-                        label = { Text("Azure Translator Key") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = azureRegion,
-                        onValueChange = { azureRegion = it },
-                        label = { Text("区域（如 eastasia，可留空）") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = azureEndpoint,
-                        onValueChange = { azureEndpoint = it },
-                        label = { Text("接口地址") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "整句翻译会把当前句发送到 Azure AI Translator；本书术语表条目会用动态词典标记" +
-                            "（<mstrans:dictionary>）随请求生效，保证专名译法一致。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
-                    )
-                } else {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "关闭时查词面板不显示整句翻译。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
-                    )
-                }
-            }
-        },
-        containerColor = CardSurface,
-        shape = CardShape
-    )
 }
 
 @Composable
@@ -690,72 +544,6 @@ private fun GlossaryDialog(
         containerColor = CardSurface,
         shape = CardShape
     )
-}
-
-@Composable
-private fun GlossaryEntryRow(
-    entry: GlossaryEntry,
-    onUpdate: (GlossaryEntry) -> Unit,
-    onRemove: () -> Unit
-) {
-    var translation by remember(entry.key, entry.translation) {
-        mutableStateOf(entry.translation)
-    }
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(entry.term, fontWeight = FontWeight.Medium)
-                Text(
-                    buildString {
-                        append(
-                            when (entry.origin) {
-                                "manual" -> "手动"
-                                "auto" -> "AI 自动"
-                                else -> "本地词频"
-                            }
-                        )
-                        if (entry.translation.isBlank()) append(" · 保留原文")
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
-                )
-            }
-            Switch(
-                checked = entry.enabled,
-                onCheckedChange = { enabled -> onUpdate(entry.copy(enabled = enabled)) }
-            )
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "删除术语",
-                    tint = InkFaint,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = translation,
-                onValueChange = { translation = it },
-                label = { Text("译法（留空=保留原文）") },
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(6.dp))
-            TextButton(onClick = {
-                onUpdate(entry.copy(translation = translation.trim(), origin = "manual"))
-            }) { Text("保存") }
-        }
-        if (entry.note.isNotBlank()) {
-            Text(
-                entry.note,
-                style = MaterialTheme.typography.labelSmall,
-                color = InkSoft,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
 }
 
 private fun decodeSampledCover(file: File, targetWidth: Int): android.graphics.Bitmap? {

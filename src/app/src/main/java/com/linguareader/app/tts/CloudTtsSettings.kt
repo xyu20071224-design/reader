@@ -28,6 +28,8 @@ enum class TtsEngineMode {
 
 data class CloudTtsSettings(
     val mode: TtsEngineMode = TtsEngineMode.SYSTEM,
+    /** Master switch for networked TTS (Azure / OpenAI-compatible / Volcano). */
+    val networkAiEnabled: Boolean = true,
     val region: String = DEFAULT_REGION,
     val apiKey: String = "",
     val enVoice: String = "",
@@ -67,6 +69,7 @@ data class CloudTtsSettings(
         const val DEFAULT_VOLC_EN_VOICE = "en_female_dacey_uranus_bigtts"
         private const val PREFS = "cloud_tts_settings"
         private const val KEY_MODE = "mode"
+        private const val KEY_NETWORK_AI_ENABLED = "network_ai_enabled"
         private const val KEY_REGION = "region"
         private const val KEY_API = "api_key"
         private const val KEY_EN_VOICE = "en_voice"
@@ -92,6 +95,7 @@ data class CloudTtsSettings(
                 mode = runCatching {
                     TtsEngineMode.valueOf(prefs.getString(KEY_MODE, null) ?: "")
                 }.getOrDefault(TtsEngineMode.SYSTEM),
+                networkAiEnabled = prefs.getBoolean(KEY_NETWORK_AI_ENABLED, true),
                 region = prefs.getString(KEY_REGION, DEFAULT_REGION).orEmpty().ifBlank { DEFAULT_REGION },
                 apiKey = CloudKeyStore.decrypt(context, prefs.getString(KEY_API, null)).orEmpty(),
                 enVoice = prefs.getString(KEY_EN_VOICE, "").orEmpty(),
@@ -124,6 +128,7 @@ data class CloudTtsSettings(
             val encryptedVolcToken = CloudKeyStore.encrypt(context, settings.volcToken)
             prefs.edit()
                 .putString(KEY_MODE, settings.mode.name)
+                .putBoolean(KEY_NETWORK_AI_ENABLED, settings.networkAiEnabled)
                 .putString(KEY_REGION, settings.region.ifBlank { DEFAULT_REGION })
                 .putString(KEY_API, encryptedKey)
                 .putString(KEY_EN_VOICE, settings.enVoice)

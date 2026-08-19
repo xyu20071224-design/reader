@@ -22,7 +22,8 @@ class AiSettingsStore(context: Context) {
         azureRegion = prefs.getString("azure_region", "").orEmpty(),
         azureEndpoint = prefs.getString("azure_endpoint", "https://api.cognitive.microsofttranslator.com")
             .orEmpty()
-            .ifBlank { "https://api.cognitive.microsofttranslator.com" }
+            .ifBlank { "https://api.cognitive.microsofttranslator.com" },
+        powerEnabled = prefs.getBoolean("power_enabled", true)
     )
 
     fun save(settings: AiSettings) {
@@ -38,6 +39,7 @@ class AiSettingsStore(context: Context) {
                 "azure_endpoint",
                 settings.azureEndpoint.trim().ifBlank { "https://api.cognitive.microsofttranslator.com" }
             )
+            .putBoolean("power_enabled", settings.powerEnabled)
             .apply()
     }
 

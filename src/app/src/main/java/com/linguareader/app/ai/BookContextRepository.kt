@@ -82,7 +82,7 @@ class BookContextRepository(
     ): AiLookupResult? {
         val profile = profileFor(book) ?: return null
         val settings = settingsStore.load()
-        val translator = if (profile.source == "deepseek" && settings.remoteReady) {
+        val translator = if (settings.powerEnabled && profile.source == "deepseek" && settings.remoteReady) {
             DeepSeekTranslator(settings)
         } else {
             LocalGlossaryTranslator()
@@ -101,7 +101,7 @@ class BookContextRepository(
 
     private fun chooseTranslator(): AiTranslator {
         val settings = settingsStore.load()
-        return if (settings.remoteReady) DeepSeekTranslator(settings)
+        return if (settings.powerEnabled && settings.remoteReady) DeepSeekTranslator(settings)
         else LocalGlossaryTranslator()
     }
 
