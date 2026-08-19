@@ -36,6 +36,21 @@ interface ChapterTtsPreparer {
 }
 
 /**
+ * Optional hook for synthesizers that can pre-generate the whole book (F-151
+ * "全书缓存"). The system TTS engine does not implement this; the cloud
+ * engines do. Progress is reported across the entire book, not per chapter.
+ */
+interface BookTtsPreparer {
+    fun prepareBook(
+        book: Book,
+        chapterCount: Int,
+        chapterProvider: suspend (Int) -> TtsChapter,
+        onProgress: (done: Int, total: Int) -> Unit,
+        onComplete: (success: Boolean) -> Unit
+    )
+}
+
+/**
  * Cloud synthesizer (F-151).
  *
  * Pre-generates a whole chapter on first play, writes MP3s into the app cache
@@ -47,23 +62,41 @@ class CloudTtsSynthesizer(
     context: Context,
     private val backend: CloudTtsBackend,
     private val listener: TtsSynthesizerListener
-) : TtsSynthesizer, ChapterTtsPreparer {
+) : TtsSynthesizer, ChapterTtsPreparer, BookTtsPreparer {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cacheRoot = File(appContext.filesDir, "tts_cache")
 
+    override val capabilities: TtsCapabilities = TtsCapabilities(
+        wordBoundaries = false,  // M3: Azure word boundary sidecar, Volcano SSE timestamps
+        chapterPreparer = true,
+        gapControl = false,
+        liveRateChange = true    // playback speed applied locally, no re-synthesis/re-billing
+    )
+
     @Volatile
     private var shutdown = false
 
     @Volatile
+    private var stopped = false
+
+    @Volatile
     private var chapterFailed = false
 
+    @Volatile
     private var prepareJob: Job? = null
+    private var bookPrepareJob: Job? = null
     private var preparedChapterKey: String? = null
     private var currentPlayer: MediaPlayer? = null
 
-    val engineLabel: String get() = backend.label
+    /** Cache files currently being synthesized, so two preparers never double-bill one sentence. */
+    private val inflightFiles = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    override val engineLabel: String get() = backend.label
+
+    override val chapterPreparer: ChapterTtsPreparer get() = this
+    override val bookPreparer: BookTtsPreparer get() = this
 
     override val isReady: Boolean get() = backend.isConfigured()
 
@@ -121,23 +154,23 @@ class CloudTtsSynthesizer(
         val (bookId, chapterIndex, sentenceIndex) = parsed
         val voice = backend.voiceFor(text)
         val file = cacheFile(bookId, chapterIndex, sentenceIndex, voice)
+        stopped = false
         scope.launch {
             val ready = waitForFileOrSynthesize(file, text, voice)
-            if (!ready || shutdown) {
-                if (!ready) mainHandler.post { listener.onError(utteranceId) }
-                return@launch
-            }
-            mainHandler.post { play(file, rate, utteranceId) }
+            if (!ready || shutdown || stopped) return@launch
+            mainHandler.post { if (!stopped) play(file, rate, utteranceId) }
         }
     }
 
     override fun stop() {
+        stopped = true
         mainHandler.post { releaseCurrentPlayer() }
     }
 
     override fun shutdown() {
         shutdown = true
         prepareJob?.cancel()
+        bookPrepareJob?.cancel()
         scope.cancel()
         mainHandler.post { releaseCurrentPlayer() }
     }
@@ -147,7 +180,73 @@ class CloudTtsSynthesizer(
         val voice = backend.voiceFor(text)
         val file = cacheFile(book.id, chapter.chapterIndex, index, voice)
         if (file.exists() && file.length() > 0) return true
-        return backend.synthesize(text, backend.voiceFor(text), file).isSuccess
+        val key = file.absolutePath
+        if (inflightFiles.putIfAbsent(key, true) != null) {
+            // Another coroutine (chapter prep vs whole-book cache) is already
+            // synthesizing this file — wait for it instead of double-billing.
+            while (inflightFiles.containsKey(key) && !shutdown) delay(100)
+            return file.exists() && file.length() > 0
+        }
+        try {
+            return backend.synthesize(text, voice, file).isSuccess
+        } finally {
+            inflightFiles.remove(key)
+        }
+    }
+
+    override fun prepareBook(
+        book: Book,
+        chapterCount: Int,
+        chapterProvider: suspend (Int) -> TtsChapter,
+        onProgress: (done: Int, total: Int) -> Unit,
+        onComplete: (success: Boolean) -> Unit
+    ) {
+        bookPrepareJob?.cancel()
+        val job = scope.launch {
+            val chapters = mutableListOf<TtsChapter>()
+            for (index in 0 until chapterCount) {
+                if (shutdown) return@launch
+                val loaded = try {
+                    chapterProvider(index)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    mainHandler.post { onComplete(false) }
+                    return@launch
+                }
+                chapters.add(loaded)
+            }
+            val total = chapters.sumOf { it.sentences.size }
+            if (total == 0) {
+                mainHandler.post { onComplete(true) }
+                return@launch
+            }
+            val semaphore = Semaphore(3)
+            val failed = AtomicBoolean(false)
+            val completed = AtomicInteger(0)
+            val jobs = chapters
+                .flatMap { chapter -> chapter.sentences.indices.map { sentenceIndex -> chapter to sentenceIndex } }
+                .map { (chapter, sentenceIndex) ->
+                    async {
+                        semaphore.withPermit {
+                            if (failed.get() || shutdown) {
+                                false
+                            } else {
+                                val ok = generateOne(book, chapter, sentenceIndex)
+                                if (!ok) failed.set(true)
+                                val done = completed.incrementAndGet()
+                                mainHandler.post { onProgress(done, total) }
+                                ok
+                            }
+                        }
+                    }
+                }
+            val allOk = jobs.all { it.await() }
+            if (!shutdown) {
+                mainHandler.post { onComplete(allOk) }
+            }
+        }
+        bookPrepareJob = job
     }
 
     private suspend fun waitForFileOrSynthesize(
@@ -157,23 +256,31 @@ class CloudTtsSynthesizer(
     ): Boolean {
         val deadline = System.currentTimeMillis() + 25_000
         while (!file.exists() && System.currentTimeMillis() < deadline) {
-            if (shutdown || chapterFailed) break
+            if (shutdown || chapterFailed || stopped) break
             delay(100)
         }
         if (file.exists() && file.length() > 0) return true
-        if (chapterFailed || shutdown) return false
+        if (chapterFailed || shutdown || stopped) return false
         // Chapter preparation may simply be slower than the first-sentence
         // deadline (long sentences, slow self-hosted servers). Waiting for the
         // in-flight preparation avoids synthesizing the same sentence twice.
-        while (!file.exists() && prepareJob?.isActive == true && !shutdown && !chapterFailed) {
+        // Whole-book caching counts too: otherwise the first play of a cached
+        // sentence would re-synthesize and double-bill (OBS-04).
+        val waitDeadline = System.currentTimeMillis() + 30_000
+        while (!file.exists() &&
+            (prepareJob?.isActive == true || bookPrepareJob?.isActive == true) &&
+            !shutdown && !chapterFailed && !stopped &&
+            System.currentTimeMillis() < waitDeadline
+        ) {
             delay(100)
         }
         if (file.exists() && file.length() > 0) return true
-        if (chapterFailed || shutdown) return false
+        if (chapterFailed || shutdown || stopped) return false
         return backend.synthesize(text, voice, file).isSuccess
     }
 
     private fun play(file: File, rate: Float, utteranceId: String) {
+        if (stopped || shutdown) return
         releaseCurrentPlayer()
         val player = MediaPlayer()
         currentPlayer = player
@@ -241,8 +348,11 @@ class CloudTtsSynthesizer(
     }
 
     private fun parseUtteranceId(id: String): Triple<String, Int, Int>? {
+        // 引擎生成的 utteranceId 是 4 段 "bookId:chapter:sentence:attempt"
+        // （见 TtsPlaybackEngine.utteranceIdFor）；末段 attempt 仅用于去重，
+        // 解析时忽略它，只取前 3 段。
         val parts = id.split(":")
-        if (parts.size != 3) return null
+        if (parts.size < 3) return null
         val chapter = parts[1].toIntOrNull() ?: return null
         val sentence = parts[2].toIntOrNull() ?: return null
         return Triple(parts[0], chapter, sentence)

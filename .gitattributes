@@ -1,0 +1,62 @@
+# LinguaReader 统一行尾约定
+# 仓库级默认: 文本文件一律 LF；Windows 批处理/powershell 脚本保持 CRLF；二进制不参与换行归一化。
+#
+# 说明:
+#   - src/ (Android) 与 desktop/ (Compose Multiplatform) 双代码库正在收敛，
+#     统一 LF 以消除跨平台 diff/merge 噪音(见 桌面版代码合并路线图.md)。
+#   - 已 checkout 的文件如需按新规则规范化, 运行 `git add --renormalize .`。
+
+# ---- 文本文件: 强制 LF ----
+*.kt          text eol=lf
+*.java        text eol=lf
+*.kts         text eol=lf
+*.md          text eol=lf
+*.sh          text eol=lf
+*.py          text eol=lf
+*.gradle      text eol=lf
+*.properties  text eol=lf
+*.xml         text eol=lf
+*.pro         text eol=lf
+*.txt         text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.json        text eol=lf
+*.toml        text eol=lf
+*.gitignore   text eol=lf
+*.gitattributes text eol=lf
+
+# gradle wrapper 脚本
+gradlew       text eol=lf
+gradlew.bat   text eol=crlf
+
+# ---- 文本文件: 强制 CRLF (Windows 原生脚本) ----
+*.bat         text eol=crlf
+*.ps1         text eol=crlf
+
+# ---- 二进制文件 (禁止换行归一化/自动合并) ----
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.webp    binary
+*.ico     binary
+*.svg     binary
+*.apk     binary
+*.aab     binary
+*.epub    binary
+*.dll     binary
+*.exe     binary
+*.so      binary
+*.sqlite  binary
+*.db      binary
+*.onnx    binary
+*.bin     binary
+*.mp3     binary
+*.wav     binary
+*.ogg     binary
+*.m4a     binary
+*.jar     binary
+*.zip     binary
+*.ttf     binary
+*.otf     binary
+*.wasm    binary

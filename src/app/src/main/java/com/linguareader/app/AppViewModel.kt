@@ -5,37 +5,30 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.linguareader.app.ai.AiBookStatus
-import com.linguareader.app.ai.AiLookupRequest
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
-import com.linguareader.app.ai.AiSettingsStore
 import com.linguareader.app.ai.BookGlossary
-import com.linguareader.app.ai.BookGlossaryRepository
-import com.linguareader.app.ai.BookContextRepository
 import com.linguareader.app.ai.GlossaryEntry
-import com.linguareader.app.ai.SentenceTranslatorFactory
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
 import com.linguareader.app.data.DictionaryRepository
 import com.linguareader.app.data.Greeting
-import com.linguareader.app.data.LaunchPromptPolicy
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
 import com.linguareader.app.data.ReviewReminderScheduler
-import com.linguareader.app.data.UpdateNote
-import com.linguareader.app.data.updateNoteFor
-import java.util.Calendar
-import com.linguareader.app.data.LibraryRepository
 import com.linguareader.app.data.SavedWord
-import com.linguareader.app.data.VocabularyRepository
+import com.linguareader.app.data.UpdateNote
 import com.linguareader.app.data.WordLookup
+import com.linguareader.app.facade.AiFacade
+import com.linguareader.app.facade.LibraryFacade
+import com.linguareader.app.facade.ReviewSettingsFacade
+import com.linguareader.app.facade.VocabularyFacade
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
 
 sealed interface LaunchPromptUi {
     data class GreetingPrompt(val greeting: Greeting) : LaunchPromptUi
@@ -61,48 +54,34 @@ data class AppUiState(
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
 }
 
+/**
+ * 顶层 ViewModel。现状是 thin facade：库/生词/AI/复习偏好分别委托给
+ * [LibraryFacade] / [VocabularyFacade] / [AiFacade] / [ReviewSettingsFacade]。
+ * 本类只负责 AppUiState 的读改写、协程编排与复习提醒重调度聚合。
+ */
 class AppViewModel(application: Application) : AndroidViewModel(application) {
-    private val library = LibraryRepository(application)
+    private val libraryFacade = LibraryFacade(application, viewModelScope)
+    private val vocabularyFacade = VocabularyFacade(application)
+    private val aiFacade = AiFacade(application)
+    private val reviewSettingsFacade = ReviewSettingsFacade(application)
     private val dictionary = DictionaryRepository(application)
-    private val vocabulary = VocabularyRepository(application)
-    private val reviewPrefs = application.getSharedPreferences("review_settings", android.content.Context.MODE_PRIVATE)
-    private val launchPrefs = application.getSharedPreferences("launch_promo", android.content.Context.MODE_PRIVATE)
-    private val aiSettingsStore = AiSettingsStore(application)
-    private val aiRepository = BookContextRepository(application, aiSettingsStore)
-    private val glossaryRepository = BookGlossaryRepository(application)
+
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
     init {
-        val storedName = reviewPrefs.getString(ReviewMode.PREFERENCE_KEY, null)
-        val preset = if (storedName == ReviewPace.CUSTOM_NAME) null
-        else runCatching { ReviewMode.valueOf(storedName ?: "") }.getOrDefault(ReviewMode.DEFAULT)
-        val custom = ReviewPace.fromJson(reviewPrefs.getString(ReviewPace.STORAGE_KEY, null))
-            ?: ReviewPace.defaultCustom()
-        val reminders = ReviewReminders.fromPreferences(
-            reviewPrefs,
-            fallback = preset?.defaultReminders() ?: ReviewReminders.DEFAULT
-        )
-        val versionCode = BuildConfig.VERSION_CODE
-        val versionName = BuildConfig.VERSION_NAME
-        val lastSeenVersion = launchPrefs.getInt("last_seen_version", 0)
-        val prompt = if (LaunchPromptPolicy.shouldShowUpdateNote(versionCode, lastSeenVersion)) {
-            // Mark as seen immediately so the note appears exactly once.
-            launchPrefs.edit().putInt("last_seen_version", versionCode).apply()
-            LaunchPromptUi.UpdatePrompt(updateNoteFor(versionCode, versionName))
-        } else {
-            LaunchPromptUi.GreetingPrompt(
-                LaunchPromptPolicy.greetingForHour(
-                    Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-                )
-            )
+        // Delete-book cleanup: drop AI context profile + per-book glossary.
+        libraryFacade.onBeforeDelete = { book ->
+            aiFacade.delete(book.id)
         }
+
+        val reviewState = reviewSettingsFacade.loadState()
         mutableState.value = mutableState.value.copy(
-            reviewPreset = preset,
-            customReview = custom,
-            reminders = reminders,
-            launchPrompt = prompt,
-            aiSettings = aiSettingsStore.load()
+            reviewPreset = reviewState.preset,
+            customReview = reviewState.custom,
+            reminders = reviewState.reminders,
+            launchPrompt = reviewSettingsFacade.resolveLaunchPrompt(),
+            aiSettings = aiFacade.loadSettings()
         )
         refresh()
     }
@@ -110,8 +89,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun refresh() {
         viewModelScope.launch {
             mutableState.value = mutableState.value.copy(loading = true)
-            val books = library.loadBooks()
-            val savedWords = vocabulary.load()
+            val books = libraryFacade.loadBooks()
+            val savedWords = vocabularyFacade.load()
             mutableState.value = mutableState.value.copy(
                 books = books,
                 savedWords = savedWords,
@@ -133,13 +112,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun importBook(uri: Uri) {
         viewModelScope.launch {
             mutableState.value = mutableState.value.copy(loading = true, message = null)
-            runCatching { library.importBook(uri) }
+            runCatching { libraryFacade.importBook(uri) }
                 .onSuccess { book ->
-                    val books = library.loadBooks()
+                    val books = libraryFacade.loadBooks()
                     mutableState.value = mutableState.value.copy(
                         books = books,
                         currentBook = book,
-                        savedWords = vocabulary.load(),
+                        savedWords = vocabularyFacade.load(),
                         loading = false
                     )
                     rescheduleReviewReminders()
@@ -165,7 +144,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun saveProgress(book: Book, chapterIndex: Int, pageIndex: Int, progress: Float) {
-        library.saveProgress(book, chapterIndex, pageIndex, progress)
+        libraryFacade.saveProgress(book, chapterIndex, pageIndex, progress)
         mutableState.value = mutableState.value.copy(
             currentBook = mutableState.value.currentBook?.copy(
                 chapterIndex = chapterIndex,
@@ -177,18 +156,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteBook(book: Book) {
         viewModelScope.launch {
-            library.deleteBook(book)
-            aiRepository.delete(book.id)
-            glossaryRepository.delete(book.id)
-            // Cloud TTS chapter audio cache is per book; remove it with the book.
-            File(getApplication<Application>().filesDir, "tts_cache/${book.id}")
-                .deleteRecursively()
+            libraryFacade.deleteBook(book)
             refresh()
         }
     }
 
     fun setAiSettings(settings: AiSettings) {
-        aiSettingsStore.save(settings)
+        aiFacade.saveSettings(settings)
         mutableState.value = mutableState.value.copy(aiSettings = settings)
         if (settings.enabled) {
             mutableState.value.currentBook?.let { ensureBookContext(it) }
@@ -203,9 +177,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (current?.generating == true || current?.ready == true) return
         viewModelScope.launch {
             setAiStatus(book.id, AiBookStatus(generating = true))
-            runCatching { aiRepository.generate(book) }
+            runCatching { aiFacade.generateContext(book) }
                 .onSuccess { profile ->
-                    runCatching { glossaryRepository.importFromProfile(book.id, profile) }
+                    runCatching { aiFacade.importGlossaryFromProfile(book.id, profile) }
                     setAiStatus(book.id, AiBookStatus(ready = true))
                 }
                 .onFailure {
@@ -222,9 +196,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (!mutableState.value.aiSettings.enabled) return
         viewModelScope.launch {
             setAiStatus(book.id, AiBookStatus(generating = true))
-            runCatching { aiRepository.generate(book, force = true) }
+            runCatching { aiFacade.generateContext(book, force = true) }
                 .onSuccess { profile ->
-                    runCatching { glossaryRepository.importFromProfile(book.id, profile) }
+                    runCatching { aiFacade.importGlossaryFromProfile(book.id, profile) }
                     setAiStatus(book.id, AiBookStatus(ready = true))
                 }
                 .onFailure {
@@ -243,22 +217,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setReviewMode(mode: ReviewMode) {
-        reviewPrefs.edit().putString(ReviewMode.PREFERENCE_KEY, mode.name).apply()
+        reviewSettingsFacade.setReviewMode(mode)
         mutableState.value = mutableState.value.copy(reviewPreset = mode)
         rescheduleReviewReminders()
     }
 
     fun setCustomReview(pace: ReviewPace) {
-        reviewPrefs.edit()
-            .putString(ReviewMode.PREFERENCE_KEY, ReviewPace.CUSTOM_NAME)
-            .putString(ReviewPace.STORAGE_KEY, pace.toJson())
-            .apply()
+        reviewSettingsFacade.setCustomReview(pace)
         mutableState.value = mutableState.value.copy(reviewPreset = null, customReview = pace)
         rescheduleReviewReminders()
     }
 
     fun setReminders(reminders: ReviewReminders) {
-        ReviewReminders.write(reviewPrefs, reminders)
+        reviewSettingsFacade.setReminders(reminders)
         mutableState.value = mutableState.value.copy(reminders = reminders)
         rescheduleReviewReminders()
     }
@@ -283,33 +254,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         entry: ContextualDictionaryEntry?
     ): AiLookupResult? {
         if (!mutableState.value.aiSettings.enabled) return null
-        val request = AiLookupRequest(
-            bookId = book.id,
-            bookTitle = book.title,
-            surfaceWord = lookup.word,
-            headword = entry?.headword ?: lookup.word,
-            sentence = lookup.sentence,
-            paragraph = lookup.paragraph,
-            localSenses = entry?.senses?.map { it.text }.orEmpty(),
-            localDefinitions = entry?.definitions.orEmpty(),
-            matchedPhrase = entry?.matchedPhrase,
-            glossary = glossaryRepository.load(book.id).entries
-        )
-        return aiRepository.translate(book, request)
+        return aiFacade.aiLookup(book, lookup, entry)
     }
 
     // --- per-book glossary ---------------------------------------------------
 
-    suspend fun glossary(bookId: String): BookGlossary = glossaryRepository.load(bookId)
+    suspend fun glossary(bookId: String): BookGlossary = aiFacade.glossary(bookId)
 
     suspend fun addGlossaryEntry(bookId: String, term: String, translation: String): BookGlossary =
-        glossaryRepository.addOrUpdate(bookId, term, translation)
+        aiFacade.addGlossaryEntry(bookId, term, translation)
 
     suspend fun updateGlossaryEntry(bookId: String, entry: GlossaryEntry): BookGlossary =
-        glossaryRepository.update(bookId, entry)
+        aiFacade.updateGlossaryEntry(bookId, entry)
 
     suspend fun removeGlossaryEntry(bookId: String, term: String): BookGlossary =
-        glossaryRepository.remove(bookId, term)
+        aiFacade.removeGlossaryEntry(bookId, term)
 
     // --- Azure sentence translation -------------------------------------------
 
@@ -319,10 +278,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      */
     suspend fun translateSentence(book: Book, sentence: String): String {
         val settings = mutableState.value.aiSettings
-        val translator = SentenceTranslatorFactory.from(settings)
-            ?: error("未启用整句翻译（需要 Azure Translator Key 或 DeepSeek API Key）")
-        val glossary = glossaryRepository.load(book.id)
-        return translator.translateSentence(sentence, glossary)
+        return aiFacade.translateSentence(book, sentence, settings)
     }
 
     fun saveWord(
@@ -333,7 +289,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         aiResult: AiLookupResult? = null
     ) {
         viewModelScope.launch {
-            val words = vocabulary.save(
+            val words = vocabularyFacade.save(
                 book, chapterTitle, lookup, entry,
                 pace = mutableState.value.reviewPace,
                 aiResult = aiResult
@@ -345,7 +301,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun removeSavedWord(id: String) {
         viewModelScope.launch {
-            val words = vocabulary.remove(id)
+            val words = vocabularyFacade.remove(id)
             mutableState.value = mutableState.value.copy(savedWords = words)
             rescheduleReviewReminders()
         }
@@ -353,7 +309,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun reviewWord(id: String, remembered: Boolean, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
-            runCatching { vocabulary.review(id, remembered, mutableState.value.reviewPace) }
+            runCatching { vocabularyFacade.review(id, remembered, mutableState.value.reviewPace) }
                 .onSuccess { words ->
                     mutableState.value = mutableState.value.copy(savedWords = words)
                     rescheduleReviewReminders()
@@ -362,7 +318,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure {
                     // Roll the list back to what is actually on disk so the UI
                     // never claims a review that was not persisted.
-                    val actual = vocabulary.load()
+                    val actual = vocabularyFacade.load()
                     mutableState.value = mutableState.value.copy(
                         savedWords = actual,
                         message = "保存复习结果失败，已恢复本地记录。",
@@ -375,7 +331,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun exportVocabulary(uri: Uri) {
         viewModelScope.launch {
-            runCatching { vocabulary.export(uri, mutableState.value.savedWords) }
+            runCatching { vocabularyFacade.export(uri, mutableState.value.savedWords) }
                 .onSuccess {
                     mutableState.value = mutableState.value.copy(
                         message = "生词表已导出为 CSV。",

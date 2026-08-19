@@ -1,4 +1,4 @@
-package com.linguareader.app
+package com.linguareader.app.ui.reader
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -74,8 +74,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.linguareader.app.AppViewModel
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
+import com.linguareader.app.data.AppPrefs
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
@@ -92,6 +94,19 @@ import com.linguareader.app.reader.EpubPage
 import com.linguareader.app.reader.ReaderController
 import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.TtsPlaybackState
+import com.linguareader.app.ui.review.ReviewPromptBanner
+import com.linguareader.app.ui.review.ReviewSettingsSheet
+import com.linguareader.app.ui.review.ReviewSheet
+import com.linguareader.app.ui.theme.Accent
+import com.linguareader.app.ui.theme.Danger
+import com.linguareader.app.ui.theme.CardShape
+import com.linguareader.app.ui.theme.CardSurface
+import com.linguareader.app.ui.theme.Ink
+import com.linguareader.app.ui.theme.InkFaint
+import com.linguareader.app.ui.theme.InkSoft
+import com.linguareader.app.ui.theme.Paper
+import com.linguareader.app.ui.tts.ListeningBar
+import com.linguareader.app.ui.tts.ListeningSettingsSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -162,6 +177,7 @@ internal fun ReaderScreen(
     var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
     var aiLoading by remember { mutableStateOf(false) }
     var sentenceTranslation by remember { mutableStateOf<String?>(null) }
+    var sentenceTranslationError by remember { mutableStateOf<String?>(null) }
     var sentenceTranslationLoading by remember { mutableStateOf(false) }
     var showingRelatedPhrase by remember { mutableStateOf(false) }
     var reviewDeck by remember { mutableStateOf<List<SavedWord>?>(null) }
@@ -173,19 +189,17 @@ internal fun ReaderScreen(
         savedWords.filter { it.nextReviewAt <= nowTick }.sortedBy { it.nextReviewAt }
     }
 
-    val preferenceStore = remember {
-        context.getSharedPreferences("reader_preferences", android.content.Context.MODE_PRIVATE)
-    }
+    val preferenceStore = remember { AppPrefs.get(context).reader }
     var preferences by remember {
         mutableStateOf(
             ReaderPreferences(
-                fontPercent = preferenceStore.getInt("fontPercent", 100),
-                lineHeight = preferenceStore.getFloat("lineHeight", 1.65f),
+                fontPercent = preferenceStore.fontPercent,
+                lineHeight = preferenceStore.lineHeight,
                 theme = runCatching {
-                    ReaderTheme.valueOf(preferenceStore.getString("theme", null) ?: "")
+                    ReaderTheme.valueOf(preferenceStore.theme ?: "")
                 }.getOrDefault(ReaderTheme.PAPER),
                 fontFamily = runCatching {
-                    ReaderFont.valueOf(preferenceStore.getString("font", null) ?: "")
+                    ReaderFont.valueOf(preferenceStore.font ?: "")
                 }.getOrDefault(ReaderFont.SERIF)
             )
         )
@@ -193,12 +207,10 @@ internal fun ReaderScreen(
 
     fun persistPreferences(value: ReaderPreferences) {
         preferences = value
-        preferenceStore.edit()
-            .putInt("fontPercent", value.fontPercent)
-            .putFloat("lineHeight", value.lineHeight)
-            .putString("theme", value.theme.name)
-            .putString("font", value.fontFamily.name)
-            .apply()
+        preferenceStore.putFontPercent(value.fontPercent)
+        preferenceStore.putLineHeight(value.lineHeight)
+        preferenceStore.putTheme(value.theme.name)
+        preferenceStore.putFont(value.fontFamily.name)
         controller.applyPreferences(value)
     }
 
@@ -361,6 +373,7 @@ internal fun ReaderScreen(
         aiResult = null
         aiLoading = false
         sentenceTranslation = null
+        sentenceTranslationError = null
         sentenceTranslationLoading = false
         dictionaryResult = viewModel.lookup(request)
         showingRelatedPhrase = false
@@ -408,9 +421,9 @@ internal fun ReaderScreen(
                     pendingPage = page
                     pendingCount = count
                     needsSave = true
-                    // A manual page turn leaves the fixed-position TTS overlay
-                    // at stale viewport coordinates; clear it here. The next
-                    // spoken sentence re-applies and re-scrolls the highlight.
+                    // A manual page turn scrolls the highlight away with the
+                    // text; clear it here so no stale block lingers on the new
+                    // page before the next sentence re-applies it.
                     if (ttsForThisBook) controller.clearHighlight()
                     if (ttsForThisBook && ttsState.isPlaying) {
                         reportTtsPositionDelayed()
@@ -582,6 +595,7 @@ internal fun ReaderScreen(
                 onNext = { TtsPlaybackController.next(context) },
                 onStop = { TtsPlaybackController.stop(context) },
                 onRateChange = { TtsPlaybackController.setRate(context, it) },
+                onCacheBook = { TtsPlaybackController.cacheWholeBook(context) },
                 choosingStart = choosingStart,
                 onChooseStart = {
                     choosingStart = !choosingStart
@@ -692,6 +706,7 @@ internal fun ReaderScreen(
             aiLoading = aiLoading,
             azureReady = aiSettings.azureReady,
             sentenceTranslation = sentenceTranslation,
+            sentenceTranslationError = sentenceTranslationError,
             sentenceTranslationLoading = sentenceTranslationLoading,
             isSaved = savedId != null && savedWords.any { word -> word.id == savedId },
             isPhraseView = showingRelatedPhrase,
@@ -726,9 +741,12 @@ internal fun ReaderScreen(
                 if (sentenceTranslationLoading) return@LookupSheet
                 scope.launch {
                     sentenceTranslationLoading = true
-                    sentenceTranslation = runCatching {
+                    sentenceTranslation = null
+                    sentenceTranslationError = null
+                    runCatching {
                         viewModel.translateSentence(book, currentLookup.sentence)
-                    }.getOrNull()
+                    }.onSuccess { sentenceTranslation = it }
+                        .onFailure { sentenceTranslationError = it.message ?: "翻译失败" }
                     sentenceTranslationLoading = false
                 }
             },
@@ -979,6 +997,7 @@ private fun LookupSheet(
     aiLoading: Boolean,
     azureReady: Boolean,
     sentenceTranslation: String?,
+    sentenceTranslationError: String?,
     sentenceTranslationLoading: Boolean,
     isSaved: Boolean,
     isPhraseView: Boolean,
@@ -1126,6 +1145,7 @@ private fun LookupSheet(
                     )
                 }
             }
+
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(
@@ -1157,6 +1177,13 @@ private fun LookupSheet(
                     "整句翻译（Azure）：$sentenceTranslation",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Ink
+                )
+            } else if (sentenceTranslationError != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "翻译失败：$sentenceTranslationError",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Danger
                 )
             }
             Spacer(Modifier.height(14.dp))

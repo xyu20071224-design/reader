@@ -49,7 +49,6 @@ object ReviewReminderPolicy {
 
 /** Schedules/cancels the single next-due local notification for enabled modes. */
 object ReviewReminderScheduler {
-    private const val PREFS = "review_notifications"
     private const val CHANNEL_ID = "review_reminder"
     private const val REQUEST_CODE = 4201
 
@@ -108,22 +107,29 @@ object ReviewReminderScheduler {
         notificationsEnabled: Boolean
     ) = schedule(context, words, mode.toPace(), notificationsEnabled)
 
-    fun todayCount(context: Context, now: Long): Int {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return prefs.getInt(ReviewReminderPolicy.dayKey(now), 0)
-    }
+    fun todayCount(context: Context, now: Long): Int =
+        AppPrefs.get(context).reviewNotifications.int(ReviewReminderPolicy.dayKey(now), 0)
 
     fun recordNotification(context: Context, now: Long) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.edit().putInt(ReviewReminderPolicy.dayKey(now), todayCount(context, now) + 1).apply()
+        AppPrefs.get(context).reviewNotifications
+            .putInt(ReviewReminderPolicy.dayKey(now), todayCount(context, now) + 1)
     }
 }
 
 class ReviewReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val prefs = context.getSharedPreferences("review_settings", Context.MODE_PRIVATE)
-        val pace = ReviewPace.fromPreferences(prefs)
-        val reminders = ReviewReminders.fromPreferences(prefs)
+        val review = AppPrefs.get(context).review
+        val pace = when (val name = review.string(ReviewMode.PREFERENCE_KEY)) {
+            ReviewPace.CUSTOM_NAME ->
+                ReviewPace.fromJson(review.string(ReviewPace.STORAGE_KEY))
+                    ?: ReviewPace.defaultCustom()
+            else -> runCatching { ReviewMode.valueOf(name ?: "") }
+                .getOrDefault(ReviewMode.DEFAULT)
+                .toPace()
+        }
+        val reminders = review.string(ReviewReminders.STORAGE_KEY)
+            ?.let(ReviewReminders::fromJson)
+            ?: ReviewReminders.DEFAULT
         val now = System.currentTimeMillis()
         val words = runCatching {
             runBlocking { VocabularyRepository(context).load() }

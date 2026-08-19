@@ -1,3 +1,14 @@
+## 2026-08-16 AI 插件加固：CJK 支持 + 瞬态重试 + 查词缓存（增量验证）
+
+- 词条匹配 CJK 化：`BookGlossary.matchesIn` 词边界改为“仅拉丁字母/数字视为词内字符”，CJK 视为边界——拉丁词条在中文字符旁可命中，中文词条可按子串命中更长的中文词（如“哈利波特”内匹配“哈利”）；新增 `Char.isCjk` 工具。
+- 整句翻译语言可配置：`AiSettings` 新增 `sourceLanguage`/`targetLanguage`（默认 `en`/`zh-Hans`），设置页（AI 设置对话框）可编辑；Azure 请求 `from`/`to` 取自设置（URL 编码），DeepSeek 整句回退提示词按语言显示名生成（新增 `languageDisplayName` 映射）。
+- 本地轻量语境支持中文/日文/韩文书：在 CJK 连续串中统计贴近边界、且不含函数字停用表的 2–4 字 n-gram（阈值 3 次、跨 2 章），按“被更长且更频繁的词条完整包含”去重子串；点击 2 字以上中文词可按包含关系命中更长词条。
+- DeepSeek 瞬态重试：`AiRequestException` 增加 `statusCode`；网络错误（IOException）与 HTTP 429/5xx 按线性退避（0.8s/1.6s）重试，单次调用最多 3 次尝试；`response_format` 拒绝时自动重试一次不带 jsonMode（原行为保留）；取消异常立即上抛。
+- 查词设置缓存：`AiSettingsStore` 增加全局 `revision` 计数（save 时自增），`BookContextRepository` 据此缓存 `AiSettings` 与 `DeepSeekTranslator` 实例（设置不变不重建），消除每次点词查词的 SharedPreferences 读取与 Keystore 解密。
+- 附带修复：工作区未完成的 TTS 重构缺 `fallbackSynthesizerFactory` 实参导致模块无法编译，按 TtsPlaybackEngine 文档意图补上（`TtsPlaybackService` 用系统引擎兜底、`TtsPlaybackEngineTest` 复用录制工厂）。
+- `testDebugUnitTest`：通过（153 个，0 失败；AI 包 29 个，新增 CJK 边界/中文词频与查词/瞬态重试判定/语言名映射等 11 个用例）。
+- 环境说明：本机无 Android Studio 时以 Homebrew JDK 17 + android-commandlinetools（android-35）运行；Robolectric 用例需把 `maven.repo.local`/`user.home` 指到可写目录（沙箱外 `~/.m2` 不可写），测试代码未改动。
+
 ## 2026-08-06 F-122 短语识别逻辑修复（增量验证）
 
 - 根因：短语匹配只看“点击词是否在词条中”，词组后部宾语/补足语（如 `good day` 的 `day`、`out of time` 的 `time`）或点击偏移漂移到相邻词时，仍会短语优先，导致点到单词却显示词组释义。

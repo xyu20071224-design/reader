@@ -130,6 +130,19 @@ class ContextAnalyzerTest {
     }
 
     @Test
+    fun targetIndexAtExclusiveBoundarySelectsNextToken() {
+        val sentence = "good day"
+        val tokens = ContextAnalyzer.tokenize(sentence)
+        // The caret at the start of the next token belongs to that token, not
+        // to the previous one whose endExclusive is exclusive.
+        val offset = tokens[1].start
+        val lookup = WordLookup("day", sentence, sentence, offset, 0f, 0f)
+        val target = ContextAnalyzer.targetIndex(tokens, lookup)
+
+        assertEquals(1, target)
+    }
+
+    @Test
     fun targetIndexPrefersClickedWordOverDriftedOffset() {
         val sentence = "He has got to go now."
         // The offset points inside "got", but the tapped word is "go":

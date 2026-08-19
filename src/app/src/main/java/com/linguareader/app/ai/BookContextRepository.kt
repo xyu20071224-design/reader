@@ -41,6 +41,12 @@ class BookContextRepository(
 ) {
     private val profilesDir = File(context.filesDir, "ai/book-context").apply { mkdirs() }
     private val mutex = Mutex()
+    private val localTranslator = LocalGlossaryTranslator()
+    private val settingsCache = SettingsCache(settingsStore)
+
+    /** Rebuilt only when the settings the translator was created from change. */
+    @Volatile private var deepSeekSettings: AiSettings? = null
+    @Volatile private var deepSeekTranslator: DeepSeekTranslator? = null
 
     suspend fun profileFor(book: Book): BookContextProfile? = withContext(Dispatchers.IO) {
         val file = profileFile(book.id)
@@ -81,17 +87,17 @@ class BookContextRepository(
         request: AiLookupRequest
     ): AiLookupResult? {
         val profile = profileFor(book) ?: return null
-        val settings = settingsStore.load()
+        val settings = settingsCache.load()
         val translator = if (profile.source == "deepseek" && settings.remoteReady) {
-            DeepSeekTranslator(settings)
+            deepSeek(settings)
         } else {
-            LocalGlossaryTranslator()
+            localTranslator
         }
         return try {
             translator.translate(profile, request)
         } catch (failure: Throwable) {
             if (failure is CancellationException || translator.offline) throw failure
-            LocalGlossaryTranslator().translate(profile, request)
+            localTranslator.translate(profile, request)
         }
     }
 
@@ -100,10 +106,37 @@ class BookContextRepository(
     }
 
     private fun chooseTranslator(): AiTranslator {
-        val settings = settingsStore.load()
-        return if (settings.remoteReady) DeepSeekTranslator(settings)
-        else LocalGlossaryTranslator()
+        val settings = settingsCache.load()
+        return if (settings.remoteReady) deepSeek(settings) else localTranslator
+    }
+
+    private fun deepSeek(settings: AiSettings): DeepSeekTranslator {
+        val cached = deepSeekTranslator
+        if (cached != null && deepSeekSettings == settings) return cached
+        val created = DeepSeekTranslator(settings)
+        deepSeekSettings = settings
+        deepSeekTranslator = created
+        return created
     }
 
     private fun profileFile(bookId: String): File = File(profilesDir, "$bookId.json")
+}
+
+/**
+ * Caches [AiSettingsStore.load] results, invalidated by the store's global
+ * revision counter (bumped on every save). Avoids a SharedPreferences read
+ * and a Keystore decryption on every tapped-word lookup.
+ */
+private class SettingsCache(private val store: AiSettingsStore) {
+    @Volatile private var revision = -1L
+    @Volatile private var cached: AiSettings = AiSettings()
+
+    fun load(): AiSettings {
+        val current = AiSettingsStore.revision
+        if (current == revision) return cached
+        val fresh = store.load()
+        cached = fresh
+        revision = current
+        return fresh
+    }
 }

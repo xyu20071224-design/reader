@@ -6,6 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 /**
  * Azure AI Translator sentence translation with per-request dynamic dictionary.
@@ -27,10 +28,12 @@ class AzureSentenceTranslator(private val settings: AiSettings) : SentenceTransl
         val marked = markupSentence(sentence, glossary.matchesIn(sentence))
         return withContext(Dispatchers.IO) {
             val base = settings.azureEndpoint.trimEnd('/')
+            val fromLang = settings.sourceLanguage.trim().ifBlank { "en" }
+            val toLang = settings.targetLanguage.trim().ifBlank { "zh-Hans" }
             val query = buildString {
                 append("api-version=3.0")
-                append("&from=en")
-                append("&to=zh-Hans")
+                append("&from=").append(URLEncoder.encode(fromLang, "UTF-8"))
+                append("&to=").append(URLEncoder.encode(toLang, "UTF-8"))
                 append("&textType=plain")
             }
             val url = URL("$base/translate?$query")
@@ -55,7 +58,10 @@ class AzureSentenceTranslator(private val settings: AiSettings) : SentenceTransl
                 val payload = if (code in 200..299) connection.inputStream else connection.errorStream
                 val text = payload?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
                 if (code !in 200..299) {
-                    throw AiRequestException("Azure 翻译 API 返回 HTTP $code：${text.take(300)}")
+                    throw AiRequestException(
+                        "Azure 翻译 API 返回 HTTP $code：${text.take(300)}",
+                        statusCode = code
+                    )
                 }
                 val root = JSONArray(text)
                 root.getJSONObject(0)
@@ -78,7 +84,7 @@ class AzureSentenceTranslator(private val settings: AiSettings) : SentenceTransl
                 builder.replace(
                     match.start,
                     match.endExclusive,
-                    "<mstrans:dictionary translation=\"$escaped\">${match.text}</mstrans:dictionary>"
+                    "<mstrans:dictionary translation=\"$escaped\">${xmlEscape(match.text)}</mstrans:dictionary>"
                 )
             }
             return builder.toString()

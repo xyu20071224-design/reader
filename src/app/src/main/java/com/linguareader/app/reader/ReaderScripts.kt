@@ -665,6 +665,28 @@ object ReaderScripts {
             }
           }
 
+          function isWordChar(ch) {
+            if (ch === undefined || ch === null || ch === '') return false;
+            if (/[\s\p{P}]/u.test(ch)) return false;
+            // Match the Kotlin rule: Latin letters/digits continue a word;
+            // CJK characters are treated as boundaries.
+            const cjk = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7AF]/.test(ch);
+            if (cjk) return false;
+            return /[\p{L}\p{N}]/u.test(ch) || /[A-Za-z0-9]/.test(ch);
+          }
+
+          function findWordIndex(text, word) {
+            let search = 0;
+            while (true) {
+              const index = text.indexOf(word, search);
+              if (index < 0) return -1;
+              const before = text[index - 1];
+              const after = text[index + word.length];
+              if (!isWordChar(before) && !isWordChar(after)) return index;
+              search = index + 1;
+            }
+          }
+
           function markSavedWords(root) {
             const version = ++savedMarkVersion;
             const active = savedWords
@@ -691,7 +713,7 @@ object ReaderScripts {
                 let best = null;
                 const lower = remaining.toLowerCase();
                 for (const word of active) {
-                  const index = lower.indexOf(word.toLowerCase());
+                  const index = findWordIndex(lower, word.toLowerCase());
                   if (index >= 0 && (best === null || index < best.index)) {
                     best = { index: index, word: word };
                   }
@@ -822,19 +844,29 @@ object ReaderScripts {
 
           function showTtsHighlight(range) {
             if (!range || range.collapsed) return;
+            // Anchor the overlay inside the scroll container and position each
+            // box in the scroller's scrollable coordinate space. The previous
+            // position:fixed + viewport coords left the highlight pinned to the
+            // screen while the text scrolled underneath it.
+            const scroller = document.getElementById('lr-scroller');
             const overlay = document.createElement('div');
             overlay.id = 'lr-tts-overlay';
             overlay.style.cssText =
-              'position:fixed;left:0;top:0;width:0;height:0;' +
+              'position:absolute;left:0;top:0;width:0;height:0;' +
               'pointer-events:none;z-index:2147483647;';
-            document.body.appendChild(overlay);
+            (scroller || document.body).appendChild(overlay);
+            const scrollerRect = scroller ? scroller.getBoundingClientRect() : { left: 0, top: 0 };
+            const scrollLeft = scroller ? scroller.scrollLeft : 0;
+            const scrollTop = scroller ? scroller.scrollTop : 0;
             const rects = range.getClientRects();
             for (let i = 0; i < rects.length; i++) {
               const rect = rects[i];
               if (rect.width === 0 && rect.height === 0) continue;
               const box = document.createElement('div');
               box.style.cssText =
-                'position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
+                'position:absolute;' +
+                'left:' + (rect.left - scrollerRect.left + scrollLeft) + 'px;' +
+                'top:' + (rect.top - scrollerRect.top + scrollTop) + 'px;' +
                 'width:' + rect.width + 'px;height:' + rect.height + 'px;' +
                 'background:rgba(184,132,83,.32);border-radius:3px;' +
                 'pointer-events:none;';

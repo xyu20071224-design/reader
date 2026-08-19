@@ -240,7 +240,8 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 - 语境档案为结构化 JSON：剧情/主题摘要、角色与译名、地点/机构译名、本书术语与固定译法、文体说明，另含 `source`（`deepseek`/`local`，旧档案缺省按 `local` 兼容）。超长书籍按每段约 24,000 字符分批请求并合并去重。
 - 点词时把“书级档案 + 当前句/段落 + 点击词 + 本地词典候选义项”发给 AI；AI 从中选出最贴合本书语境的释义，或给出专名/术语的本书译法。AI 结果作为“本书语境释义”区域显示在本地词典结果之上。
 - 未配置 API Key 或 AI 请求失败/超时时自动降级：有本地轻量档案时显示词频提示，否则仅显示本地词典结果，不阻塞阅读。
-- 本地轻量档案（离线实现）：统计章节中重复出现的大写专名与连续大写双词，记录词频和首次出现句子；命中时显示“本书出现 N 次；首次见：……”提示。
+- 本地轻量档案（离线实现）：统计章节中重复出现的大写专名与连续大写双词，记录词频和首次出现句子；命中时显示“本书出现 N 次；首次见：……”提示。中文/日文/韩文书同样支持：统计贴近边界的 2–4 字 CJK 序列（函数字过滤 + 子串去重），点击的 2 字以上中文词可按“包含”匹配到更长词条（如“哈利”命中“哈利波特”）。
+- DeepSeek 请求内置瞬态重试：网络错误、HTTP 429/5xx 最多重试至 3 次总尝试（线性退避 0.8s/1.6s），单次超时不再直接降级；`response_format` 被端点拒绝时自动重试一次不带 jsonMode。
 - 收藏生词时，若 AI 结果已返回，则一并保存 AI 释义、来源与说明（`SavedWord.aiMeaning/aiSource/aiExplanation`）；生词本卡片与复习卡在本地释义下方展示“本书语境（来源）：……”；CSV 导出新增 `ai_meaning`、`ai_source` 两列；旧数据无 AI 字段时正常兼容显示。
 - 提供方抽象为 `AiTranslator` 接口（`DeepSeekTranslator` / `LocalGlossaryTranslator`），接口地址与模型可在设置中修改，兼容 OpenAI 风格 `/chat/completions` 接口。
 - API Key 仅保存在应用私有 SharedPreferences，不写入代码或构建产物；AI 设置页需用户显式填写 Key 才会启用联网请求。
@@ -254,7 +255,7 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 - 术语来源：AI 档案生成后自动导入角色/地点/术语（直接启用）；本地轻量模式导入无译法的词频条目（标记“本地词频”，不参与 Azure 翻译，仅点词提示）；用户可在书级“术语表”入口手动新增、编辑、删除、开关。手动条目优先级最高，译法留空表示“保留原文不译”。
 - 点词查词时，术语表条目优先于档案内嵌术语参与 DeepSeek/本地查询，保证用户修改立即生效。
 - 整句翻译独立于点词语境释义，提供方抽象为 `SentenceTranslator` 接口，由 `SentenceTranslatorFactory` 按设置选择：Azure AI Translator 优先（设置中单独填写 Azure Translator Key，可选区域）；未配置 Azure 时若已启用 DeepSeek，则回退到 DeepSeek 提示词翻译。
-- Azure 请求为 `POST {endpoint}/translate?api-version=3.0&from=en&to=zh-Hans`，句中出现且启用的术语按“最长优先、不重叠”匹配，并用 `<mstrans:dictionary translation="…">…</mstrans:dictionary>` 动态词典标记包裹（区分大小写，保留句中原文大小写）；译法为空时标记为原文以保持不译。
+- Azure 请求为 `POST {endpoint}/translate?api-version=3.0&from={源语言}&to={目标语言}`，语言代码取自设置（默认 `en` / `zh-Hans`，DeepSeek 整句回退提示词同步使用）；句中出现且启用的术语按“最长优先、不重叠”匹配（词边界对 CJK 友好：拉丁词相邻 CJK 视为边界，中文术语可按子串匹配），并用 `<mstrans:dictionary translation="…">…</mstrans:dictionary>` 动态词典标记包裹（区分大小写，保留句中原文大小写）；译法为空时标记为原文以保持不译。
 - 未配置任何整句翻译提供方或请求失败时，按钮提示/忽略结果，不影响本地查词与 AI 语境释义。
 
 ### 3.4 生词本与复习

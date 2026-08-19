@@ -14,7 +14,7 @@ interface SentenceTranslator {
     val displayName: String
     val offline: Boolean
 
-    /** Translates one English sentence to Simplified Chinese. */
+    /** Translates one sentence using the configured language pair (default en → zh-Hans). */
     suspend fun translateSentence(sentence: String, glossary: BookGlossary): String
 }
 

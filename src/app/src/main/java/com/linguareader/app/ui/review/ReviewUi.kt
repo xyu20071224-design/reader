@@ -1,4 +1,4 @@
-package com.linguareader.app
+package com.linguareader.app.ui.review
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -69,6 +69,20 @@ import com.linguareader.app.data.SavedWord
 import kotlinx.coroutines.delay
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import com.linguareader.app.ui.theme.Accent
+import com.linguareader.app.ui.theme.AccentDeep
+import com.linguareader.app.ui.theme.AccentSoft
+import com.linguareader.app.ui.theme.CardShape
+import com.linguareader.app.ui.theme.CardSurface
+import com.linguareader.app.ui.theme.Danger
+import com.linguareader.app.ui.theme.Ink
+import com.linguareader.app.ui.theme.InkFaint
+import com.linguareader.app.ui.theme.InkSoft
+import com.linguareader.app.ui.theme.Paper
+import com.linguareader.app.ui.theme.PaperDeep
+import com.linguareader.app.ui.theme.PillShape
+import com.linguareader.app.ui.theme.SmallShape
+import com.linguareader.app.ui.theme.Success
 
 /** Shared review deck used by the vocabulary screen and reader-side entries. */
 @OptIn(ExperimentalMaterial3Api::class)

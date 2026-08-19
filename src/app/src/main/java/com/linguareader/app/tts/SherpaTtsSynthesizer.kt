@@ -26,6 +26,14 @@ class SherpaTtsSynthesizer(
     context: Context,
     private val listener: TtsSynthesizerListener
 ) : TtsSynthesizer {
+    override val capabilities: TtsCapabilities = TtsCapabilities(
+        wordBoundaries = false,
+        chapterPreparer = false,
+        gapControl = false,
+        liveRateChange = true   // local speed applied via sherpa-onnx regen; no re-billing
+    )
+    override val engineLabel: String = "本地 Piper 语音"
+
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -36,6 +44,7 @@ class SherpaTtsSynthesizer(
     private var enTts: OfflineTts? = null
 
     private var player: MediaPlayer? = null
+    private var currentFile: File? = null
     private var generation = 0
 
     init {
@@ -83,11 +92,18 @@ class SherpaTtsSynthesizer(
 
     override fun stop() {
         generation++
-        runCatching {
-            player?.stop()
-            player?.release()
+        player?.let { p ->
+            runCatching {
+                p.setOnPreparedListener(null)
+                p.setOnCompletionListener(null)
+                p.setOnErrorListener(null)
+                p.stop()
+            }
+            runCatching { p.release() }
+            player = null
         }
-        player = null
+        currentFile?.delete()
+        currentFile = null
     }
 
     override fun shutdown() {
@@ -194,6 +210,7 @@ class SherpaTtsSynthesizer(
     }
 
     private fun play(file: File, utteranceId: String, gen: Int) {
+        currentFile = file
         runCatching {
             val mp = MediaPlayer()
             player = mp
@@ -209,19 +226,22 @@ class SherpaTtsSynthesizer(
                     listener.onStart(utteranceId)
                     it.start()
                 } else {
-                    it.release()
+                    runCatching { it.release() }
                     file.delete()
+                    if (currentFile === file) currentFile = null
                 }
             }
             mp.setOnCompletionListener {
                 if (gen == generation) listener.onDone(utteranceId)
-                it.release()
+                runCatching { it.release() }
                 file.delete()
+                if (currentFile === file) currentFile = null
             }
             mp.setOnErrorListener { _, _, _ ->
                 if (gen == generation) listener.onError(utteranceId)
-                mp.release()
+                runCatching { mp.release() }
                 file.delete()
+                if (currentFile === file) currentFile = null
                 true
             }
             mp.prepareAsync()

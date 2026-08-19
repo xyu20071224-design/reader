@@ -115,7 +115,11 @@ data class AiSettings(
     val azureTranslationEnabled: Boolean = false,
     val azureKey: String = "",
     val azureRegion: String = "",
-    val azureEndpoint: String = "https://api.cognitive.microsofttranslator.com"
+    val azureEndpoint: String = "https://api.cognitive.microsofttranslator.com",
+    /** Source language code for sentence translation (Azure `from` / DeepSeek prompt). */
+    val sourceLanguage: String = "en",
+    /** Target language code for sentence translation (Azure `to` / DeepSeek prompt). */
+    val targetLanguage: String = "zh-Hans"
 ) {
     /** Remote AI is only used when the user enabled it and supplied a key. */
     val remoteReady: Boolean get() = enabled && apiKey.isNotBlank()
@@ -131,8 +135,11 @@ data class AiBookStatus(
     val error: String? = null
 )
 
-/** Thrown when the remote AI provider fails. */
-class AiRequestException(message: String) : Exception(message)
+/** Thrown when the remote AI provider fails; [statusCode] is the HTTP status if known. */
+class AiRequestException(
+    message: String,
+    val statusCode: Int? = null
+) : Exception(message)
 
 /** One book-specific glossary entry, editable by the user. */
 data class GlossaryEntry(
@@ -209,8 +216,9 @@ fun BookGlossary.matchesIn(sentence: String): List<GlossaryMatch> {
     return entries.asSequence()
         .filter { it.enabled && it.term.isNotBlank() }
         .sortedByDescending { it.term.length }
-        .mapNotNull { entry ->
+        .flatMap { entry ->
             val termLower = entry.term.lowercase()
+            val found = mutableListOf<GlossaryMatch>()
             var searchFrom = 0
             while (true) {
                 val index = lower.indexOf(termLower, searchFrom)
@@ -221,7 +229,7 @@ fun BookGlossary.matchesIn(sentence: String): List<GlossaryMatch> {
                     boundaryOk(sentence, index, end)
                 ) {
                     occupied += range
-                    return@mapNotNull GlossaryMatch(
+                    found += GlossaryMatch(
                         entry = entry,
                         text = sentence.substring(index, end),
                         start = index,
@@ -230,13 +238,29 @@ fun BookGlossary.matchesIn(sentence: String): List<GlossaryMatch> {
                 }
                 searchFrom = index + 1
             }
-            null
+            found
         }
         .toList()
 }
 
 private fun boundaryOk(sentence: String, start: Int, end: Int): Boolean {
-    val before = if (start == 0) ' ' else sentence[start - 1]
-    val after = if (end >= sentence.length) ' ' else sentence[end]
-    return !before.isLetter() && !after.isLetter()
+    val before = sentence.getOrNull(start - 1)
+    val after = sentence.getOrNull(end)
+    return before.isWordChar() != true && after.isWordChar() != true
 }
+
+/** Only Latin-ish letters/digits continue a word; CJK and punctuation are boundaries. */
+private fun Char?.isWordChar(): Boolean = this != null && isLetterOrDigit() && !isCjk()
+
+/**
+ * True for CJK unified ideographs, kana and Hangul. These have no word
+ * spacing, so any CJK neighbour counts as a boundary for glossary matching
+ * (Latin terms next to Chinese text match, and Chinese terms may match as
+ * substrings inside longer Chinese words).
+ */
+internal fun Char.isCjk(): Boolean =
+    this in '\u3040'..'\u30FF' || // 平假名/片假名
+        this in '\u3400'..'\u4DBF' || // CJK 扩展 A
+        this in '\u4E00'..'\u9FFF' || // CJK 统一表意文字
+        this in '\uF900'..'\uFAFF' || // CJK 兼容表意文字
+        this in '\uAC00'..'\uD7AF' // 谚文音节

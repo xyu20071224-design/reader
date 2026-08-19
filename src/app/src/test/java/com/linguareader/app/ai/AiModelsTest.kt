@@ -24,6 +24,21 @@ class AiModelsTest {
     }
 
     @Test
+    fun `matchesIn collects duplicate term occurrences`() {
+        val glossary = BookGlossary(
+            bookId = "book-1",
+            entries = listOf(GlossaryEntry(term = "Harry Potter", translation = "哈利·波特"))
+        )
+        val matches = glossary.matchesIn("Harry Potter met Harry Potter.")
+
+        assertEquals(2, matches.size)
+        assertEquals(0, matches[0].start)
+        assertEquals("Harry Potter", matches[0].text)
+        assertEquals(17, matches[1].start)
+        assertEquals("Harry Potter", matches[1].text)
+    }
+
+    @Test
     fun `profile json without source defaults to local`() {
         val restored = BookContextProfile.fromJson(
             JSONObject()

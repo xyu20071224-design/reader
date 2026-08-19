@@ -143,7 +143,7 @@ object ContextAnalyzer {
         if (tokens.isEmpty()) return -1
         val wanted = normalize(lookup.word)
         val byOffset = tokens.indexOfFirst {
-            lookup.sentenceOffset in it.start..it.endExclusive
+            lookup.sentenceOffset in it.start until it.endExclusive
         }
         // Only trust the caret offset when the token under it is the word the
         // reader actually tapped. If the JS offset drifts (whitespace or

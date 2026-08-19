@@ -63,6 +63,8 @@ object TtsPlaybackController {
 
     fun setRate(context: Context, rate: Float) = TtsPlaybackService.setRate(context, rate)
 
+    fun cacheWholeBook(context: Context) = TtsPlaybackService.cacheWholeBook(context)
+
     fun onReaderChapterLoaded(bookId: String, chapterIndex: Int) =
         TtsPlaybackService.onReaderChapterLoaded(bookId, chapterIndex)
 

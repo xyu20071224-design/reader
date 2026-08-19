@@ -71,9 +71,12 @@ data class TtsChapter(
         var remaining = sentenceIndex.coerceAtLeast(0)
         for ((blockIndex, blockSentences) in sentencesByBlock.withIndex()) {
             if (remaining < blockSentences.size) {
-                val sentence = blockSentences[remaining]
                 var cursor = 0
                 for (i in 0..remaining) {
+                    // Advance the cursor past each *preceding* sentence in the
+                    // block; searching for the target sentence itself on every
+                    // iteration makes every non-first sentence return null.
+                    val sentence = blockSentences[i]
                     val found = blocks[blockIndex].indexOf(sentence, cursor)
                     if (found < 0) return null
                     if (i == remaining) return Triple(blockIndex, found, sentence.length)

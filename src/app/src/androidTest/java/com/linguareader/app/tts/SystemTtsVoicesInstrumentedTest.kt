@@ -25,6 +25,7 @@ class SystemTtsVoicesInstrumentedTest {
         var rawInitOk = false
         var rawNull = false
         var rawNames = emptyList<String>()
+        var rawLocalNames = emptyList<String>()
         val rawLatch = CountDownLatch(1)
         lateinit var raw: TextToSpeech
         raw = TextToSpeech(context) { status ->
@@ -32,7 +33,9 @@ class SystemTtsVoicesInstrumentedTest {
             if (rawInitOk) {
                 val v = raw.voices
                 rawNull = v == null
-                rawNames = v.orEmpty().map { it.name }
+                val voices = v.orEmpty()
+                rawNames = voices.map { it.name }
+                rawLocalNames = voices.filterNot { it.isNetworkConnectionRequired }.map { it.name }
             }
             rawLatch.countDown()
         }
@@ -55,7 +58,9 @@ class SystemTtsVoicesInstrumentedTest {
 
         if (rawInitOk && rawNames.isNotEmpty()) {
             assertTrue("loader should surface engine voices", voices.isNotEmpty())
-            assertEquals(rawNames.toSet(), voices.map { it.name }.toSet())
+            // The loader intentionally drops network-required voices so the
+            // dropdowns only offer voices that work offline.
+            assertEquals(rawLocalNames.toSet(), voices.map { it.name }.toSet())
         }
         // When the engine reports no voices (or init fails), the loader must
         // still finish with a non-null (possibly empty) list — asserted above

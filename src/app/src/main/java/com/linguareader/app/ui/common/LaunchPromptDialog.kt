@@ -1,4 +1,4 @@
-package com.linguareader.app
+package com.linguareader.app.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -30,9 +30,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.linguareader.app.LaunchPromptUi
+import com.linguareader.app.R
 import com.linguareader.app.data.Greeting
 import com.linguareader.app.data.GreetingPeriod
 import com.linguareader.app.data.UpdateNote
+import com.linguareader.app.ui.theme.Accent
+import com.linguareader.app.ui.theme.CardShape
+import com.linguareader.app.ui.theme.CardSurface
+import com.linguareader.app.ui.theme.Ink
+import com.linguareader.app.ui.theme.InkSoft
+import com.linguareader.app.ui.theme.PillShape
 
 /** Launch greeting scene card, or one-time update note after an app update (F-144). */
 @Composable

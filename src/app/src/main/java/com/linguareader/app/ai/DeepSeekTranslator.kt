@@ -1,9 +1,12 @@
 package com.linguareader.app.ai
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -64,6 +67,8 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
         sentence: String,
         glossary: BookGlossary
     ): String {
+        val sourceName = languageDisplayName(settings.sourceLanguage, "英文")
+        val targetName = languageDisplayName(settings.targetLanguage, "简体中文")
         val user = buildString {
             if (glossary.entries.isNotEmpty()) {
                 appendLine("本书术语表（词条 | 译法 | 说明）：")
@@ -72,13 +77,13 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
                 }
                 appendLine()
             }
-            appendLine("请把下面这句英文翻译成简体中文，严格按照术语表译法处理专名与术语：")
+            appendLine("请把下面这句${sourceName}翻译成${targetName}，严格按照术语表译法处理专名与术语：")
             appendLine(sentence)
             appendLine()
-            appendLine("只输出 JSON：{\"translation\":\"整句中文翻译\"}")
+            appendLine("只输出 JSON：{\"translation\":\"整句${targetName}翻译\"}")
         }
         val answer = chat(
-            system = SENTENCE_SYSTEM_PROMPT,
+            system = sentenceSystemPrompt(targetName),
             user = user,
             jsonMode = true
         )
@@ -247,16 +252,44 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
 
     // --- HTTP ---------------------------------------------------------------
 
+    /**
+     * Runs one chat request with bounded retries.
+     *
+     * - Endpoints that reject `response_format=json_object` get one retry
+     *   without it (the prompt/parser still recover a JSON object).
+     * - Transient failures (network errors, 429, 5xx) are retried with a
+     *   short backoff up to [MAX_ATTEMPTS] total attempts, so a single
+     *   timeout or rate-limit no longer drops the whole book profile to the
+     *   offline fallback.
+     */
     private suspend fun chat(
         system: String,
         user: String,
         jsonMode: Boolean
     ): JSONObject = withContext(Dispatchers.IO) {
-        val first = runCatching { request(system, user, jsonMode) }
-        first.getOrElse { error ->
-            if (!jsonMode || !shouldRetryWithoutJsonMode(error)) throw error
-            request(system, user, jsonMode = false)
+        var activeJsonMode = jsonMode
+        var attempt = 0
+        var lastError: Throwable? = null
+        while (attempt < MAX_ATTEMPTS) {
+            attempt++
+            val result = runCatching { request(system, user, activeJsonMode) }
+            val error = result.exceptionOrNull() ?: return@withContext result.getOrThrow()
+            if (error is CancellationException) throw error
+            if (activeJsonMode && attempt < MAX_ATTEMPTS && shouldRetryWithoutJsonMode(error)) {
+                activeJsonMode = false
+                continue
+            }
+            if (attempt < MAX_ATTEMPTS && shouldRetryKeepingJsonMode(error)) {
+                continue
+            }
+            if (attempt < MAX_ATTEMPTS && isTransientFailure(error)) {
+                delay(RETRY_BASE_DELAY_MS * attempt)
+                continue
+            }
+            lastError = error
+            break
         }
+        throw lastError ?: AiRequestException("DeepSeek 请求失败")
     }
 
     private fun request(
@@ -293,7 +326,10 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
             val payload = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = payload?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (code !in 200..299) {
-                throw AiRequestException("DeepSeek API 返回 HTTP $code：${text.take(300)}")
+                throw AiRequestException(
+                    "DeepSeek API 返回 HTTP $code：${text.take(300)}",
+                    statusCode = code
+                )
             }
             val content = try {
                 JSONObject(text)
@@ -323,6 +359,23 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
     }
 
     companion object {
+        /** Total HTTP attempts per chat call (initial request + retries). */
+        internal const val MAX_ATTEMPTS = 3
+
+        /** Base backoff in ms; grows linearly per attempt (800, 1600). */
+        internal const val RETRY_BASE_DELAY_MS = 800L
+
+        /**
+         * Failures worth retrying: network-level errors (DNS, connect,
+         * timeout, reset) and transient HTTP statuses (429 rate limit,
+         * 5xx server errors). Authorization/config errors (4xx) do not retry.
+         */
+        internal fun isTransientFailure(error: Throwable): Boolean =
+            error is IOException ||
+                (error is AiRequestException && (
+                    error.statusCode == 429 || (error.statusCode ?: 0) in 500..599
+                    ))
+
         /**
          * Some OpenAI-compatible endpoints (and some DeepSeek models) reject
          * `response_format={"type":"json_object"}` with a 400/422. Retrying
@@ -330,10 +383,52 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
          * recover a JSON object from the reply.
          */
         internal fun shouldRetryWithoutJsonMode(error: Throwable): Boolean =
-            error is AiRequestException && (
-                error.message?.contains("response_format", ignoreCase = true) == true ||
-                    error.message?.contains("无法解析的 JSON", ignoreCase = true) == true
-                )
+            error is AiRequestException &&
+                error.message?.contains("response_format", ignoreCase = true) == true
+
+        /**
+         * A successful HTTP response whose content is not valid JSON is a
+         * content-formatting failure, not an endpoint capability failure.
+         * Retrying with json_mode still enabled is more likely to fix it than
+         * disabling the only thing that constrains the model to JSON.
+         */
+        internal fun shouldRetryKeepingJsonMode(error: Throwable): Boolean =
+            error is AiRequestException &&
+                error.statusCode == null &&
+                error.message?.contains("无法解析的 JSON", ignoreCase = true) == true
+
+        /** Chinese display name for a BCP-47-ish language code, else the code itself. */
+        internal fun languageDisplayName(code: String, fallback: String): String {
+            val clean = code.trim().ifBlank { return fallback }
+            return LANGUAGE_NAMES[clean.lowercase()] ?: clean
+        }
+
+        private val LANGUAGE_NAMES = mapOf(
+            "en" to "英文",
+            "zh" to "中文",
+            "zh-hans" to "简体中文",
+            "zh-cn" to "简体中文",
+            "zh-hant" to "繁体中文",
+            "zh-tw" to "繁体中文",
+            "ja" to "日语",
+            "ko" to "韩语",
+            "fr" to "法语",
+            "de" to "德语",
+            "es" to "西班牙语",
+            "ru" to "俄语",
+            "pt" to "葡萄牙语",
+            "it" to "意大利语",
+            "ar" to "阿拉伯语",
+            "th" to "泰语",
+            "vi" to "越南语",
+            "id" to "印尼语",
+            "tr" to "土耳其语"
+        )
+
+        private fun sentenceSystemPrompt(targetName: String) =
+            "你是一个阅读辅助工具。把用户提供的句子翻译成自然、通顺的$targetName。" +
+                "用户给出的术语表译法必须优先采用；译法为“保留原文”的词保持原文不译。" +
+                "只输出 JSON 对象：{\"translation\":\"整句${targetName}翻译\"}。"
 
         private const val CONTEXT_SYSTEM_PROMPT =
             "你是一个英语阅读辅助工具。阅读用户提供的英文书籍章节，提取翻译语境信息。" +
@@ -349,10 +444,5 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
                 "优先从用户提供的本地词典义项中挑选；若点击词是书中专名或术语，给出本书中的固定译法。" +
                 "只输出 JSON 对象，不要输出其他内容：{\"meaning\":\"中文释义（必填）\",\"explanation\":\"为什么这个义项贴合本句（可选，1-2句）\",\"phrase\":\"命中短语（可选）\"}。" +
                 "meaning 要简短，像词典义项一样可以直接用于学习。"
-
-        private const val SENTENCE_SYSTEM_PROMPT =
-            "你是一个英语阅读辅助工具。把用户提供的英文句子翻译成自然、通顺的简体中文。" +
-                "用户给出的术语表译法必须优先采用；译法为“保留原文”的词保持英文不译。" +
-                "只输出 JSON 对象：{\"translation\":\"整句中文翻译\"}。"
     }
 }

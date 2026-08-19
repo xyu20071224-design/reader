@@ -65,6 +65,17 @@ class SentenceSplitterTest {
     }
 
     @Test
+    fun keepsSpacedInitialsTogether() {
+        val sentences = SentenceSplitter.split(
+            "J. K. Rowling walked in. George R. R. Martin wrote the book."
+        )
+
+        assertEquals(2, sentences.size)
+        assertEquals("J. K. Rowling walked in.", sentences[0])
+        assertEquals("George R. R. Martin wrote the book.", sentences[1])
+    }
+
+    @Test
     fun treatsTerminatorRunsAsOneBoundary() {
         val sentences = SentenceSplitter.split("Really!! I can't believe it. Wait… what?")
 

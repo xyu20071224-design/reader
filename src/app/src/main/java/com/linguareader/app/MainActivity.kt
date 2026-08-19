@@ -18,6 +18,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.linguareader.app.ui.bookshelf.BookshelfScreen
+import com.linguareader.app.ui.common.LaunchPromptDialog
+import com.linguareader.app.ui.reader.ReaderScreen
+import com.linguareader.app.ui.theme.Accent
+import com.linguareader.app.ui.theme.AccentDeep
+import com.linguareader.app.ui.theme.AccentSoft
+import com.linguareader.app.ui.theme.AppShapes
+import com.linguareader.app.ui.theme.CardSurface
+import com.linguareader.app.ui.theme.Danger
+import com.linguareader.app.ui.theme.Gold
+import com.linguareader.app.ui.theme.Ink
+import com.linguareader.app.ui.theme.InkSoft
+import com.linguareader.app.ui.theme.Paper
+import com.linguareader.app.ui.theme.PaperDeep
+import com.linguareader.app.ui.theme.Success
 import java.util.Locale
 
 private val LinguaColorScheme = lightColorScheme(

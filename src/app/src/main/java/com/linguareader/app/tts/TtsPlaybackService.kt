@@ -55,6 +55,10 @@ class TtsPlaybackService : Service() {
     @Volatile
     private var progressWriteVersion = 0
 
+    /** Guards asynchronous play setup against stop/restart races (BUG-009). */
+    @Volatile
+    private var playGeneration = 0
+
     /** Serializes the version-check + disk write into one critical section. */
     private val progressWriteMutex = Mutex()
 
@@ -63,15 +67,14 @@ class TtsPlaybackService : Service() {
             synthesizerFactory = { listener ->
                 TtsSynthesizerFactory.create(applicationContext, listener)
             },
+            fallbackSynthesizerFactory = { listener ->
+                SystemTtsSynthesizer(applicationContext, listener)
+            },
             chapterLoader = { book, index ->
                 withContext(Dispatchers.IO) { extractor.chapter(book, index) }
             },
-            isSystemEngine = { it is SystemTtsSynthesizer },
             engineLabelForSettings = {
                 engineLabelFor(CloudTtsSettings.load(applicationContext))
-            },
-            engineLabelForSynthesizer = { s ->
-                (s as? CloudTtsSynthesizer)?.engineLabel ?: "系统语音"
             },
             onChapterRequest = { chapter -> _chapterRequests.tryEmit(chapter) },
             onBookSwitched = { extractor.clear() },
@@ -125,6 +128,7 @@ class TtsPlaybackService : Service() {
             ACTION_STOP -> stopPlayback()
             ACTION_RATE -> intent.getFloatExtra(EXTRA_RATE, engine.currentSpeechRate).let(::setRate)
             ACTION_RECONFIGURE -> engine.reconfigure()
+            ACTION_CACHE_BOOK -> engine.cacheWholeBook()
         }
         return START_NOT_STICKY
     }
@@ -171,10 +175,12 @@ class TtsPlaybackService : Service() {
         val sentenceText = intent.getStringExtra(EXTRA_SENTENCE_TEXT)?.trim().orEmpty()
         val blockText = intent.getStringExtra(EXTRA_BLOCK_TEXT).orEmpty()
         val blockOffset = intent.getIntExtra(EXTRA_BLOCK_OFFSET, 0)
+        val generation = ++playGeneration
 
         when {
             sentenceText.isNotEmpty() -> scope.launch {
                 val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
+                if (generation != playGeneration) return@launch
                 val index = chapter.sentences.indexOfFirst { it == sentenceText }
                     .takeIf { it >= 0 } ?: 0
                 engine.startPlayback(newBook, requestedChapter, index)
@@ -182,6 +188,7 @@ class TtsPlaybackService : Service() {
 
             blockText.isNotEmpty() -> scope.launch {
                 val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
+                if (generation != playGeneration) return@launch
                 val index = chapter.sentenceIndexAt(blockText, blockOffset) ?: 0
                 engine.startPlayback(newBook, requestedChapter, index)
             }
@@ -204,6 +211,7 @@ class TtsPlaybackService : Service() {
     private fun setRate(rate: Float) = engine.setRate(rate)
 
     private fun stopPlayback() {
+        playGeneration++
         engine.stop()
         mediaSession?.isActive = false
         updateMediaSession()
@@ -261,6 +269,7 @@ class TtsPlaybackService : Service() {
                 0
             }
         )
+        mediaSession?.isActive = true
         isForeground = true
     }
 
@@ -375,6 +384,7 @@ class TtsPlaybackService : Service() {
         private const val ACTION_STOP = "com.linguareader.app.tts.STOP"
         private const val ACTION_RATE = "com.linguareader.app.tts.RATE"
         private const val ACTION_RECONFIGURE = "com.linguareader.app.tts.RECONFIGURE"
+        private const val ACTION_CACHE_BOOK = "com.linguareader.app.tts.CACHE_BOOK"
 
         private const val EXTRA_BOOK_JSON = "book_json"
         private const val EXTRA_CHAPTER = "chapter"
@@ -483,6 +493,14 @@ class TtsPlaybackService : Service() {
                 Intent(context, TtsPlaybackService::class.java)
                     .setAction(ACTION_RATE)
                     .putExtra(EXTRA_RATE, rate)
+            )
+        }
+
+        /** Starts whole-book cache (全书缓存). No-op unless a listening session is active. */
+        fun cacheWholeBook(context: Context) {
+            if (_state.value.bookId == null) return
+            context.startService(
+                Intent(context, TtsPlaybackService::class.java).setAction(ACTION_CACHE_BOOK)
             )
         }
 

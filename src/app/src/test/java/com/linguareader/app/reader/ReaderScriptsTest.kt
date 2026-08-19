@@ -20,6 +20,15 @@ class ReaderScriptsTest {
     }
 
     @Test
+    fun savedWordMarkingRespectsWordBoundaries() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "function isWordChar(ch)")
+        assertContains(script, "function findWordIndex(text, word)")
+        assertContains(script, "!isWordChar(before) && !isWordChar(after)")
+    }
+
+    @Test
     fun wordLookupUsesOneNormalizedCoordinateSpaceForSentenceOffset() {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())
 

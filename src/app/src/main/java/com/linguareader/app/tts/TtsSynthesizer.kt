@@ -19,6 +19,35 @@ import java.util.Locale
 interface TtsSynthesizer {
     val isReady: Boolean
 
+    /**
+     * Capability declaration (see [TtsCapabilities]). The controller gates
+     * feature paths on these flags instead of probing the concrete type.
+     */
+    val capabilities: TtsCapabilities
+
+    /** Human-readable engine name for the playback state / notification. */
+    val engineLabel: String
+
+    /** True when this is the Android system TTS fallback engine. */
+    val isSystemEngine: Boolean
+        get() = false
+
+    /**
+     * Whole-chapter pre-generation entry, or `null` when this engine cannot
+     * pre-generate a chapter. Implementers that support it override this (and
+     * set [capabilities.chapterPreparer] = true); consumers gate on the
+     * capability / this value, never on concrete identity.
+     */
+    val chapterPreparer: ChapterTtsPreparer?
+        get() = null
+
+    /**
+     * Whole-book pre-generation entry, or `null` when unsupported. Implementers
+     * that support it override this; consumers gate on the capability / value.
+     */
+    val bookPreparer: BookTtsPreparer?
+        get() = null
+
     /** Queue [text] for synthesis; [utteranceId] is echoed back by callbacks. */
     fun speak(text: String, rate: Float, utteranceId: String)
 
@@ -33,6 +62,13 @@ interface TtsSynthesizerListener {
     fun onStart(utteranceId: String)
     fun onDone(utteranceId: String)
     fun onError(utteranceId: String)
+
+    /**
+     * Word-level timestamp for [utteranceId], covering characters
+     * [startChar, endChar) within the sentence. Engines with
+     * `capabilities.wordBoundaries == false` never invoke this.
+     */
+    fun onWordBoundary(utteranceId: String, startChar: Int, endChar: Int) {}
 }
 
 /**
@@ -45,6 +81,15 @@ class SystemTtsSynthesizer(
     private val zhVoice: String = "",
     private val enVoice: String = ""
 ) : TtsSynthesizer {
+    override val capabilities: TtsCapabilities = TtsCapabilities(
+        wordBoundaries = false,   // M3: probe onRangeStart support and re-declare
+        chapterPreparer = false,
+        gapControl = false,
+        liveRateChange = true
+    )
+    override val engineLabel: String = "系统语音"
+    override val isSystemEngine: Boolean = true
+
     private var ready = false
     private lateinit var tts: TextToSpeech
     private val voicesByName = mutableMapOf<String, Voice>()
@@ -63,7 +108,7 @@ class SystemTtsSynthesizer(
                     // init callback fires (getVoices() then returns null/empty).
                     // Retry once so a selected voice is not silently ignored on
                     // the first utterance. This mirrors SystemTtsVoices.load().
-                    Handler(Looper.getMainLooper()).postDelayed({ populateVoices() }, 300)
+                    Handler(Looper.getMainLooper()).postDelayed({ populateVoices(force = true) }, 300)
                 }
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
@@ -105,18 +150,23 @@ class SystemTtsSynthesizer(
         val voice = configured.takeIf { it.isNotBlank() }?.let { voicesByName[it] }
         val voiceUsable = voice != null && !voice.isNetworkConnectionRequired
         if (!voiceUsable || tts.setVoice(voice) != TextToSpeech.SUCCESS) {
-            tts.language = locale
+            // setLanguage 返回负值表示引擎缺少该语言音色数据（会静默无声），
+            // 回退到引擎默认音色，避免整段静音。
+            if (tts.setLanguage(locale) < 0) {
+                tts.defaultVoice?.let { runCatching { tts.setVoice(it) } }
+            }
         }
         tts.setSpeechRate(rate.coerceIn(0.5f, 2f))
         tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
-    private fun populateVoices() {
+    private fun populateVoices(force: Boolean = false) {
         // Only attempt once: engines whose getVoices() stays empty would
         // otherwise re-query `tts.voices` (potentially a slow binder call) on
-        // every utterance. There is nothing to lazy-load after init anyway —
-        // voices do not meaningfully change mid-session.
-        if (voicesLoaded) return
+        // every utterance. The init path passes force=true for its one delayed
+        // retry, because the voice list may only become available right after
+        // the init callback has fired.
+        if (voicesLoaded && !force) return
         voicesLoaded = true
         // `getVoices()` is a platform type that may be null; collapsing
         // null/binder failures to an empty set keeps `voicesByName` populated

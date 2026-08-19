@@ -1,4 +1,4 @@
-package com.linguareader.app
+package com.linguareader.app.ui.vocabulary
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +54,17 @@ import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
 import com.linguareader.app.data.ReviewScheduler
 import com.linguareader.app.data.SavedWord
+import com.linguareader.app.ui.review.ReviewSettingsSheet
+import com.linguareader.app.ui.review.ReviewSheet
+import com.linguareader.app.ui.theme.Accent
+import com.linguareader.app.ui.theme.CardShape
+import com.linguareader.app.ui.theme.CardSurface
+import com.linguareader.app.ui.theme.Gold
+import com.linguareader.app.ui.theme.InkFaint
+import com.linguareader.app.ui.theme.InkSoft
+import com.linguareader.app.ui.theme.PaperDeep
+import com.linguareader.app.ui.theme.SmallShape
+import com.linguareader.app.ui.theme.Success
 
 @Composable
 internal fun VocabularyScreen(

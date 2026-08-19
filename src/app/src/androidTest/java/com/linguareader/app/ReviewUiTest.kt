@@ -8,6 +8,8 @@ import androidx.compose.ui.test.performScrollTo
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
+import com.linguareader.app.ui.review.ReviewPromptBanner
+import com.linguareader.app.ui.review.ReviewSettingsSheet
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

@@ -1,44 +1,41 @@
 package com.linguareader.app.ai
 
 import android.content.Context
+import com.linguareader.app.data.AppPrefs
 import com.linguareader.app.tts.CloudKeyStore
 
 /** Persists AI settings in app-private SharedPreferences. */
 class AiSettingsStore(context: Context) {
     private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+    private val prefs = AppPrefs.get(context).ai
 
     fun load(): AiSettings = AiSettings(
-        enabled = prefs.getBoolean("enabled", false),
-        apiKey = loadSecret("api_key"),
-        baseUrl = prefs.getString("base_url", "https://api.deepseek.com")
-            .orEmpty()
-            .ifBlank { "https://api.deepseek.com" },
-        model = prefs.getString("model", "deepseek-chat")
-            .orEmpty()
-            .ifBlank { "deepseek-chat" },
-        azureTranslationEnabled = prefs.getBoolean("azure_enabled", false),
-        azureKey = loadSecret("azure_key"),
-        azureRegion = prefs.getString("azure_region", "").orEmpty(),
-        azureEndpoint = prefs.getString("azure_endpoint", "https://api.cognitive.microsofttranslator.com")
-            .orEmpty()
-            .ifBlank { "https://api.cognitive.microsofttranslator.com" }
+        enabled = prefs.enabled,
+        apiKey = loadSecret(prefs.apiKey),
+        baseUrl = prefs.baseUrl.ifBlank { "https://api.deepseek.com" },
+        model = prefs.model.ifBlank { "deepseek-chat" },
+        azureTranslationEnabled = prefs.azureEnabled,
+        azureKey = loadSecret(prefs.azureKey),
+        azureRegion = prefs.azureRegion,
+        azureEndpoint = prefs.azureEndpoint.ifBlank { "https://api.cognitive.microsofttranslator.com" },
+        sourceLanguage = prefs.sourceLanguage.ifBlank { "en" },
+        targetLanguage = prefs.targetLanguage.ifBlank { "zh-Hans" }
     )
 
     fun save(settings: AiSettings) {
-        prefs.edit()
-            .putBoolean("enabled", settings.enabled)
-            .putString("api_key", encryptOrNull(settings.apiKey))
-            .putString("base_url", settings.baseUrl.trim().ifBlank { "https://api.deepseek.com" })
-            .putString("model", settings.model.trim().ifBlank { "deepseek-chat" })
-            .putBoolean("azure_enabled", settings.azureTranslationEnabled)
-            .putString("azure_key", encryptOrNull(settings.azureKey))
-            .putString("azure_region", settings.azureRegion.trim())
-            .putString(
-                "azure_endpoint",
-                settings.azureEndpoint.trim().ifBlank { "https://api.cognitive.microsofttranslator.com" }
-            )
-            .apply()
+        prefs.putEnabled(settings.enabled)
+        prefs.putApiKey(encryptOrNull(settings.apiKey))
+        prefs.putBaseUrl(settings.baseUrl.trim().ifBlank { "https://api.deepseek.com" })
+        prefs.putModel(settings.model.trim().ifBlank { "deepseek-chat" })
+        prefs.putAzureEnabled(settings.azureTranslationEnabled)
+        prefs.putAzureKey(encryptOrNull(settings.azureKey))
+        prefs.putAzureRegion(settings.azureRegion.trim())
+        prefs.putAzureEndpoint(
+            settings.azureEndpoint.trim().ifBlank { "https://api.cognitive.microsofttranslator.com" }
+        )
+        prefs.putSourceLanguage(settings.sourceLanguage.trim().ifBlank { "en" })
+        prefs.putTargetLanguage(settings.targetLanguage.trim().ifBlank { "zh-Hans" })
+        revision++
     }
 
     /**
@@ -52,9 +49,8 @@ class AiSettingsStore(context: Context) {
      * avoid losing the key on upgrade. A null result signals "no value" and
      * maps to "".
      */
-    private fun loadSecret(key: String): String {
-        val stored = prefs.getString(key, null)
-        if (stored.isNullOrBlank()) return ""
+    private fun loadSecret(stored: String): String {
+        if (stored.isBlank()) return ""
         return CloudKeyStore.decrypt(appContext, stored)
             ?: stored
     }
@@ -63,5 +59,15 @@ class AiSettingsStore(context: Context) {
     private fun encryptOrNull(value: String): String? {
         val trimmed = value.trim()
         return if (trimmed.isEmpty()) null else CloudKeyStore.encrypt(appContext, trimmed)
+    }
+
+    companion object {
+        /**
+         * Global save counter. [BookContextRepository]'s settings cache uses it
+         * to detect saves from any [AiSettingsStore] instance and reload once.
+         */
+        @Volatile
+        var revision: Long = 0L
+            private set
     }
 }

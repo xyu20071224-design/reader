@@ -55,6 +55,9 @@ class LibraryRepository(private val context: Context) {
             }
         }
 
+    /**
+     * Persists the listening position of a book (chapter + sentence index).
+     */
     suspend fun saveListeningProgress(book: Book, chapterIndex: Int, sentenceIndex: Int) =
         withContext(Dispatchers.IO) {
             mutex.withLock {

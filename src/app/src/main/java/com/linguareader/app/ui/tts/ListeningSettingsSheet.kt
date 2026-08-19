@@ -1,4 +1,4 @@
-package com.linguareader.app
+package com.linguareader.app.ui.tts
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +53,14 @@ import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.VolcanoTtsBackend
 import kotlinx.coroutines.launch
 import java.io.File
+import com.linguareader.app.ui.theme.Accent
+import com.linguareader.app.ui.theme.Danger
+import com.linguareader.app.ui.theme.Ink
+import com.linguareader.app.ui.theme.InkFaint
+import com.linguareader.app.ui.theme.InkSoft
+import com.linguareader.app.ui.theme.Paper
+import com.linguareader.app.ui.theme.PillShape
+import com.linguareader.app.ui.theme.Success
 
 /** Settings for the optional cloud TTS engines (F-151). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,6 +112,39 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                     status = "已获取 ${list.size} 个可用音色"
                 }
                 .onFailure { status = it.message ?: "获取音色失败，请检查 Region 与 Key" }
+            busy = false
+        }
+    }
+
+    fun testAzure() {
+        if (settings.region.isBlank() || settings.apiKey.isBlank()) {
+            status = "请先填写 Region 和 API Key"
+            return
+        }
+        val voice = when {
+            settings.useMultilingual && settings.multilingualVoice.isNotBlank() ->
+                settings.multilingualVoice
+            settings.zhVoice.isNotBlank() -> settings.zhVoice
+            else -> settings.enVoice
+        }
+        if (voice.isBlank()) {
+            status = "请先获取可用音色并选择音色"
+            return
+        }
+        busy = true
+        status = null
+        scope.launch {
+            val probe = File(context.cacheDir, "tts_probe_azure.mp3")
+            AzureSpeechClient(settings.region, settings.apiKey)
+                .synthesize("测试。Test.", voice, probe)
+                .onSuccess {
+                    probe.delete()
+                    status = "连接成功，Azure 可正常合成"
+                }
+                .onFailure {
+                    probe.delete()
+                    status = it.message ?: "连接失败"
+                }
             busy = false
         }
     }
@@ -307,7 +348,7 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
                     TextButton(onClick = ::fetchAzureVoices, enabled = !busy) {
                         Text("获取可用音色")
                     }
-                    TextButton(onClick = ::fetchAzureVoices, enabled = !busy) {
+                    TextButton(onClick = ::testAzure, enabled = !busy) {
                         Text("测试连接")
                     }
                 }

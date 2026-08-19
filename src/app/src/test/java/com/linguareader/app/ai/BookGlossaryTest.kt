@@ -72,4 +72,43 @@ class BookGlossaryTest {
 
         assertTrue(glossary.matchesIn("Hogwarts is far away.").isEmpty())
     }
+
+    @Test
+    fun `matchesIn matches latin terms surrounded by cjk text`() {
+        val glossary = BookGlossary(
+            bookId = "book-1",
+            entries = listOf(GlossaryEntry(term = "Harry", translation = "哈利"))
+        )
+
+        val matches = glossary.matchesIn("今天Harry又迟到了。")
+
+        assertEquals(listOf("Harry"), matches.map { it.text })
+    }
+
+    @Test
+    fun `matchesIn matches cjk terms inside longer cjk words`() {
+        val glossary = BookGlossary(
+            bookId = "book-1",
+            entries = listOf(
+                GlossaryEntry(term = "哈利波特", translation = "Harry Potter"),
+                GlossaryEntry(term = "霍格沃茨", translation = "Hogwarts")
+            )
+        )
+
+        val matches = glossary.matchesIn("哈利波特走进了霍格沃茨。")
+        val matched = matches.map { it.entry.term }
+
+        assertTrue(matched.contains("哈利波特"))
+        assertTrue(matched.contains("霍格沃茨"))
+    }
+
+    @Test
+    fun `matchesIn still blocks latin substring matches inside words`() {
+        val glossary = BookGlossary(
+            bookId = "book-1",
+            entries = listOf(GlossaryEntry(term = "cat", translation = "猫"))
+        )
+
+        assertTrue(glossary.matchesIn("concatenate words").isEmpty())
+    }
 }

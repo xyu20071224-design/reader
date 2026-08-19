@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.linguareader.app.data.AppPrefs
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -65,84 +66,59 @@ data class CloudTtsSettings(
         const val DEFAULT_VOLC_RESOURCE = "seed-tts-2.0"
         const val DEFAULT_VOLC_ZH_VOICE = "zh_female_shuangkuaisisi_uranus_bigtts"
         const val DEFAULT_VOLC_EN_VOICE = "en_female_dacey_uranus_bigtts"
-        private const val PREFS = "cloud_tts_settings"
-        private const val KEY_MODE = "mode"
-        private const val KEY_REGION = "region"
-        private const val KEY_API = "api_key"
-        private const val KEY_EN_VOICE = "en_voice"
-        private const val KEY_ZH_VOICE = "zh_voice"
-        private const val KEY_MULTILINGUAL_VOICE = "multilingual_voice"
-        private const val KEY_USE_MULTILINGUAL = "use_multilingual"
-        private const val KEY_SYSTEM_ZH_VOICE = "system_zh_voice"
-        private const val KEY_SYSTEM_EN_VOICE = "system_en_voice"
-        private const val KEY_SERVER_URL = "server_url"
-        private const val KEY_SERVER_MODEL = "server_model"
-        private const val KEY_SERVER_TOKEN = "server_token"
-        private const val KEY_SERVER_VOICE = "server_voice"
-        private const val KEY_VOLC_API_KEY = "volc_api_key"
-        private const val KEY_VOLC_APP_ID = "volc_app_id"
-        private const val KEY_VOLC_TOKEN = "volc_token"
-        private const val KEY_VOLC_RESOURCE = "volc_resource_id"
-        private const val KEY_VOLC_ZH_VOICE = "volc_zh_voice"
-        private const val KEY_VOLC_EN_VOICE = "volc_en_voice"
 
         fun load(context: Context): CloudTtsSettings {
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val p = AppPrefs.get(context).cloudTts
             return CloudTtsSettings(
                 mode = runCatching {
-                    TtsEngineMode.valueOf(prefs.getString(KEY_MODE, null) ?: "")
+                    TtsEngineMode.valueOf(p.mode ?: "")
                 }.getOrDefault(TtsEngineMode.SYSTEM),
-                region = prefs.getString(KEY_REGION, DEFAULT_REGION).orEmpty().ifBlank { DEFAULT_REGION },
-                apiKey = CloudKeyStore.decrypt(context, prefs.getString(KEY_API, null)).orEmpty(),
-                enVoice = prefs.getString(KEY_EN_VOICE, "").orEmpty(),
-                zhVoice = prefs.getString(KEY_ZH_VOICE, "").orEmpty(),
-                multilingualVoice = prefs.getString(KEY_MULTILINGUAL_VOICE, "").orEmpty(),
-                useMultilingual = prefs.getBoolean(KEY_USE_MULTILINGUAL, true),
-                systemZhVoice = prefs.getString(KEY_SYSTEM_ZH_VOICE, "").orEmpty(),
-                systemEnVoice = prefs.getString(KEY_SYSTEM_EN_VOICE, "").orEmpty(),
-                serverUrl = prefs.getString(KEY_SERVER_URL, "").orEmpty(),
-                serverModel = prefs.getString(KEY_SERVER_MODEL, "tts-1").orEmpty().ifBlank { "tts-1" },
-                serverToken = CloudKeyStore.decrypt(context, prefs.getString(KEY_SERVER_TOKEN, null)).orEmpty(),
-                serverVoice = prefs.getString(KEY_SERVER_VOICE, "").orEmpty(),
-                volcApiKey = CloudKeyStore.decrypt(context, prefs.getString(KEY_VOLC_API_KEY, null)).orEmpty(),
-                volcAppId = prefs.getString(KEY_VOLC_APP_ID, "").orEmpty(),
-                volcToken = CloudKeyStore.decrypt(context, prefs.getString(KEY_VOLC_TOKEN, null)).orEmpty(),
-                volcResourceId = prefs.getString(KEY_VOLC_RESOURCE, DEFAULT_VOLC_RESOURCE)
-                    .orEmpty().ifBlank { DEFAULT_VOLC_RESOURCE },
-                volcZhVoice = prefs.getString(KEY_VOLC_ZH_VOICE, DEFAULT_VOLC_ZH_VOICE)
-                    .orEmpty().ifBlank { DEFAULT_VOLC_ZH_VOICE },
-                volcEnVoice = prefs.getString(KEY_VOLC_EN_VOICE, DEFAULT_VOLC_EN_VOICE)
-                    .orEmpty().ifBlank { DEFAULT_VOLC_EN_VOICE }
+                region = p.region.ifBlank { DEFAULT_REGION },
+                apiKey = CloudKeyStore.decrypt(context, p.apiKey).orEmpty(),
+                enVoice = p.enVoice,
+                zhVoice = p.zhVoice,
+                multilingualVoice = p.multilingualVoice,
+                useMultilingual = p.useMultilingual,
+                systemZhVoice = p.systemZhVoice,
+                systemEnVoice = p.systemEnVoice,
+                serverUrl = p.serverUrl,
+                serverModel = p.serverModel.ifBlank { "tts-1" },
+                serverToken = CloudKeyStore.decrypt(context, p.serverToken).orEmpty(),
+                serverVoice = p.serverVoice,
+                volcApiKey = CloudKeyStore.decrypt(context, p.volcApiKey).orEmpty(),
+                volcAppId = p.volcAppId,
+                volcToken = CloudKeyStore.decrypt(context, p.volcToken).orEmpty(),
+                volcResourceId = p.volcResourceId.ifBlank { DEFAULT_VOLC_RESOURCE },
+                volcZhVoice = p.volcZhVoice.ifBlank { DEFAULT_VOLC_ZH_VOICE },
+                volcEnVoice = p.volcEnVoice.ifBlank { DEFAULT_VOLC_EN_VOICE }
             )
         }
 
         fun save(context: Context, settings: CloudTtsSettings) {
-            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val p = AppPrefs.get(context).cloudTts
             val encryptedKey = CloudKeyStore.encrypt(context, settings.apiKey)
             val encryptedToken = CloudKeyStore.encrypt(context, settings.serverToken)
             val encryptedVolcApiKey = CloudKeyStore.encrypt(context, settings.volcApiKey)
             val encryptedVolcToken = CloudKeyStore.encrypt(context, settings.volcToken)
-            prefs.edit()
-                .putString(KEY_MODE, settings.mode.name)
-                .putString(KEY_REGION, settings.region.ifBlank { DEFAULT_REGION })
-                .putString(KEY_API, encryptedKey)
-                .putString(KEY_EN_VOICE, settings.enVoice)
-                .putString(KEY_ZH_VOICE, settings.zhVoice)
-                .putString(KEY_MULTILINGUAL_VOICE, settings.multilingualVoice)
-                .putBoolean(KEY_USE_MULTILINGUAL, settings.useMultilingual)
-                .putString(KEY_SYSTEM_ZH_VOICE, settings.systemZhVoice)
-                .putString(KEY_SYSTEM_EN_VOICE, settings.systemEnVoice)
-                .putString(KEY_SERVER_URL, settings.serverUrl.trim())
-                .putString(KEY_SERVER_MODEL, settings.serverModel.ifBlank { "tts-1" })
-                .putString(KEY_SERVER_TOKEN, encryptedToken)
-                .putString(KEY_SERVER_VOICE, settings.serverVoice)
-                .putString(KEY_VOLC_API_KEY, encryptedVolcApiKey)
-                .putString(KEY_VOLC_APP_ID, settings.volcAppId.trim())
-                .putString(KEY_VOLC_TOKEN, encryptedVolcToken)
-                .putString(KEY_VOLC_RESOURCE, settings.volcResourceId.ifBlank { DEFAULT_VOLC_RESOURCE })
-                .putString(KEY_VOLC_ZH_VOICE, settings.volcZhVoice.ifBlank { DEFAULT_VOLC_ZH_VOICE })
-                .putString(KEY_VOLC_EN_VOICE, settings.volcEnVoice.ifBlank { DEFAULT_VOLC_EN_VOICE })
-                .apply()
+            p.putMode(settings.mode.name)
+            p.putRegion(settings.region.ifBlank { DEFAULT_REGION })
+            p.putApiKey(encryptedKey)
+            p.putEnVoice(settings.enVoice)
+            p.putZhVoice(settings.zhVoice)
+            p.putMultilingualVoice(settings.multilingualVoice)
+            p.putUseMultilingual(settings.useMultilingual)
+            p.putSystemZhVoice(settings.systemZhVoice)
+            p.putSystemEnVoice(settings.systemEnVoice)
+            p.putServerUrl(settings.serverUrl.trim())
+            p.putServerModel(settings.serverModel.ifBlank { "tts-1" })
+            p.putServerToken(encryptedToken)
+            p.putServerVoice(settings.serverVoice)
+            p.putVolcApiKey(encryptedVolcApiKey)
+            p.putVolcAppId(settings.volcAppId.trim())
+            p.putVolcToken(encryptedVolcToken)
+            p.putVolcResourceId(settings.volcResourceId.ifBlank { DEFAULT_VOLC_RESOURCE })
+            p.putVolcZhVoice(settings.volcZhVoice.ifBlank { DEFAULT_VOLC_ZH_VOICE })
+            p.putVolcEnVoice(settings.volcEnVoice.ifBlank { DEFAULT_VOLC_EN_VOICE })
         }
     }
 }

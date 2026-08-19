@@ -66,4 +66,24 @@ class AzureSentenceTranslatorTest {
 
         assertTrue(marked.contains("translation=\"安静 &quot;书&quot; &amp; 故事\""))
     }
+
+    @Test
+    fun `element content is xml escaped`() {
+        val sentence = "R&D spending rose."
+        val matches = listOf(
+            GlossaryMatch(
+                entry = GlossaryEntry(term = "R&D", translation = "研发"),
+                text = "R&D",
+                start = 0,
+                endExclusive = 3
+            )
+        )
+
+        val marked = AzureSentenceTranslator.markupSentence(sentence, matches)
+
+        assertEquals(
+            "<mstrans:dictionary translation=\"研发\">R&amp;D</mstrans:dictionary> spending rose.",
+            marked
+        )
+    }
 }

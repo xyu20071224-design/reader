@@ -3,6 +3,8 @@
 
 # Gradle / Android build outputs
 .gradle/
+.gradle-home/
+.robolectric-home/
 build/
 captures/
 .externalNativeBuild/
@@ -50,3 +52,5 @@ src/app/src/main/assets/sherpa/**/*.onnx
 
 # Logs
 *.log
+
+.android/

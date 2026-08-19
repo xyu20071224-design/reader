@@ -1,4 +1,4 @@
-package com.linguareader.app
+package com.linguareader.app.ui.bookshelf
 
 import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -79,6 +80,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
+import com.linguareader.app.AppUiState
+import com.linguareader.app.ui.vocabulary.VocabularyScreen
+import com.linguareader.app.ui.theme.Accent
+import com.linguareader.app.ui.theme.AccentSoft
+import com.linguareader.app.ui.theme.BookCoverFallback
+import com.linguareader.app.ui.theme.CardShape
+import com.linguareader.app.ui.theme.CardSurface
+import com.linguareader.app.ui.theme.Danger
+import com.linguareader.app.ui.theme.InkFaint
+import com.linguareader.app.ui.theme.InkSoft
+import com.linguareader.app.ui.theme.Paper
+import com.linguareader.app.ui.theme.PillShape
+import com.linguareader.app.ui.theme.Success
+
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -301,6 +317,8 @@ private fun AiSettingsDialog(
     var azureKey by remember(settings) { mutableStateOf(settings.azureKey) }
     var azureRegion by remember(settings) { mutableStateOf(settings.azureRegion) }
     var azureEndpoint by remember(settings) { mutableStateOf(settings.azureEndpoint) }
+    var sourceLanguage by remember(settings) { mutableStateOf(settings.sourceLanguage) }
+    var targetLanguage by remember(settings) { mutableStateOf(settings.targetLanguage) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -315,7 +333,9 @@ private fun AiSettingsDialog(
                         azureTranslationEnabled = azureEnabled,
                         azureKey = azureKey,
                         azureRegion = azureRegion,
-                        azureEndpoint = azureEndpoint
+                        azureEndpoint = azureEndpoint,
+                        sourceLanguage = sourceLanguage,
+                        targetLanguage = targetLanguage
                     )
                 )
                 onDismiss()
@@ -427,6 +447,29 @@ private fun AiSettingsDialog(
                         "关闭时查词面板不显示整句翻译。",
                         style = MaterialTheme.typography.labelSmall,
                         color = InkSoft
+                    )
+                }
+                if (enabled || azureEnabled) {
+                    HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                    Text(
+                        "整句翻译语言（Azure 与 DeepSeek 回退共用）",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = sourceLanguage,
+                        onValueChange = { sourceLanguage = it },
+                        label = { Text("源语言代码（如 en）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = targetLanguage,
+                        onValueChange = { targetLanguage = it },
+                        label = { Text("目标语言代码（如 zh-Hans）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

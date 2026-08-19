@@ -118,6 +118,31 @@ class TtsTextExtractorTest {
     }
 
     @Test
+    fun sentenceLocationFindsNonFirstSentencesWithinBlock() {
+        val book = bookWith(
+            """
+            <html><body>
+              <p>Alpha one. Beta two. Gamma three.</p>
+              <p>After block.</p>
+            </body></html>
+            """.trimIndent()
+        )
+        val chapter = TtsTextExtractor().chapter(book, 0)
+        val alpha = "Alpha one."
+        val beta = "Beta two."
+        val gamma = "Gamma three."
+
+        assertEquals(Triple(0, 0, alpha.length), chapter.sentenceLocation(0))
+        // Second and third sentences of the same block must resolve to their
+        // real offsets (regression: they previously returned null because the
+        // cursor search reused the target sentence instead of advancing past
+        // each preceding sentence).
+        assertEquals(Triple(0, alpha.length + 1, beta.length), chapter.sentenceLocation(1))
+        assertEquals(Triple(0, alpha.length + 1 + beta.length + 1, gamma.length), chapter.sentenceLocation(2))
+        assertEquals(Triple(1, 0, "After block.".length), chapter.sentenceLocation(3))
+    }
+
+    @Test
     fun jsoupAndNormalizerProduceWhitespaceCollapsedBlocks() {
         val document = Jsoup.parse(
             """

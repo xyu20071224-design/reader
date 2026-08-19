@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import com.linguareader.app.data.LaunchPromptPolicy
 import com.linguareader.app.data.updateNoteFor
+import com.linguareader.app.ui.common.LaunchPromptDialog
 import org.junit.Rule
 import org.junit.Test
 
