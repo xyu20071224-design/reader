@@ -60,6 +60,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -113,10 +115,21 @@ internal fun BookshelfScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("语境阅读", fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (showVocabulary) "${state.savedWords.size} 个生词"
-                            else "${state.books.size} 本书",
+                            if (showVocabulary) {
+                                pluralStringResource(
+                                    R.plurals.shelf_word_count,
+                                    state.savedWords.size,
+                                    state.savedWords.size
+                                )
+                            } else {
+                                pluralStringResource(
+                                    R.plurals.shelf_book_count,
+                                    state.books.size,
+                                    state.books.size
+                                )
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             color = InkSoft
                         )
@@ -131,7 +144,13 @@ internal fun BookshelfScreen(
                             tint = if (showVocabulary) Accent else InkSoft
                         )
                         Spacer(Modifier.width(5.dp))
-                        Text(if (showVocabulary) "书架" else "生词本 ${state.savedWords.size}")
+                        Text(
+                            if (showVocabulary) {
+                                stringResource(R.string.shelf_tab_shelf)
+                            } else {
+                                stringResource(R.string.shelf_tab_words, state.savedWords.size)
+                            }
+                        )
                     }
                     if (!showVocabulary) {
                         TextButton(onClick = { showAiDrawer = true }) {
@@ -142,7 +161,7 @@ internal fun BookshelfScreen(
                                 tint = if (state.aiSettings.enabled) Accent else InkSoft
                             )
                             Spacer(Modifier.width(4.dp))
-                            Text("AI 中心")
+                            Text(stringResource(R.string.shelf_ai_center))
                         }
                         Button(
                             onClick = {
@@ -165,7 +184,7 @@ internal fun BookshelfScreen(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("导入")
+                            Text(stringResource(R.string.shelf_import))
                         }
                     }
                     Spacer(Modifier.width(12.dp))
@@ -228,7 +247,7 @@ internal fun BookshelfScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = Accent)
                         Spacer(Modifier.height(12.dp))
-                        Text("正在整理图书…", color = InkSoft)
+                        Text(stringResource(R.string.shelf_loading), color = InkSoft)
                     }
                 }
             }
@@ -238,7 +257,9 @@ internal fun BookshelfScreen(
     state.message?.let {
         AlertDialog(
             onDismissRequest = onDismissMessage,
-            confirmButton = { TextButton(onClick = onDismissMessage) { Text("知道了") } },
+            confirmButton = {
+                TextButton(onClick = onDismissMessage) { Text(stringResource(R.string.common_got_it)) }
+            },
             title = { Text(state.messageTitle) },
             text = { Text(it) },
             containerColor = CardSurface,
@@ -253,13 +274,15 @@ internal fun BookshelfScreen(
                 TextButton(onClick = {
                     onDelete(book)
                     deleteCandidate = null
-                }) { Text("删除", color = Danger) }
+                }) { Text(stringResource(R.string.common_delete), color = Danger) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteCandidate = null }) { Text("取消") }
+                TextButton(onClick = { deleteCandidate = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             },
-            title = { Text("删除《${book.title}》？") },
-            text = { Text("本地书籍副本与阅读进度会一并删除。") },
+            title = { Text(stringResource(R.string.shelf_delete_title, book.title)) },
+            text = { Text(stringResource(R.string.shelf_delete_body)) },
             containerColor = CardSurface,
             shape = CardShape
         )
@@ -304,10 +327,14 @@ private fun EmptyBookshelf(onImport: () -> Unit) {
             tint = Accent.copy(alpha = .55f)
         )
         Spacer(Modifier.height(20.dp))
-        Text("从一本英文书开始", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            stringResource(R.string.shelf_empty_title),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold
+        )
         Spacer(Modifier.height(8.dp))
         Text(
-            "导入无 DRM 的可重排 EPUB、TXT、FB2 或文字版 PDF。图书和阅读进度只保存在本机。",
+            stringResource(R.string.shelf_empty_body),
             color = InkSoft
         )
         Spacer(Modifier.height(24.dp))
@@ -318,7 +345,7 @@ private fun EmptyBookshelf(onImport: () -> Unit) {
         ) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("选择电子书文件")
+            Text(stringResource(R.string.shelf_empty_action))
         }
     }
 }
@@ -402,17 +429,22 @@ private fun BookCard(
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            if (book.progress > 0f) "已读 ${(book.progress * 100).roundToInt()}%" else book.author,
+            if (book.progress > 0f) {
+                stringResource(R.string.shelf_progress_read, (book.progress * 100).roundToInt())
+            } else {
+                book.author
+            },
             style = MaterialTheme.typography.bodySmall,
             color = InkSoft,
             maxLines = 1
         )
         if (aiEnabled) {
             val statusLabel = when {
-                aiStatus == null -> "AI 语境：待生成"
-                aiStatus.generating -> "AI 语境：生成中…"
-                aiStatus.ready -> "AI 语境：就绪"
-                else -> aiStatus.error?.let { "AI 语境：$it" } ?: "AI 语境：生成失败"
+                aiStatus == null -> stringResource(R.string.shelf_ai_pending)
+                aiStatus.generating -> stringResource(R.string.shelf_ai_generating)
+                aiStatus.ready -> stringResource(R.string.shelf_ai_ready)
+                aiStatus.error != null -> stringResource(R.string.shelf_ai_error, aiStatus.error)
+                else -> stringResource(R.string.shelf_ai_failed)
             }
             Text(
                 statusLabel,
@@ -430,7 +462,11 @@ private fun BookCard(
                     tint = Accent
                 )
                 Spacer(Modifier.width(3.dp))
-                Text("术语表", style = MaterialTheme.typography.labelSmall, color = Accent)
+                Text(
+                    stringResource(R.string.shelf_glossary),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Accent
+                )
             }
             TextButton(onClick = onLongPressDelete, modifier = Modifier.height(30.dp)) {
                 Icon(
@@ -440,7 +476,11 @@ private fun BookCard(
                     tint = InkFaint
                 )
                 Spacer(Modifier.width(3.dp))
-                Text("移除", style = MaterialTheme.typography.labelSmall, color = InkFaint)
+                Text(
+                    stringResource(R.string.shelf_remove),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkFaint
+                )
             }
         }
     }
@@ -469,9 +509,9 @@ private fun GlossaryDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("完成") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) }
         },
-        title = { Text("术语表 · ${book.title}") },
+        title = { Text(stringResource(R.string.glossary_title, book.title)) },
         text = {
             Column(
                 Modifier
@@ -483,7 +523,7 @@ private fun GlossaryDialog(
                     OutlinedTextField(
                         value = newTerm,
                         onValueChange = { newTerm = it },
-                        label = { Text("英文术语") },
+                        label = { Text(stringResource(R.string.glossary_term_label)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
@@ -491,7 +531,7 @@ private fun GlossaryDialog(
                     OutlinedTextField(
                         value = newTranslation,
                         onValueChange = { newTranslation = it },
-                        label = { Text("译法（留空=保留原文）") },
+                        label = { Text(stringResource(R.string.glossary_translation_label)) },
                         singleLine = true,
                         modifier = Modifier.weight(1.3f)
                     )
@@ -506,13 +546,13 @@ private fun GlossaryDialog(
                     }) {
                         Icon(
                             Icons.Default.Add,
-                            contentDescription = "添加术语",
+                            contentDescription = stringResource(R.string.glossary_add),
                             tint = Accent
                         )
                     }
                 }
                 Text(
-                    "手动条目优先于 AI 自动条目；开关控制是否参与 Azure 整句翻译，关闭后仅用于点词提示。",
+                    stringResource(R.string.glossary_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkSoft
                 )
@@ -520,7 +560,7 @@ private fun GlossaryDialog(
                 if (loading) {
                     CircularProgressIndicator(color = Accent, modifier = Modifier.size(28.dp))
                 } else if (entries.isEmpty()) {
-                    Text("还没有术语条目。", color = InkSoft)
+                    Text(stringResource(R.string.glossary_empty), color = InkSoft)
                 } else {
                     entries.forEach { entry ->
                         GlossaryEntryRow(

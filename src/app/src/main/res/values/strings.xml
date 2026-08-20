@@ -1,3 +1,107 @@
 <resources>
     <string name="app_name">语境阅读</string>
+
+    <!-- 通用 -->
+    <string name="common_got_it">知道了</string>
+    <string name="common_delete">删除</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_done">完成</string>
+
+    <!-- 一次性轻提示（Snackbar） -->
+    <string name="notice_book_imported">已导入《%1$s》</string>
+    <string name="notice_book_deleted">已删除《%1$s》</string>
+
+    <!-- 书架 -->
+    <plurals name="shelf_book_count">
+        <item quantity="other">%d 本书</item>
+    </plurals>
+    <plurals name="shelf_word_count">
+        <item quantity="other">%d 个生词</item>
+    </plurals>
+    <string name="shelf_tab_shelf">书架</string>
+    <string name="shelf_tab_words">生词本 %1$d</string>
+    <string name="shelf_ai_center">AI 中心</string>
+    <string name="shelf_import">导入</string>
+    <string name="shelf_loading">正在整理图书…</string>
+    <string name="shelf_delete_title">删除《%1$s》？</string>
+    <string name="shelf_delete_body">本地书籍副本与阅读进度会一并删除。</string>
+    <string name="shelf_empty_title">从一本英文书开始</string>
+    <string name="shelf_empty_body">导入无 DRM 的可重排 EPUB、TXT、FB2 或文字版 PDF。图书和阅读进度只保存在本机。</string>
+    <string name="shelf_empty_action">选择电子书文件</string>
+    <string name="shelf_progress_read">已读 %1$d%%</string>
+    <string name="shelf_ai_pending">AI 语境：待生成</string>
+    <string name="shelf_ai_generating">AI 语境：生成中…</string>
+    <string name="shelf_ai_ready">AI 语境：就绪</string>
+    <string name="shelf_ai_error">AI 语境：%1$s</string>
+    <string name="shelf_ai_failed">AI 语境：生成失败</string>
+    <string name="shelf_glossary">术语表</string>
+    <string name="shelf_remove">移除</string>
+
+    <!-- 本书术语表 -->
+    <string name="glossary_title">术语表 · %1$s</string>
+    <string name="glossary_term_label">英文术语</string>
+    <string name="glossary_translation_label">译法（留空=保留原文）</string>
+    <string name="glossary_add">添加术语</string>
+    <string name="glossary_hint">手动条目优先于 AI 自动条目；开关控制是否参与 Azure 整句翻译，关闭后仅用于点词提示。</string>
+    <string name="glossary_empty">还没有术语条目。</string>
+
+    <!-- 听书播放条 -->
+    <string name="player_cache_progress"> 缓存全书 %1$d%%</string>
+    <string name="player_previous">上一句</string>
+    <string name="player_pause">暂停</string>
+    <string name="player_play">播放</string>
+    <string name="player_next">下一句</string>
+    <string name="player_choose_start_hint">点击正文中的单词/句子，从此句开始朗读</string>
+    <string name="player_preparing">正在准备朗读…</string>
+    <string name="player_paused">已暂停</string>
+    <string name="player_set_start">设置起点</string>
+    <string name="player_cache_book">缓存全书音频</string>
+    <string name="player_speed">语速</string>
+    <string name="player_speed_value">语速 %1$s</string>
+    <string name="player_speed_hint">0.5× – 2.0×，点击页面可从此句开始听</string>
+    <string name="player_stop">停止听书</string>
+
+    <!-- 多角色音色 -->
+    <string name="multivoice_title">多角色音色（实验）</string>
+    <string name="multivoice_subtitle">按「谁在说话」给旁白与各角色分配不同音色；需要 AI 语境档案提供角色表。</string>
+    <string name="multivoice_unsupported">本地 Piper 只有 2 个内置音色，系统语音音色不可控，均不支持多角色。</string>
+    <string name="multivoice_no_books">书架还没有书，导入后即可分配角色音色。</string>
+    <string name="multivoice_book_label">书目</string>
+    <string name="multivoice_pick_book">选择书籍</string>
+    <string name="multivoice_current_book">本书：%1$s</string>
+    <string name="multivoice_narrator_section">旁白音色</string>
+    <string name="multivoice_narrator_zh">中文旁白</string>
+    <string name="multivoice_narrator_en">英文旁白</string>
+    <string name="multivoice_characters_section">角色音色</string>
+    <string name="multivoice_no_characters">本书还没有角色条目：在 AI 中心生成语境档案，或在术语表手动添加角色。</string>
+    <string name="multivoice_lock_hint">选定音色即锁定该角色（名字旁的锁形图标表示已锁定，点解锁图标或「恢复自动」交回自动分配）；未锁定的角色会随新章节的共现关系自动微调。</string>
+    <string name="multivoice_clone_notice">克隆音色请只使用自备或已获授权的参考音频，不要克隆真人/演员声音；所有朗读音频均为 AI 合成，如需删除本机缓存可在书籍删除时一并清除。</string>
+    <string name="multivoice_auto">自动分配</string>
+    <string name="multivoice_change">更换</string>
+    <string name="multivoice_locked">已锁定音色</string>
+    <string name="multivoice_release">恢复自动分配 %1$s</string>
+    <string name="multivoice_release_action">恢复自动</string>
+    <string name="multivoice_audition">试听 %1$s</string>
+    <string name="multivoice_audition_stop">停止试听</string>
+    <string name="multivoice_audition_failed">试听失败</string>
+    <string name="multivoice_picker_title">%1$s · 选择音色</string>
+    <string name="multivoice_search">搜索音色（名字/语言/性别/风格）</string>
+    <string name="multivoice_no_match">没有匹配的音色。</string>
+    <string name="multivoice_role_major">主要角色</string>
+    <string name="multivoice_role_medium">次要角色</string>
+    <string name="multivoice_role_minor">配角</string>
+    <string name="multivoice_gender_male">男</string>
+    <string name="multivoice_gender_female">女</string>
+    <string name="multivoice_locked_notice">已锁定「%1$s」的音色</string>
+    <string name="multivoice_released_notice">「%1$s」已恢复自动分配</string>
+    <string name="multivoice_status_no_library">当前引擎还没有可用音色列表：请先在上方获取/填写音色（Azure 拉取音色、自建服务器提供 /voices）。</string>
+    <string name="multivoice_status_no_roster">本书还没有角色表：请在 AI 中心生成语境档案，生成后角色会出现在这里。</string>
+    <string name="multivoice_status_rule_mode">未配置 DeepSeek Key：说话人识别使用规则模式（只区分旁白与对白），角色音色暂不会生效。</string>
+    <string name="multivoice_status_no_map">尚未生成音色映射。</string>
+    <plurals name="multivoice_status_shared">
+        <item quantity="other">音色数量不足：已为 %1$d 个角色分配音色，其中 %2$d 个与不同场的角色共用音色。</item>
+    </plurals>
+    <plurals name="multivoice_status_ready">
+        <item quantity="other">已为 %1$d 个角色分配音色。</item>
+    </plurals>
 </resources>

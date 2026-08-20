@@ -261,3 +261,18 @@ M1.5 此前只有「服务能跑」的既成事实（8001 上的 IndexTTS 2.5、
 - `assembleDebug`：通过。
 - 仍待人工：真机看夜间外壳观感（尤其 sheet/弹层与状态栏过渡）、音色选择弹层在 100+ 音色下的滚动手感。
 - 评审里其余未做项（留待第二批）：全局 Snackbar 替代散落的状态文字、文案抽到 `strings.xml`、统一听书设置/术语表入口、`Typography` 定制、平板/横屏适配、部分图标补 `contentDescription`。
+
+## 2026-08-20 UI 评审整改第二批（全局 Snackbar + 文案资源化）
+
+- **全局 Snackbar**：新增 `AppSnackbar` + `LocalAppSnackbar`（同一时刻只显示一条，新提示顶掉旧的），`MainActivity` 用 `SnackbarHost` 承载并浮在书架/阅读页之上；`AppUiState.notice` 作为一次性提示通道（`clearNotice()` 弹过即清），导入成功提示「已导入《X》」、删除提示「已删除《X》」——此前这两个操作**完全没有反馈**。多角色面板的「已锁定音色 / 已恢复自动 / 试听失败」也从面板内一行状态字改为轻提示。
+- **文案资源化（首批）**：`values/strings.xml` 建立命名规范（`common_* / notice_* / shelf_* / glossary_* / player_* / multivoice_*`），并新增 `values-en/strings.xml` —— **英文界面首次真正可用**，i18n 机制已被验证而不只是「留了路」。已迁移三个完整界面 + ViewModel 提示：`ListeningBar`（13）、`MultiVoiceSettings`（32）、`BookshelfScreen`（29）、导入/删除提示（2），并对「N 本书 / N 个生词 / N 个角色已分配」使用 `plurals` 正确处理英文单复数。
+- **纯逻辑不再产出界面文案**：`MultiVoiceSupport.statusMessage(...)` 改为 `status(...)` 返回 `MultiVoiceStatus`（`NO_LIBRARY / NO_ROSTER / RULE_MODE / NO_MAP / SHARED_VOICES / READY` + 计数），界面映射到资源字符串；对应单测改为断言状态与计数而不是中文措辞。
+
+验证情况：
+
+- `testDebugUnitTest`：**269 个全部通过**（`MultiVoiceSupportTest` 改为断言状态枚举/计数）。
+- `lintDebug`：通过，0 错误；资源侧无 `MissingTranslation`、无 `PluralsCandidate`（两处计数文案已改 `plurals`），本轮文件无新增告警。
+- `assembleDebug`：通过。
+- 迁移进度（剩余中文字面量，可作为下一批的度量）：`ListeningSettingsSheet` 105、`ReviewUi` 63、`ReaderScreen` 44、`AiDrawerSheet` 34、`VocabularyScreen` 24、`AppViewModel` 12、`LaunchPromptDialog` 2。
+- **协作提示**：本轮**有意跳过 `ListeningSettingsSheet.kt`**（以及 `CloudTtsSettings/TtsSynthesizer/SherpaTtsSynthesizer/PiperVoice*`）——同一工作区另有会话正在这些文件上开发 Piper 音色导入功能，避免互相覆盖；这批提交只包含本会话改动的文件。
+- 仍待人工：真机确认 Snackbar 位置不挡听书条（当前底部留白 72dp）、切到英文系统语言看 `values-en` 文案排版。

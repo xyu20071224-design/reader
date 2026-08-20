@@ -45,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import com.linguareader.app.data.Book
 import com.linguareader.app.tts.BookVoiceMap
 import com.linguareader.app.tts.CloudTtsSettings
+import com.linguareader.app.tts.MultiVoiceStatus
+import com.linguareader.app.tts.MultiVoiceStatusKind
 import com.linguareader.app.tts.MultiVoiceSupport
 import com.linguareader.app.tts.TtsLanguage
 import com.linguareader.app.tts.TtsPlaybackController
@@ -77,7 +81,9 @@ internal fun MultiVoiceSection(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbar = LocalAppSnackbar.current
     val engineSupported = MultiVoiceSupport.engineSupportsMultiVoice(settings)
+    val auditionFailed = stringResource(R.string.multivoice_audition_failed)
 
     var bookId by remember(preselectedBook?.id) {
         mutableStateOf(preselectedBook?.id ?: books.firstOrNull()?.id.orEmpty())
@@ -85,8 +91,7 @@ internal fun MultiVoiceSection(
     var library by remember { mutableStateOf(VoiceLibrary()) }
     var voiceMap by remember { mutableStateOf<BookVoiceMap?>(null) }
     var characters by remember { mutableStateOf<List<VoiceCharacter>>(emptyList()) }
-    var status by remember { mutableStateOf<String?>(null) }
-    var auditionError by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<MultiVoiceStatus?>(null) }
     var playingVoice by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var reloadToken by remember { mutableIntStateOf(0) }
@@ -112,7 +117,7 @@ internal fun MultiVoiceSection(
         library = loadedLibrary
         characters = roster
         voiceMap = map
-        status = MultiVoiceSupport.statusMessage(
+        status = MultiVoiceSupport.status(
             taggingReady = MultiVoiceSupport.taggingReady(context),
             rosterSize = roster.size,
             library = loadedLibrary,
@@ -135,6 +140,7 @@ internal fun MultiVoiceSection(
                 repository.lock(bookId, target.speaker, voiceId)
             }
             TtsPlaybackController.onCloudSettingsChanged(context)
+            snackbar.show(context.getString(R.string.multivoice_locked_notice, target.title))
             reloadToken++
         }
     }
@@ -146,13 +152,13 @@ internal fun MultiVoiceSection(
             val speaker = target.narratorLanguage?.let { BookVoiceMap.narratorKey(it) } ?: target.speaker
             repository.unlock(bookId, speaker)
             TtsPlaybackController.onCloudSettingsChanged(context)
+            snackbar.show(context.getString(R.string.multivoice_released_notice, target.title))
             reloadToken++
         }
     }
 
     fun audition(speaker: String, voiceId: String) {
         if (voiceId.isBlank()) return
-        auditionError = null
         if (playingVoice == voiceId) {
             VoiceAudition.stop()
             playingVoice = null
@@ -169,7 +175,7 @@ internal fun MultiVoiceSection(
                 text = text,
                 onFinished = { if (playingVoice == voiceId) playingVoice = null }
             ).onFailure {
-                auditionError = it.message ?: "试听失败"
+                snackbar.show(it.message ?: auditionFailed)
                 playingVoice = null
             }
         }
@@ -181,15 +187,15 @@ internal fun MultiVoiceSection(
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(
-                "多角色音色（实验）",
+                stringResource(R.string.multivoice_title),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 if (engineSupported) {
-                    "按「谁在说话」给旁白与各角色分配不同音色；需要 AI 语境档案提供角色表。"
+                    stringResource(R.string.multivoice_subtitle)
                 } else {
-                    "本地 Piper 只有 2 个内置音色，系统语音音色不可控，均不支持多角色。"
+                    stringResource(R.string.multivoice_unsupported)
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
@@ -207,17 +213,21 @@ internal fun MultiVoiceSection(
     Spacer(Modifier.height(10.dp))
     if (preselectedBook == null) {
         if (books.isEmpty()) {
-            Text("书架还没有书，导入后即可分配角色音色。", color = InkSoft)
+            Text(stringResource(R.string.multivoice_no_books), color = InkSoft)
             return
         }
         var bookMenu by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("书目", style = MaterialTheme.typography.labelLarge, color = InkSoft)
+            Text(
+                stringResource(R.string.multivoice_book_label),
+                style = MaterialTheme.typography.labelLarge,
+                color = InkSoft
+            )
             Spacer(Modifier.width(10.dp))
             Box(Modifier.weight(1f)) {
                 TextButton(onClick = { bookMenu = true }, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        bookTitle ?: "选择书籍",
+                        bookTitle ?: stringResource(R.string.multivoice_pick_book),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
@@ -242,7 +252,7 @@ internal fun MultiVoiceSection(
         }
     } else {
         Text(
-            "本书：" + preselectedBook.title,
+            stringResource(R.string.multivoice_current_book, preselectedBook.title),
             style = MaterialTheme.typography.labelMedium,
             color = InkSoft
         )
@@ -250,10 +260,7 @@ internal fun MultiVoiceSection(
 
     status?.let {
         Spacer(Modifier.height(6.dp))
-        Text(it, style = MaterialTheme.typography.labelSmall, color = InkSoft)
-    }
-    auditionError?.let {
-        Text(it, style = MaterialTheme.typography.labelSmall, color = Danger)
+        Text(statusText(it), style = MaterialTheme.typography.labelSmall, color = InkSoft)
     }
 
     if (loading) {
@@ -266,11 +273,19 @@ internal fun MultiVoiceSection(
     if (map == null || library.isEmpty) return
 
     Spacer(Modifier.height(12.dp))
-    Text("旁白音色", style = MaterialTheme.typography.labelLarge, color = InkSoft)
+    Text(
+        stringResource(R.string.multivoice_narrator_section),
+        style = MaterialTheme.typography.labelLarge,
+        color = InkSoft
+    )
     MultiVoiceSupport.NARRATOR_LANGUAGES.forEach { language ->
         val target = VoicePickerTarget(
             speaker = "narrator",
-            title = if (language == TtsLanguage.CHINESE) "中文旁白" else "英文旁白",
+            title = if (language == TtsLanguage.CHINESE) {
+                stringResource(R.string.multivoice_narrator_zh)
+            } else {
+                stringResource(R.string.multivoice_narrator_en)
+            },
             language = language,
             gender = null,
             narratorLanguage = language
@@ -287,10 +302,14 @@ internal fun MultiVoiceSection(
     }
 
     Spacer(Modifier.height(12.dp))
-    Text("角色音色", style = MaterialTheme.typography.labelLarge, color = InkSoft)
+    Text(
+        stringResource(R.string.multivoice_characters_section),
+        style = MaterialTheme.typography.labelLarge,
+        color = InkSoft
+    )
     if (characters.isEmpty()) {
         Text(
-            "本书还没有角色条目：在 AI 中心生成语境档案，或在术语表手动添加角色。",
+            stringResource(R.string.multivoice_no_characters),
             style = MaterialTheme.typography.labelSmall,
             color = InkSoft
         )
@@ -320,16 +339,14 @@ internal fun MultiVoiceSection(
         }
     Spacer(Modifier.height(6.dp))
     Text(
-        "选定音色即锁定该角色（名字旁的锁形图标表示已锁定，点解锁图标或「恢复自动」交回自动分配）；" +
-            "未锁定的角色会随新章节的共现关系自动微调。",
+        stringResource(R.string.multivoice_lock_hint),
         style = MaterialTheme.typography.labelSmall,
         color = InkFaint
     )
     Spacer(Modifier.height(4.dp))
     // PLAN-MULTI-VOICE §12.3 红线：克隆音色的素材来源与 AI 合成标识。
     Text(
-        "克隆音色请只使用自备或已获授权的参考音频，不要克隆真人/演员声音；" +
-            "所有朗读音频均为 AI 合成，如需删除本机缓存可在书籍删除时一并清除。",
+        stringResource(R.string.multivoice_clone_notice),
         style = MaterialTheme.typography.labelSmall,
         color = InkFaint
     )
@@ -372,19 +389,41 @@ private data class VoicePickerTarget(
     val narratorLanguage: String?
 )
 
+@Composable
 private fun characterSubtitle(character: VoiceCharacter): String {
     val parts = mutableListOf<String>()
-    when (character.importance.lowercase()) {
-        "major" -> parts += "主要角色"
-        "medium" -> parts += "次要角色"
-        else -> parts += "配角"
+    parts += when (character.importance.lowercase()) {
+        "major" -> stringResource(R.string.multivoice_role_major)
+        "medium" -> stringResource(R.string.multivoice_role_medium)
+        else -> stringResource(R.string.multivoice_role_minor)
     }
     when (character.gender.lowercase()) {
-        "male" -> parts += "男"
-        "female" -> parts += "女"
+        "male" -> parts += stringResource(R.string.multivoice_gender_male)
+        "female" -> parts += stringResource(R.string.multivoice_gender_female)
     }
     if (character.style.isNotEmpty()) parts += character.style.take(2).joinToString("/")
     return parts.joinToString(" · ")
+}
+
+/** 状态提示文案：把 [MultiVoiceStatus] 映射到资源字符串。 */
+@Composable
+private fun statusText(status: MultiVoiceStatus): String = when (status.kind) {
+    MultiVoiceStatusKind.NO_LIBRARY -> stringResource(R.string.multivoice_status_no_library)
+    MultiVoiceStatusKind.NO_ROSTER -> stringResource(R.string.multivoice_status_no_roster)
+    MultiVoiceStatusKind.RULE_MODE -> stringResource(R.string.multivoice_status_rule_mode)
+    MultiVoiceStatusKind.NO_MAP -> stringResource(R.string.multivoice_status_no_map)
+    MultiVoiceStatusKind.SHARED_VOICES -> pluralStringResource(
+        R.plurals.multivoice_status_shared,
+        status.characters,
+        status.characters,
+        status.shared
+    )
+
+    MultiVoiceStatusKind.READY -> pluralStringResource(
+        R.plurals.multivoice_status_ready,
+        status.characters,
+        status.characters
+    )
 }
 
 /** 一行可分配的说话人：名字、当前音色、试听/停止、恢复自动。 */
@@ -399,6 +438,10 @@ private fun VoiceRow(
     onRelease: () -> Unit,
     subtitle: String? = null
 ) {
+    // semantics{} 不是 composable 作用域，标签先取出来。
+    val auditionLabel = stringResource(R.string.multivoice_audition, title)
+    val stopAuditionLabel = stringResource(R.string.multivoice_audition_stop)
+    val releaseLabel = stringResource(R.string.multivoice_release, title)
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -416,14 +459,14 @@ private fun VoiceRow(
                 if (locked) {
                     Icon(
                         Icons.Default.Lock,
-                        contentDescription = "已锁定音色",
+                        contentDescription = stringResource(R.string.multivoice_locked),
                         tint = Accent,
                         modifier = Modifier.padding(start = 4.dp).size(13.dp)
                     )
                 }
             }
             Text(
-                currentVoice.ifBlank { "自动分配" },
+                currentVoice.ifBlank { stringResource(R.string.multivoice_auto) },
                 style = MaterialTheme.typography.labelSmall,
                 color = if (currentVoice.isBlank()) InkFaint else InkSoft,
                 maxLines = 1,
@@ -433,12 +476,12 @@ private fun VoiceRow(
                 Text(it, style = MaterialTheme.typography.labelSmall, color = InkFaint)
             }
         }
-        TextButton(onClick = onOpenPicker) { Text("更换") }
+        TextButton(onClick = onOpenPicker) { Text(stringResource(R.string.multivoice_change)) }
         IconButton(
             onClick = onAudition,
             enabled = currentVoice.isNotBlank(),
             modifier = Modifier.semantics {
-                contentDescription = if (playing) "停止试听" else "试听 " + title
+                contentDescription = if (playing) stopAuditionLabel else auditionLabel
             }
         ) {
             Icon(
@@ -451,7 +494,7 @@ private fun VoiceRow(
         if (locked) {
             IconButton(
                 onClick = onRelease,
-                modifier = Modifier.semantics { contentDescription = "恢复自动分配 " + title }
+                modifier = Modifier.semantics { contentDescription = releaseLabel }
             ) {
                 Icon(
                     Icons.Default.LockOpen,
@@ -482,26 +525,28 @@ private fun VoicePickerDialog(
     onDismiss: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
+    val auditionTemplate = stringResource(R.string.multivoice_audition, "%s")
+    val auditionOf: (String) -> String = { id -> auditionTemplate.replace("%s", id) }
     val groups = remember(library, query, target) {
         VoicePicker.groups(library.voices, target.language, target.gender, query)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = CardSurface,
-        title = { Text(target.title + " · 选择音色") },
+        title = { Text(stringResource(R.string.multivoice_picker_title, target.title)) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("搜索音色（名字/语言/性别/风格）") },
+                    label = { Text(stringResource(R.string.multivoice_search)) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
                 if (groups.isEmpty()) {
-                    Text("没有匹配的音色。", color = InkSoft)
+                    Text(stringResource(R.string.multivoice_no_match), color = InkSoft)
                 } else {
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
                         groups.forEach { group ->
@@ -534,8 +579,7 @@ private fun VoicePickerDialog(
                                     IconButton(
                                         onClick = { onAudition(option.voice.id) },
                                         modifier = Modifier.semantics {
-                                            contentDescription =
-                                                "试听 " + option.voice.id
+                                            contentDescription = auditionOf(option.voice.id)
                                         }
                                     ) {
                                         Icon(
@@ -557,11 +601,11 @@ private fun VoicePickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("完成") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) }
         },
         dismissButton = {
             if (locked) {
-                TextButton(onClick = onRelease) { Text("恢复自动") }
+                TextButton(onClick = onRelease) { Text(stringResource(R.string.multivoice_release_action)) }
             }
         }
     )

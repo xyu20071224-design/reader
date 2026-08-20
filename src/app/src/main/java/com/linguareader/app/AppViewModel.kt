@@ -55,6 +55,8 @@ data class AppUiState(
     val launchPrompt: LaunchPromptUi? = null,
     val message: String? = null,
     val messageTitle: String = "提示",
+    /** 一次性轻提示（Snackbar）：显示后由界面调用 [AppViewModel.clearNotice] 清空。 */
+    val notice: String? = null,
     val aiSettings: AiSettings = AiSettings(),
     val aiStatuses: Map<String, AiBookStatus> = emptyMap()
 ) {
@@ -144,7 +146,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         books = books,
                         currentBook = book,
                         savedWords = vocabulary.load(),
-                        loading = false
+                        loading = false,
+                        notice = string(R.string.notice_book_imported, book.title)
                     )
                     rescheduleReviewReminders()
                 }
@@ -190,6 +193,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .deleteRecursively()
             // Multi-voice M3: the per-book character → voice mapping goes too.
             File(getApplication<Application>().filesDir, "voice_maps/${book.id}.json").delete()
+            mutableState.value = mutableState.value.copy(
+                notice = string(R.string.notice_book_deleted, book.title)
+            )
             refresh()
         }
     }
@@ -275,6 +281,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissLaunchPrompt() {
         mutableState.value = mutableState.value.copy(launchPrompt = null)
+    }
+
+    /** 取应用资源文案（ViewModel 里没有 Composable 上下文）。 */
+    private fun string(id: Int, vararg args: Any): String =
+        getApplication<Application>().getString(id, *args)
+
+    /** 清掉已经弹过的一次性提示，避免重组时重复弹。 */
+    fun clearNotice() {
+        if (mutableState.value.notice != null) {
+            mutableState.value = mutableState.value.copy(notice = null)
+        }
     }
 
     fun clearMessage() {

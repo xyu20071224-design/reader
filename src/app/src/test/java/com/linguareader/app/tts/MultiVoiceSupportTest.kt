@@ -56,24 +56,29 @@ class MultiVoiceSupportTest {
 
     @Test
     fun statusExplainsEveryBlockedState() {
+        // 状态是数据而非文案，界面再映射到资源字符串（可本地化）。
         val library = VoiceLibrary(listOf(VoiceInfo("af_maple", "en", "female")), engine = "e")
         val map = BookVoiceMap("b", characterVoice = mapOf("Gandalf" to "af_maple"))
 
-        assertTrue(
-            MultiVoiceSupport.statusMessage(true, 2, VoiceLibrary(), map).contains("没有可用音色列表")
+        assertEquals(
+            MultiVoiceStatusKind.NO_LIBRARY,
+            MultiVoiceSupport.status(true, 2, VoiceLibrary(), map).kind
         )
-        assertTrue(
-            MultiVoiceSupport.statusMessage(true, 0, library, map).contains("还没有角色表")
+        assertEquals(
+            MultiVoiceStatusKind.NO_ROSTER,
+            MultiVoiceSupport.status(true, 0, library, map).kind
         )
-        assertTrue(
-            MultiVoiceSupport.statusMessage(false, 2, library, map).contains("规则模式")
+        assertEquals(
+            MultiVoiceStatusKind.RULE_MODE,
+            MultiVoiceSupport.status(false, 2, library, map).kind
         )
-        assertTrue(
-            MultiVoiceSupport.statusMessage(true, 2, library, null).contains("尚未生成音色映射")
+        assertEquals(
+            MultiVoiceStatusKind.NO_MAP,
+            MultiVoiceSupport.status(true, 2, library, null).kind
         )
-        assertTrue(
-            MultiVoiceSupport.statusMessage(true, 1, library, map).contains("已为 1 个角色")
-        )
+        val ready = MultiVoiceSupport.status(true, 1, library, map)
+        assertEquals(MultiVoiceStatusKind.READY, ready.kind)
+        assertEquals(1, ready.characters)
     }
 
     @Test
@@ -88,7 +93,10 @@ class MultiVoiceSupportTest {
         )
         assertEquals(2, MultiVoiceSupport.sharedVoiceCount(shared))
         val library = VoiceLibrary(listOf(VoiceInfo("am_onyx", "en", "male")), engine = "e")
-        assertTrue(MultiVoiceSupport.statusMessage(true, 3, library, shared).contains("音色数量不足"))
+        val status = MultiVoiceSupport.status(true, 3, library, shared)
+        assertEquals(MultiVoiceStatusKind.SHARED_VOICES, status.kind)
+        assertEquals(3, status.characters)
+        assertEquals(2, status.shared)
 
         val distinct = BookVoiceMap("b", characterVoice = mapOf("A" to "v1", "B" to "v2"))
         assertEquals(0, MultiVoiceSupport.sharedVoiceCount(distinct))

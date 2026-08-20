@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.linguareader.app.tts.TtsPlaybackState
 import java.util.Locale
 
@@ -55,6 +56,15 @@ internal fun ListeningBar(
     onChooseStart: () -> Unit = {}
 ) {
     var speedMenuOpen by remember { mutableStateOf(false) }
+    // semantics{} 不是 composable 作用域，无障碍标签先在这里取出来。
+    val previousLabel = stringResource(R.string.player_previous)
+    val pauseLabel = stringResource(R.string.player_pause)
+    val playLabel = stringResource(R.string.player_play)
+    val nextLabel = stringResource(R.string.player_next)
+    val startLabel = stringResource(R.string.player_set_start)
+    val cacheLabel = stringResource(R.string.player_cache_book)
+    val speedLabel = stringResource(R.string.player_speed)
+    val stopLabel = stringResource(R.string.player_stop)
     val progress = if (state.sentenceCount > 0) {
         state.sentenceIndex.toFloat() / state.sentenceCount
     } else {
@@ -87,7 +97,7 @@ internal fun ListeningBar(
                     trackColor = Accent.copy(alpha = .12f)
                 )
                 Text(
-                    " 缓存全书 ${(cacheProgress * 100).toInt()}%",
+                    stringResource(R.string.player_cache_progress, (cacheProgress * 100).toInt()),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkSoft,
                     modifier = Modifier.padding(start = 8.dp)
@@ -100,7 +110,7 @@ internal fun ListeningBar(
         ) {
             IconButton(
                 onClick = onPrevious,
-                modifier = Modifier.semantics { contentDescription = "上一句" }
+                modifier = Modifier.semantics { contentDescription = previousLabel }
             ) {
                 Icon(Icons.Filled.SkipPrevious, contentDescription = null, tint = Ink)
             }
@@ -109,7 +119,7 @@ internal fun ListeningBar(
                 modifier = Modifier
                     .size(44.dp)
                     .semantics {
-                        contentDescription = if (state.isPlaying) "暂停" else "播放"
+                        contentDescription = if (state.isPlaying) pauseLabel else playLabel
                     }
             ) {
                 Icon(
@@ -121,16 +131,16 @@ internal fun ListeningBar(
             }
             IconButton(
                 onClick = onNext,
-                modifier = Modifier.semantics { contentDescription = "下一句" }
+                modifier = Modifier.semantics { contentDescription = nextLabel }
             ) {
                 Icon(Icons.Filled.SkipNext, contentDescription = null, tint = Ink)
             }
             Text(
                 when {
-                    choosingStart -> "点击正文中的单词/句子，从此句开始朗读"
+                    choosingStart -> stringResource(R.string.player_choose_start_hint)
                     state.currentSentence.isNotBlank() -> state.currentSentence
-                    state.isPlaying -> "正在准备朗读…"
-                    else -> "已暂停"
+                    state.isPlaying -> stringResource(R.string.player_preparing)
+                    else -> stringResource(R.string.player_paused)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = InkSoft,
@@ -140,7 +150,7 @@ internal fun ListeningBar(
             )
             IconButton(
                 onClick = onChooseStart,
-                modifier = Modifier.semantics { contentDescription = "设置起点" }
+                modifier = Modifier.semantics { contentDescription = startLabel }
             ) {
                 Icon(
                     Icons.Filled.Flag,
@@ -152,7 +162,7 @@ internal fun ListeningBar(
             if (state.canCacheBook) {
                 IconButton(
                     onClick = onCacheBook,
-                    modifier = Modifier.semantics { contentDescription = "缓存全书音频" }
+                    modifier = Modifier.semantics { contentDescription = cacheLabel }
                 ) {
                     Icon(
                         Icons.Filled.Download,
@@ -165,7 +175,7 @@ internal fun ListeningBar(
             Box {
                 TextButton(
                     onClick = { speedMenuOpen = true },
-                    modifier = Modifier.semantics { contentDescription = "语速" }
+                    modifier = Modifier.semantics { contentDescription = speedLabel }
                 ) {
                     Icon(
                         Icons.Filled.Speed,
@@ -186,7 +196,7 @@ internal fun ListeningBar(
                     var rate by remember(state.speechRate) { mutableFloatStateOf(state.speechRate) }
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         Text(
-                            "语速 ${rateLabel(rate)}",
+                            stringResource(R.string.player_speed_value, rateLabel(rate)),
                             style = MaterialTheme.typography.labelLarge,
                             color = Ink
                         )
@@ -200,7 +210,7 @@ internal fun ListeningBar(
                             steps = 5
                         )
                         Text(
-                            "0.5× – 2.0×，点击页面可从此句开始听",
+                            stringResource(R.string.player_speed_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = InkFaint
                         )
@@ -209,7 +219,7 @@ internal fun ListeningBar(
             }
             IconButton(
                 onClick = onStop,
-                modifier = Modifier.semantics { contentDescription = "停止听书" }
+                modifier = Modifier.semantics { contentDescription = stopLabel }
             ) {
                 Icon(Icons.Filled.Close, contentDescription = null, tint = InkFaint)
             }

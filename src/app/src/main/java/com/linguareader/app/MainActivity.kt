@@ -7,8 +7,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -18,8 +22,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
@@ -39,7 +45,11 @@ class MainActivity : ComponentActivity() {
             var readerTheme by remember { mutableStateOf(storedReaderTheme(context)) }
             val palette = paletteFor(readerTheme, isSystemInDarkTheme())
             ApplySystemBars(palette)
-            CompositionLocalProvider(LocalLinguaPalette provides palette) {
+            val snackbar = rememberAppSnackbar()
+            CompositionLocalProvider(
+                LocalLinguaPalette provides palette,
+                LocalAppSnackbar provides snackbar
+            ) {
                 MaterialTheme(
                     colorScheme = colorSchemeFor(palette),
                     shapes = AppShapes
@@ -80,6 +90,15 @@ private fun LinguaReaderApp(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val currentBook = state.currentBook
     val speak = rememberEnglishSpeaker()
+    val snackbar = LocalAppSnackbar.current
+
+    // 一次性提示（导入/删除等）统一走全局 Snackbar，弹过即清空。
+    LaunchedEffect(state.notice) {
+        state.notice?.let {
+            snackbar.show(it)
+            viewModel.clearNotice()
+        }
+    }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Paper) {
         if (currentBook == null) {
@@ -124,6 +143,20 @@ private fun LinguaReaderApp(
 
     state.launchPrompt?.let { prompt ->
         LaunchPromptDialog(prompt = prompt, onDismiss = viewModel::dismissLaunchPrompt)
+    }
+
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        SnackbarHost(
+            hostState = snackbar.hostState,
+            modifier = Modifier.padding(bottom = 72.dp)
+        ) { data ->
+            Snackbar(
+                snackbarData = data,
+                containerColor = Ink,
+                contentColor = Paper,
+                shape = SmallShape
+            )
+        }
     }
 }
 

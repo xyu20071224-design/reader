@@ -10,6 +10,33 @@ import com.linguareader.app.ai.SpeakerTagRepository
  * (M2/M3) and the listening settings UI (M4), so the panel always shows exactly
  * what playback will do.
  */
+/** 多角色设置当前处于哪种状态（面板据此选文案）。 */
+enum class MultiVoiceStatusKind {
+    /** 引擎还没有可用音色库。 */
+    NO_LIBRARY,
+
+    /** 本书还没有角色表（语境档案未生成）。 */
+    NO_ROSTER,
+
+    /** 没有 DeepSeek Key，说话人识别只能走规则层。 */
+    RULE_MODE,
+
+    /** 还没算出音色映射。 */
+    NO_MAP,
+
+    /** 音色不足，部分不共场的角色共用音色。 */
+    SHARED_VOICES,
+
+    /** 一切就绪。 */
+    READY
+}
+
+data class MultiVoiceStatus(
+    val kind: MultiVoiceStatusKind,
+    val characters: Int = 0,
+    val shared: Int = 0
+)
+
 object MultiVoiceSupport {
 
     /** Narration voices are assigned per language (mixed zh/en books). */
@@ -97,7 +124,13 @@ object MultiVoiceSupport {
         return settings.powerEnabled && settings.remoteReady
     }
 
-    /** One short audition line, in the language the voice speaks. */
+    /**
+     * One short audition line, in the language the voice speaks.
+     *
+     * Deliberately not a string resource: this is the *text being synthesised*
+     * (TTS content), which must follow the voice language rather than the UI
+     * locale.
+     */
     fun sampleText(speakerName: String, language: String): String {
         val name = speakerName.trim()
         return if (language.equals(TtsLanguage.CHINESE, ignoreCase = true)) {
@@ -116,27 +149,30 @@ object MultiVoiceSupport {
     }
 
     /**
-     * Status line for the settings panel (§8.5): what the reader needs to know
-     * before expecting different voices.
+     * Status of the multi-voice setup (§8.5), as data rather than prose so the
+     * panel can render it from string resources (and tests can assert on the
+     * decision instead of the wording).
      */
-    fun statusMessage(
+    fun status(
         taggingReady: Boolean,
         rosterSize: Int,
         library: VoiceLibrary,
         map: BookVoiceMap?
-    ): String = when {
-        library.isEmpty ->
-            "当前引擎还没有可用音色列表：请先在上方获取/填写音色（Azure 拉取音色、自建服务器提供 /voices）。"
-        rosterSize == 0 ->
-            "本书还没有角色表：请在 AI 中心生成语境档案，生成后角色会出现在这里。"
-        !taggingReady ->
-            "未配置 DeepSeek Key：说话人识别使用规则模式（只区分旁白与对白），角色音色暂不会生效。"
-        map == null ->
-            "尚未生成音色映射。"
-        sharedVoiceCount(map) > 0 ->
-            "音色数量不足：已为 " + map.characterVoice.size + " 个角色分配音色，其中 " +
-                sharedVoiceCount(map) + " 个与不同场的角色共用音色。"
-        else -> "已为 " + map.characterVoice.size + " 个角色分配音色。"
+    ): MultiVoiceStatus = when {
+        library.isEmpty -> MultiVoiceStatus(MultiVoiceStatusKind.NO_LIBRARY)
+        rosterSize == 0 -> MultiVoiceStatus(MultiVoiceStatusKind.NO_ROSTER)
+        !taggingReady -> MultiVoiceStatus(MultiVoiceStatusKind.RULE_MODE)
+        map == null -> MultiVoiceStatus(MultiVoiceStatusKind.NO_MAP)
+        sharedVoiceCount(map) > 0 -> MultiVoiceStatus(
+            kind = MultiVoiceStatusKind.SHARED_VOICES,
+            characters = map.characterVoice.size,
+            shared = sharedVoiceCount(map)
+        )
+
+        else -> MultiVoiceStatus(
+            kind = MultiVoiceStatusKind.READY,
+            characters = map.characterVoice.size
+        )
     }
 
     /** How many characters share a voice with someone else. */

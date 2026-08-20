@@ -1,0 +1,111 @@
+<resources>
+    <string name="app_name">Lingua Reader</string>
+
+    <!-- Common -->
+    <string name="common_got_it">Got it</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_done">Done</string>
+
+    <!-- Transient notices (Snackbar) -->
+    <string name="notice_book_imported">Imported \"%1$s\"</string>
+    <string name="notice_book_deleted">Deleted \"%1$s\"</string>
+
+    <!-- Bookshelf -->
+    <plurals name="shelf_book_count">
+        <item quantity="one">%d book</item>
+        <item quantity="other">%d books</item>
+    </plurals>
+    <plurals name="shelf_word_count">
+        <item quantity="one">%d word</item>
+        <item quantity="other">%d words</item>
+    </plurals>
+    <string name="shelf_tab_shelf">Bookshelf</string>
+    <string name="shelf_tab_words">Vocabulary %1$d</string>
+    <string name="shelf_ai_center">AI center</string>
+    <string name="shelf_import">Import</string>
+    <string name="shelf_loading">Organising books…</string>
+    <string name="shelf_delete_title">Delete \"%1$s\"?</string>
+    <string name="shelf_delete_body">The local copy of the book and its reading progress are removed as well.</string>
+    <string name="shelf_empty_title">Start with an English book</string>
+    <string name="shelf_empty_body">Import a DRM-free reflowable EPUB, TXT, FB2 or text-based PDF. Books and progress stay on this device.</string>
+    <string name="shelf_empty_action">Choose an e-book file</string>
+    <string name="shelf_progress_read">%1$d%% read</string>
+    <string name="shelf_ai_pending">AI context: not built</string>
+    <string name="shelf_ai_generating">AI context: building…</string>
+    <string name="shelf_ai_ready">AI context: ready</string>
+    <string name="shelf_ai_error">AI context: %1$s</string>
+    <string name="shelf_ai_failed">AI context: failed</string>
+    <string name="shelf_glossary">Glossary</string>
+    <string name="shelf_remove">Remove</string>
+
+    <!-- Per-book glossary -->
+    <string name="glossary_title">Glossary · %1$s</string>
+    <string name="glossary_term_label">English term</string>
+    <string name="glossary_translation_label">Translation (blank = keep original)</string>
+    <string name="glossary_add">Add term</string>
+    <string name="glossary_hint">Manual entries win over AI ones; the switch controls whether the term is used for Azure sentence translation, otherwise it only shows on tap.</string>
+    <string name="glossary_empty">No glossary entries yet.</string>
+
+    <!-- Listening player bar -->
+    <string name="player_cache_progress"> Caching book %1$d%%</string>
+    <string name="player_previous">Previous sentence</string>
+    <string name="player_pause">Pause</string>
+    <string name="player_play">Play</string>
+    <string name="player_next">Next sentence</string>
+    <string name="player_choose_start_hint">Tap a word or sentence in the text to start reading from there</string>
+    <string name="player_preparing">Preparing…</string>
+    <string name="player_paused">Paused</string>
+    <string name="player_set_start">Set start point</string>
+    <string name="player_cache_book">Cache whole book audio</string>
+    <string name="player_speed">Speed</string>
+    <string name="player_speed_value">Speed %1$s</string>
+    <string name="player_speed_hint">0.5×–2.0×; tap the page to start from that sentence</string>
+    <string name="player_stop">Stop listening</string>
+
+    <!-- Multi-voice -->
+    <string name="multivoice_title">Character voices (experimental)</string>
+    <string name="multivoice_subtitle">Gives narration and every character its own voice; needs the AI context profile for the character list.</string>
+    <string name="multivoice_unsupported">Local Piper ships only two voices and system TTS voices cannot be controlled, so neither supports character voices.</string>
+    <string name="multivoice_no_books">No books yet — import one to assign character voices.</string>
+    <string name="multivoice_book_label">Book</string>
+    <string name="multivoice_pick_book">Choose a book</string>
+    <string name="multivoice_current_book">This book: %1$s</string>
+    <string name="multivoice_narrator_section">Narration voices</string>
+    <string name="multivoice_narrator_zh">Chinese narration</string>
+    <string name="multivoice_narrator_en">English narration</string>
+    <string name="multivoice_characters_section">Character voices</string>
+    <string name="multivoice_no_characters">No characters for this book yet: build the AI context profile, or add characters in the glossary.</string>
+    <string name="multivoice_lock_hint">Picking a voice locks that speaker (the lock icon next to the name means locked; tap the unlock icon or “Automatic” to hand it back). Unlocked characters keep adapting as new chapters reveal who shares a scene.</string>
+    <string name="multivoice_clone_notice">Only use reference audio you own or are licensed to use — never clone a real person’s or actor’s voice. All narration is AI-synthesised; deleting a book also clears its cached audio.</string>
+    <string name="multivoice_auto">Automatic</string>
+    <string name="multivoice_change">Change</string>
+    <string name="multivoice_locked">Voice locked</string>
+    <string name="multivoice_release">Back to automatic for %1$s</string>
+    <string name="multivoice_release_action">Automatic</string>
+    <string name="multivoice_audition">Preview %1$s</string>
+    <string name="multivoice_audition_stop">Stop preview</string>
+    <string name="multivoice_audition_failed">Preview failed</string>
+    <string name="multivoice_picker_title">%1$s · choose a voice</string>
+    <string name="multivoice_search">Search voices (name/language/gender/style)</string>
+    <string name="multivoice_no_match">No matching voice.</string>
+    <string name="multivoice_role_major">Major character</string>
+    <string name="multivoice_role_medium">Supporting character</string>
+    <string name="multivoice_role_minor">Minor character</string>
+    <string name="multivoice_gender_male">male</string>
+    <string name="multivoice_gender_female">female</string>
+    <string name="multivoice_locked_notice">Locked the voice for “%1$s”</string>
+    <string name="multivoice_released_notice">“%1$s” is back to automatic</string>
+    <string name="multivoice_status_no_library">This engine has no voice list yet: fetch or fill in voices above (Azure fetches them; a self-hosted server exposes /voices).</string>
+    <string name="multivoice_status_no_roster">This book has no character list yet: build the AI context profile and the characters will show up here.</string>
+    <string name="multivoice_status_rule_mode">No DeepSeek key: speaker detection runs in rule mode (narration vs dialogue only), so character voices stay inactive.</string>
+    <string name="multivoice_status_no_map">No voice mapping yet.</string>
+    <plurals name="multivoice_status_shared">
+        <item quantity="one">Not enough voices: %1$d character assigned, %2$d of them shares a voice with a character it never speaks next to.</item>
+        <item quantity="other">Not enough voices: %1$d characters assigned, %2$d of them share a voice with a character they never speak next to.</item>
+    </plurals>
+    <plurals name="multivoice_status_ready">
+        <item quantity="one">%1$d character has a voice.</item>
+        <item quantity="other">%1$d characters have a voice.</item>
+    </plurals>
+</resources>
