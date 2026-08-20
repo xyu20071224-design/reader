@@ -231,12 +231,13 @@ M1.5 此前只有「服务能跑」的既成事实（8001 上的 IndexTTS 2.5、
 | IndexTTS 2.5（GPU 克隆） | en | 6 | 2.58 s | 0.057 s |
 | IndexTTS 2.5（GPU 克隆） | zh | 4 | 3.17 s | 0.119 s |
 
-  结论（客观部分）：Kokoro 快 5–6 倍且纯 CPU，适合默认逐句听书；IndexTTS 单句 1.5–4.7 秒可用于在线合成，但全书缓存对其保持禁用（App 已按 `/v1/models` 自动隐藏按钮）。**音质取向仍需人工试听** `artifacts/tts-compare/` 下 en/zh 样音后在报告末尾填结论。
+  结论：性能上 Kokoro 快 5–6 倍且纯 CPU；IndexTTS 单句 1.5–4.7 秒可用于在线逐句合成，全书缓存对其保持禁用（App 按 `/v1/models` 自动隐藏按钮）。**人工试听后（2026-08-20）选定中英文默认引擎均为 IndexTTS 2.5**：英文 `first_3s_1.wav`、中文 `voice_03.wav`（样音 `indextts_first_3s_1_en_0.mp3` / `indextts_voice_03_zh_4.mp3`），Kokoro 转为快速/无 GPU 兜底。
+- 落地该结论：自建服务器新增「英文音色 / 中文音色」两个可选字段（`serverEnVoice`/`serverZhVoice`，按句语言路由，留空回落通用音色），听书设置面板同步；这两个音色同时进入音色库并计入多角色分配的保留位。选定的两个音色已登记进 `tts-server/voices/voices.json`（带语言/性别/风格画像），其中 `first_3s_1.wav` 标注为「仅本机自用，参考音频取自商业音乐轨，发布前须替换」。
 - 合规：核对 IndexTTS2 的《bilibili 模型使用许可协议》——免费、非独占、不可转让，仅在「月活 > 1 亿或上一自然年营收 > 1 亿人民币」时需另行申请商业许可（本项目无需）；须保留版权声明与许可副本、不得用其输出改进其他商用 AI 模型、禁止高风险场景、输出合规责任自负。多角色面板已常驻「仅用自备/授权素材 + AI 合成」提示；仓库不内置任何克隆参考音频（`tts-server/voices/` 音频已 gitignore），历史测试素材 `artifacts/first_3s.wav`（取自商业音乐轨）标记为不得用于发布。
 
 验证情况：
 
-- `testDebugUnitTest`：**258 个全部通过**（新增 3 个：`/voices` 画像解析、`clone_*` 命名先验、音频扩展名不影响先验）。
+- `testDebugUnitTest`：**259 个全部通过**（新增 4 个：`/voices` 画像解析、`clone_*` 命名先验、音频扩展名不影响先验、自建服务器中英音色路由；`CloudTtsSettingsTest` 往返用例同步覆盖新字段）。
 - `lintDebug` / `assembleDebug`：通过。
 - 服务侧实测：Kokoro 8000 与 IndexTTS 8001 均在本机启动成功，`scripts/tts_compare.py` 18 次合成全部 200 成功。
 - 仍待人工：中英音质对比结论、以「角色专属克隆音色」跑一遍端到端听书（目前 `voices/` 只登记了 IndexTTS 自带示例，未放任何真人参考音频）。

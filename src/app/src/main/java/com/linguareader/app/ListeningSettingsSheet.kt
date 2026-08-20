@@ -422,8 +422,26 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.serverVoice,
                     onValueChange = { settings = settings.copy(serverVoice = it.trim()) },
-                    label = { Text("音色/voice（可选）") },
-                    supportingText = { Text("Fish Speech 通常为 default；也可填克隆音色名") },
+                    label = { Text("音色/voice（可选，通用兜底）") },
+                    supportingText = { Text("Fish Speech 通常为 default；IndexTTS 可填参考音频名，如 voice_03.wav") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = settings.serverEnVoice,
+                    onValueChange = { settings = settings.copy(serverEnVoice = it.trim()) },
+                    label = { Text("英文音色（可选）") },
+                    supportingText = { Text("英文句子用此音色；留空跟随上方通用音色") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = settings.serverZhVoice,
+                    onValueChange = { settings = settings.copy(serverZhVoice = it.trim()) },
+                    label = { Text("中文音色（可选）") },
+                    supportingText = { Text("中文句子用此音色；IndexTTS 一次只克隆一个说话人，中英分开填更自然") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

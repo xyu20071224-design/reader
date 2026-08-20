@@ -35,6 +35,32 @@ class OpenAiCompatTtsBackendTest {
     }
 
     @Test
+    fun voiceForRoutesChineseAndEnglishToTheirOwnVoices() {
+        // M1.5 结论：IndexTTS 英文与中文各用一个参考音色。
+        val split = OpenAiCompatTtsBackend(
+            CloudTtsSettings(
+                mode = TtsEngineMode.OPENAI_COMPAT,
+                serverVoice = "voice_03.wav",
+                serverEnVoice = "first_3s_1.wav",
+                serverZhVoice = "voice_03.wav"
+            )
+        )
+        assertEquals("first_3s_1.wav", split.voiceFor("Frodo woke suddenly."))
+        assertEquals("voice_03.wav", split.voiceFor("佛罗多突然醒了。"))
+
+        // Only one of them configured: the other language falls back.
+        val partial = OpenAiCompatTtsBackend(
+            CloudTtsSettings(
+                mode = TtsEngineMode.OPENAI_COMPAT,
+                serverVoice = "default",
+                serverEnVoice = "af_maple"
+            )
+        )
+        assertEquals("af_maple", partial.voiceFor("Hello."))
+        assertEquals("default", partial.voiceFor("你好。"))
+    }
+
+    @Test
     fun voiceListParsingAcceptsEveryServerShape() {
         // Local Kokoro wrapper: {"voices":[...]}
         assertEquals(

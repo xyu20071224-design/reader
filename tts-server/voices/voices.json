@@ -5,9 +5,16 @@
       "label": "IndexTTS 示例中文女",
       "language": "zh",
       "gender": "female",
-      "style": [
-        "calm"
-      ]
+      "style": ["calm"],
+      "note": "M1.5 实测选定的中文旁白音色（IndexTTS 自带示例）"
+    },
+    {
+      "id": "first_3s_1.wav",
+      "label": "英文旁白（实测选定）",
+      "language": "en",
+      "gender": "female",
+      "style": ["calm"],
+      "note": "仅限本机试听/自用：参考音频取自商业音乐轨，不得随产品分发，发布前须换成自备或已授权录音"
     }
   ]
 }

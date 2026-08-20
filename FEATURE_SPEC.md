@@ -517,7 +517,8 @@ v1 范围（当前章节内跳转）：
 - **引擎选择**：阅读设置 → 听书设置，可选“系统语音 / Azure 云 TTS / 火山引擎（豆包语音）/ 自建服务器（OpenAI 兼容）”。
 - **Azure 配置**：Region（默认 `chinanorth3`，终结点 `https://<region>.tts.speech.azure.cn`）、API Key、英文/中文/多语言音色；音色列表通过 `voices/list` 接口实时拉取，默认英文 `en-US-AriaNeural`、中文 `zh-CN-XiaoxiaoNeural`，存在可用多语言音色时默认开启“中英混读音色”。
 - **火山引擎配置**：终结点固定为 `https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse`（SSE 流式，音频帧 `data` 为 base64）；鉴权二选一：新版控制台 API Key（`X-Api-Key`，推荐）或旧版控制台 App ID + Access Token（`X-Api-App-Id` + `X-Api-Access-Key`）；Resource ID 默认 `seed-tts-2.0`（豆包语音合成模型 2.0，也可选 `seed-tts-1.0` / `seed-tts-1.0-concurr` 以使用 `BV*_streaming` 音色）；中英文音色分别配置，默认中文 `zh_female_shuangkuaisisi_uranus_bigtts`、英文 `en_female_dacey_uranus_bigtts`，支持自定义声音复刻 speaker ID；按句含中文则走中文音色、否则走英文音色。
-- **自建服务器配置**：服务器地址（自动补 `/v1/audio/speech`）、模型名、可选 Bearer Token、音色名（Fish Speech 通常为 `default`）。
+- **自建服务器配置**：服务器地址（自动补 `/v1/audio/speech`）、模型名、可选 Bearer Token、通用音色名（Fish Speech 通常为 `default`），以及可选的**英文音色 / 中文音色**——按句检测语言分别路由，留空则回落到通用音色（IndexTTS 一次只克隆一个说话人，中英分开配置才自然）。
+- **默认引擎实测结论（2026-08-20）**：中英文均以 IndexTTS 2.5 为首选（英文 `first_3s_1.wav`、中文 `voice_03.wav`），Kokoro 作为快速/无 GPU 兜底（每句 0.45–0.77 s，比 IndexTTS 快 5–6 倍）。
 - **自建服务器音色列表**：连接后按 `GET /voices` → `GET /v1/audio/voices` 顺序拉取音色并缓存；返回体可为字符串数组、`{"voices":[…]}`、`{"data":[{"id":…}]}`，或带画像的 `{"voice_profiles":[{"id","language","gender","style"}]}`（本机 Kokoro 与 IndexTTS 包装均已支持），画像用于多角色音色分配的硬过滤。
 - **IndexTTS 2.5（克隆音色，本机 8001）**：`tts-server/indextts/` 提供仓库维护的 OpenAI 兼容包装；克隆音色放 `INDEX_VOICES_DIR`（默认 `voices/`），`voices/voices.json` 记录语言/性别/风格；`voice` 支持文件名（可省扩展名）、绝对路径或 `default`。App 通过 `GET /v1/models` 识别为慢引擎并隐藏「全书缓存」。实测（RTX 5070 Ti）英文 2.58 s/句、中文 3.17 s/句，Kokoro 对应为 0.45 / 0.77 s/句。
 - **克隆音色红线**：只允许自备或已获授权的参考音频（`scripts/make_clone_voice.py` 强制 `--consent` 确认），不得克隆真人/演员声音；多角色面板常驻「AI 合成」提示；仓库不内置任何参考音频。IndexTTS2 模型许可为《bilibili 模型使用许可协议》，月活 1 亿 / 年营收 1 亿人民币以下免费商用，须保留版权声明与许可副本。

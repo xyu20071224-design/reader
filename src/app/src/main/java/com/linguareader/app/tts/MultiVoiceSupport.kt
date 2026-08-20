@@ -73,7 +73,14 @@ object MultiVoiceSupport {
 
     /** Voice ids the user already spent manually; kept out of auto assignment. */
     fun reservedVoices(settings: CloudTtsSettings): Set<String> =
-        listOf(settings.narratorVoice, settings.dialogueVoice)
+        listOf(
+            settings.narratorVoice,
+            settings.dialogueVoice,
+            // Per-language narration voices of a self-hosted engine are also
+            // "spent": a character must not end up sounding like the narrator.
+            settings.serverEnVoice,
+            settings.serverZhVoice
+        )
             .filter { it.isNotBlank() }
             .toSet()
 

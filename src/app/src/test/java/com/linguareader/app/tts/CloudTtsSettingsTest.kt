@@ -31,6 +31,8 @@ class CloudTtsSettingsTest {
             serverUrl = "http://192.168.1.10:8000",
             serverModel = "kokoro",
             serverVoice = "af_maple",
+            serverEnVoice = "first_3s_1.wav",
+            serverZhVoice = "voice_03.wav",
             narratorVoice = "af_maple",
             dialogueVoice = "af_sol",
             multiVoiceEnabled = true
@@ -40,6 +42,8 @@ class CloudTtsSettingsTest {
 
         assertEquals(TtsEngineMode.OPENAI_COMPAT, loaded.mode)
         assertEquals("http://192.168.1.10:8000", loaded.serverUrl)
+        assertEquals("first_3s_1.wav", loaded.serverEnVoice)
+        assertEquals("voice_03.wav", loaded.serverZhVoice)
         assertEquals("af_maple", loaded.narratorVoice)
         assertEquals("af_sol", loaded.dialogueVoice)
         assertTrue(loaded.multiVoiceEnabled)

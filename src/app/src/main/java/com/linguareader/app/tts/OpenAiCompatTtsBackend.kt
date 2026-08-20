@@ -107,8 +107,20 @@ class OpenAiCompatTtsBackend(
         }
     }
 
-    override fun voiceFor(text: String): String =
-        settings.serverVoice.ifBlank { "default" }
+    /**
+     * Per-sentence language routing (M1.5): a self-hosted engine may need one
+     * reference voice per language - IndexTTS clones a single speaker per
+     * request, so English and Chinese narration use different reference audio.
+     * Both blank keeps the previous single-voice behaviour.
+     */
+    override fun voiceFor(text: String): String {
+        val perLanguage = if (TtsLanguage.of(text) == TtsLanguage.CHINESE) {
+            settings.serverZhVoice
+        } else {
+            settings.serverEnVoice
+        }
+        return perLanguage.ifBlank { settings.serverVoice }.ifBlank { "default" }
+    }
 
     /**
      * Voice ids the server offers (multi-voice M3 音色库).

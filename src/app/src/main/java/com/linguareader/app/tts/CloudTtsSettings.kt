@@ -42,6 +42,13 @@ data class CloudTtsSettings(
     val serverModel: String = "tts-1",
     val serverToken: String = "",
     val serverVoice: String = "",
+    /**
+     * Self-hosted engine, per-language voices (M1.5 结论：IndexTTS 的英文与中文
+     * 各用一个参考音色）。Blank falls back to [serverVoice], which keeps the
+     * single-voice behaviour of earlier builds.
+     */
+    val serverEnVoice: String = "",
+    val serverZhVoice: String = "",
     /** Multi-voice M1: voice used for narration sentences (empty = off,
      *  follows [serverVoice] / engine default). */
     val narratorVoice: String = "",
@@ -95,6 +102,8 @@ data class CloudTtsSettings(
         private const val KEY_SERVER_MODEL = "server_model"
         private const val KEY_SERVER_TOKEN = "server_token"
         private const val KEY_SERVER_VOICE = "server_voice"
+        private const val KEY_SERVER_EN_VOICE = "server_en_voice"
+        private const val KEY_SERVER_ZH_VOICE = "server_zh_voice"
         private const val KEY_NARRATOR_VOICE = "narrator_voice"
         private const val KEY_DIALOGUE_VOICE = "dialogue_voice"
         private const val KEY_MULTI_VOICE = "multi_voice_enabled"
@@ -124,6 +133,8 @@ data class CloudTtsSettings(
                 serverModel = prefs.getString(KEY_SERVER_MODEL, "tts-1").orEmpty().ifBlank { "tts-1" },
                 serverToken = CloudKeyStore.decrypt(context, prefs.getString(KEY_SERVER_TOKEN, null)).orEmpty(),
                 serverVoice = prefs.getString(KEY_SERVER_VOICE, "").orEmpty(),
+                serverEnVoice = prefs.getString(KEY_SERVER_EN_VOICE, "").orEmpty(),
+                serverZhVoice = prefs.getString(KEY_SERVER_ZH_VOICE, "").orEmpty(),
                 narratorVoice = prefs.getString(KEY_NARRATOR_VOICE, "").orEmpty(),
                 dialogueVoice = prefs.getString(KEY_DIALOGUE_VOICE, "").orEmpty(),
                 multiVoiceEnabled = prefs.getBoolean(KEY_MULTI_VOICE, false),
@@ -160,6 +171,8 @@ data class CloudTtsSettings(
                 .putString(KEY_SERVER_MODEL, settings.serverModel.ifBlank { "tts-1" })
                 .putString(KEY_SERVER_TOKEN, encryptedToken)
                 .putString(KEY_SERVER_VOICE, settings.serverVoice)
+                .putString(KEY_SERVER_EN_VOICE, settings.serverEnVoice.trim())
+                .putString(KEY_SERVER_ZH_VOICE, settings.serverZhVoice.trim())
                 .putString(KEY_NARRATOR_VOICE, settings.narratorVoice)
                 .putString(KEY_DIALOGUE_VOICE, settings.dialogueVoice)
                 .putBoolean(KEY_MULTI_VOICE, settings.multiVoiceEnabled)

@@ -72,8 +72,23 @@ python scripts\make_clone_voice.py --source my_recording.m4a --name Gandalf `
 | IndexTTS 2.5（GPU 克隆） | en | 2.58 s | 0.057 s |
 | IndexTTS 2.5（GPU 克隆） | zh | 3.17 s | 0.119 s |
 
-结论：Kokoro 约快 5–6 倍，逐句流式听书更稳；IndexTTS 2.5 单句 1.5–4.7 秒仍可用于
-在线逐句合成（预生成会明显抢跑），但**全书缓存对它保持禁用**。音质取向由人工试听决定。
+**结论（2026-08-20 人工试听确认）**：中英文默认引擎都用 IndexTTS 2.5 ——
+英文参考音色 `first_3s_1.wav`、中文 `voice_03.wav`；Kokoro 保留为「快速 / 无 GPU 兜底」
+（纯 CPU、每句 0.45–0.77 s，约快 5–6 倍）。IndexTTS 单句 1.5–4.7 秒可用于在线逐句合成，
+但**全书缓存对它保持禁用**（App 按 `/v1/models` 自动隐藏按钮）。
+
+对应的 App 配置（听书设置 → 自建服务器）：
+
+| 字段 | 值 |
+|---|---|
+| 服务器地址 | `http://<本机IP>:8001` |
+| 模型名 | 留空或任意（IndexTTS 忽略） |
+| 音色/voice（通用兜底） | `voice_03.wav` |
+| 英文音色 | `first_3s_1.wav` |
+| 中文音色 | `voice_03.wav` |
+
+> `first_3s_1.wav` 的参考音频取自商业音乐轨，**仅限本机自用**；对外发布前必须换成自备或
+> 已授权录音（用 `scripts/make_clone_voice.py --consent` 生成）。
 
 ## 使用红线（§12.3，务必遵守）
 

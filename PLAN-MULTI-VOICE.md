@@ -346,8 +346,9 @@ interface TtsSynthesizer {
 6. **英文主引擎实测（2026-08-20 已完成客观部分）**：`scripts/tts_compare.py` 同批句子实测（RTX 5070 Ti）——
    Kokoro 英文 0.45 s/句、中文 0.77 s/句；IndexTTS 2.5 英文 2.58 s/句、中文 3.17 s/句（每字 0.057 / 0.119 s）。
    即 Kokoro 约快 5–6 倍且 CPU 即可跑，IndexTTS 单句 1.5–4.7 秒仍可用于在线逐句合成（全书缓存对其保持禁用）。
-   **音质取向仍需人工试听** `artifacts/tts-compare/` 下的中英样音后填结论；性能上建议英文默认继续用 Kokoro，
-   IndexTTS 作为「要角色克隆音色时」的引擎。
+   **人工试听结论（2026-08-20，已确认）**：中英文默认引擎都选 **IndexTTS 2.5**——英文用参考音色
+   `first_3s_1.wav`（样音 `indextts_first_3s_1_en_0.mp3`），中文用 `voice_03.wav`（样音
+   `indextts_voice_03_zh_4.mp3`）；Kokoro 转为「快速/无 GPU 兜底」引擎。风险 #6 关闭。
 
 ---
 

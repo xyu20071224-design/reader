@@ -151,6 +151,8 @@ object VoiceLibraryLoader {
 
     private fun configuredIds(settings: CloudTtsSettings): List<String> = listOf(
         settings.serverVoice,
+        settings.serverEnVoice,
+        settings.serverZhVoice,
         settings.narratorVoice,
         settings.dialogueVoice
     )
