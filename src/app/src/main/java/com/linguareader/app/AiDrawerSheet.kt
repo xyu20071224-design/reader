@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,6 +55,7 @@ import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.data.Book
 import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.TtsPlaybackController
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -282,21 +284,55 @@ private fun AiTranslationSettingsBody(
             )
         }
         Spacer(Modifier.height(20.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        // 保存后必须有明确反馈：此前点「保存」界面毫无变化，用户会以为没响应。
+        // 抽屉是独立窗口（全局 Snackbar 会被它遮住），所以确认信息放在行内。
+        var savedNotice by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(savedNotice) {
+            if (savedNotice != null) {
+                delay(3000)
+                savedNotice = null
+            }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            savedNotice?.let {
+                Row(
+                    Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Success,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Success
+                    )
+                }
+            } ?: Spacer(Modifier.weight(1f))
             Button(
                 onClick = {
-                    onSave(
-                        settings.copy(
-                            enabled = deepSeekEnabled,
-                            apiKey = apiKey,
-                            baseUrl = baseUrl,
-                            model = model,
-                            azureTranslationEnabled = azureEnabled,
-                            azureKey = azureKey,
-                            azureRegion = azureRegion,
-                            azureEndpoint = azureEndpoint
-                        )
+                    val updated = settings.copy(
+                        enabled = deepSeekEnabled,
+                        apiKey = apiKey.trim(),
+                        baseUrl = baseUrl.trim(),
+                        model = model.trim(),
+                        azureTranslationEnabled = azureEnabled,
+                        azureKey = azureKey.trim(),
+                        azureRegion = azureRegion.trim(),
+                        azureEndpoint = azureEndpoint.trim()
                     )
+                    onSave(updated)
+                    // 说清「保存后会发生什么」，而不是只说“已保存”。
+                    savedNotice = when {
+                        !enabled -> "已保存（联网 AI 总开关关闭，暂不生效）"
+                        updated.remoteReady -> "已保存：DeepSeek 已就绪，打开书即可生成语境档案"
+                        deepSeekEnabled -> "已保存：未填 API Key，将使用本地轻量语境"
+                        else -> "已保存：AI 语境已关闭，查词保持纯本地"
+                    }
                 },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Accent,

@@ -243,4 +243,34 @@ class ReaderScriptsTest {
         assertFalse(script.contains("ReaderBridge.onTtsPage"))
         assertFalse(script.contains("targetPage * window.innerWidth"))
     }
+
+    @Test
+    fun ttsHighlightMeasuresItsOwnOriginInsteadOfAssumingTheScrollerBox() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 真机（分页多列布局）实测：滚动容器 style.top=104 但 rect.top=136，覆盖层
+        // 的绝对定位原点又在 200，按「rect - scrollerRect + scrollTop」推算会让高亮
+        // 框整体低 64px（≈2.7 行），看起来像高亮了后面几行的句子。
+        // 所以必须用零尺寸探针实测原点，而不是假设包含块等于滚动容器的 padding box。
+        assertContains(script, "const originRect = probe.getBoundingClientRect();")
+        assertContains(script, "'left:' + (rect.left - originRect.left) + 'px;' +")
+        assertContains(script, "'top:' + (rect.top - originRect.top) + 'px;' +")
+        // 旧的推算方式不能再出现，否则偏移会回归。
+        assertFalse(script.contains("rect.top - scrollerRect.top"))
+        assertFalse(script.contains("rect.left - scrollerRect.left"))
+        // 探针只用于测量，必须立刻移除，不留在 DOM 里。
+        assertContains(script, "probe.remove();")
+        // 覆盖层仍然挂在滚动容器内（随内容滚动），不是 position:fixed。
+        assertContains(script, "(scroller || document.body).appendChild(overlay);")
+        assertFalse(script.contains("position:fixed;left:' + rect.left"))
+    }
+
+    @Test
+    fun highlightDiagnosticsAreNotShippedInTheBootstrap() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 定位偏移时加过临时诊断日志，别再回到仓库里。
+        assertFalse(script.contains("lrHighlightDebug"))
+        assertFalse(script.contains("[lr-hl]"))
+    }
 }

@@ -822,10 +822,8 @@ object ReaderScripts {
 
           function showTtsHighlight(range) {
             if (!range || range.collapsed) return;
-            // Anchor the overlay inside the scroll container and position each
-            // box in the scroller's scrollable coordinate space. The previous
-            // position:fixed + viewport coords left the highlight pinned to the
-            // screen while the text scrolled underneath it.
+            // 覆盖层挂在滚动容器内，随内容一起滚动（早期版本用 position:fixed +
+            // 视口坐标，文字滚走了高亮还钉在屏幕上）。
             const scroller = document.getElementById('lr-scroller');
             const overlay = document.createElement('div');
             overlay.id = 'lr-tts-overlay';
@@ -833,9 +831,19 @@ object ReaderScripts {
               'position:absolute;left:0;top:0;width:0;height:0;' +
               'pointer-events:none;z-index:2147483647;';
             (scroller || document.body).appendChild(overlay);
-            const scrollerRect = scroller ? scroller.getBoundingClientRect() : { left: 0, top: 0 };
-            const scrollLeft = scroller ? scroller.scrollLeft : 0;
-            const scrollTop = scroller ? scroller.scrollTop : 0;
+            // 用零尺寸探针实测「left:0;top:0 实际落在视口的哪个位置」，再把每个
+            // 高亮盒按「文字视口坐标 - 原点视口坐标」摆放。
+            //
+            // 之前用 rect - scrollerRect + scrollLeft/scrollTop 推算，隐含假设
+            // 「包含块 = 滚动容器的 padding box」。真机（分页多列布局）实测该假设
+            // 不成立：滚动容器 style.top=104 但实测 136，覆盖层再偏 32，最终高亮框
+            // 比文字低 64px（≈2.7 行），看起来就像「高亮了后面几行的句子」。
+            // 探针法与包含块、滚动偏移、多列分栏、WebView 视口怪癖都无关。
+            const probe = document.createElement('div');
+            probe.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;';
+            overlay.appendChild(probe);
+            const originRect = probe.getBoundingClientRect();
+            probe.remove();
             const rects = range.getClientRects();
             for (let i = 0; i < rects.length; i++) {
               const rect = rects[i];
@@ -843,8 +851,8 @@ object ReaderScripts {
               const box = document.createElement('div');
               box.style.cssText =
                 'position:absolute;' +
-                'left:' + (rect.left - scrollerRect.left + scrollLeft) + 'px;' +
-                'top:' + (rect.top - scrollerRect.top + scrollTop) + 'px;' +
+                'left:' + (rect.left - originRect.left) + 'px;' +
+                'top:' + (rect.top - originRect.top) + 'px;' +
                 'width:' + rect.width + 'px;height:' + rect.height + 'px;' +
                 'background:rgba(184,132,83,.32);border-radius:3px;' +
                 'pointer-events:none;';
