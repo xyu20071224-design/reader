@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Translate
@@ -722,7 +723,7 @@ internal fun ReaderScreen(
             loading = dictionaryLoading,
             aiContext = aiResult,
             aiLoading = aiLoading,
-            translationReady = SentenceTranslatorFactory.isConfigured(aiSettings),
+            sentenceTranslationReady = SentenceTranslatorFactory.isConfigured(aiSettings),
             translation = translation,
             translationLoading = translationLoading,
             sentenceTranslation = sentenceTranslation,
@@ -1057,7 +1058,7 @@ private fun LookupSheet(
     loading: Boolean,
     aiContext: AiLookupResult?,
     aiLoading: Boolean,
-    translationReady: Boolean,
+    sentenceTranslationReady: Boolean,
     translation: TranslationLookupResult?,
     translationLoading: Boolean,
     sentenceTranslation: SentenceTranslationResult?,
@@ -1217,6 +1218,7 @@ private fun LookupSheet(
                     color = InkSoft
                 )
             }
+            var pairingExpanded by remember(lookup.word, lookup.sentence) { mutableStateOf(false) }
             translation?.let { result ->
                 Spacer(Modifier.height(14.dp))
                 Text(
@@ -1245,42 +1247,77 @@ private fun LookupSheet(
                     style = MaterialTheme.typography.labelMedium,
                     color = Ink.copy(alpha = .62f)
                 )
-            }
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    onClick = onTranslateSentence,
-                    enabled = translationReady && !sentenceTranslationLoading
-                ) {
-                    Icon(
-                        Icons.Filled.Translate,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (translationReady) Accent else InkFaint
-                    )
-                    Spacer(Modifier.width(4.dp))
+                if (pairingExpanded) {
+                    // 整句对照：并排给出配对到的英文原句与译文段落，便于判断配对是否正确。
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        stringResource(R.string.translate_sentence),
-                        color = if (translationReady) Accent else InkFaint
+                        stringResource(R.string.reader_translation_english, result.english),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Ink.copy(alpha = .78f)
                     )
-                }
-                if (sentenceTranslationLoading) {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .width(72.dp)
-                            .height(4.dp),
-                        color = Accent,
-                        trackColor = Accent.copy(alpha = .12f)
-                    )
+                    if (result.chineseParagraph.isNotBlank() &&
+                        result.chineseParagraph != result.chinese
+                    ) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(
+                                R.string.reader_translation_paragraph,
+                                result.chineseParagraph
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Ink.copy(alpha = .78f)
+                        )
+                    }
                 }
             }
-            if (!translationReady) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.translate_sentence_unavailable),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = InkSoft
-                )
+            if (sentenceTranslationReady || translation != null) {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 云端整句翻译只在真配好了提供方时出现：没配就别摆一个按不动的按钮。
+                    if (sentenceTranslationReady) {
+                        TextButton(
+                            onClick = onTranslateSentence,
+                            enabled = !sentenceTranslationLoading
+                        ) {
+                            Icon(
+                                Icons.Filled.Translate,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Accent
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.translate_sentence), color = Accent)
+                        }
+                        if (sentenceTranslationLoading) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .width(72.dp)
+                                    .height(4.dp),
+                                color = Accent,
+                                trackColor = Accent.copy(alpha = .12f)
+                            )
+                        }
+                    }
+                    // 有中文译本时，用完全离线的「整句对照」顶上这个位置。
+                    if (translation != null) {
+                        TextButton(onClick = { pairingExpanded = !pairingExpanded }) {
+                            Icon(
+                                Icons.Filled.CompareArrows,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Accent
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                stringResource(
+                                    if (pairingExpanded) R.string.reader_translation_collapse
+                                    else R.string.reader_translation_expand
+                                ),
+                                color = Accent
+                            )
+                        }
+                    }
+                }
             }
             sentenceTranslationError?.let { message ->
                 Spacer(Modifier.height(6.dp))

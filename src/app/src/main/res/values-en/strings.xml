@@ -50,7 +50,6 @@
     <!-- Sentence translation (lookup sheet) -->
     <string name="translate_sentence">Translate sentence</string>
     <string name="translate_sentence_result">Sentence translation (%1$s): %2$s</string>
-    <string name="translate_sentence_unavailable">Sentence translation is not configured: add an Azure Translator key or a DeepSeek API key in the AI centre.</string>
     <string name="translate_sentence_failed">Sentence translation failed. Check your network or key, then try again.</string>
 
     <!-- Chinese translation pairing -->
@@ -67,6 +66,10 @@
     <string name="reader_translation_loading">Looking up the translation…</string>
     <string name="reader_translation_meta_sentence">%1$s · sentence level · %2$d%% confidence</string>
     <string name="reader_translation_meta_paragraph">%1$s · paragraph level (no sentence match) · %2$d%% confidence</string>
+    <string name="reader_translation_expand">Sentence pairing</string>
+    <string name="reader_translation_collapse">Hide pairing</string>
+    <string name="reader_translation_english">Source: %1$s</string>
+    <string name="reader_translation_paragraph">Translated paragraph: %1$s</string>
 
     <!-- Listening player bar -->
     <string name="player_cache_progress"> Caching book %1$d%%</string>
