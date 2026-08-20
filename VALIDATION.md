@@ -241,3 +241,23 @@ M1.5 此前只有「服务能跑」的既成事实（8001 上的 IndexTTS 2.5、
 - `lintDebug` / `assembleDebug`：通过。
 - 服务侧实测：Kokoro 8000 与 IndexTTS 8001 均在本机启动成功，`scripts/tts_compare.py` 18 次合成全部 200 成功。
 - 仍待人工：中英音质对比结论、以「角色专属克隆音色」跑一遍端到端听书（目前 `voices/` 只登记了 IndexTTS 自带示例，未放任何真人参考音频）。
+
+## 2026-08-20 UI 评审整改第一批（外壳夜间模式 + 多角色面板打磨）
+
+代码级 UI 评审后先修两处影响最大的：
+
+- **外壳夜间模式**：`ThemeColors.kt` 由「一组固定颜色」重构为 `LinguaPalette` 日间/夜间双调色板 + `LocalLinguaPalette`，13 个语义色改为 `@Composable @ReadOnlyComposable` 取值——**所有界面调用点（`Ink`/`Paper`/`Accent`…）零改动**即可跟随主题；`colorSchemeFor(palette)` 派生 Material 配色，`ApplySystemBars` 让状态栏/导航栏颜色与图标亮度跟随（此前 themes.xml 把状态栏钉死浅色）。切换规则 `chromeIsDark`：正文阅读主题为「夜间」→ 外壳变暗，其他主题→日间，从未设置过→跟随系统深色；阅读设置里改主题会通过 `onAppearanceChanged` 即时切换外壳。夜间底色与正文夜间主题同为 `#171717`，消除了「暗色正文里打开目录/听书设置白屏闪光」的问题。强调色在夜间提亮为棕金，其上文字改用新的 `OnAccent`（日间白/夜间墨），替换了 9 处硬编码 `Color.White`；`ReviewCurvePicker` 的 Canvas 颜色改为在 composable 作用域先取值。
+- **多角色面板整改**（我上一轮欠的债）：
+  1. 新增「恢复自动」——行内解锁图标与选择弹层里的按钮，调用 `VoiceMapRepository.unlock` 后立刻重跑分配（此前锁了就回不到自动）；
+  2. 音色选择改为**可搜索分组弹层** `VoicePickerDialog` + 纯逻辑 `VoicePicker`（推荐＝同语言且性别不冲突置顶，其余按「语言 · 性别」分组、角色语言优先；支持按 id/语言/性别/风格搜索），替代原来 `take(60)` 的裸下拉（Kokoro 有 100+ 音色）；
+  3. 试听有状态：`VoiceAudition` 增加完成回调与 `isPlaying`，按钮在播放时变「停止」，选择弹层里每个音色都能单独试听；
+  4. 锁定标记与下拉箭头改用 `Icons.Default.Lock/LockOpen/ArrowDropDown`（替换 emoji 与 `"▾"` 文本，顺带修掉 AI 中心与听书设置里另外 3 处 `▾`）；
+  5. 角色列表不再在滚动 sheet 内嵌同方向滚动列。
+
+验证情况：
+
+- `testDebugUnitTest`：**269 个全部通过**（新增 10 个：`ThemeColorsTest` 5 个——跟随阅读主题/跟随系统/调色板选择/夜间对比度与底色对齐/配色方案派生；`VoicePickerTest` 5 个——搜索命中 id/语言/性别/风格、推荐组置顶与性别不冲突、分组标签与角色语言优先、搜索收窄与空结果、行文案）。
+- `lintDebug`：通过，0 错误（40 条提示：1 信息 + 39 既有警告，本轮改动无新增告警）。
+- `assembleDebug`：通过。
+- 仍待人工：真机看夜间外壳观感（尤其 sheet/弹层与状态栏过渡）、音色选择弹层在 100+ 音色下的滚动手感。
+- 评审里其余未做项（留待第二批）：全局 Snackbar 替代散落的状态文字、文案抽到 `strings.xml`、统一听书设置/术语表入口、`Typography` 定制、平板/横屏适配、部分图标补 `contentDescription`。

@@ -17,7 +17,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -567,7 +570,7 @@ internal fun ListeningSettingsBody(
                     enabled = !busy,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Accent,
-                        contentColor = Color.White
+                        contentColor = OnAccent
                     ),
                     shape = PillShape
                 ) { Text("保存") }
@@ -699,7 +702,7 @@ private fun VoiceDropdown(
                     modifier = Modifier.weight(1f),
                     color = Ink
                 )
-                Text("▾", color = InkSoft)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
             }
             DropdownMenu(
                 expanded = expanded,
@@ -742,7 +745,7 @@ private fun SystemVoiceDropdown(
                     modifier = Modifier.weight(1f),
                     color = Ink
                 )
-                Text("▾", color = InkSoft)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
             }
             DropdownMenu(
                 expanded = expanded,

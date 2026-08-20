@@ -131,7 +131,7 @@ internal fun ReviewSheet(
                 Spacer(Modifier.height(20.dp))
                 Button(
                     onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
                     shape = PillShape
                 ) { Text("完成") }
                 Spacer(Modifier.height(16.dp))
@@ -191,7 +191,7 @@ internal fun ReviewSheet(
                             enabled = !busy,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Success,
-                                contentColor = Color.White
+                                contentColor = OnAccent
                             ),
                             shape = PillShape
                         ) {
@@ -203,7 +203,7 @@ internal fun ReviewSheet(
                 } else {
                     Button(
                         onClick = { revealed = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.White),
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
                         shape = PillShape
                     ) { Text("显示释义") }
                 }
@@ -554,7 +554,7 @@ private fun CustomReviewEditor(
                 }
                 Button(
                     onClick = { onSave(draft) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
                     shape = PillShape
                 ) { Text("保存并启用") }
             }
@@ -600,6 +600,11 @@ private fun ReviewCurvePicker(
     modifier: Modifier = Modifier
 ) {
     val currentOnChange by rememberUpdatedState(onRetentionChange)
+    // Canvas 的绘制作用域不是 @Composable，配色要先在这里取出来。
+    val gridColor = Ink.copy(alpha = .10f)
+    val curveColor = Accent
+    val markerColor = Ink.copy(alpha = .45f)
+    val handleFill = Paper
     Canvas(
         modifier = modifier
             .fillMaxWidth()
@@ -630,7 +635,7 @@ private fun ReviewCurvePicker(
 
         listOf(1.0, 0.85, 0.60).forEach { r ->
             drawLine(
-                color = Ink.copy(alpha = .10f),
+                color = gridColor,
                 start = Offset(left, yFor(r)),
                 end = Offset(size.width - right, yFor(r)),
                 strokeWidth = 1.dp.toPx()
@@ -647,12 +652,12 @@ private fun ReviewCurvePicker(
             if (step == 0) path.moveTo(px, py) else path.lineTo(px, py)
             step += 1
         }
-        drawPath(path, color = Accent, style = Stroke(width = 2.dp.toPx()))
+        drawPath(path, color = curveColor, style = Stroke(width = 2.dp.toPx()))
 
         ReviewMode.entries.forEach { mode ->
             val r = ReviewPace.retentionForMultiplier(mode.intervalMultiplier)
             drawCircle(
-                color = Ink.copy(alpha = .45f),
+                color = markerColor,
                 radius = 3.dp.toPx(),
                 center = Offset(xFor(r), yFor(r))
             )
@@ -660,8 +665,8 @@ private fun ReviewCurvePicker(
 
         val handleRetention = retention.coerceIn(ReviewPace.MIN_RETENTION, ReviewPace.MAX_RETENTION)
         val handle = Offset(xFor(handleRetention), yFor(handleRetention))
-        drawCircle(color = Accent, radius = 9.dp.toPx(), center = handle)
-        drawCircle(color = Paper, radius = 4.dp.toPx(), center = handle)
+        drawCircle(color = curveColor, radius = 9.dp.toPx(), center = handle)
+        drawCircle(color = handleFill, radius = 4.dp.toPx(), center = handle)
     }
 }
 

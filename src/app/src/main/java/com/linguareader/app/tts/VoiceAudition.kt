@@ -17,11 +17,16 @@ object VoiceAudition {
     @Volatile
     private var player: MediaPlayer? = null
 
+    /** 播放结束/被打断时回调，让面板把「停止」还原成「试听」。 */
+    @Volatile
+    private var onFinished: (() -> Unit)? = null
+
     suspend fun play(
         context: Context,
         settings: CloudTtsSettings,
         voiceId: String,
-        text: String
+        text: String,
+        onFinished: () -> Unit = {}
     ): Result<Unit> {
         val appContext = context.applicationContext
         val backend = backendFor(appContext, settings)
@@ -40,22 +45,42 @@ object VoiceAudition {
                 created.setDataSource(file.absolutePath)
                 created.setOnCompletionListener { finished ->
                     finished.release()
-                    if (player === finished) player = null
+                    if (player === finished) {
+                        player = null
+                        notifyFinished()
+                    }
+                }
+                created.setOnErrorListener { _, _, _ ->
+                    stop()
+                    true
                 }
                 created.prepare()
                 created.start()
                 player = created
-            }
+                this@VoiceAudition.onFinished = onFinished
+            }.onFailure { onFinished() }
         }
     }
 
+    /** 是否正在播放试听（面板用它显示「停止」）。 */
+    val isPlaying: Boolean get() = player != null
+
     fun stop() {
-        val current = player ?: return
+        val current = player
         player = null
-        runCatching {
-            if (current.isPlaying) current.stop()
+        if (current != null) {
+            runCatching {
+                if (current.isPlaying) current.stop()
+            }
+            runCatching { current.release() }
         }
-        runCatching { current.release() }
+        notifyFinished()
+    }
+
+    private fun notifyFinished() {
+        val callback = onFinished
+        onFinished = null
+        callback?.invoke()
     }
 
     private fun backendFor(context: Context, settings: CloudTtsSettings): CloudTtsBackend? =

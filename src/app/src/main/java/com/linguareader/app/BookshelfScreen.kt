@@ -159,7 +159,7 @@ internal fun BookshelfScreen(
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Accent,
-                                contentColor = Color.White
+                                contentColor = OnAccent
                             ),
                             shape = PillShape
                         ) {
@@ -313,7 +313,7 @@ private fun EmptyBookshelf(onImport: () -> Unit) {
         Spacer(Modifier.height(24.dp))
         Button(
             onClick = onImport,
-            colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.White),
+            colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
             shape = PillShape
         ) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))

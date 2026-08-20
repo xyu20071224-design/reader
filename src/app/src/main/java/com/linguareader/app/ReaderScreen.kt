@@ -130,7 +130,9 @@ internal fun ReaderScreen(
     onCustomReviewChange: (ReviewPace) -> Unit,
     onRemindersChange: (ReviewReminders) -> Unit,
     onSpeak: (String) -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    /** 阅读主题变化时通知外层，让书架/弹层等外壳配色跟着切换（日间/夜间）。 */
+    onAppearanceChanged: (ReaderTheme) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
@@ -200,6 +202,8 @@ internal fun ReaderScreen(
             .putString("font", value.fontFamily.name)
             .apply()
         controller.applyPreferences(value)
+        // 外壳（书架、弹层、听书条）跟随正文主题切换日间/夜间。
+        onAppearanceChanged(value.theme)
     }
 
     fun progressOf(chapter: Int, page: Int, count: Int): Float {

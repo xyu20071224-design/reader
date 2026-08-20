@@ -112,7 +112,7 @@ private fun GreetingSceneDialog(greeting: Greeting, onDismiss: () -> Unit) {
                 Button(
                     onClick = onDismiss,
                     shape = PillShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("开始阅读", modifier = Modifier.padding(vertical = 2.dp))

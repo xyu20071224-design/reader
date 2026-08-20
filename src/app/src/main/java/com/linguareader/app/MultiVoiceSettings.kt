@@ -1,5 +1,7 @@
 package com.linguareader.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,15 +10,27 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,16 +58,15 @@ import com.linguareader.app.tts.TtsLanguage
 import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.VoiceAudition
 import com.linguareader.app.tts.VoiceCharacter
-import com.linguareader.app.tts.VoiceInfo
 import com.linguareader.app.tts.VoiceLibrary
+import com.linguareader.app.tts.VoicePicker
 import kotlinx.coroutines.launch
 
 /**
  * 多角色音色设置（PLAN-MULTI-VOICE §8, M4）。
  *
- * The switch itself is part of the listening settings and saved with them; the
- * per-character choices are applied immediately (they are locks in the book
- * voice map) and the playback service is asked to reload right away.
+ * 开关随听书设置一起保存；角色/旁白的音色选择是即时生效的（写入书级音色映射的
+ * 锁定项并让听书服务重载），可随时「恢复自动」交回自动分配。
  */
 @Composable
 internal fun MultiVoiceSection(
@@ -72,8 +87,10 @@ internal fun MultiVoiceSection(
     var characters by remember { mutableStateOf<List<VoiceCharacter>>(emptyList()) }
     var status by remember { mutableStateOf<String?>(null) }
     var auditionError by remember { mutableStateOf<String?>(null) }
+    var playingVoice by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var reloadToken by remember { mutableIntStateOf(0) }
+    var picker by remember { mutableStateOf<VoicePickerTarget?>(null) }
 
     val bookTitle = (preselectedBook ?: books.firstOrNull { it.id == bookId })?.title
 
@@ -108,16 +125,26 @@ internal fun MultiVoiceSection(
         reload()
     }
 
-    fun applyVoice(speaker: String, voiceId: String, language: String?) {
+    /** 选定音色 = 锁定该说话人；服务重载后下一句生效。 */
+    fun applyVoice(target: VoicePickerTarget, voiceId: String) {
         scope.launch {
             val repository = MultiVoiceSupport.voiceMapRepository(context)
-            voiceMap = if (language != null) {
-                repository.lockNarrator(bookId, language, voiceId)
+            voiceMap = if (target.narratorLanguage != null) {
+                repository.lockNarrator(bookId, target.narratorLanguage, voiceId)
             } else {
-                repository.lock(bookId, speaker, voiceId)
+                repository.lock(bookId, target.speaker, voiceId)
             }
-            // The service reloads the mapping on reconfigure, so the change is
-            // audible from the next sentence on.
+            TtsPlaybackController.onCloudSettingsChanged(context)
+            reloadToken++
+        }
+    }
+
+    /** 恢复自动：解除锁定并立刻重跑一次分配。 */
+    fun releaseVoice(target: VoicePickerTarget) {
+        scope.launch {
+            val repository = MultiVoiceSupport.voiceMapRepository(context)
+            val speaker = target.narratorLanguage?.let { BookVoiceMap.narratorKey(it) } ?: target.speaker
+            repository.unlock(bookId, speaker)
             TtsPlaybackController.onCloudSettingsChanged(context)
             reloadToken++
         }
@@ -126,11 +153,25 @@ internal fun MultiVoiceSection(
     fun audition(speaker: String, voiceId: String) {
         if (voiceId.isBlank()) return
         auditionError = null
+        if (playingVoice == voiceId) {
+            VoiceAudition.stop()
+            playingVoice = null
+            return
+        }
+        playingVoice = voiceId
         scope.launch {
             val voiceLanguage = library.byId(voiceId)?.language ?: TtsLanguage.ENGLISH
             val text = MultiVoiceSupport.sampleText(speaker, voiceLanguage)
-            VoiceAudition.play(context, settings, voiceId, text)
-                .onFailure { auditionError = it.message ?: "试听失败" }
+            VoiceAudition.play(
+                context = context,
+                settings = settings,
+                voiceId = voiceId,
+                text = text,
+                onFinished = { if (playingVoice == voiceId) playingVoice = null }
+            ).onFailure {
+                auditionError = it.message ?: "试听失败"
+                playingVoice = null
+            }
         }
     }
 
@@ -182,7 +223,7 @@ internal fun MultiVoiceSection(
                         modifier = Modifier.weight(1f),
                         color = Ink
                     )
-                    Text("▾", color = InkSoft)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
                 }
                 DropdownMenu(expanded = bookMenu, onDismissRequest = { bookMenu = false }) {
                     books.forEach { candidate ->
@@ -200,7 +241,11 @@ internal fun MultiVoiceSection(
             }
         }
     } else {
-        Text("本书：" + preselectedBook.title, style = MaterialTheme.typography.labelMedium, color = InkSoft)
+        Text(
+            "本书：" + preselectedBook.title,
+            style = MaterialTheme.typography.labelMedium,
+            color = InkSoft
+        )
     }
 
     status?.let {
@@ -223,13 +268,21 @@ internal fun MultiVoiceSection(
     Spacer(Modifier.height(12.dp))
     Text("旁白音色", style = MaterialTheme.typography.labelLarge, color = InkSoft)
     MultiVoiceSupport.NARRATOR_LANGUAGES.forEach { language ->
-        VoiceRow(
+        val target = VoicePickerTarget(
+            speaker = "narrator",
             title = if (language == TtsLanguage.CHINESE) "中文旁白" else "英文旁白",
-            locked = map.isLocked(BookVoiceMap.narratorKey(language)),
+            language = language,
+            gender = null,
+            narratorLanguage = language
+        )
+        VoiceRow(
+            title = target.title,
             currentVoice = map.narratorFor(language).orEmpty(),
-            candidates = candidatesFor(library, language, null),
-            onSelect = { applyVoice("narrator", it, language) },
-            onAudition = { audition("narrator", it) }
+            locked = map.isLocked(BookVoiceMap.narratorKey(language)),
+            playing = playingVoice != null && playingVoice == map.narratorFor(language),
+            onOpenPicker = { picker = target },
+            onAudition = { audition("narrator", map.narratorFor(language).orEmpty()) },
+            onRelease = { releaseVoice(target) }
         )
     }
 
@@ -243,24 +296,32 @@ internal fun MultiVoiceSection(
         )
         return
     }
-    Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
-        characters
-            .sortedWith(compareByDescending<VoiceCharacter> { it.importanceRank }.thenBy { it.key })
-            .forEach { character ->
-                VoiceRow(
-                    title = character.name,
-                    subtitle = characterSubtitle(character),
-                    locked = map.isLocked(character.key),
-                    currentVoice = map.voiceFor(character.name).orEmpty(),
-                    candidates = candidatesFor(library, character.language, character.gender),
-                    onSelect = { applyVoice(character.name, it, null) },
-                    onAudition = { audition(character.name, it) }
-                )
-            }
-    }
+    characters
+        .sortedWith(compareByDescending<VoiceCharacter> { it.importanceRank }.thenBy { it.key })
+        .forEach { character ->
+            val current = map.voiceFor(character.name).orEmpty()
+            val target = VoicePickerTarget(
+                speaker = character.name,
+                title = character.name,
+                language = character.language,
+                gender = character.gender,
+                narratorLanguage = null
+            )
+            VoiceRow(
+                title = character.name,
+                subtitle = characterSubtitle(character),
+                currentVoice = current,
+                locked = map.isLocked(character.key),
+                playing = playingVoice != null && playingVoice == current,
+                onOpenPicker = { picker = target },
+                onAudition = { audition(character.name, current) },
+                onRelease = { releaseVoice(target) }
+            )
+        }
     Spacer(Modifier.height(6.dp))
     Text(
-        "选定音色即锁定该角色（自动分配不再改动它）；未锁定的角色会随新章节的共现关系自动微调。",
+        "选定音色即锁定该角色（名字旁的锁形图标表示已锁定，点解锁图标或「恢复自动」交回自动分配）；" +
+            "未锁定的角色会随新章节的共现关系自动微调。",
         style = MaterialTheme.typography.labelSmall,
         color = InkFaint
     )
@@ -272,21 +333,44 @@ internal fun MultiVoiceSection(
         style = MaterialTheme.typography.labelSmall,
         color = InkFaint
     )
+
+    picker?.let { target ->
+        VoicePickerDialog(
+            target = target,
+            library = library,
+            currentVoice = if (target.narratorLanguage != null) {
+                map.narratorFor(target.narratorLanguage).orEmpty()
+            } else {
+                map.voiceFor(target.speaker).orEmpty()
+            },
+            locked = if (target.narratorLanguage != null) {
+                map.isLocked(BookVoiceMap.narratorKey(target.narratorLanguage))
+            } else {
+                map.isLocked(BookVoiceMap.keyOf(target.speaker))
+            },
+            playingVoice = playingVoice,
+            onAudition = { voice -> audition(target.speaker, voice) },
+            onPick = { voice ->
+                applyVoice(target, voice)
+                picker = null
+            },
+            onRelease = {
+                releaseVoice(target)
+                picker = null
+            },
+            onDismiss = { picker = null }
+        )
+    }
 }
 
-/** Recommended candidates first (language + gender match), then the whole library. */
-private fun candidatesFor(
-    library: VoiceLibrary,
-    language: String,
-    gender: String?
-): List<VoiceInfo> {
-    val recommended = library.voices.filter { voice ->
-        voice.available && voice.speaks(language) &&
-            (gender.isNullOrBlank() || voice.gender.isBlank() || voice.gender.equals(gender, true))
-    }
-    val rest = library.voices.filter { it.available && it !in recommended }
-    return recommended + rest
-}
+/** 正在挑音色的对象：一个角色，或某个语言的旁白。 */
+private data class VoicePickerTarget(
+    val speaker: String,
+    val title: String,
+    val language: String,
+    val gender: String?,
+    val narratorLanguage: String?
+)
 
 private fun characterSubtitle(character: VoiceCharacter): String {
     val parts = mutableListOf<String>()
@@ -303,27 +387,45 @@ private fun characterSubtitle(character: VoiceCharacter): String {
     return parts.joinToString(" · ")
 }
 
-/** One assignable speaker: name, current voice picker and an audition button. */
+/** 一行可分配的说话人：名字、当前音色、试听/停止、恢复自动。 */
 @Composable
 private fun VoiceRow(
     title: String,
     currentVoice: String,
-    candidates: List<VoiceInfo>,
     locked: Boolean,
-    onSelect: (String) -> Unit,
-    onAudition: (String) -> Unit,
+    playing: Boolean,
+    onOpenPicker: () -> Unit,
+    onAudition: () -> Unit,
+    onRelease: () -> Unit,
     subtitle: String? = null
 ) {
-    var expanded by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth(),
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (locked) {
+                    Icon(
+                        Icons.Default.Lock,
+                        contentDescription = "已锁定音色",
+                        tint = Accent,
+                        modifier = Modifier.padding(start = 4.dp).size(13.dp)
+                    )
+                }
+            }
             Text(
-                if (locked) title + " 🔒" else title,
-                style = MaterialTheme.typography.bodyMedium,
+                currentVoice.ifBlank { "自动分配" },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (currentVoice.isBlank()) InkFaint else InkSoft,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -331,42 +433,136 @@ private fun VoiceRow(
                 Text(it, style = MaterialTheme.typography.labelSmall, color = InkFaint)
             }
         }
-        Box {
-            TextButton(onClick = { expanded = true }) {
-                Text(
-                    currentVoice.ifBlank { "自动" },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = Ink
-                )
-                Text("▾", color = InkSoft)
+        TextButton(onClick = onOpenPicker) { Text("更换") }
+        IconButton(
+            onClick = onAudition,
+            enabled = currentVoice.isNotBlank(),
+            modifier = Modifier.semantics {
+                contentDescription = if (playing) "停止试听" else "试听 " + title
             }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                candidates.take(60).forEach { voice ->
-                    DropdownMenuItem(
-                        text = { Text(voiceLabel(voice), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        onClick = {
-                            expanded = false
-                            onSelect(voice.id)
-                        }
-                    )
-                }
+        ) {
+            Icon(
+                if (playing) Icons.Default.Stop else Icons.Default.PlayArrow,
+                contentDescription = null,
+                tint = if (playing) Accent else InkSoft,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        if (locked) {
+            IconButton(
+                onClick = onRelease,
+                modifier = Modifier.semantics { contentDescription = "恢复自动分配 " + title }
+            ) {
+                Icon(
+                    Icons.Default.LockOpen,
+                    contentDescription = null,
+                    tint = InkFaint,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
-        TextButton(
-            onClick = { onAudition(currentVoice) },
-            enabled = currentVoice.isNotBlank()
-        ) { Text("试听") }
     }
 }
 
-private fun voiceLabel(voice: VoiceInfo): String {
-    val tags = mutableListOf<String>()
-    when (voice.gender.lowercase()) {
-        "male" -> tags += "男"
-        "female" -> tags += "女"
+/**
+ * 音色选择弹层：搜索 + 「推荐 / 语言·性别」分组 + 逐项试听。
+ *
+ * Kokoro 一台服务器就有 100+ 音色，所以用可搜索的分组列表代替长下拉。
+ */
+@Composable
+private fun VoicePickerDialog(
+    target: VoicePickerTarget,
+    library: VoiceLibrary,
+    currentVoice: String,
+    locked: Boolean,
+    playingVoice: String?,
+    onAudition: (String) -> Unit,
+    onPick: (String) -> Unit,
+    onRelease: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    val groups = remember(library, query, target) {
+        VoicePicker.groups(library.voices, target.language, target.gender, query)
     }
-    if (voice.language.isNotBlank()) tags += voice.language
-    if (voice.style.isNotEmpty()) tags += voice.style.first()
-    return if (tags.isEmpty()) voice.id else voice.id + "（" + tags.joinToString("·") + "）"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardSurface,
+        title = { Text(target.title + " · 选择音色") },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("搜索音色（名字/语言/性别/风格）") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                if (groups.isEmpty()) {
+                    Text("没有匹配的音色。", color = InkSoft)
+                } else {
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                        groups.forEach { group ->
+                            item(key = "header-" + group.title) {
+                                Text(
+                                    group.title,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = InkFaint,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(group.options, key = { it.voice.id }) { option ->
+                                val selected = option.voice.id == currentVoice
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(if (selected) AccentSoft else CardSurface)
+                                        .clickable { onPick(option.voice.id) }
+                                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        VoicePicker.label(option.voice),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (selected) AccentDeep else Ink,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = { onAudition(option.voice.id) },
+                                        modifier = Modifier.semantics {
+                                            contentDescription =
+                                                "试听 " + option.voice.id
+                                        }
+                                    ) {
+                                        Icon(
+                                            if (playingVoice == option.voice.id) {
+                                                Icons.Default.Stop
+                                            } else {
+                                                Icons.Default.PlayArrow
+                                            },
+                                            contentDescription = null,
+                                            tint = if (playingVoice == option.voice.id) Accent else InkSoft,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        },
+        dismissButton = {
+            if (locked) {
+                TextButton(onClick = onRelease) { Text("恢复自动") }
+            }
+        }
+    )
 }
