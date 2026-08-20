@@ -1,0 +1,18 @@
+{
+  "voices": [
+    {
+      "id": "clone_gandalf_en_m.wav",
+      "label": "Gandalf",
+      "language": "en",
+      "gender": "male",
+      "style": ["deep", "calm"]
+    },
+    {
+      "id": "clone_xiaoyu_zh_f.wav",
+      "label": "小雨",
+      "language": "zh",
+      "gender": "female",
+      "style": ["bright"]
+    }
+  ]
+}

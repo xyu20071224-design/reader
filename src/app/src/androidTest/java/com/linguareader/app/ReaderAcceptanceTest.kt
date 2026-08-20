@@ -126,6 +126,14 @@ class ReaderAcceptanceTest {
         composeRule.waitUntil(15_000) {
             composeRule.onAllNodesWithContentDescription("页码指示").fetchSemanticsNodes().isNotEmpty()
         }
+        // The indicator appears as soon as the toolbar renders, before the
+        // chapter has finished paginating (pageCount starts at 1). A page turn
+        // tapped in that window is silently dropped because window.lrTurn is
+        // not installed until the WebView fires onReady. Wait until the real
+        // page count is known so the reader is actually ready to turn pages.
+        composeRule.waitUntil(15_000) {
+            runCatching { pageCount() }.getOrDefault(1) > 1
+        }
     }
 
     private fun pageIndicatorText(): String =
@@ -136,6 +144,9 @@ class ReaderAcceptanceTest {
 
     private fun pageNumber(): Int =
         pageIndicatorText().substringAfter("·").trim().substringBefore("/").trim().toInt()
+
+    private fun pageCount(): Int =
+        pageIndicatorText().substringAfter("·").trim().substringAfter("/").trim().toInt()
 
     private fun seedBook() {
         bookRoot.mkdirs()

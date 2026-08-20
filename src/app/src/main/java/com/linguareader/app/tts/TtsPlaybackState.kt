@@ -14,6 +14,12 @@ data class TtsPlaybackState(
     val isPreparing: Boolean = false,
     val preparedCount: Int = 0,
     val preparedTotal: Int = 0,
+    /** Whether the current engine can pre-generate the whole book. */
+    val canCacheBook: Boolean = false,
+    /** Whole-book cache (全书缓存) progress, across all chapters. */
+    val isCachingBook: Boolean = false,
+    val cachedSentences: Int = 0,
+    val cachedTotal: Int = 0,
     /** Exact DOM location of the sentence being read (-1 = not available). */
     val highlightBlockIndex: Int = -1,
     val highlightOffset: Int = 0,

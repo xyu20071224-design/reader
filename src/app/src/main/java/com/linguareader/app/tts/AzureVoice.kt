@@ -11,7 +11,9 @@ data class AzureVoice(
     val displayName: String,
     val localeName: String = "",
     val secondaryLocales: List<String> = emptyList(),
-    val status: String = "GA"
+    val status: String = "GA",
+    /** Azure style tags (`StyleList`), used as the multi-voice style profile. */
+    val styles: List<String> = emptyList()
 ) {
     fun isMultilingual(): Boolean =
         shortName.contains("Multilingual", ignoreCase = true)
@@ -32,11 +34,14 @@ data class AzureVoice(
         .put("localeName", localeName)
         .put("secondaryLocales", JSONArray(secondaryLocales))
         .put("status", status)
+        .put("styles", JSONArray(styles))
 
     companion object {
         fun fromJson(json: JSONObject): AzureVoice {
             val secondary = json.optJSONArray("SecondaryLocaleList")
                 ?: json.optJSONArray("secondaryLocales")
+            val styleList = json.optJSONArray("StyleList")
+                ?: json.optJSONArray("styles")
             return AzureVoice(
                 shortName = firstString(json, "ShortName", "shortName"),
                 locale = firstString(json, "Locale", "locale"),
@@ -48,7 +53,13 @@ data class AzureVoice(
                 } else {
                     (0 until secondary.length()).map { secondary.optString(it) }
                 },
-                status = firstString(json, "Status", "status").ifBlank { "GA" }
+                status = firstString(json, "Status", "status").ifBlank { "GA" },
+                styles = if (styleList == null) {
+                    emptyList()
+                } else {
+                    (0 until styleList.length())
+                        .mapNotNull { styleList.optString(it).trim().takeIf(String::isNotBlank) }
+                }
             )
         }
 

@@ -36,6 +36,28 @@ interface ChapterTtsPreparer {
 }
 
 /**
+ * Optional hook for synthesizers that can pre-generate the whole book (F-151
+ * "全书缓存"). The system TTS engine does not implement this; the cloud
+ * engines do. Progress is reported across the entire book, not per chapter.
+ */
+interface BookTtsPreparer {
+    /**
+     * Whether whole-book pre-generation is enabled for this synthesizer.
+     * Default true; slow engines (IndexTTS via OpenAI-compatible backend)
+     * report false after the capability probe so the UI hides the button.
+     */
+    val supportsWholeBookCache: Boolean get() = true
+
+    fun prepareBook(
+        book: Book,
+        chapterCount: Int,
+        chapterProvider: suspend (Int) -> TtsChapter,
+        onProgress: (done: Int, total: Int) -> Unit,
+        onComplete: (success: Boolean) -> Unit
+    )
+}
+
+/**
  * Cloud synthesizer (F-151).
  *
  * Pre-generates a whole chapter on first play, writes MP3s into the app cache
@@ -46,8 +68,13 @@ interface ChapterTtsPreparer {
 class CloudTtsSynthesizer(
     context: Context,
     private val backend: CloudTtsBackend,
-    private val listener: TtsSynthesizerListener
-) : TtsSynthesizer, ChapterTtsPreparer {
+    private val listener: TtsSynthesizerListener,
+    /** Maps a speaker tag ("narrator" / name / "dialogue") plus the sentence
+     *  text to the voice id to synthesize with (multi-voice M1/M3). Must be the
+     *  same resolver the playback engine uses, or pre-generated audio would be
+     *  cached under a voice that playback never asks for. */
+    private val voiceForSpeaker: (String, String) -> String? = { _, _ -> null }
+) : TtsSynthesizer, ChapterTtsPreparer, BookTtsPreparer {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -60,12 +87,29 @@ class CloudTtsSynthesizer(
     private var chapterFailed = false
 
     private var prepareJob: Job? = null
+    private var bookPrepareJob: Job? = null
     private var preparedChapterKey: String? = null
     private var currentPlayer: MediaPlayer? = null
+
+    /** Cache files currently being synthesized, so two preparers never double-bill one sentence. */
+    private val inflightFiles = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
     val engineLabel: String get() = backend.label
 
     override val isReady: Boolean get() = backend.isConfigured()
+
+    override val supportsWholeBookCache: Boolean get() = backend.supportsWholeBookCache
+
+    init {
+        // Probe backend capabilities (e.g. slow-engine detection) once; the
+        // result flips supportsWholeBookCache and re-evaluates the cache UI.
+        scope.launch {
+            backend.refreshCapabilities()
+            if (!shutdown) {
+                mainHandler.post { listener.onCapabilitiesChanged() }
+            }
+        }
+    }
 
     override fun prepareChapter(
         book: Book,
@@ -112,17 +156,17 @@ class CloudTtsSynthesizer(
         }
     }
 
-    override fun speak(text: String, rate: Float, utteranceId: String) {
+    override fun speak(text: String, rate: Float, utteranceId: String, voice: String?) {
         val parsed = parseUtteranceId(utteranceId)
         if (parsed == null) {
             mainHandler.post { listener.onError(utteranceId) }
             return
         }
         val (bookId, chapterIndex, sentenceIndex) = parsed
-        val voice = backend.voiceFor(text)
-        val file = cacheFile(bookId, chapterIndex, sentenceIndex, voice)
+        val effectiveVoice = voice?.takeIf { it.isNotBlank() } ?: backend.voiceFor(text)
+        val file = cacheFile(bookId, chapterIndex, sentenceIndex, effectiveVoice)
         scope.launch {
-            val ready = waitForFileOrSynthesize(file, text, voice)
+            val ready = waitForFileOrSynthesize(file, text, effectiveVoice)
             if (!ready || shutdown) {
                 if (!ready) mainHandler.post { listener.onError(utteranceId) }
                 return@launch
@@ -138,16 +182,84 @@ class CloudTtsSynthesizer(
     override fun shutdown() {
         shutdown = true
         prepareJob?.cancel()
+        bookPrepareJob?.cancel()
         scope.cancel()
         mainHandler.post { releaseCurrentPlayer() }
     }
 
     private suspend fun generateOne(book: Book, chapter: TtsChapter, index: Int): Boolean {
         val text = chapter.sentences[index]
-        val voice = backend.voiceFor(text)
+        val voice = voiceForSpeaker(chapter.speakerAt(index), text)?.takeIf { it.isNotBlank() }
+            ?: backend.voiceFor(text)
         val file = cacheFile(book.id, chapter.chapterIndex, index, voice)
         if (file.exists() && file.length() > 0) return true
-        return backend.synthesize(text, backend.voiceFor(text), file).isSuccess
+        val key = file.absolutePath
+        if (inflightFiles.putIfAbsent(key, true) != null) {
+            // Another coroutine (chapter prep vs whole-book cache) is already
+            // synthesizing this file — wait for it instead of double-billing.
+            while (inflightFiles.containsKey(key) && !shutdown) delay(100)
+            return file.exists() && file.length() > 0
+        }
+        try {
+            return backend.synthesize(text, voice, file).isSuccess
+        } finally {
+            inflightFiles.remove(key)
+        }
+    }
+
+    override fun prepareBook(
+        book: Book,
+        chapterCount: Int,
+        chapterProvider: suspend (Int) -> TtsChapter,
+        onProgress: (done: Int, total: Int) -> Unit,
+        onComplete: (success: Boolean) -> Unit
+    ) {
+        bookPrepareJob?.cancel()
+        val job = scope.launch {
+            val chapters = mutableListOf<TtsChapter>()
+            for (index in 0 until chapterCount) {
+                if (shutdown) return@launch
+                val loaded = try {
+                    chapterProvider(index)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    mainHandler.post { onComplete(false) }
+                    return@launch
+                }
+                chapters.add(loaded)
+            }
+            val total = chapters.sumOf { it.sentences.size }
+            if (total == 0) {
+                mainHandler.post { onComplete(true) }
+                return@launch
+            }
+            val semaphore = Semaphore(3)
+            val failed = AtomicBoolean(false)
+            val completed = AtomicInteger(0)
+            val jobs = chapters
+                .flatMap { chapter -> chapter.sentences.indices.map { sentenceIndex -> chapter to sentenceIndex } }
+                .map { (chapter, sentenceIndex) ->
+                    async {
+                        semaphore.withPermit {
+                            if (failed.get() || shutdown) {
+                                false
+                            } else {
+                                val ok = generateOne(book, chapter, sentenceIndex)
+                                if (!ok) failed.set(true)
+                                val done = completed.incrementAndGet()
+                                mainHandler.post { onProgress(done, total) }
+                                ok
+                            }
+                        }
+                    }
+                }
+            val allOk = jobs.all { it.await() }
+            if (!shutdown) {
+                mainHandler.post { onComplete(allOk) }
+            }
+        }
+        bookPrepareJob = job
     }
 
     private suspend fun waitForFileOrSynthesize(
@@ -241,8 +353,11 @@ class CloudTtsSynthesizer(
     }
 
     private fun parseUtteranceId(id: String): Triple<String, Int, Int>? {
+        // 引擎生成的 utteranceId 是 4 段 "bookId:chapter:sentence:attempt"
+        // （见 TtsPlaybackEngine.utteranceIdFor）；末段 attempt 仅用于去重，
+        // 解析时忽略它，只取前 3 段。
         val parts = id.split(":")
-        if (parts.size != 3) return null
+        if (parts.size < 3) return null
         val chapter = parts[1].toIntOrNull() ?: return null
         val sentence = parts[2].toIntOrNull() ?: return null
         return Triple(parts[0], chapter, sentence)

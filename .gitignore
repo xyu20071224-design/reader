@@ -50,3 +50,13 @@ src/app/src/main/assets/sherpa/**/*.onnx
 
 # Logs
 *.log
+
+# Local TTS server assets (large model weights, personal reference audio)
+tts-server/models/
+tts-server/voices/*.wav
+tts-server/voices/*.mp3
+tts-server/voices/*.flac
+tts-server/voices/*.ogg
+
+# Local debug/verification artefacts (APKs, logcats, ffmpeg, audio samples)
+artifacts/

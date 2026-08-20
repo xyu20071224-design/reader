@@ -148,3 +148,95 @@ release still requires a production signing key and release configuration.
 - `testDebugUnitTest`：未在本环境全量重跑；本次新增 `TtsTextExtractorTest` 两个用例（内联叶子块判定 + 嵌套块防回归），`LaunchPromptTest` 不受新增 1.3.1 更新说明分支影响。
 - `lintDebug` / `connectedDebugAndroidTest`：未重跑，需完整 Android 环境（模拟器/真机）补做最终回归。
 - 产物：`LinguaReader-1.3.1-debug.apk`（调试签名，约 56 MB，SHA-256 `ECE3E30B36EDA4004949E9EF92A553E53B85FDF4D79EEB9D9895E7D47814B234`），已发布至 GitHub Releases tag `v1.3.1`。
+
+## 2026-08-20 F-152 多角色听书 M2（LLM 说话人打标，增量验证）
+
+本轮完成 `PLAN-MULTI-VOICE.md` 的 **M2 里程碑**（M1 规则层双音色已在前一轮落地）：
+
+- 书级角色画像：`CharacterProfile`（姓名/别名/性别/年龄段/风格/重要性/语言/置信度）随 AI 语境档案一次产出（D1，共用 `AiChatClient` DeepSeek 调用框架），并按「手动优先、别名取并集」并入本书术语表 `kind=character` 条目。
+- 章节 LLM 打标：`SpeakerLlmTagger` 按「段索引 + 引文序号」对齐（`SpeakerRuleTagger.index()` 提供槽位），角色表 + 别名归一 + `confidence ≥ 0.6` 校验，未通过者退回规则层标签；长章节按 12k 字符分窗，无引文窗口不请求。
+- 缓存与增量：`files/ai/speaker-tags/<bookId>/<chapter>.json`（Mutex + 原子写），已打标章节不再请求，句数不匹配的旧缓存作废；删除书籍或重建语境档案时清除。
+- 播放接线：章节先用规则层结果开播，LLM 结果返回后热替换标签（`TtsPlaybackEngine.applySpeakerTags` + `TtsTextExtractor.applySpeakers`），队列/`utteranceId`/进度/高亮零影响；每章只解析一次，避免逐句重复读缓存或重复请求。
+- 降级：联网 AI 关闭、无 DeepSeek Key、角色表为空、请求失败/超时均保持 M1 规则层结果，失败章节不落缓存。D2 限制保留：Piper/系统语音以及未配置对白音色时不发起任何打标请求。
+
+验证情况：
+
+- `testDebugUnitTest`（JDK 17 / Gradle 8.11.1 / AGP 8.9.1，`--offline`）：**206 个全部通过**，其中本轮新增 44 个：
+  - `SpeakerLlmTaggerTest` 18 个：角色表/别名/大小写归一、引文与段落级对齐、未知角色与低置信度退回规则层、缺字段与非法 JSON、分窗策略（无引文不请求、长章节切窗）、提示词携带绝对段索引与引文编号、后端失败/部分窗口失败的降级与可缓存性、标签与句子长度一致。
+  - `SpeakerTagRepositoryTest` 9 个（Robolectric）：缓存读写与增量（同章第二次零请求、新章节才请求）、长度不匹配缓存作废、无 Key/总开关关闭/空角色表零请求降级、后端失败不落缓存且下次重试、`delete` 清空、越表角色名不被写成角色。
+  - `CharacterProfileTest` 11 个：`CharacterProfile`/`BookContextProfile`/`GlossaryEntry`/`ChapterSpeakerTags` JSON 往返与缺省值、多段档案合并、`mergeProfile` 手动优先与别名并集。
+  - `SpeakerRuleTaggerTest` +4 个：段落/引文槽位索引、`index()` 与 `tag()` 一致、跨段引文在本段内编号、空章节。
+  - `TtsPlaybackEngineTest` +2 个：播放中热替换说话人标签后下一句改用角色音色；跨书/跨章/长度不符的标签被丢弃。
+- `lintDebug`：通过，0 错误（40 条提示中 39 条为既有警告，无一来自本轮新增文件）。
+- `assembleDebug`：通过（调试 APK 打包成功）。
+- `connectedDebugAndroidTest`：本轮未重跑（需模拟器/真机）。
+- 真实链路人工验证仍待做：需真实 DeepSeek Key + 云 TTS 服务器，按 `PLAN-MULTI-VOICE.md` §9「真机/服务器验证」抽验归属准确率（目标 LLM ≥ 90%）。
+
+## 2026-08-20 F-152 多角色听书 M3（角色 → 音色自动分配，增量验证）
+
+本轮完成 `PLAN-MULTI-VOICE.md` 的 **M3 里程碑**，让 M2 的逐句角色标签真正发出不同声音：
+
+- 音色库画像：`VoiceInfo`/`VoiceLibrary`/`VoiceNaming` + `VoiceLibraryLoader`。Azure 取 `voices/list` 的性别与 `StyleList`；自建服务器新增 `GET /voices`（本地 Kokoro 包装）与 `/v1/audio/voices`（Kokoro-FastAPI）音色列表拉取并缓存（`ServerVoiceStore`）；火山用已配置音色；裸音色 ID 由命名先验补全语言/性别（`zf_/zm_/af_/am_/bf_/bm_`、`zh_female_*`、`zh-CN-*`）。
+- 分配算法：`VoiceAssigner` = 硬过滤（语言必配、性别不冲突）→ 软评分（性别/年龄/风格/重要性×音质）→ 按重要性与共现度贪心并施加区分度惩罚 `λ·Σ sim` → 交换一次 → **仅在不共现角色之间复用** → 旁白兜底；旁白音色先选（偏中性风格）并计入已占用，天然与角色拉开。
+- 共现统计：`SpeakerCooccurrence` 直接复用 M2 的章节打标缓存（跳过旁白/未归属对白、折叠连续同一说话人），不新增存储。
+- 持久化与一致性：`BookVoiceMap` + `VoiceMapRepository`（`files/voice_maps/<bookId>.json`，Mutex + 原子写）：跨章跨会话不重算、新角色增量分配、`userLocked` 永不被覆盖、切换引擎重算但保留锁定；删除书籍时一并删除映射。
+- 播放接线：`TtsPlaybackService.resolveVoice`（手动旁白音色 → 角色/旁白映射 → 对白音色 → 引擎默认）同时供播放队列与云引擎整章预生成使用（`TtsSynthesizerFactory.create(..., voiceResolver)`），避免预生成把音频缓存到播放端不会请求的音色下；解析器签名扩展为 `(speaker, text)`，按句语言选择中/英旁白音色；设置快照随 ACTION_RECONFIGURE 失效。
+
+验证情况：
+
+- `testDebugUnitTest`（`--offline`）：**246 个全部通过**，其中本轮新增 40 个：
+  - `VoiceAssignerTest` 15 个：硬过滤（语言/性别/放宽顺序）、软评分（风格与年龄细化）、旁白中性选择与保留位、共现拉开（同一输入有/无共现得到不同结果）、复用仅限不共现且相邻角色宁退旁白、交换、锁定不动、增量不动旧映射、换引擎重算保留锁定、空音色库不改动、中英旁白各一个、同重要性顺序确定。
+  - `VoiceMapRepositoryTest` 7 个（Robolectric）：落盘与重载、增量新增角色、锁定项在重分配后保留、切换引擎在新库内重算、无音色库返回空、保留位、删除。
+  - `BookVoiceMapTest` 7 个：JSON 往返、大小写无关查找、旁白按语言回退、未知说话人回退调用方默认、锁定/解锁、空输入不产生垃圾条目。
+  - `VoiceLibraryTest` 6 个 + `SpeakerCooccurrenceTest` 4 个 + `OpenAiCompatTtsBackendTest` +1（音色列表三种返回形状与异常载荷）。
+- `lintDebug`：通过，0 错误（40 条提示：1 条信息 + 39 条既有警告；本轮新增文件无任何告警，`ServerVoiceStore` 用 `edit {}` KTX 写法）。
+- `assembleDebug`：通过。
+- `connectedDebugAndroidTest`：本轮未重跑（需模拟器/真机）。
+- 真实链路人工验证仍待做：需真实云 TTS/自建服务器，人工确认「主要角色音色区分度」与「同书跨章音色一致」，并核对 Kokoro `/voices` 实际返回的音色数量是否足够 10+ 角色。
+
+## 2026-08-20 F-152 多角色听书 M4（角色音色界面，增量验证）
+
+本轮完成 `PLAN-MULTI-VOICE.md` 的 **M4 里程碑**，多角色听书自此形成完整闭环（M1 规则层 → M2 LLM 打标 → M3 自动分配 → M4 人工可调）：
+
+- 显式开关：`CloudTtsSettings.multiVoiceEnabled`（默认关，持久化）。关闭时不发任何打标请求、不生成音色映射，播放等同单音色 + 手填旁白/对白音色；Piper 与系统语音下开关置灰并给出 D2 说明。
+- 多角色面板 `MultiVoiceSection`（`MultiVoiceSettings.kt`）：书目选择（阅读页自带当前书）、状态提示（无音色库 / 无角色表 / 无 Key 规则模式 / 音色不足已共用 / 已分配 N 个）、中英旁白音色下拉、按重要性排序的角色列表（角色名 + 画像摘要 + 音色下拉 + 试听 + 🔒 锁定标记）。
+- 试听：`VoiceAudition` 用当前引擎按指定音色合成一句样句并用 MediaPlayer 播放（中文音色说中文样句、英文说英文），播放前停掉上一条避免叠音。
+- 共用装配：`MultiVoiceSupport` 收敛服务与 UI 的公共逻辑（音色库刷新、角色表读取、保留音色、D2 判定、状态文案、样句），`TtsPlaybackService` 改为复用它。
+- 解析优先级调整：角色/旁白映射（M3，M4 面板直接编辑）→ 手填旁白/对白音色（M1）→ 引擎默认，避免面板改了旁白却被旧手填值覆盖。
+- 立即生效：任何手动选择写入 `userLocked` 后触发 `onCloudSettingsChanged`（ACTION_RECONFIGURE），服务重载映射，下一句起使用新音色。
+
+验证情况：
+
+- `testDebugUnitTest`（`--offline`）：**255 个全部通过**，其中本轮新增 9 个：
+  - `MultiVoiceSupportTest` 6 个：D2 引擎判定、开关/总开关/引擎三重门控（默认关）、保留音色集合、中英样句与旁白样句、状态文案五种分支、共用音色计数与「音色不足」提示。
+  - `CloudTtsSettingsTest` 3 个（Robolectric）：多角色开关默认关、听书设置（含开关与旁白/对白音色）保存-加载往返、关闭后仍持久化。
+- `lintDebug`：通过，0 错误（40 条提示：1 条信息 + 39 条既有警告；本轮新增文件零告警——UI 的 `AutoboxingStateCreation` 提示已按建议改用 `mutableIntStateOf`）。
+- `assembleDebug`：通过。
+- `connectedDebugAndroidTest`：本轮未重跑；多角色面板的交互（下拉选择、试听播放）需真机/模拟器 + 真实云 TTS 服务人工验证。
+- 仍待人工验证：开关打开后端到端听感（角色音色区分度、跨章一致性）、试听按钮在各引擎下的成功率、Kokoro `/voices` 返回的音色数量是否足够 10+ 角色。
+
+## 2026-08-20 F-152 多角色听书 M1.5（IndexTTS 2.5 克隆音色引擎，收尾验证）
+
+M1.5 此前只有「服务能跑」的既成事实（8001 上的 IndexTTS 2.5、手机端已成功合成过 LOTR 正文），本轮把它补成完整里程碑：
+
+- 服务纳管：`tts-server/indextts/indextts_server.py` 作为仓库权威副本（与安装目录副本一致）。新增 `INDEX_VOICES_DIR` 克隆音色目录与 `voices/voices.json` 画像清单；`GET /voices` 在保持兼容的 `voices` 字符串数组之外新增 `voice_profiles`（id/label/language/gender/style）；`voice` 解析顺序为「绝对路径 → 克隆音色目录 → 安装目录 examples/ → 默认参考音频」。已重启实测：`/voices` 返回 16 个音色 + 16 条画像，登记后的 `voice_03.wav` 正确带出 `language=zh, gender=female, style=[calm]`。
+- App 贯通：`ServerVoice`（新）承接服务器画像 → `ServerVoiceStore` 缓存（兼容旧的纯 id 缓存）→ `VoiceLibraryLoader` 与命名先验合并，克隆音色因此能参与 M3 的语言/性别硬过滤；`VoiceNaming` 识别 `clone_<角色>_<lang>_<m|f>` 并在匹配先验前去掉 `.wav/.mp3/...` 扩展名（IndexTTS 用文件名当音色 id）。
+- 工具：`scripts/make_clone_voice.py`（从任意音频剪 3–10 秒参考音频、按约定命名、写入清单，**强制 `--consent`** 声明素材来源）；`scripts/tts_compare.py`（同批中英句子逐句实测两引擎，产出 `artifacts/tts-compare/report.md` 与可试听样音）。
+- 中英实测（RTX 5070 Ti，两服务本机运行）：
+
+| 引擎 | 语种 | 句数 | 平均每句 | 每字 |
+|---|---|---|---|---|
+| Kokoro（CPU） | en | 6 | 0.45 s | 0.010 s |
+| Kokoro（CPU） | zh | 2 | 0.77 s | 0.029 s |
+| IndexTTS 2.5（GPU 克隆） | en | 6 | 2.58 s | 0.057 s |
+| IndexTTS 2.5（GPU 克隆） | zh | 4 | 3.17 s | 0.119 s |
+
+  结论（客观部分）：Kokoro 快 5–6 倍且纯 CPU，适合默认逐句听书；IndexTTS 单句 1.5–4.7 秒可用于在线合成，但全书缓存对其保持禁用（App 已按 `/v1/models` 自动隐藏按钮）。**音质取向仍需人工试听** `artifacts/tts-compare/` 下 en/zh 样音后在报告末尾填结论。
+- 合规：核对 IndexTTS2 的《bilibili 模型使用许可协议》——免费、非独占、不可转让，仅在「月活 > 1 亿或上一自然年营收 > 1 亿人民币」时需另行申请商业许可（本项目无需）；须保留版权声明与许可副本、不得用其输出改进其他商用 AI 模型、禁止高风险场景、输出合规责任自负。多角色面板已常驻「仅用自备/授权素材 + AI 合成」提示；仓库不内置任何克隆参考音频（`tts-server/voices/` 音频已 gitignore），历史测试素材 `artifacts/first_3s.wav`（取自商业音乐轨）标记为不得用于发布。
+
+验证情况：
+
+- `testDebugUnitTest`：**258 个全部通过**（新增 3 个：`/voices` 画像解析、`clone_*` 命名先验、音频扩展名不影响先验）。
+- `lintDebug` / `assembleDebug`：通过。
+- 服务侧实测：Kokoro 8000 与 IndexTTS 8001 均在本机启动成功，`scripts/tts_compare.py` 18 次合成全部 200 成功。
+- 仍待人工：中英音质对比结论、以「角色专属克隆音色」跑一遍端到端听书（目前 `voices/` 只登记了 IndexTTS 自带示例，未放任何真人参考音频）。

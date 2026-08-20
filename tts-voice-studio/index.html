@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>TTS 音色试听台 · Voice Studio</title>
+<style>
+  :root {
+    --bg: #0b0d14;
+    --bg2: #12141d;
+    --card: #171a26;
+    --card-2: #1c2030;
+    --card-hover: #202536;
+    --border: #262c3e;
+    --border-2: #333a52;
+    --text: #e8ecf6;
+    --muted: #8f96ac;
+    --accent: #6c8cff;
+    --accent-2: #9a6cff;
+    --accent-glow: rgba(108, 140, 255, 0.16);
+    --green: #3ecf8e;
+    --green-bg: rgba(62, 207, 142, 0.12);
+    --red: #ff6b6b;
+    --red-bg: rgba(255, 107, 107, 0.12);
+    --amber: #ffb454;
+    --amber-bg: rgba(255, 180, 84, 0.12);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --shadow: 0 10px 34px rgba(0, 0, 0, 0.42);
+    --mono: "Cascadia Code", "Consolas", "SF Mono", "JetBrains Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+    background:
+      radial-gradient(1100px 500px at 12% -8%, rgba(108,140,255,0.10), transparent 60%),
+      radial-gradient(900px 440px at 88% -6%, rgba(154,108,255,0.10), transparent 60%),
+      linear-gradient(180deg, #0b0d14 0%, #10131d 100%);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--accent); }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 30px 22px 70px; }
+
+  /* ---------- 顶部 ---------- */
+  header { margin-bottom: 22px; }
+  .brand { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .brand .logo {
+    width: 46px; height: 46px; border-radius: 13px; flex: 0 0 auto;
+    display: grid; place-items: center; font-size: 22px;
+    background: linear-gradient(140deg, #6c8cff, #9a6cff);
+    box-shadow: 0 6px 22px rgba(108,140,255,0.35);
+  }
+  header h1 {
+    font-size: 26px; margin: 0; letter-spacing: -0.3px; line-height: 1.15;
+    background: linear-gradient(90deg, #aebaff, #c7a2ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  header .subtitle { color: var(--muted); font-size: 13.5px; margin: 6px 0 0; line-height: 1.6; }
+  .liveclock { margin-left: auto; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+
+  .globalbar {
+    margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 16px; box-shadow: var(--shadow);
+  }
+  .globalbar .gbtn {
+    border: 1px solid var(--border-2); background: var(--card-2); color: var(--text);
+    padding: 8px 15px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all .14s; white-space: nowrap;
+  }
+  .globalbar .gbtn:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .globalbar .gbtn:active { transform: translateY(0); }
+  .globalbar .gbtn.primary { background: linear-gradient(135deg, #6c8cff, #9a6cff); border-color: transparent; color: #fff; }
+  .globalbar .gbtn.primary:hover { filter: brightness(1.08); }
+  .globalbar .gbtn.danger { border-color: rgba(255,107,107,0.4); color: #ffb3b3; }
+  .globalbar .gbtn.danger:hover { background: var(--red-bg); }
+  .globalbar .gbtn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .gpu {
+    margin-left: auto; display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    background: var(--card-2); border: 1px solid var(--border); border-radius: 9px; padding: 6px 10px;
+  }
+  .gpu .gpu-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .gpu.hidden { display: none; }
+  .gpu-bar { width: 74px; height: 6px; border-radius: 999px; background: #0f1220; overflow: hidden; }
+  .gpu-bar > i { display: block; height: 100%; background: linear-gradient(90deg, #3ecf8e, #6c8cff); transition: width .5s; }
+
+  /* ---------- 状态胶囊 ---------- */
+  .status {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+    border: 1px solid var(--border); background: var(--card); color: var(--muted);
+  }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status.on { color: var(--green); border-color: rgba(62,207,142,0.35); background: var(--green-bg); }
+  .status.on .dot { background: var(--green); box-shadow: 0 0 9px var(--green); }
+  .status.off { color: var(--red); border-color: rgba(255,107,107,0.35); background: var(--red-bg); }
+  .status.off .dot { background: var(--red); }
+  .status.starting { color: var(--amber); border-color: rgba(255,180,84,0.4); background: var(--amber-bg); }
+  .status.starting .dot { background: var(--amber); animation: pulse 1.1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+
+  /* ---------- 后端面板 ---------- */
+  .diff { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+  .panel {
+    background: linear-gradient(160deg, var(--card-2), var(--card));
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 18px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 9px;
+    position: relative; overflow: hidden; transition: border-color .2s;
+  }
+  .panel.running { border-color: rgba(62,207,142,0.4); }
+  .panel.starting { border-color: rgba(255,180,84,0.4); }
+  .panel::after {
+    content: ""; position: absolute; top: -30px; right: -30px; width: 120px; height: 120px;
+    background: radial-gradient(circle, var(--accent-glow), transparent 70%); pointer-events: none;
+  }
+  .panel .k { font-size: 12.5px; color: var(--muted); font-family: var(--mono); }
+  .panel .t { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .panel .d { font-size: 13px; color: var(--muted); line-height: 1.55; }
+  .panel .d code {
+    font-family: var(--mono); background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+    padding: 0 5px; border-radius: 5px; font-size: 11.5px;
+  }
+  .panel .meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+  .panel .ctlrow { margin-top: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  .ctlbtn {
+    border: 1px solid var(--accent); background: rgba(108,140,255,0.12); color: #c7d3ff;
+    padding: 8px 16px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all .14s; white-space: nowrap;
+  }
+  .ctlbtn:hover { background: rgba(108,140,255,0.25); }
+  .ctlbtn:active { transform: scale(0.98); }
+  .ctlbtn.stop { border-color: var(--red); background: rgba(255,107,107,0.12); color: #ffb3b3; }
+  .ctlbtn.stop:hover { background: rgba(255,107,107,0.25); }
+  .ctlbtn:disabled { opacity: 0.55; cursor: default; transform: none; }
+  .ctlbtn.mini { padding: 6px 11px; font-size: 12px; }
+
+  /* ---------- 区块 ---------- */
+  .section { margin-bottom: 28px; }
+  .section-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .section-head h2 { font-size: 19px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .section-head .tag {
+    font-size: 11.5px; color: var(--muted); background: var(--card);
+    border: 1px solid var(--border); padding: 2px 10px; border-radius: 999px;
+  }
+  .section-head .spacer { flex: 1; }
+  .ghostlink {
+    font-size: 12.5px; color: var(--muted); cursor: pointer; background: none; border: 0;
+    padding: 4px 8px; border-radius: 7px; transition: all .14s;
+  }
+  .ghostlink:hover { color: var(--accent); background: rgba(108,140,255,0.1); }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+  .search {
+    flex: 1 1 240px; min-width: 190px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); padding: 10px 14px; font-size: 14px; outline: none;
+    transition: border-color .16s, box-shadow .16s;
+  }
+  .search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .search::placeholder { color: #515873; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    padding: 7px 13px; border-radius: 999px; font-size: 12.5px; cursor: pointer;
+    background: var(--card); border: 1px solid var(--border); color: var(--muted);
+    user-select: none; transition: all .14s; white-space: nowrap;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ---------- 音色网格 ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 12px; }
+  .voice {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 13px 13px 11px; transition: transform .12s, border-color .14s, background .14s;
+    box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 9px;
+  }
+  .voice:hover { transform: translateY(-2px); border-color: var(--accent); background: var(--card-hover); }
+  .voice:focus-within { border-color: var(--accent); }
+  .voice.is-kb { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+  .voice .name-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .voice .vname { font-family: var(--mono); font-size: 13.5px; font-weight: 600; word-break: break-all; }
+  .voice .vbadge {
+    font-size: 10.5px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(108,140,255,0.16); color: #aebaff; white-space: nowrap; flex: 0 0 auto;
+  }
+  .voice .vbadge.default { background: rgba(62,207,142,0.16); color: #8be9c0; }
+  .voice .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .btn {
+    border: 1px solid var(--border); background: var(--bg2); color: var(--text);
+    padding: 6.5px 10px; border-radius: 8px; font-size: 12.5px; cursor: pointer;
+    transition: all .13s; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); color: #fff; }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn.play { flex: 1 1 auto; }
+  .btn.play.playing { border-color: var(--green); color: var(--green); }
+  .btn.play.playing::before { content: "⏹ "; }
+  .btn.copy { color: var(--muted); }
+  .btn.copy:hover { color: var(--accent); border-color: var(--accent); }
+  .btn.copy.copied { color: var(--green); border-color: var(--green); }
+
+  .empty {
+    grid-column: 1 / -1; text-align: center; padding: 30px; color: var(--muted);
+    background: var(--card); border: 1px dashed var(--border); border-radius: var(--radius); font-size: 14px;
+    display: flex; flex-direction: column; gap: 10px; align-items: center;
+  }
+  .empty code { font-family: var(--mono); background: rgba(255,255,255,0.05); padding: 2px 7px; border-radius: 6px; font-size: 12.5px; color: var(--text); }
+  .empty .big { font-size: 26px; }
+  .empty p { margin: 0; }
+  .spinner {
+    display: inline-block; width: 15px; height: 15px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.18); border-top-color: var(--amber);
+    animation: spin 0.9s linear infinite; vertical-align: -2px; margin-right: 7px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- 历史 ---------- */
+  .history { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .hitem {
+    font-size: 11.5px; font-family: var(--mono); padding: 3px 9px; border-radius: 999px;
+    background: var(--card-2); border: 1px solid var(--border); color: var(--muted);
+    cursor: pointer; transition: all .13s; white-space: nowrap; max-width: 240px;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .hitem:hover { border-color: var(--accent); color: var(--text); }
+  .hitem .h-engine { color: var(--accent); margin-right: 4px; }
+  .hitem .h-lang { opacity: 0.7; margin-left: 3px; }
+
+  /* ---------- 弹层 ---------- */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(4,6,12,0.62); backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center; z-index: 200; padding: 20px;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    width: min(820px, 100%); max-height: 86vh; display: flex; flex-direction: column;
+    background: var(--bg2); border: 1px solid var(--border-2); border-radius: var(--radius);
+    box-shadow: 0 24px 70px rgba(0,0,0,0.6); overflow: hidden; animation: pop .18s ease;
+  }
+  @keyframes pop { from { transform: scale(0.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal .m-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    border-bottom: 1px solid var(--border); flex: 0 0 auto;
+  }
+  .modal .m-title { font-weight: 700; font-size: 15px; flex: 1; }
+  .modal .m-close {
+    border: 1px solid var(--border); background: var(--card); color: var(--muted);
+    width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 15px; line-height: 1;
+  }
+  .modal .m-close:hover { color: #fff; border-color: var(--red); }
+  .modal .m-body { padding: 16px 18px; overflow: auto; flex: 1 1 auto; }
+  .logbox {
+    background: #0a0c13; border: 1px solid var(--border); border-radius: 10px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap;
+    word-break: break-all; padding: 14px; color: #b9c0d6; min-height: 160px; max-height: 52vh; overflow: auto;
+  }
+  .logbox:empty::after { content: "（暂无日志内容）"; color: var(--muted); }
+  .m-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .m-toolbar .seg { display: flex; background: var(--card); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+  .m-toolbar .seg button {
+    background: none; border: 0; color: var(--muted); padding: 7px 14px; font-size: 12.5px; cursor: pointer;
+  }
+  .m-toolbar .seg button.active { background: var(--accent); color: #fff; }
+
+  /* ---------- toast ---------- */
+  #toast {
+    position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px);
+    background: #0e1016; border: 1px solid var(--accent); color: var(--text);
+    padding: 11px 18px; border-radius: 11px; font-size: 13.5px; box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none; transition: all .24s; z-index: 999; max-width: 92vw;
+    border-left: 3px solid var(--accent);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  footer { margin-top: 34px; color: var(--muted); font-size: 12.5px; line-height: 1.75; }
+  footer code {
+    font-family: var(--mono); background: var(--card);
+    border: 1px solid var(--border); padding: 1px 6px; border-radius: 6px; font-size: 11.5px;
+  }
+
+  @media (max-width: 720px) {
+    .diff { grid-template-columns: 1fr; }
+    header h1 { font-size: 22px; }
+    .liveclock { display: none; }
+    .gpu { margin-left: 0; }
+    .wrap { padding: 20px 14px 60px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">🎧</div>
+      <div>
+        <h1>TTS 音色试听台</h1>
+        <p class="subtitle">在本页启动 / 停止两套本地 TTS 服务，浏览、试听音色，并一键复制要填进「听书 App」的配置。</p>
+      </div>
+      <div class="liveclock" id="clock" aria-hidden="true"></div>
+    </div>
+
+    <div class="globalbar">
+      <button class="gbtn primary" id="gctrl" disabled>全部启动</button>
+      <span class="status" id="st-kokoro"><span class="dot"></span>检测中…</span>
+      <span class="status" id="st-indextts"><span class="dot"></span>检测中…</span>
+      <button class="gbtn" id="btn-logs">查看日志</button>
+      <span class="gpu hidden" id="gpu" title="GPU 显存 / 运算占用">
+        <span class="gpu-dot"></span><span id="gpu-text">GPU --</span>
+        <span class="gpu-bar"><i id="gpu-fill" style="width:0%"></i></span>
+      </span>
+    </div>
+  </header>
+
+  <!-- 两套后端面板 -->
+  <div class="diff">
+    <div class="panel" id="panel-kokoro">
+      <div class="k">Kokoro · 端口 8000 · <span id="ip-kokoro">http://…:8000</span></div>
+      <div class="t">⚡ 轻量 · CPU 实时合成</div>
+      <div class="d">103 个音色，支持中文与英文，适合低延迟逐段朗读。命名：<code>zf_</code> 中女 / <code>zm_</code> 中男 / <code>af_</code>·<code>am_</code> 美英 / <code>bf_</code>·<code>bm_</code> 英英。</div>
+      <div class="meta">
+        <span>PID：<span id="pid-kokoro">—</span></span>
+        <span>音色：<span id="cnt2-kokoro">—</span></span>
+      </div>
+      <div class="ctlrow">
+        <button class="ctlbtn" id="ctl-kokoro" disabled>…</button>
+      </div>
+    </div>
+    <div class="panel" id="panel-indextts">
+      <div class="k">IndexTTS 2.5 · 端口 8001 · <span id="ip-indextts">http://…:8001</span></div>
+      <div class="t">💎 高质量 · GPU 克隆音色</div>
+      <div class="d">克隆音色，音质更自然但合成较慢（启动需加载模型约 30 秒）。音色用 <code>voice_XX</code> 短名或 WAV 路径指定。</div>
+      <div class="meta">
+        <span>PID：<span id="pid-indextts">—</span></span>
+        <span>音色：<span id="cnt2-indextts">—</span></span>
+      </div>
+      <div class="ctlrow">
+        <button class="ctlbtn" id="ctl-indextts" disabled>…</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kokoro 区块 -->
+  <section class="section" id="sec-kokoro">
+    <div class="section-head">
+      <h2>⚡ Kokoro 音色</h2>
+      <span class="tag" id="cnt-kokoro"></span>
+      <span class="spacer"></span>
+      <button class="ghostlink" id="rand-kokoro">🎲 随机试听</button>
+    </div>
+    <div class="toolbar">
+      <input type="search" class="search" id="search-kokoro" placeholder="🔍 搜索音色名，例如 zf 或 maple…" aria-label="搜索 Kokoro 音色">
+      <div class="chips" id="chips-kokoro" role="group" aria-label="按类别筛选">
+        <span class="chip active" data-k="" tabindex="0" role="button" aria-pressed="true">全部</span>
+        <span class="chip" data-k="zh_f" tabindex="0" role="button" aria-pressed="false">中文女声 zf</span>
+        <span class="chip" data-k="zh_m" tabindex="0" role="button" aria-pressed="false">中文男声 zm</span>
+        <span class="chip" data-k="en_am" tabindex="0" role="button" aria-pressed="false">英文 (美式)</span>
+        <span class="chip" data-k="en_br" tabindex="0" role="button" aria-pressed="false">英文 (英式)</span>
+        <span class="chip" data-k="other" tabindex="0" role="button" aria-pressed="false">其他</span>
+      </div>
+    </div>
+    <div class="grid" id="grid-kokoro"></div>
+  </section>
+
+  <!-- IndexTTS 区块 -->
+  <section class="section" id="sec-indextts">
+    <div class="section-head">
+      <h2>💎 IndexTTS 2.5 音色</h2>
+      <span class="tag" id="cnt-indextts"></span>
+      <span class="spacer"></span>
+      <button class="ghostlink" id="rand-indextts">🎲 随机试听</button>
+    </div>
+    <div class="toolbar">
+      <input type="search" class="search" id="search-indextts" placeholder="🔍 搜索音色名…" aria-label="搜索 IndexTTS 音色">
+    </div>
+    <div class="grid" id="grid-indextts"></div>
+  </section>
+
+  <!-- 试听历史 -->
+  <section class="section" aria-label="试听历史">
+    <div class="section-head">
+      <h2>🕘 试听历史</h2>
+      <span class="tag" id="hist-hint">本会话</span>
+    </div>
+    <div class="history" id="history"><span class="empty-text" style="color:var(--muted);font-size:13px">暂无试听记录</span></div>
+  </section>
+
+  <footer>
+    <p>
+      使用说明：先在顶部启动需要的服务；每个音色提供「试听中文 / 试听英文」与「复制配置」（普通 / 完整说明）。
+      完整说明 = 服务器地址 + 模型名留空 + 音色；普通 = 可直接粘贴进 App 的多行文本。
+      IndexTTS 填 <code>voice_07</code> 这种去掉 <code>.wav</code> 的短名；Kokoro 用原始名。
+    </p>
+    <p>本页启动的服务会在后台运行（脱离本工具进程），关闭本页不影响它们；再次打开会自动识别已运行状态。若手机无法访问，请放行防火墙端口 8002（见 README.md）。</p>
+  </footer>
+</div>
+
+<!-- 日志弹层 -->
+<div class="overlay" id="log-overlay" role="dialog" aria-modal="true" aria-label="后端日志">
+  <div class="modal">
+    <div class="m-head">
+      <span class="m-title">📄 后端日志</span>
+      <button class="m-close" id="log-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="m-body">
+      <div class="m-toolbar">
+        <div class="seg" role="tablist">
+          <button class="active" data-engine="kokoro" role="tab">Kokoro</button>
+          <button data-engine="indextts" role="tab">IndexTTS</button>
+        </div>
+        <button class="btn copy" id="log-refresh">刷新</button>
+        <button class="btn copy" id="log-copy">复制日志</button>
+        <span style="color:var(--muted);font-size:12px" id="log-meta"></span>
+      </div>
+      <div class="logbox" id="logbox" tabindex="0" aria-label="日志内容">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var state = { kokoro: null, indextts: null };
+  var playingBtn = null;
+  var playingAudio = null;
+  var LAN_IP = "192.168.1.9";
+  var SAMPLE_ZH = "你好，欢迎使用本地语音合成。";
+  var SAMPLE_EN = "Hello, this is a voice preview.";
+  var POLL_MS = 4000;
+  var LOG_ENGINE = "kokoro";
+  var inFlight = false;           // 控制操作防抖锁
+  var lastAutoRefresh = 0;
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function toast(msg) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove("show"); }, 2800);
+  }
+  function kindLabel(k) {
+    return { zh_f: "中女", zh_m: "中男", en_am: "美英", en_br: "英英", other: "其他" }[k] || k;
+  }
+  function engineLabel(e) { return e === "kokoro" ? "Kokoro" : "IndexTTS 2.5"; }
+
+  /* ---------- 时钟 ---------- */
+  function tickClock() {
+    $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  }
+
+  /* ---------- 状态胶囊 ---------- */
+  function setStatus(key, mode, text) {
+    var el = $("st-" + key);
+    el.className = "status " + mode;
+    el.innerHTML = '<span class="dot"></span>' + esc(text);
+  }
+  function stateStatus(key, d) {
+    if (!d) { setStatus(key, "off", "🚫 未知"); return; }
+    if (d.state === "running") setStatus(key, "on", d.label + " · 运行中 · " + d.voices.length + " 音色");
+    else if (d.state === "starting") setStatus(key, "starting", d.label + " · 启动中…");
+    else if (d.state === "stopped") setStatus(key, "off", d.label + " · 已停止");
+    else setStatus(key, "off", d.label + " · " + d.state);
+  }
+
+  /* ---------- 面板 + 控制按钮 ---------- */
+  function syncCtlBtn(key, d) {
+    var btn = $("ctl-" + key);
+    var panel = $("panel-" + key);
+    if (!btn) return;
+    panel.classList.remove("running", "starting");
+    if (!d) {
+      btn.disabled = false; btn.textContent = "启动"; btn.className = "ctlbtn"; return;
+    }
+    if (d.state === "running") {
+      btn.disabled = false; btn.textContent = "停止"; btn.className = "ctlbtn stop"; panel.classList.add("running");
+    } else if (d.state === "starting") {
+      btn.disabled = true; btn.textContent = "启动中…"; btn.className = "ctlbtn"; panel.classList.add("starting");
+    } else {
+      btn.disabled = false; btn.textContent = "启动"; btn.className = "ctlbtn";
+    }
+  }
+
+  function syncMeta() {
+    $("pid-kokoro").textContent = state.kokoro ? (state.kokoro.pid || "—") : "—";
+    $("pid-indextts").textContent = state.indextts ? (state.indextts.pid || "—") : "—";
+    $("ip-kokoro").textContent = "http://" + LAN_IP + ":8000";
+    $("ip-indextts").textContent = "http://" + LAN_IP + ":8001";
+    syncGlobalCtrl();
+  }
+
+  /* 全局「全部启动/停止」按钮：据两端状态判定文案与动作 */
+  function syncGlobalCtrl() {
+    var btn = $("gctrl");
+    var k = state.kokoro, i = state.indextts;
+    if (!k || !i) { btn.disabled = true; btn.textContent = "全部启动"; return; }
+    btn.disabled = false;
+    var anyRunning = k.state === "running" || i.state === "running";
+    var anyStarting = k.state === "starting" || i.state === "starting";
+    if (anyStarting) { btn.disabled = true; btn.textContent = "启动中…"; btn.className = "gbtn"; return; }
+    if (anyRunning) { btn.textContent = "全部停止"; btn.className = "gbtn danger"; }
+    else { btn.textContent = "全部启动"; btn.className = "gbtn primary"; }
+  }
+
+  /* ---------- 控制（含防抖） ---------- */
+  function control(engine, action, onDone) {
+    if (inFlight) { toast("操作进行中，请稍候…"); return; }
+    inFlight = true;
+    // 视觉即时反馈
+    if (engine === "all") { $("gctrl").disabled = true; }
+    fetch("/api/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ engine: engine, action: action })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.ok) {
+          var label = engine === "all" ? "全部" : engineLabel(engine);
+          toast((action === "start" ? "已发起启动 " : "已停止 ") + label);
+          if (onDone) onDone(j);
+          load();
+          // 启动后稍作延时再刷新一次，等状态尽快收敛
+          if (action === "start") setTimeout(load, 1500);
+        } else {
+          toast("操作失败：" + (j.error || "未知错误"));
+        }
+      })
+      .catch(function (e) { toast("操作失败：" + e.message); })
+      .finally(function () { inFlight = false; });
+  }
+
+  /* ---------- 渲染 Kokoro ---------- */
+  var kokoroFilter = "";
+  function renderKokoro() {
+    var data = state.kokoro;
+    var grid = $("grid-kokoro");
+    grid.innerHTML = "";
+    if (!data || data.state === "stopped") {
+      grid.innerHTML = '<div class="empty"><span class="big">⚡</span><p>Kokoro 未启动 —— 点击上方「启动」按钮（CPU 服务，几秒即可就绪），或运行 <code>tts-server\\start.bat</code> 后刷新。</p></div>';
+      $("cnt-kokoro").textContent = "未启动";
+      return;
+    }
+    if (data.state === "starting") {
+      grid.innerHTML = '<div class="empty"><p><span class="spinner"></span>正在启动 Kokoro，请稍候…</p></div>';
+      $("cnt-kokoro").textContent = "启动中";
+      return;
+    }
+    var voices = data.voices;
+    var kw = $("search-kokoro").value.trim().toLowerCase();
+    var shown = 0;
+    for (var i = 0; i < voices.length; i++) {
+      var v = voices[i];
+      if (kokoroFilter && v.kind !== kokoroFilter) continue;
+      if (kw && v.name.toLowerCase().indexOf(kw) === -1) continue;
+      shown++;
+      grid.appendChild(voiceCard("kokoro", v.name, kindLabel(v.kind), data.port, false));
+    }
+    $("cnt-kokoro").textContent = shown + " / " + voices.length + " 个音色";
+    if (shown === 0) grid.innerHTML = '<div class="empty"><p>没有匹配的音色。</p></div>';
+  }
+
+  /* ---------- 渲染 IndexTTS ---------- */
+  function renderIndexTTS() {
+    var data = state.indextts;
+    var grid = $("grid-indextts");
+    grid.innerHTML = "";
+    if (!data || data.state === "stopped") {
+      grid.innerHTML = '<div class="empty"><span class="big">💎</span><p>IndexTTS 未启动 —— 点击上方「启动」按钮（GPU 服务，加载约 4GB 模型，需 15~35 秒），或运行 <code>start_indextts.bat</code> 后刷新。</p></div>';
+      $("cnt-indextts").textContent = "未启动";
+      return;
+    }
+    if (data.state === "starting") {
+      grid.innerHTML = '<div class="empty"><p><span class="spinner"></span>正在启动 IndexTTS（加载模型，需 15~35 秒），请稍候…</p></div>';
+      $("cnt-indextts").textContent = "启动中";
+      return;
+    }
+    var voices = data.voices;
+    var kw = $("search-indextts").value.trim().toLowerCase();
+    var shown = 0;
+    for (var i = 0; i < voices.length; i++) {
+      var v = voices[i];
+      if (kw && v.name.toLowerCase().indexOf(kw) === -1) continue;
+      shown++;
+      var isDefault = (v.name === data.default);
+      grid.appendChild(voiceCard("indextts", v.name, isDefault ? "默认" : "", data.port, isDefault));
+    }
+    $("cnt-indextts").textContent = shown + " / " + voices.length + " 个音色";
+    if (shown === 0) grid.innerHTML = '<div class="empty"><p>没有匹配的音色。</p></div>';
+  }
+
+  function refreshCounts() {
+    $("cnt2-kokoro").textContent = state.kokoro && state.kokoro.voices ? state.kokoro.voices.length + " 个" : "—";
+    $("cnt2-indextts").textContent = state.indextts && state.indextts.voices ? state.indextts.voices.length + " 个" : "—";
+  }
+
+  /* ---------- 音色卡片 ---------- */
+  function voiceCard(engine, name, badge, port, isDefault) {
+    var div = document.createElement("div");
+    div.className = "voice";
+    div.setAttribute("tabindex", "0");
+    div.setAttribute("role", "group");
+    div.setAttribute("aria-label", name + " 音色");
+
+    var nameRow = document.createElement("div");
+    nameRow.className = "name-row";
+    var nm = document.createElement("span");
+    nm.className = "vname";
+    nm.textContent = name;
+    nm.title = name;
+    nameRow.appendChild(nm);
+    if (badge) {
+      var b = document.createElement("span");
+      b.className = "vbadge" + (isDefault ? " default" : "");
+      b.textContent = badge;
+      nameRow.appendChild(b);
+    }
+    div.appendChild(nameRow);
+
+    var btns = document.createElement("div");
+    btns.className = "btns";
+    btns.appendChild(makePlayButton("试听中文", engine, name, "zh"));
+    btns.appendChild(makePlayButton("试听英文", engine, name, "en"));
+    var copyBtn = document.createElement("button");
+    copyBtn.className = "btn copy";
+    copyBtn.textContent = "复制配置";
+    copyBtn.setAttribute("aria-label", "复制 " + name + " 的配置");
+    copyBtn.addEventListener("click", function () { copyConfig(engine, name, port, copyBtn); });
+    btns.appendChild(copyBtn);
+    var copyFullBtn = document.createElement("button");
+    copyFullBtn.className = "btn copy";
+    copyFullBtn.textContent = "完整说明";
+    copyFullBtn.setAttribute("aria-label", "复制 " + name + " 的完整说明");
+    copyFullBtn.addEventListener("click", function () { copyConfigFull(engine, name, port, copyFullBtn); });
+    btns.appendChild(copyFullBtn);
+    div.appendChild(btns);
+    return div;
+  }
+
+  function makePlayButton(label, engine, voice, lang) {
+    var btn = document.createElement("button");
+    btn.className = "btn play";
+    btn.textContent = label;
+    btn._label = label;
+    btn.addEventListener("click", function () { playPreview(engine, voice, lang, btn); });
+    return btn;
+  }
+
+  /* ---------- 试听（播放独占） ---------- */
+  function playPreview(engine, voice, lang, btn) {
+    // 若重复点击正在播放的按钮：视为「停止」
+    if (playingBtn === btn && playingAudio) {
+      stopPlayback();
+      return;
+    }
+    stopPlayback();
+    var text = (lang === "zh") ? SAMPLE_ZH : SAMPLE_EN;
+    btn.classList.add("playing");
+    btn.textContent = "合成中…";
+    btn.setAttribute("aria-busy", "true");
+    playingBtn = btn;
+
+    fetch("/api/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ engine: engine, voice: voice, text: text, lang: lang })
+    })
+      .then(function (resp) {
+        if (!resp.ok) {
+          return resp.json().then(function (j) { throw new Error(j.error || ("HTTP " + resp.status)); })
+            .catch(function () { throw new Error("HTTP " + resp.status); });
+        }
+        return resp.blob();
+      })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = new Audio(url);
+        playingAudio = a;
+        a.onended = function () { resetBtn(); URL.revokeObjectURL(url); };
+        a.onerror = function () { resetBtn(); toast("音频播放失败"); };
+        a.onloadeddata = function () { refreshHistory(); };
+        btn.textContent = "播放中…";
+        a.play().catch(function () { resetBtn(); toast("自动播放被拦截，请再点一次"); });
+      })
+      .catch(function (e) { resetBtn(); toast("试听失败：" + e.message); });
+  }
+
+  function stopPlayback() {
+    if (playingAudio) { try { playingAudio.pause(); } catch (e) {} playingAudio = null; }
+    resetBtn();
+  }
+  function resetBtn() {
+    if (playingBtn) {
+      playingBtn.classList.remove("playing");
+      playingBtn.textContent = playingBtn._label;
+      playingBtn.removeAttribute("aria-busy");
+      playingBtn = null;
+    }
+  }
+
+  /* ---------- 复制配置 ---------- */
+  function copyText(text, btn) {
+    var done = function (ok) {
+      if (ok) {
+        if (btn) {
+          btn.classList.add("copied");
+          var old = btn.textContent;
+          btn.textContent = "已复制 ✓";
+          setTimeout(function () { btn.textContent = old; btn.classList.remove("copied"); }, 1500);
+        }
+      } else {
+        toast("复制失败，请手动复制");
+      }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(true); } catch (e) { done(false); }
+      document.body.removeChild(ta);
+    }
+  }
+  function copyConfig(engine, voice, port, btn) {
+    var text = "服务器地址: http://" + LAN_IP + ":" + port + "\n音色/voice: " + voice;
+    copyText(text, btn);
+  }
+  function copyConfigFull(engine, voice, port, btn) {
+    var text =
+      "服务器地址: http://" + LAN_IP + ":" + port + "\n" +
+      "模型名称: （留空即可）\n" +
+      "音色/voice: " + voice + "\n" +
+      "引擎: " + engineLabel(engine) + "\n" +
+      "说明: 由 TTS 音色试听台生成";
+    copyText(text, btn);
+  }
+
+  /* ---------- GPU ---------- */
+  function renderGpu(g) {
+    var el = $("gpu");
+    if (!g || g.unavailable) { el.classList.add("hidden"); return; }
+    el.classList.remove("hidden");
+    $("gpu-text").textContent = "GPU " + g.memory_pct + "% · " + Math.round(g.util) + "%";
+    $("gpu-fill").style.width = Math.min(100, g.memory_pct) + "%";
+  }
+
+  /* ---------- 试听历史 ---------- */
+  var historyCache = [];
+  function refreshHistory() {
+    fetch("/api/history")
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        historyCache = j.history || [];
+        renderHistory();
+      })
+      .catch(function () {});
+  }
+  function renderHistory() {
+    var box = $("history");
+    box.innerHTML = "";
+    if (!historyCache.length) {
+      box.innerHTML = '<span style="color:var(--muted);font-size:13px">暂无试听记录</span>';
+      return;
+    }
+    // 新→旧展示
+    for (var i = historyCache.length - 1; i >= 0; i--) {
+      (function (h) {
+        var el = document.createElement("button");
+        el.className = "hitem";
+        el.title = "点击重听";
+        var t = new Date(h.time * 1000).toLocaleTimeString("zh-CN", { hour12: false });
+        el.innerHTML = '<span style="color:var(--muted)">' + esc(t) + '</span> <span class="h-engine">' + esc(h.engine === "kokoro" ? "K" : "I") + '</span> ' +
+          esc(h.voice) + ' <span class="h-lang">' + (h.lang === "zh" ? "中" : "英") + '</span>';
+        el.addEventListener("click", function () { replay(h); });
+        box.appendChild(el);
+      })(historyCache[i]);
+    }
+  }
+  function replay(h) {
+    var text = (h.lang === "zh") ? SAMPLE_ZH : SAMPLE_EN;
+    stopPlayback();
+    toast("重听 " + h.voice + "…");
+    fetch("/api/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ engine: h.engine, voice: h.voice, text: text, lang: h.lang })
+    })
+      .then(function (resp) {
+        if (!resp.ok) { return resp.json().then(function (j) { throw new Error(j.error || "HTTP " + resp.status); }); }
+        return resp.blob();
+      })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = new Audio(url);
+        playingAudio = a;
+        a.onended = function () { URL.revokeObjectURL(url); };
+        a.play().catch(function () { toast("自动播放被拦截"); });
+      })
+      .catch(function (e) { toast("重听失败：" + e.message); });
+  }
+
+  /* ---------- 随机试听 ---------- */
+  function randomPreview(engine) {
+    var data = state[engine];
+    if (!data || data.state !== "running" || !data.voices || !data.voices.length) {
+      toast(engineLabel(engine) + " 未运行或无音色，请先启动");
+      return;
+    }
+    if (playingAudio || playingBtn) stopPlayback();
+    var v = data.voices[Math.floor(Math.random() * data.voices.length)];
+    var lang = (engine === "kokoro") ? (Math.random() < 0.5 ? "zh" : "en") : "zh";
+    toast("随机试听 " + v.name + "（" + (lang === "zh" ? "中" : "英") + "）");
+    playPreview(engine, v.name, lang, null);
+  }
+
+  /* ---------- 日志弹层 ---------- */
+  function openLogs(engine) {
+    if (engine) LOG_ENGINE = engine;
+    $("log-overlay").classList.add("open");
+    var segs = document.querySelectorAll("#log-overlay .seg button");
+    for (var i = 0; i < segs.length; i++) {
+      segs[i].classList.toggle("active", segs[i].getAttribute("data-engine") === LOG_ENGINE);
+    }
+    loadLogs();
+    setTimeout(function () { $("logbox").focus(); }, 50);
+  }
+  function closeLogs() { $("log-overlay").classList.remove("open"); }
+  function loadLogs() {
+    $("logbox").textContent = "加载中…";
+    fetch("/api/logs?engine=" + LOG_ENGINE)
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        $("logbox").textContent = j.log || "";
+        $("log-meta").textContent = (j.log ? j.log.length + " 字符" : "空") + (j.log ? " · " + j.label : "");
+      })
+      .catch(function (e) { $("logbox").textContent = "日志读取失败：" + e.message; });
+  }
+  function copyLog() {
+    copyText($("logbox").textContent || "", null);
+    toast("日志已复制");
+  }
+
+  /* ---------- 加载 / 轮询 ---------- */
+  function load() {
+    fetch("/api/voices")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        state.kokoro = data.kokoro;
+        state.indextts = data.indextts;
+        if (data.lan_ip) {
+          LAN_IP = data.lan_ip;
+          $("ip-kokoro").textContent = "http://" + LAN_IP + ":8000";
+          $("ip-indextts").textContent = "http://" + LAN_IP + ":8001";
+        }
+        if (data.sample_zh) SAMPLE_ZH = data.sample_zh;
+        if (data.sample_en) SAMPLE_EN = data.sample_en;
+        renderGpu(data.gpu);
+        stateStatus("kokoro", state.kokoro);
+        stateStatus("indextts", state.indextts);
+        syncCtlBtn("kokoro", state.kokoro);
+        syncCtlBtn("indextts", state.indextts);
+        syncMeta();
+        refreshCounts();
+        renderKokoro();
+        renderIndexTTS();
+      })
+      .catch(function (e) {
+        setStatus("kokoro", "off", "获取失败");
+        setStatus("indextts", "off", "获取失败");
+        toast("无法连接试听台服务：" + e.message);
+      });
+  }
+
+  /* ---------- 搜索防抖 ---------- */
+  function debounce(fn, wait) {
+    var t;
+    return function () {
+      var args = arguments, ctx = this;
+      clearTimeout(t);
+      t = setTimeout(function () { fn.apply(ctx, args); }, wait);
+    };
+  }
+
+  /* ---------- 事件绑定 ---------- */
+  function bind() {
+    var dk = debounce(renderKokoro, 180);
+    var di = debounce(renderIndexTTS, 180);
+    $("search-kokoro").addEventListener("input", dk);
+    $("search-indextts").addEventListener("input", di);
+
+    var chips = $("chips-kokoro").querySelectorAll(".chip");
+    function selectChip(c) {
+      for (var j = 0; j < chips.length; j++) {
+        chips[j].classList.remove("active");
+        chips[j].setAttribute("aria-pressed", "false");
+      }
+      c.classList.add("active");
+      c.setAttribute("aria-pressed", "true");
+      kokoroFilter = c.getAttribute("data-k");
+      renderKokoro();
+    }
+    for (var i = 0; i < chips.length; i++) {
+      (function (c) {
+        c.addEventListener("click", function () { selectChip(c); });
+        c.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectChip(c); }
+        });
+      })(chips[i]);
+    }
+
+    $("ctl-kokoro").addEventListener("click", function () {
+      var d = state.kokoro;
+      control("kokoro", (d && d.state === "running") ? "stop" : "start");
+    });
+    $("ctl-indextts").addEventListener("click", function () {
+      var d = state.indextts;
+      control("indextts", (d && d.state === "running") ? "stop" : "start");
+    });
+    $("gctrl").addEventListener("click", function () {
+      var k = state.kokoro, i = state.indextts;
+      if (!k || !i) return;
+      var anyRunning = k.state === "running" || i.state === "running";
+      control("all", anyRunning ? "stop" : "start");
+    });
+
+    $("rand-kokoro").addEventListener("click", function () { randomPreview("kokoro"); });
+    $("rand-indextts").addEventListener("click", function () { randomPreview("indextts"); });
+
+    $("btn-logs").addEventListener("click", function () { openLogs(); });
+    $("log-close").addEventListener("click", closeLogs);
+    $("log-overlay").addEventListener("click", function (e) {
+      if (e.target === $("log-overlay")) closeLogs();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && $("log-overlay").classList.contains("open")) closeLogs();
+    });
+    var segs = document.querySelectorAll("#log-overlay .seg button");
+    for (var s = 0; s < segs.length; s++) {
+      (function (b) {
+        b.addEventListener("click", function () { LOG_ENGINE = b.getAttribute("data-engine"); openLogs(LOG_ENGINE); });
+      })(segs[s]);
+    }
+    $("log-refresh").addEventListener("click", loadLogs);
+    $("log-copy").addEventListener("click", copyLog);
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    bind();
+    tickClock();
+    setInterval(tickClock, 1000);
+    load();
+    refreshHistory();
+    setInterval(load, POLL_MS);
+    setInterval(refreshHistory, 8000);
+  });
+})();
+</script>
+</body>
+</html>

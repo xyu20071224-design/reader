@@ -5,6 +5,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Plain text for one chapter, split into sentences for TTS playback.
@@ -16,13 +17,29 @@ import java.io.File
 data class TtsChapter(
     val chapterIndex: Int,
     val title: String,
-    val blocks: List<String>
+    val blocks: List<String>,
+    /** Per-sentence speaker tags, parallel to [sentences] (M1 multi-voice).
+     *  Empty means every sentence is "narrator" (pre-M1 caches, no tagger). */
+    val speakers: List<String> = emptyList()
 ) {
     private val sentencesByBlock: List<List<String>> = blocks.map { SentenceSplitter.split(it) }
 
     val sentences: List<String> get() = sentencesByBlock.flatten()
 
     val sentenceCount: Int get() = sentencesByBlock.sumOf { it.size }
+
+    /** Speaker of the flat [sentenceIndex]-th sentence; "narrator" when the
+     *  chapter carries no speaker tags (M1: "narrator" vs everything else). */
+    fun speakerAt(sentenceIndex: Int): String =
+        speakers.getOrNull(sentenceIndex)?.takeIf { it.isNotBlank() } ?: "narrator"
+
+    /**
+     * The same chapter with refined speaker tags (M2: the LLM tagger upgrades
+     * the rule-layer tags asynchronously). A list that is not parallel to the
+     * sentences is refused, so a stale answer can never shift voices.
+     */
+    fun withSpeakers(speakers: List<String>): TtsChapter =
+        if (speakers.size == sentenceCount) copy(speakers = speakers) else this
 
     /** Flat sentence index for a tapped position inside one block. */
     fun sentenceIndexAt(blockText: String, blockOffset: Int): Int? {
@@ -71,9 +88,12 @@ data class TtsChapter(
         var remaining = sentenceIndex.coerceAtLeast(0)
         for ((blockIndex, blockSentences) in sentencesByBlock.withIndex()) {
             if (remaining < blockSentences.size) {
-                val sentence = blockSentences[remaining]
                 var cursor = 0
                 for (i in 0..remaining) {
+                    // Advance the cursor past each *preceding* sentence in the
+                    // block; searching for the target sentence itself on every
+                    // iteration makes every non-first sentence return null.
+                    val sentence = blockSentences[i]
                     val found = blocks[blockIndex].indexOf(sentence, cursor)
                     if (found < 0) return null
                     if (i == remaining) return Triple(blockIndex, found, sentence.length)
@@ -112,7 +132,9 @@ data class TtsChapter(
  * Results are cached per (book id, chapter index) for a session.
  */
 class TtsTextExtractor {
-    private val cache = mutableMapOf<Pair<String, Int>, TtsChapter>()
+    // Concurrent: chapters are extracted on the IO dispatcher while the M2
+    // speaker tagger writes refined tags back from its own coroutine.
+    private val cache = ConcurrentHashMap<Pair<String, Int>, TtsChapter>()
 
     fun chapter(book: Book, chapterIndex: Int): TtsChapter {
         val key = book.id to chapterIndex
@@ -123,11 +145,23 @@ class TtsTextExtractor {
         val blocks = leafBlocks(document)
             .map { it.text().replace(Regex("\\s+"), " ").trim() }
             .filter { it.isNotBlank() }
-        return TtsChapter(safeIndex, chapter.title, blocks).also { cache[key] = it }
+        val speakers = SpeakerRuleTagger.tag(blocks)
+        return TtsChapter(safeIndex, chapter.title, blocks, speakers).also { cache[key] = it }
     }
 
     fun clear() {
         cache.clear()
+    }
+
+    /**
+     * Applies refined speaker tags (M2 LLM layer) to a cached chapter, so the
+     * next load of that chapter already carries them. A chapter that is not
+     * cached, or a tag list of the wrong length, is ignored.
+     */
+    fun applySpeakers(bookId: String, chapterIndex: Int, speakers: List<String>) {
+        val key = bookId to chapterIndex
+        val cached = cache[key] ?: return
+        cache[key] = cached.withSpeakers(speakers)
     }
 
     private fun leafBlocks(document: Document): List<Element> {

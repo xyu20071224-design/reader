@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.linguareader.app.data.Book
 import com.linguareader.app.tts.AzureSpeechClient
 import com.linguareader.app.tts.AzureVoice
 import com.linguareader.app.tts.CloudTtsSettings
@@ -57,9 +58,9 @@ import java.io.File
 /** Settings for the optional cloud TTS engines (F-151). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
+internal fun ListeningSettingsSheet(onDismiss: () -> Unit, book: Book? = null) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
-        ListeningSettingsBody(onDismiss = onDismiss, onSaved = onDismiss)
+        ListeningSettingsBody(onDismiss = onDismiss, onSaved = onDismiss, book = book)
     }
 }
 
@@ -69,9 +70,16 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit) {
  *
  * @param onDismiss optional dismiss callback; when null the cancel button is hidden.
  * @param onSaved invoked after a successful save (e.g. close the sheet).
+ * @param books shelf books, so the multi-voice section can pick one (AI drawer).
+ * @param book the book being read, if any; its characters are shown directly.
  */
 @Composable
-internal fun ListeningSettingsBody(onDismiss: (() -> Unit)?, onSaved: () -> Unit) {
+internal fun ListeningSettingsBody(
+    onDismiss: (() -> Unit)?,
+    onSaved: () -> Unit,
+    books: List<Book> = emptyList(),
+    book: Book? = null
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var settings by remember { mutableStateOf(CloudTtsSettings.load(context)) }
@@ -419,6 +427,24 @@ internal fun ListeningSettingsBody(onDismiss: (() -> Unit)?, onSaved: () -> Unit
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = settings.narratorVoice,
+                    onValueChange = { settings = settings.copy(narratorVoice = it.trim()) },
+                    label = { Text("旁白音色 Narrator（可选）") },
+                    supportingText = { Text("多角色听书 M1：旁白句子用此音色；留空则跟随上方「音色/voice」") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = settings.dialogueVoice,
+                    onValueChange = { settings = settings.copy(dialogueVoice = it.trim()) },
+                    label = { Text("对白音色 Dialogue（可选）") },
+                    supportingText = { Text("引号内对白用此音色；两个都留空 = 单音色模式（原有行为）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = ::testServer, enabled = !busy) {
                     Text("测试连接")
@@ -493,6 +519,14 @@ internal fun ListeningSettingsBody(onDismiss: (() -> Unit)?, onSaved: () -> Unit
                     )
                 }
             }
+
+            // Multi-voice M4: switch + narrator/character voices (§8).
+            MultiVoiceSection(
+                settings = settings,
+                onSettingsChange = { settings = it },
+                books = books,
+                preselectedBook = book
+            )
 
             if (settings.mode != TtsEngineMode.SYSTEM && settings.mode != TtsEngineMode.PIPER) {
                 Spacer(Modifier.height(14.dp))

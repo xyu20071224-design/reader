@@ -59,7 +59,9 @@ class SherpaTtsSynthesizer(
 
     override val isReady: Boolean get() = ready
 
-    override fun speak(text: String, rate: Float, utteranceId: String) {
+    override fun speak(text: String, rate: Float, utteranceId: String, voice: String?) {
+        // Piper ignores per-utterance voice (only 2 bundled voices, auto
+        // switched by language) — multi-voice is disabled for it (D2).
         if (!ready || text.isBlank()) return
         val gen = ++generation
         scope.launch {

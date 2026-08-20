@@ -13,6 +13,7 @@ import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.ai.BookGlossaryRepository
 import com.linguareader.app.ai.BookContextRepository
 import com.linguareader.app.ai.GlossaryEntry
+import com.linguareader.app.ai.SpeakerTagRepository
 import com.linguareader.app.ai.SentenceTranslatorFactory
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
@@ -70,6 +71,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val aiSettingsStore = AiSettingsStore(application)
     private val aiRepository = BookContextRepository(application, aiSettingsStore)
     private val glossaryRepository = BookGlossaryRepository(application)
+    /** Multi-voice M2: per-chapter speaker tag cache (invalidated with the profile). */
+    private val speakerTagRepository =
+        SpeakerTagRepository(application, aiSettingsStore, glossaryRepository)
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
 
@@ -180,9 +184,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             library.deleteBook(book)
             aiRepository.delete(book.id)
             glossaryRepository.delete(book.id)
+            speakerTagRepository.delete(book.id)
             // Cloud TTS chapter audio cache is per book; remove it with the book.
             File(getApplication<Application>().filesDir, "tts_cache/${book.id}")
                 .deleteRecursively()
+            // Multi-voice M3: the per-book character → voice mapping goes too.
+            File(getApplication<Application>().filesDir, "voice_maps/${book.id}.json").delete()
             refresh()
         }
     }
@@ -225,6 +232,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { aiRepository.generate(book, force = true) }
                 .onSuccess { profile ->
                     runCatching { glossaryRepository.importFromProfile(book.id, profile) }
+                    // A fresh profile means a fresh character roster, so cached
+                    // chapter speaker tags are re-requested on demand (M2).
+                    speakerTagRepository.delete(book.id)
                     setAiStatus(book.id, AiBookStatus(ready = true))
                 }
                 .onFailure {

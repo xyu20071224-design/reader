@@ -13,7 +13,8 @@ import java.net.URL
  * The endpoint is OpenAI-compatible, so [AiSettings.baseUrl] and [AiSettings.model]
  * are configurable; the default points at https://api.deepseek.com.
  */
-class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, SentenceTranslator {
+class DeepSeekTranslator(private val settings: AiSettings) :
+    AiTranslator, SentenceTranslator, AiChatClient {
     override val id = "deepseek"
     override val displayName = "DeepSeek"
     override val offline = false
@@ -87,6 +88,14 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
         }
     }
 
+    /**
+     * Shared JSON chat entry point (D1). The speaker tagger drives its own
+     * prompts through this method, so retries, JSON recovery and error
+     * reporting stay identical to the context-profile path.
+     */
+    override suspend fun chatJson(system: String, user: String): JSONObject =
+        chat(system = system, user = user, jsonMode = true)
+
     // --- book context -------------------------------------------------------
 
     private fun chapterSegments(chapters: List<ChapterText>): List<List<ChapterText>> {
@@ -152,6 +161,16 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
             return (0 until array.length()).mapNotNull { array.optString(it).trim().takeIf(String::isNotBlank) }
         }
 
+        // Multi-voice M2 (D1): the book profile carries the voice-facing
+        // character table produced by the same request.
+        val profiles = json.optJSONArray("characterProfiles")?.let { array ->
+            (0 until array.length()).mapNotNull { index ->
+                array.optJSONObject(index)
+                    ?.let(CharacterProfile::fromJson)
+                    ?.takeIf { it.name.isNotBlank() }
+            }
+        }.orEmpty()
+
         return BookContextProfile(
             bookId = "",
             bookTitle = "",
@@ -159,6 +178,7 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
             characters = terms("characters"),
             places = terms("places"),
             glossary = terms("glossary"),
+            characterProfiles = profiles,
             styleNotes = strings("styleNotes")
         )
     }
@@ -184,6 +204,14 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
             return byKey.values.take(120)
         }
 
+        val characterProfiles = linkedMapOf<String, CharacterProfile>()
+        partials.flatMap { it.characterProfiles }.forEach { profile ->
+            if (profile.name.isBlank()) return@forEach
+            val existing = characterProfiles[profile.key]
+            characterProfiles[profile.key] =
+                existing?.mergedWith(profile) ?: profile
+        }
+
         return BookContextProfile(
             bookId = "",
             bookTitle = bookTitle,
@@ -191,6 +219,7 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
             characters = mergeTerms(partials.map { it.characters }),
             places = mergeTerms(partials.map { it.places }),
             glossary = mergeTerms(partials.map { it.glossary }),
+            characterProfiles = characterProfiles.values.take(60),
             styleNotes = styleNotes.take(16),
             source = "deepseek"
         )
@@ -336,13 +365,18 @@ class DeepSeekTranslator(private val settings: AiSettings) : AiTranslator, Sente
                 )
 
         private const val CONTEXT_SYSTEM_PROMPT =
-            "你是一个英语阅读辅助工具。阅读用户提供的英文书籍章节，提取翻译语境信息。" +
+            "你是一个英语阅读辅助工具。阅读用户提供的英文书籍章节，提取翻译语境信息，并顺带整理有台词的角色画像（用于听书多音色分配）。" +
                 "只输出 JSON 对象，不要输出其他内容。JSON 结构：{\"summary\":\"全书/本节剧情与主题概述（中文，2-4句）\"," +
                 "\"characters\":[{\"term\":\"英文名\",\"translation\":\"中文译名（无则留空）\",\"note\":\"角色说明\"}]," +
                 "\"places\":[{\"term\":\"英文地名/机构名\",\"translation\":\"中文译名（无则留空）\",\"note\":\"说明\"}]," +
                 "\"glossary\":[{\"term\":\"英文术语或反复出现的词\",\"translation\":\"本书语境译法\",\"note\":\"说明\"}]," +
+                "\"characterProfiles\":[{\"name\":\"英文名（必须与 characters 中的 term 完全一致）\"," +
+                "\"aliases\":[\"别名/尊称/昵称\"],\"gender\":\"male|female|unknown\"," +
+                "\"ageGroup\":\"child|young|adult|elderly|unknown\",\"style\":[\"声音风格词，如 calm/deep/lively\"]," +
+                "\"importance\":\"major|medium|minor\",\"language\":\"en|zh\",\"confidence\":0.9}]," +
                 "\"styleNotes\":[\"文体/语气说明（口语、正式、方言、叙述风格等）\"]}。" +
-                "术语列表控制在每项 8-15 条以内，优先保留对翻译影响大的专名与关键词。"
+                "术语列表控制在每项 8-15 条以内，优先保留对翻译影响大的专名与关键词；" +
+                "characterProfiles 只列本节有台词或被称呼的角色（不超过 12 个），无法判断的字段留空或写 unknown。"
 
         private const val TRANSLATE_SYSTEM_PROMPT =
             "你是一个英语阅读辅助工具。用户读英文书时点击一个单词，需要你结合该书语境给出最贴合的中文释义。" +

@@ -33,9 +33,12 @@ data class SystemVoiceInfo(
     companion object {
         private val CHINESE_LANGUAGE_CODES = setOf(
             "zh", "cmn", "yue", "hak", "wuu", "nan",
-            "cjy", "cpx", "gan", "hsn", "lzh", "czh", "czo", "mnp"
+            "cjy", "cpx", "gan", "hsn", "lzh", "czh", "czo", "mnp",
+            // OPPO/ColorOS "TTS Accessibility Engine" reports Chinese voices
+            // with the non-standard code "chn" (and English with "usa").
+            "chn"
         )
-        private val ENGLISH_LANGUAGE_CODES = setOf("en", "eng")
+        private val ENGLISH_LANGUAGE_CODES = setOf("en", "eng", "usa")
     }
 }
 

@@ -33,4 +33,54 @@ class OpenAiCompatTtsBackendTest {
         assertEquals("default", blank.voiceFor("anything"))
         assertTrue(blank.isConfigured().not())
     }
+
+    @Test
+    fun voiceListParsingAcceptsEveryServerShape() {
+        // Local Kokoro wrapper: {"voices":[...]}
+        assertEquals(
+            listOf("af_maple", "zf_001"),
+            OpenAiCompatTtsBackend
+                .parseVoiceList("{\"voices\":[\"af_maple\",\"zf_001\"],\"count\":2}")
+                .map { it.id }
+        )
+        // OpenAI style: {"data":[{"id":…}]}
+        assertEquals(
+            listOf("alloy", "echo"),
+            OpenAiCompatTtsBackend
+                .parseVoiceList("{\"data\":[{\"id\":\"alloy\"},{\"id\":\"echo\"}]}")
+                .map { it.id }
+        )
+        // Bare array, objects carrying only a name, duplicates collapsed.
+        assertEquals(
+            listOf("x", "y"),
+            OpenAiCompatTtsBackend.parseVoiceList("[\"x\",\"y\",\"x\"]").map { it.id }
+        )
+        assertEquals(
+            listOf("named"),
+            OpenAiCompatTtsBackend.parseVoiceList("[{\"name\":\"named\"}]").map { it.id }
+        )
+        // Unusable payloads never break the library build.
+        assertTrue(OpenAiCompatTtsBackend.parseVoiceList("not json").isEmpty())
+        assertTrue(OpenAiCompatTtsBackend.parseVoiceList("{}").isEmpty())
+        assertTrue(OpenAiCompatTtsBackend.parseVoiceList("").isEmpty())
+    }
+
+    @Test
+    fun voiceListKeepsCloneMetadataWhenTheServerProvidesIt() {
+        // M1.5: the IndexTTS wrapper describes each clone voice, so the M3
+        // assigner can hard-filter it by language and gender.
+        val voices = OpenAiCompatTtsBackend.parseVoiceList(
+            "{\"voices\":[{\"id\":\"clone_gandalf.wav\",\"language\":\"en\"," +
+                "\"gender\":\"male\",\"style\":[\"deep\",\"calm\"]}," +
+                "{\"id\":\"voice_03.wav\"}],\"default\":\"voice_03.wav\"}"
+        )
+        assertEquals(2, voices.size)
+        val clone = voices.first()
+        assertEquals("clone_gandalf.wav", clone.id)
+        assertEquals("en", clone.language)
+        assertEquals("male", clone.gender)
+        assertEquals(listOf("deep", "calm"), clone.style)
+        // A bare entry stays metadata-free and is filled by the naming priors.
+        assertEquals(ServerVoice("voice_03.wav"), voices[1])
+    }
 }

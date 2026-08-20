@@ -111,9 +111,35 @@ class BookGlossaryRepository(private val context: Context) {
                     }
                 }
 
-                profile.characters.forEach { import(it, "character") }
+                profile.characters.forEach { import(it, GlossaryEntry.KIND_CHARACTER) }
                 profile.places.forEach { import(it, "place") }
                 profile.glossary.forEach { import(it, "glossary") }
+
+                // Multi-voice M2 (PLAN-MULTI-VOICE §7): the profile also carries
+                // voice-facing character attributes (aliases / gender / age /
+                // style / importance). They are merged onto the very same
+                // character entries, so the roster the speaker tagger validates
+                // against is the glossary the user can edit - and manual values
+                // are never overwritten.
+                profile.characterProfiles.forEach { characterProfile ->
+                    val name = characterProfile.name.trim()
+                    if (name.isBlank()) return@forEach
+                    val key = name.lowercase()
+                    val existing = merged[key]
+                    // Never re-kind a place/glossary entry into a character.
+                    if (existing != null && existing.kind != GlossaryEntry.KIND_CHARACTER) {
+                        return@forEach
+                    }
+                    val base = existing ?: GlossaryEntry(
+                        term = name,
+                        kind = GlossaryEntry.KIND_CHARACTER,
+                        origin = "auto"
+                    )
+                    val updated = base.mergeProfile(characterProfile)
+                    if (updated != existing) {
+                        merged[key] = updated.copy(updatedAt = System.currentTimeMillis())
+                    }
+                }
                 write(bookId, BookGlossary(bookId, merged.values.toList()))
             }
         }

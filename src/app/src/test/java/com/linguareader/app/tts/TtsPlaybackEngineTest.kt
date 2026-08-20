@@ -18,7 +18,12 @@ import kotlin.test.assertTrue
  */
 class TtsPlaybackEngineTest {
 
-    private data class Spoken(val text: String, val rate: Float, val utteranceId: String)
+    private data class Spoken(
+        val text: String,
+        val rate: Float,
+        val utteranceId: String,
+        val voice: String? = null
+    )
 
     private class FakeTtsSynthesizer(
         val listener: TtsSynthesizerListener,
@@ -27,8 +32,8 @@ class TtsPlaybackEngineTest {
         val spoken = mutableListOf<Spoken>()
         var stopped = 0
         var shutdown = 0
-        override fun speak(text: String, rate: Float, utteranceId: String) {
-            spoken += Spoken(text, rate, utteranceId)
+        override fun speak(text: String, rate: Float, utteranceId: String, voice: String?) {
+            spoken += Spoken(text, rate, utteranceId, voice)
         }
         override fun stop() { stopped++ }
         override fun shutdown() { shutdown++ }
@@ -48,8 +53,8 @@ class TtsPlaybackEngineTest {
         var stopped = 0
         var shutdown = 0
         var prepareCalls = 0
-        override fun speak(text: String, rate: Float, utteranceId: String) {
-            spoken += Spoken(text, rate, utteranceId)
+        override fun speak(text: String, rate: Float, utteranceId: String, voice: String?) {
+            spoken += Spoken(text, rate, utteranceId, voice)
         }
         override fun stop() { stopped++ }
         override fun shutdown() { shutdown++ }
@@ -73,7 +78,8 @@ class TtsPlaybackEngineTest {
         factory: (TtsSynthesizerListener) -> TtsSynthesizer,
         isSystem: (TtsSynthesizer) -> Boolean,
         chapters: suspend (Book, Int) -> TtsChapter,
-        readerLoaded: (String) -> Int? = { null }
+        readerLoaded: (String) -> Int? = { null },
+        voiceForSpeaker: (String, String) -> String? = { _, _ -> null }
     ) {
         val synthesizers = mutableListOf<TtsSynthesizer>()
         private val recordingFactory: (TtsSynthesizerListener) -> TtsSynthesizer = { l ->
@@ -93,7 +99,8 @@ class TtsPlaybackEngineTest {
             onProgressSave = { b, c, s -> progressSaves += Triple(b.id, c, s) },
             onState = { states += it },
             dispatcher = dispatcher,
-            readerLoadedChapterFor = readerLoaded
+            readerLoadedChapterFor = readerLoaded,
+            voiceForSpeaker = voiceForSpeaker
         )
         val state: TtsPlaybackState get() = states.last()
         val synthesizer: TtsSynthesizer get() = synthesizers.first()
@@ -141,6 +148,114 @@ class TtsPlaybackEngineTest {
         assertEquals(0, h.state.highlightBlockIndex)
         assertEquals(0, h.state.highlightOffset)
         assertEquals("Hello.".length, h.state.highlightLength)
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun appliesRefinedSpeakerTagsMidPlayback() = runTest {
+        // M2: the LLM tagger answers after playback started; the refined tags
+        // are applied to the loaded chapter without touching the queue, so the
+        // next sentence is spoken with its character voice.
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val loaded = TtsChapter(
+            0, "Ch0",
+            blocks = listOf("She nodded. \"Yes,\" she said."),
+            speakers = listOf("narrator", "dialogue")
+        )
+        val h = Harness(
+            dispatcher = dispatcher,
+            factory = { l -> FakeTtsSynthesizer(l) },
+            isSystem = { it is FakeTtsSynthesizer },
+            chapters = { _, _ -> loaded },
+            voiceForSpeaker = { speaker, _ ->
+                when (speaker) {
+                    "narrator" -> "af_maple"
+                    "Gandalf" -> "am_onyx"
+                    else -> "af_sol"
+                }
+            }
+        )
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+        val fake = h.synthesizer as FakeTtsSynthesizer
+        assertEquals("af_maple", fake.spoken[0].voice)
+
+        h.engine.applySpeakerTags("b1", 0, listOf("narrator", "Gandalf"))
+        testScheduler.advanceUntilIdle()
+        fake.emitStart("b1:0:0:1")
+        fake.emitDone("b1:0:0:1")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(2, fake.spoken.size)
+        assertEquals("am_onyx", fake.spoken[1].voice)
+        assertEquals("Gandalf", h.engine.currentChapter?.speakerAt(1))
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun ignoresStaleOrMismatchedSpeakerTags() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val loaded = TtsChapter(
+            0, "Ch0",
+            blocks = listOf("She nodded. \"Yes,\" she said."),
+            speakers = listOf("narrator", "dialogue")
+        )
+        val h = plainHarness(dispatcher, { _, _ -> loaded })
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+
+        // Another book, another chapter, and a list of the wrong length: all
+        // dropped, so voices can never shift onto the wrong sentences.
+        h.engine.applySpeakerTags("other", 0, listOf("Gandalf", "Gandalf"))
+        h.engine.applySpeakerTags("b1", 3, listOf("Gandalf", "Gandalf"))
+        h.engine.applySpeakerTags("b1", 0, listOf("Gandalf"))
+        testScheduler.advanceUntilIdle()
+
+        assertEquals("dialogue", h.engine.currentChapter?.speakerAt(1))
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun passesPerSpeakerVoiceToSynthesizer() = runTest {
+        // M1 multi-voice: narrator sentences get the narrator voice, dialogue
+        // sentences get the dialogue voice, both via the injected resolver.
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val tagged = TtsChapter(
+            0, "Ch0",
+            blocks = listOf("She nodded. \"Yes,\" she said."),
+            speakers = listOf("narrator", "dialogue")
+        )
+        val h = Harness(
+            dispatcher = dispatcher,
+            factory = { l -> FakeTtsSynthesizer(l) },
+            isSystem = { it is FakeTtsSynthesizer },
+            chapters = { _, _ -> tagged },
+            voiceForSpeaker = { speaker, _ ->
+                if (speaker == "narrator") "af_maple" else "af_sol"
+            }
+        )
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+        val fake = h.synthesizer as FakeTtsSynthesizer
+
+        assertEquals(1, fake.spoken.size)
+        assertEquals("af_maple", fake.spoken[0].voice)
+        fake.emitStart("b1:0:0:1")
+        fake.emitDone("b1:0:0:1")
+        testScheduler.advanceUntilIdle()
+        assertEquals(2, fake.spoken.size)
+        assertEquals("af_sol", fake.spoken[1].voice)
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun noVoicePassedWhenResolverDisabled() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = plainHarness(dispatcher, { _, _ -> chapter("Hello.", "World.") })
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+        val fake = h.synthesizer as FakeTtsSynthesizer
+        assertNull(fake.spoken[0].voice)
         h.engine.shutdown()
     }
 

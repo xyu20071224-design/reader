@@ -59,6 +59,7 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 | F-144 | 启动问候与更新提示 | 已实现（模拟器验证通过） |
 | F-150 | 听书（整章/全书连续朗读） | 已实现（1.3.0） |
 | F-151 | 外置 TTS：Azure 云 TTS / OpenAI 兼容自建服务器 / 火山引擎（豆包语音） | 已实现（1.3.0） |
+| F-152 | 多角色听书（说话人识别 + 角色音色） | 已实现（M1 规则层 + M2 LLM 打标 + M3 音色自动分配 + M4 角色 UI）；仅剩「长按改说话人」为可选后续项 |
 
 ## 3. 功能详细规约
 
@@ -517,6 +518,9 @@ v1 范围（当前章节内跳转）：
 - **Azure 配置**：Region（默认 `chinanorth3`，终结点 `https://<region>.tts.speech.azure.cn`）、API Key、英文/中文/多语言音色；音色列表通过 `voices/list` 接口实时拉取，默认英文 `en-US-AriaNeural`、中文 `zh-CN-XiaoxiaoNeural`，存在可用多语言音色时默认开启“中英混读音色”。
 - **火山引擎配置**：终结点固定为 `https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse`（SSE 流式，音频帧 `data` 为 base64）；鉴权二选一：新版控制台 API Key（`X-Api-Key`，推荐）或旧版控制台 App ID + Access Token（`X-Api-App-Id` + `X-Api-Access-Key`）；Resource ID 默认 `seed-tts-2.0`（豆包语音合成模型 2.0，也可选 `seed-tts-1.0` / `seed-tts-1.0-concurr` 以使用 `BV*_streaming` 音色）；中英文音色分别配置，默认中文 `zh_female_shuangkuaisisi_uranus_bigtts`、英文 `en_female_dacey_uranus_bigtts`，支持自定义声音复刻 speaker ID；按句含中文则走中文音色、否则走英文音色。
 - **自建服务器配置**：服务器地址（自动补 `/v1/audio/speech`）、模型名、可选 Bearer Token、音色名（Fish Speech 通常为 `default`）。
+- **自建服务器音色列表**：连接后按 `GET /voices` → `GET /v1/audio/voices` 顺序拉取音色并缓存；返回体可为字符串数组、`{"voices":[…]}`、`{"data":[{"id":…}]}`，或带画像的 `{"voice_profiles":[{"id","language","gender","style"}]}`（本机 Kokoro 与 IndexTTS 包装均已支持），画像用于多角色音色分配的硬过滤。
+- **IndexTTS 2.5（克隆音色，本机 8001）**：`tts-server/indextts/` 提供仓库维护的 OpenAI 兼容包装；克隆音色放 `INDEX_VOICES_DIR`（默认 `voices/`），`voices/voices.json` 记录语言/性别/风格；`voice` 支持文件名（可省扩展名）、绝对路径或 `default`。App 通过 `GET /v1/models` 识别为慢引擎并隐藏「全书缓存」。实测（RTX 5070 Ti）英文 2.58 s/句、中文 3.17 s/句，Kokoro 对应为 0.45 / 0.77 s/句。
+- **克隆音色红线**：只允许自备或已获授权的参考音频（`scripts/make_clone_voice.py` 强制 `--consent` 确认），不得克隆真人/演员声音；多角色面板常驻「AI 合成」提示；仓库不内置任何参考音频。IndexTTS2 模型许可为《bilibili 模型使用许可协议》，月活 1 亿 / 年营收 1 亿人民币以下免费商用，须保留版权声明与许可副本。
 - **整章预生成**：首次播放某章时并发（最多 3 路）合成整章并写入 `files/tts_cache/<bookId>/<chapter>/<voice>/<序号>.mp3`；首句就绪即开始播放，其余后台继续；语速调整在播放端变速，不重新合成。
 - **失败回退**：网络失败、HTTP 错误、Key/Token 无效等导致章节合成失败时，自动切换系统 TTS 继续播放，并在播放条状态中标明“云 TTS 失败”；设置页可测试连接。
 - **配置变更**：播放中修改引擎配置会重建合成器并重播当前句。
@@ -530,6 +534,60 @@ v1 范围（当前章节内跳转）：
 - 火山引擎豆包语音 V3 SSE 可合成：新版 `X-Api-Key` 与旧版 AppID+Token 两种鉴权均可用；SSE 音频帧解码、结束帧（code 20000000）与错误帧处理正确；中英文按句路由音色。
 - 首句就绪即播、其余后台生成；生成中断网/报错时自动回退系统语音且播放不中断。
 - 删除书籍后云 TTS 缓存一并清除。
+
+### 3.12 多角色听书（F-152，M1–M4 已实现）
+
+目标与架构（完整设计见 `PLAN-MULTI-VOICE.md`）：
+
+- 听书按「谁在说话」为旁白与各角色分配不同音色。识别结果挂在与句子平行的 `TtsChapter.speakers` 数组上，播放队列、收听进度与句高亮零改动，播放引擎只把 `voice` 字符串透传给后端。
+- 两层识别：规则层 `SpeakerRuleTagger`（引号归一化、引文跨度、前挂/后挂/中插归属、跨段引文；M1，同时是兜底层）与 LLM 层 `SpeakerLlmTagger`（按章打标；M2）。两层通过「段索引 + 引文序号」对齐（`SpeakerRuleTagger.index()`），不做文本匹配，避免归一化差异导致漂移。
+- **D1**：LLM 打标与 AI 语境档案共用同一套 DeepSeek 调用基础设施（`AiChatClient.chatJson`，含 JSON 模式重试与失败降级）；书级角色画像随语境档案一次产出，章节归属按章独立请求。
+- **D2**：多角色仅在云引擎（Azure / 火山引擎 / 自建 OpenAI 兼容服务器）生效；Piper 与系统语音音色不可控，不参与多角色，也不会触发任何打标请求。
+
+行为：
+
+- **角色表**：生成语境档案时顺带产出 `characterProfiles`（姓名、别名、性别、年龄段、风格、重要性、语言、置信度），并入本书术语表的 `kind=character` 条目；合并遵循「手动优先」——用户填过的字段不被自动结果覆盖，别名取并集（多一个别名只会提升识别率）。
+- **章节打标**：某章第一次被听到时后台请求一次，输入为该章段落文本 + 规则层引文编号 + 角色表；返回 `{"paragraphs":[{"p":段索引,"speaker":"整段说话人","quotes":[{"q":引文序号,"speaker":"角色名","confidence":0.0–1.0}]}]}`。
+- **校验**：`speaker` 必须属于角色表（别名先归一为规范名）或 `narrator`；不在表内、缺字段或 `confidence < 0.6` 的答案一律丢弃并退回规则层标签（对白仍读对白音色，不会被降级成旁白，也不会出现凭空角色）。
+- **请求预算**：长章节按 12k 字符切成若干段落窗口分别请求，窗口内没有任何引文则不请求（纯旁白由规则层直接判定）。
+- **缓存与增量**：结果写入 `files/ai/speaker-tags/<bookId>/<chapter>.json`（原子写 + Mutex）；已打标章节不再请求，只有新读到的章节花一次请求；缓存长度与当前章节句数不一致（章节被重新提取）时缓存作废并重打标。
+- **不阻塞播放**：章节先用规则层结果开播；LLM 结果返回后热替换当前章节的说话人标签并写回提取器缓存，播放队列、`utteranceId`、进度与高亮均不受影响（等待阅读器章节握手的那一句不做替换，避免丢句）。
+- **降级**：联网 AI 总开关关闭、未填 DeepSeek Key、角色表为空、请求失败/超时 → 保留规则层结果（即 M1 的旁白/对白双音色），失败章节不写缓存，下次收听再试。
+- **失效**：删除书籍或重新生成语境档案（角色表可能变化）时，清除该书的打标缓存。
+
+音色分配（M3）：
+
+- **音色库**：当前引擎可用音色 + 画像。Azure 用 `voices/list` 的性别与 `StyleList`；自建服务器读 `GET /voices`（本地 Kokoro 包装）或 `GET /v1/audio/voices`（Kokoro-FastAPI 风格），缓存在 SharedPreferences；火山用已配置的中英文音色。裸音色 ID 用命名先验补全（Kokoro `zf_/zm_`=中文女/男、`af_/am_`=美音、`bf_/bm_`=英音；火山 `zh_female_*`；Azure `zh-CN-*` 取语言）。
+- **分配算法**：① 硬过滤（语言必须匹配，已知性别不得冲突；同语言无候选才放宽性别）→ ② 软评分（性别 0.40 / 年龄 0.15 / 风格 0.25 / 重要性×音质 0.20）→ ③ 按「重要性、共现度、名字」降序贪心，并对已分配的共现角色施加区分度惩罚 `λ·Σ sim(v, 邻居音色)`（λ=0.6，sim 由性别/语言/风格 Jaccard 计算）→ ④ 音色不够时先尝试一次「与次要角色交换」，再允许**仅在不共现角色之间复用**，最后兜底旁白音色。
+- **旁白**：先于角色选出（最中性：风格含 calm/neutral/narration 加分，whisper/shouting/童声减分，音质次之），并计入「已占用」，因此角色天然避开旁白音色；中英各一个。
+- **共现统计**：由 M2 的章节打标缓存现算（跳过旁白与未归属对白、折叠连续同一说话人的长台词），读过的章节越多越准。
+- **持久化与一致性**：`files/voice_maps/<bookId>.json` 保存 `narrator`（按语言）、`characterVoice`（按角色名）、`userLocked`、`engine`；跨章跨会话不重算；新角色增量分配、不动旧映射；用户锁定项永不被自动覆盖；切换引擎（音色库变了）重算但保留锁定标记（锁定音色在新引擎不存在时该角色重新分配）。
+- **解析顺序**：手动配置的旁白音色（M1）→ 角色/旁白映射（M3）→ 对白音色（M1，用于未归属对白）→ 引擎默认（后端自行按语言路由）。云引擎整章预生成与逐句播放共用同一解析器，避免把音频缓存到播放端不会请求的音色下。
+- **删除**：删除书籍时同步删除该书的音色映射。
+
+界面（M4）：
+
+- **入口**：阅读设置 →「听书设置」（自带当前书）或书架 →「AI 中心 → 听书语音」（提供书目下拉）。
+- **开关**：「多角色音色（实验）」默认关闭；关闭时完全不打标、不分配，播放行为等同单音色 + 手填旁白/对白音色。引擎为本地 Piper 或系统语音时开关**置灰**，并说明「本地 Piper 只有 2 个内置音色，系统语音音色不可控，均不支持多角色」（D2）。
+- **状态提示**：按优先级显示「当前引擎没有可用音色列表 / 本书还没有角色表（需先生成语境档案）/ 未配置 DeepSeek Key（规则模式）/ 音色数量不足已共用 N 个 / 已为 N 个角色分配音色」。
+- **旁白音色**：中文、英文各一个下拉，选定即锁定该语言的旁白音色。
+- **角色列表**：按重要性排序，每行显示角色名、画像摘要（主要/次要/配角 · 性别 · 风格）、当前音色下拉（推荐候选=同语言且性别不冲突的音色在前，其后是全库）与「试听」按钮；已锁定的角色名后带 🔒。
+- **试听**：用当前引擎按所选音色合成一句样句并播放（中文音色说中文样句、英文音色说英文样句），播放新样句前先停掉上一条。
+- **选定即锁定**：任何手动选择都会写入 `userLocked` 并立即通知听书服务重载映射，下一句起生效；未锁定的角色仍会随新章节的共现关系自动微调。
+
+验收要点：
+
+- 已填 DeepSeek Key 且语境档案就绪时，含对白的章节由 LLM 逐句归属；同一章第二次播放不再发起请求（命中缓存）。
+- 未填 Key / 关闭联网 AI / 角色表为空时，听书仍按规则层旁白+对白双音色正常播放，无任何网络请求。
+- LLM 返回未知角色名或低置信度答案时，对应句子退回规则层标签；标签数组长度始终与章节句数一致。
+- 引擎为 Piper/系统语音，或未配置对白音色时，不产生任何打标请求，也不生成音色映射。
+- 角色画像就绪且音色库足够时，主要角色各得一个独立音色，旁白与角色音色互不相同；同书再次播放使用同一套映射。
+- 音色数量不足时，只有「从不相邻发言」的角色共用音色；相邻发言的角色宁可退回旁白音色也不共用。
+- 用户锁定某角色音色后，重新分配（含新增角色、切换引擎）不会改动它。
+- 多角色开关默认关闭且持久化；关闭时无任何打标请求与音色映射，Piper/系统语音下开关置灰。
+- 角色列表可改音色并试听；改动即刻生效（下一句起使用新音色），重开面板仍显示该选择并带锁定标记。
+
+（可选后续：阅读页长按句子修正「此人说话/旁白」并增量重打标，见 `PLAN-MULTI-VOICE.md` §8.6。）
 
 ## 4. 数据与存储规约
 
@@ -545,6 +603,10 @@ v1 范围（当前章节内跳转）：
 | `vocabulary.json` | 生词与复习状态数组 |
 | `dictionary/ecdict-v2.sqlite` | 首次查词时从资产复制出来的只读词典 |
 | `tts_cache/<bookId>/<chapter>/<voice>/<序号>.mp3` | 云 TTS 章节音频缓存（删除书籍时一并清除） |
+| `ai/book-context/<bookId>.json` | 本书 AI 语境档案（含角色画像 `characterProfiles`） |
+| `ai/glossary/<bookId>.json` | 本书术语表（`kind=character` 条目同时是多角色的角色表） |
+| `ai/speaker-tags/<bookId>/<chapter>.json` | 章节说话人打标缓存（LLM 结果；删除书籍或重建语境档案时清除） |
+| `voice_maps/<bookId>.json` | 本书角色 → 音色映射（含旁白音色、用户锁定项与生成时的引擎标识） |
 | SharedPreferences `reader_preferences` | 阅读外观偏好 |
 
 ### 4.2 Book / Chapter JSON
@@ -672,6 +734,10 @@ CREATE TABLE forms (
 | 1.6.7 | 2026-08-12 | 修复 F-150 选择起点时从本章开头播放：JS 点词定位改用与 `ttsBlocks()`/`TtsTextExtractor` 相同的叶子块选择器（补齐 `section/article/pre/h5/h6` 等），`TtsChapter.locateBlock` 增加祖先段落回退并重定位偏移到实际叶子块，杜绝段落匹配失败回退第 0 句 |
 | 1.6.8 | 2026-08-14 | 听书缺陷修复：上一句/下一句与翻页跟随先停当前语音（修复系统 TTS 排队与音画不同步）；换书/待命时停止旧书音频并重置会话、清理提取器缓存；连续错误熔断改为开播成功时复位；章节握手增加等待者身份校验防止过期等待者造成重复语音/跳句；点击中文正文也可选择起点；句高亮改为按块+偏移精确定位（重复句不再高亮到首次出现处）；自建 OpenAI 兼容 TTS 服务支持 http 明文端点（`network_security_config`）；云预合成较慢时等待进行中的预生成以避免重复合成 |
 | 1.6.9 | 2026-08-15 | 听书稳定性/凭证安全/高亮定位修复，版本升至 1.3.1（versionCode 7）：待选（standby）态前台服务化（`startForegroundService` + `ensureForeground`）避免切后台被杀；收听进度写盘加 `@Volatile` + 单调 `progressWriteVersion` + `Mutex` 防快照覆盖回退；`previousSentence` 加目标章守卫防快速连点跳章；`onReaderChapterLoaded` 仅当章节匹配才写入/complete 防握手白等；`utteranceIdFor` 引入 `speakAttempt` 代际隔离防同名句回拨漏句；`speakCurrent` 句尾越界主动推进防卡死；`CloudKeyStore.key` 改 lazy 单例防 Keystore 并发覆盖密钥；AI 凭证改用 Keystore 加密并兼容旧明文迁移；`decrypt` 校验密文长度；`TtsTextExtractor.leafBlocks` 改为与 JS `!querySelector` 严格等价（`select(BLOCK_SELECTOR).isEmpty()`）修复内联样式章节高亮错位；滚动模式恢复等内容高度就绪再定位防闪跳；新增 1.3.1 更新说明 |
+| 1.6.10 | 2026-08-20 | 新增 F-152 多角色听书 M1+M2：`speak(voice)` 接口透传与旁白/对白双音色（M1 规则层 `SpeakerRuleTagger`：引号归一化、引文跨度、前/后挂与中插归属、跨段引文）；M2 LLM 打标 `SpeakerLlmTagger`（复用 `AiChatClient` DeepSeek 框架，按「段索引+引文序号」对齐、角色表/别名/置信度校验、12k 字符分窗、无引文窗口不请求）；语境档案顺带产出 `characterProfiles` 并按「手动优先」并入术语表 `kind=character`；打标缓存 `ai/speaker-tags/<bookId>/<chapter>.json` 支持增量与失效；播放中热替换说话人标签不影响队列/进度/高亮；无 Key/失败/空角色表全部降级为规则层。单元测试 206 个通过（新增 44 个） |
+| 1.6.11 | 2026-08-20 | F-152 多角色听书 M3 音色自动分配：新增 `VoiceInfo`/`VoiceLibrary`/`VoiceNaming`（Azure `voices/list` 性别+`StyleList`、自建服务器 `/voices` 或 `/v1/audio/voices` 音色列表并缓存、火山已配音色，裸 ID 用命名先验补全语言/性别）；`VoiceAssigner`（硬过滤 + 软评分 + 共现贪心区分度惩罚 λ + 一次交换 + 仅限不共现角色的复用 + 旁白兜底，旁白先选并保留）；`SpeakerCooccurrence` 由 M2 章节缓存统计相邻说话人；`BookVoiceMap` + `VoiceMapRepository` 持久化到 `voice_maps/<bookId>.json`（增量分配、用户锁定、换引擎重算）；播放与整章预生成共用 `resolveVoice`（手动旁白音色 → 角色映射 → 对白音色 → 引擎默认），删除书籍时清除映射。单元测试 246 个通过（新增 40 个） |
+| 1.6.12 | 2026-08-20 | F-152 多角色听书 M4 界面：新增「多角色音色（实验）」开关（`multiVoiceEnabled`，默认关，Piper/系统语音置灰按 D2；关闭时不打标、不分配）；听书设置与 AI 中心新增多角色面板 `MultiVoiceSection`（书目选择、状态提示、中英旁白音色下拉、按重要性排序的角色列表 + 推荐音色下拉 + 试听、锁定标记）；选定即写 `userLocked` 并通知服务重载；新增 `VoiceAudition`（按指定音色合成一句样句并播放，播放前停上一条）与 `MultiVoiceSupport`（服务/UI 共用装配、状态文案、样句、D2 判定）；解析优先级改为「角色映射 → 手填旁白/对白 → 引擎默认」。单元测试 255 个通过（新增 9 个） |
+| 1.6.13 | 2026-08-20 | F-152 多角色听书 M1.5 收尾（IndexTTS 2.5 克隆音色引擎）：`tts-server/indextts/` 纳入仓库（`/voices` 新增 `voice_profiles` 音色画像、`INDEX_VOICES_DIR` 克隆音色目录 + `voices.json` 清单、`voice` 解析顺序扩展）；App 侧 `ServerVoice` 元数据贯通（`ServerVoiceStore` 缓存画像、`VoiceLibraryLoader` 合并、`VoiceNaming` 识别 `clone_<角色>_<lang>_<m\|f>` 并忽略音频扩展名），克隆音色可参与 M3 语言/性别硬过滤；新增 `scripts/make_clone_voice.py`（强制 `--consent`）与 `scripts/tts_compare.py` 中英实测（Kokoro 0.45/0.77 s/句 vs IndexTTS 2.58/3.17 s/句）；多角色面板增加 AI 合成与素材授权提示；核对 IndexTTS2 的 bilibili 模型许可（1 亿月活/1 亿营收以下免费商用）。单元测试 258 个通过 |
 
 ## 7. 已知不一致（待处理）
 

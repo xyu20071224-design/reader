@@ -31,6 +31,75 @@ data class ContextTerm(
 }
 
 /**
+ * Voice-facing character profile (PLAN-MULTI-VOICE §3.2).
+ *
+ * Produced as a by-product of the book context profile (D1: 语境档案书级生成时
+ * 顺带产出角色画像表), merged into the per-book glossary so the user can edit
+ * it, and consumed by the M2 speaker tagger (roster + aliases) and the M3
+ * voice assigner (gender / age / style / importance).
+ */
+data class CharacterProfile(
+    /** Canonical name, e.g. "Gandalf". */
+    val name: String,
+    /** Alternative names normalised onto [name], e.g. "Mithrandir". */
+    val aliases: List<String> = emptyList(),
+    /** male / female / unknown (blank = unknown). */
+    val gender: String = "",
+    /** child / young / adult / elderly / unknown (blank = unknown). */
+    val ageGroup: String = "",
+    /** Free-form voice hints: calm, deep, lively… */
+    val style: List<String> = emptyList(),
+    /** major / medium / minor — drives M3 assignment order. */
+    val importance: String = IMPORTANCE_MINOR,
+    /** Hard constraint for voice assignment ("en" / "zh"). */
+    val language: String = "en",
+    val confidence: Float = 0f,
+    /** auto / local / manual — same vocabulary as [GlossaryEntry.origin]. */
+    val origin: String = "auto"
+) {
+    /** Stable key: one profile per lowercase name. */
+    val key: String get() = name.trim().lowercase()
+
+    /** Assignment order for M3: major first, minor last. */
+    val importanceRank: Int
+        get() = when (importance.lowercase()) {
+            IMPORTANCE_MAJOR -> 3
+            IMPORTANCE_MEDIUM -> 2
+            else -> 1
+        }
+
+    fun toJson(): JSONObject = JSONObject()
+        .put("name", name)
+        .put("aliases", jsonStringArray(aliases))
+        .put("gender", gender)
+        .put("ageGroup", ageGroup)
+        .put("style", jsonStringArray(style))
+        .put("importance", importance)
+        .put("language", language)
+        .put("confidence", confidence.toDouble())
+        .put("origin", origin)
+
+    companion object {
+        const val IMPORTANCE_MAJOR = "major"
+        const val IMPORTANCE_MEDIUM = "medium"
+        const val IMPORTANCE_MINOR = "minor"
+
+        fun fromJson(json: JSONObject) = CharacterProfile(
+            name = json.optString("name").trim(),
+            aliases = json.stringList("aliases"),
+            gender = json.optString("gender").trim(),
+            ageGroup = json.optString("ageGroup").trim(),
+            style = json.stringList("style"),
+            importance = json.optString("importance", IMPORTANCE_MINOR).trim()
+                .ifBlank { IMPORTANCE_MINOR },
+            language = json.optString("language", "en").trim().ifBlank { "en" },
+            confidence = json.optDouble("confidence", 0.0).toFloat(),
+            origin = json.optString("origin", "auto").trim().ifBlank { "auto" }
+        )
+    }
+}
+
+/**
  * Book-level translation context generated once per book and stored locally.
  *
  * The DeepSeek implementation produces this from the book text; the local
@@ -43,6 +112,8 @@ data class BookContextProfile(
     val characters: List<ContextTerm> = emptyList(),
     val places: List<ContextTerm> = emptyList(),
     val glossary: List<ContextTerm> = emptyList(),
+    /** Voice-facing character profiles (multi-voice M2, D1). */
+    val characterProfiles: List<CharacterProfile> = emptyList(),
     val styleNotes: List<String> = emptyList(),
     /** Backend that produced this profile ("deepseek" or "local"). */
     val source: String = "local"
@@ -54,6 +125,10 @@ data class BookContextProfile(
         .put("characters", JSONArray().apply { characters.forEach { put(it.toJson()) } })
         .put("places", JSONArray().apply { places.forEach { put(it.toJson()) } })
         .put("glossary", JSONArray().apply { glossary.forEach { put(it.toJson()) } })
+        .put(
+            "characterProfiles",
+            JSONArray().apply { characterProfiles.forEach { put(it.toJson()) } }
+        )
         .put("styleNotes", JSONArray().apply { styleNotes.forEach { put(it) } })
         .put("source", source)
 
@@ -76,6 +151,13 @@ data class BookContextProfile(
                 characters = terms("characters"),
                 places = terms("places"),
                 glossary = terms("glossary"),
+                characterProfiles = json.optJSONArray("characterProfiles")?.let { array ->
+                    (0 until array.length()).mapNotNull { index ->
+                        array.optJSONObject(index)
+                            ?.let(CharacterProfile::fromJson)
+                            ?.takeIf { it.name.isNotBlank() }
+                    }
+                }.orEmpty(),
                 styleNotes = strings("styleNotes"),
                 source = json.optString("source", "local")
             )
@@ -144,10 +226,59 @@ data class GlossaryEntry(
     val note: String = "",
     val enabled: Boolean = true,
     val origin: String = "manual",
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    // Character-profile fields (multi-voice M2, PLAN-MULTI-VOICE 3.2/7):
+    // only meaningful for kind == "character"; the glossary is the single
+    // editable home of the speaker roster.
+    val aliases: List<String> = emptyList(),
+    val gender: String = "",
+    val ageGroup: String = "",
+    val style: List<String> = emptyList(),
+    val importance: String = ""
 ) {
     /** Stable key: one entry per lowercase term. */
     val key: String get() = term.lowercase()
+
+    /** Character view of this entry; null for non-character entries. */
+    fun characterProfile(): CharacterProfile? {
+        if (kind != KIND_CHARACTER || term.isBlank()) return null
+        return CharacterProfile(
+            name = term,
+            aliases = aliases,
+            gender = gender,
+            ageGroup = ageGroup,
+            style = style,
+            importance = importance.ifBlank { CharacterProfile.IMPORTANCE_MINOR },
+            origin = origin
+        )
+    }
+
+    /**
+     * Merges an auto-generated [CharacterProfile] into this entry.
+     *
+     * Manual entries keep every attribute the user actually filled in
+     * (origin=manual wins, the same rule [BookGlossaryRepository] already
+     * applies to translations); blank attributes are filled from the profile.
+     * Aliases are always unioned - an extra alias only ever helps the speaker
+     * tagger recognise a name.
+     */
+    fun mergeProfile(profile: CharacterProfile): GlossaryEntry {
+        val manual = origin == "manual"
+        fun pick(mine: String, theirs: String): String =
+            if (manual && mine.isNotBlank()) mine else theirs.ifBlank { mine }
+        val mergedAliases = (aliases + profile.aliases)
+            .map(String::trim)
+            .filter { it.isNotBlank() && !it.equals(term, ignoreCase = true) }
+            .distinctBy { it.lowercase() }
+        return copy(
+            kind = KIND_CHARACTER,
+            aliases = mergedAliases,
+            gender = pick(gender, profile.gender),
+            ageGroup = pick(ageGroup, profile.ageGroup),
+            style = if (manual && style.isNotEmpty()) style else profile.style.ifEmpty { style },
+            importance = pick(importance, profile.importance)
+        )
+    }
 
     fun toJson(): JSONObject = JSONObject()
         .put("term", term)
@@ -157,8 +288,15 @@ data class GlossaryEntry(
         .put("enabled", enabled)
         .put("origin", origin)
         .put("updatedAt", updatedAt)
+        .put("aliases", jsonStringArray(aliases))
+        .put("gender", gender)
+        .put("ageGroup", ageGroup)
+        .put("style", jsonStringArray(style))
+        .put("importance", importance)
 
     companion object {
+        const val KIND_CHARACTER = "character"
+
         fun fromJson(json: JSONObject) = GlossaryEntry(
             term = json.optString("term"),
             translation = json.optString("translation"),
@@ -166,7 +304,12 @@ data class GlossaryEntry(
             note = json.optString("note"),
             enabled = json.optBoolean("enabled", true),
             origin = json.optString("origin", "manual"),
-            updatedAt = json.optLong("updatedAt")
+            updatedAt = json.optLong("updatedAt"),
+            aliases = json.stringList("aliases"),
+            gender = json.optString("gender").trim(),
+            ageGroup = json.optString("ageGroup").trim(),
+            style = json.stringList("style"),
+            importance = json.optString("importance").trim()
         )
     }
 }
@@ -241,4 +384,73 @@ private fun boundaryOk(sentence: String, start: Int, end: Int): Boolean {
     val before = if (start == 0) ' ' else sentence[start - 1]
     val after = if (end >= sentence.length) ' ' else sentence[end]
     return !before.isLetter() && !after.isLetter()
+}
+
+/**
+ * Cached per-chapter speaker tags (PLAN-MULTI-VOICE 4.2, incremental cache).
+ *
+ * One file per (book, chapter); [speakers] is parallel to the chapter sentence
+ * list, so a cache whose length no longer matches the extracted chapter is
+ * simply ignored (re-tagged on demand) instead of shifting voices.
+ */
+data class ChapterSpeakerTags(
+    val chapterIndex: Int,
+    val speakers: List<String>,
+    /** Which layer produced the tags: "llm" (DeepSeek) or "rule" (fallback). */
+    val source: String = SOURCE_RULE,
+    val updatedAt: Long = 0L
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("chapterIndex", chapterIndex)
+        .put("speakers", jsonStringArray(speakers))
+        .put("source", source)
+        .put("updatedAt", updatedAt)
+
+    companion object {
+        const val SOURCE_LLM = "llm"
+        const val SOURCE_RULE = "rule"
+
+        fun fromJson(json: JSONObject): ChapterSpeakerTags {
+            val array = json.optJSONArray("speakers")
+            val speakers = if (array == null) emptyList()
+            else (0 until array.length()).map { array.optString(it) }
+            return ChapterSpeakerTags(
+                chapterIndex = json.optInt("chapterIndex", -1),
+                speakers = speakers,
+                source = json.optString("source", SOURCE_RULE).ifBlank { SOURCE_RULE },
+                updatedAt = json.optLong("updatedAt")
+            )
+        }
+    }
+}
+
+/**
+ * Combines two profiles of the same character coming from different requests
+ * (the context profile is built per chapter segment, so the same name shows up
+ * several times with partial attributes).
+ */
+internal fun CharacterProfile.mergedWith(other: CharacterProfile): CharacterProfile =
+    copy(
+        aliases = (aliases + other.aliases)
+            .map(String::trim)
+            .filter { it.isNotBlank() && !it.equals(name, ignoreCase = true) }
+            .distinctBy { it.lowercase() },
+        gender = gender.ifBlank { other.gender },
+        ageGroup = ageGroup.ifBlank { other.ageGroup },
+        style = (style + other.style).map(String::trim).filter(String::isNotBlank)
+            .distinctBy { it.lowercase() }.take(4),
+        importance = if (other.importanceRank > importanceRank) other.importance else importance,
+        language = language.ifBlank { other.language },
+        confidence = maxOf(confidence, other.confidence)
+    )
+
+// --- small JSON helpers shared by the models above -------------------------
+
+internal fun jsonStringArray(values: List<String>): JSONArray =
+    JSONArray().apply { values.forEach { put(it) } }
+
+internal fun JSONObject.stringList(key: String): List<String> {
+    val array = optJSONArray(key) ?: return emptyList()
+    return (0 until array.length())
+        .mapNotNull { array.optString(it).trim().takeIf(String::isNotBlank) }
 }

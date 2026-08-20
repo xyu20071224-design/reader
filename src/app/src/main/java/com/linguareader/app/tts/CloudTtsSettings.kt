@@ -42,6 +42,19 @@ data class CloudTtsSettings(
     val serverModel: String = "tts-1",
     val serverToken: String = "",
     val serverVoice: String = "",
+    /** Multi-voice M1: voice used for narration sentences (empty = off,
+     *  follows [serverVoice] / engine default). */
+    val narratorVoice: String = "",
+    /** Multi-voice M1: voice used for dialogue sentences (empty = off). */
+    val dialogueVoice: String = "",
+    /**
+     * Multi-voice M4 master switch (default off, PLAN-MULTI-VOICE §8.1).
+     *
+     * When off nothing multi-voice runs: no speaker tagging requests, no voice
+     * assignment, and only the manual [narratorVoice] / [dialogueVoice] apply.
+     * D2: only the cloud engines can honour it.
+     */
+    val multiVoiceEnabled: Boolean = false,
     val volcApiKey: String = "",
     val volcAppId: String = "",
     val volcToken: String = "",
@@ -82,6 +95,9 @@ data class CloudTtsSettings(
         private const val KEY_SERVER_MODEL = "server_model"
         private const val KEY_SERVER_TOKEN = "server_token"
         private const val KEY_SERVER_VOICE = "server_voice"
+        private const val KEY_NARRATOR_VOICE = "narrator_voice"
+        private const val KEY_DIALOGUE_VOICE = "dialogue_voice"
+        private const val KEY_MULTI_VOICE = "multi_voice_enabled"
         private const val KEY_VOLC_API_KEY = "volc_api_key"
         private const val KEY_VOLC_APP_ID = "volc_app_id"
         private const val KEY_VOLC_TOKEN = "volc_token"
@@ -108,6 +124,9 @@ data class CloudTtsSettings(
                 serverModel = prefs.getString(KEY_SERVER_MODEL, "tts-1").orEmpty().ifBlank { "tts-1" },
                 serverToken = CloudKeyStore.decrypt(context, prefs.getString(KEY_SERVER_TOKEN, null)).orEmpty(),
                 serverVoice = prefs.getString(KEY_SERVER_VOICE, "").orEmpty(),
+                narratorVoice = prefs.getString(KEY_NARRATOR_VOICE, "").orEmpty(),
+                dialogueVoice = prefs.getString(KEY_DIALOGUE_VOICE, "").orEmpty(),
+                multiVoiceEnabled = prefs.getBoolean(KEY_MULTI_VOICE, false),
                 volcApiKey = CloudKeyStore.decrypt(context, prefs.getString(KEY_VOLC_API_KEY, null)).orEmpty(),
                 volcAppId = prefs.getString(KEY_VOLC_APP_ID, "").orEmpty(),
                 volcToken = CloudKeyStore.decrypt(context, prefs.getString(KEY_VOLC_TOKEN, null)).orEmpty(),
@@ -141,6 +160,9 @@ data class CloudTtsSettings(
                 .putString(KEY_SERVER_MODEL, settings.serverModel.ifBlank { "tts-1" })
                 .putString(KEY_SERVER_TOKEN, encryptedToken)
                 .putString(KEY_SERVER_VOICE, settings.serverVoice)
+                .putString(KEY_NARRATOR_VOICE, settings.narratorVoice)
+                .putString(KEY_DIALOGUE_VOICE, settings.dialogueVoice)
+                .putBoolean(KEY_MULTI_VOICE, settings.multiVoiceEnabled)
                 .putString(KEY_VOLC_API_KEY, encryptedVolcApiKey)
                 .putString(KEY_VOLC_APP_ID, settings.volcAppId.trim())
                 .putString(KEY_VOLC_TOKEN, encryptedVolcToken)

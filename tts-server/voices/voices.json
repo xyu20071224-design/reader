@@ -1,0 +1,13 @@
+{
+  "voices": [
+    {
+      "id": "voice_03.wav",
+      "label": "IndexTTS 示例中文女",
+      "language": "zh",
+      "gender": "female",
+      "style": [
+        "calm"
+      ]
+    }
+  ]
+}

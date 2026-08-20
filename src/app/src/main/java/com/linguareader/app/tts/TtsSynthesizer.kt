@@ -19,8 +19,10 @@ import java.util.Locale
 interface TtsSynthesizer {
     val isReady: Boolean
 
-    /** Queue [text] for synthesis; [utteranceId] is echoed back by callbacks. */
-    fun speak(text: String, rate: Float, utteranceId: String)
+    /** Queue [text] for synthesis; [utteranceId] is echoed back by callbacks.
+     *  [voice] optionally overrides the engine's default voice per utterance
+     *  (multi-voice M1: narrator / dialogue); null keeps the configured one. */
+    fun speak(text: String, rate: Float, utteranceId: String, voice: String? = null)
 
     fun stop()
 
@@ -33,6 +35,11 @@ interface TtsSynthesizerListener {
     fun onStart(utteranceId: String)
     fun onDone(utteranceId: String)
     fun onError(utteranceId: String)
+
+    /** Fired after an async backend capability probe (e.g. slow-engine
+     *  detection for 全书缓存) finished; the engine re-evaluates what the UI
+     *  may offer. Default no-op. */
+    fun onCapabilitiesChanged() {}
 }
 
 /**
@@ -98,13 +105,14 @@ class SystemTtsSynthesizer(
 
     override val isReady: Boolean get() = ready
 
-    override fun speak(text: String, rate: Float, utteranceId: String) {
+    override fun speak(text: String, rate: Float, utteranceId: String, voice: String?) {
         if (text.isBlank()) return
         val locale = localeFor(text)
-        val configured = if (locale == Locale.CHINA) zhVoice else enVoice
-        val voice = configured.takeIf { it.isNotBlank() }?.let { voicesByName[it] }
-        val voiceUsable = voice != null && !voice.isNetworkConnectionRequired
-        if (!voiceUsable || tts.setVoice(voice) != TextToSpeech.SUCCESS) {
+        val selected = voice?.takeIf { it.isNotBlank() }
+            ?: if (locale == Locale.CHINA) zhVoice else enVoice
+        val voiceObj = selected.takeIf { it.isNotBlank() }?.let { voicesByName[it] }
+        val voiceUsable = voiceObj != null && !voiceObj.isNetworkConnectionRequired
+        if (!voiceUsable || tts.setVoice(voiceObj) != TextToSpeech.SUCCESS) {
             // setLanguage 返回负值表示引擎缺少该语言音色数据（会静默无声），
             // 回退到引擎默认音色，避免整段静音。
             if (tts.setLanguage(locale) < 0) {
@@ -157,8 +165,20 @@ class SystemTtsSynthesizer(
  * system TTS engine.
  */
 object TtsSynthesizerFactory {
-    fun create(context: Context, listener: TtsSynthesizerListener): TtsSynthesizer {
+    fun create(
+        context: Context,
+        listener: TtsSynthesizerListener,
+        /** Voice resolver shared with the playback engine (multi-voice M1/M3).
+         *  Null falls back to the settings-only M1 resolver. */
+        voiceResolver: ((String, String) -> String?)? = null
+    ): TtsSynthesizer {
         val settings = CloudTtsSettings.load(context)
+        // Multi-voice M1 fallback: narrator / dialogue voices from settings.
+        // Both empty keeps the engine single-voice, identical to pre-M1.
+        val voiceForSpeaker: (String, String) -> String? = voiceResolver ?: { speaker, _ ->
+            (if (speaker == "narrator") settings.narratorVoice else settings.dialogueVoice)
+                .takeIf { it.isNotBlank() }
+        }
         return when {
             settings.mode == TtsEngineMode.PIPER && settings.isConfigured ->
                 SherpaTtsSynthesizer(context, listener)
@@ -166,13 +186,13 @@ object TtsSynthesizerFactory {
             // Networked engines honour the master power switch; when it is off
             // they fall back to the local engines below (offline-first).
             settings.networkAiEnabled && settings.mode == TtsEngineMode.AZURE && settings.isConfigured ->
-                CloudTtsSynthesizer(context, AzureTtsBackend(settings, context), listener)
+                CloudTtsSynthesizer(context, AzureTtsBackend(settings, context), listener, voiceForSpeaker)
 
             settings.networkAiEnabled && settings.mode == TtsEngineMode.OPENAI_COMPAT && settings.isConfigured ->
-                CloudTtsSynthesizer(context, OpenAiCompatTtsBackend(settings), listener)
+                CloudTtsSynthesizer(context, OpenAiCompatTtsBackend(settings), listener, voiceForSpeaker)
 
             settings.networkAiEnabled && settings.mode == TtsEngineMode.VOLC && settings.isConfigured ->
-                CloudTtsSynthesizer(context, VolcanoTtsBackend(settings), listener)
+                CloudTtsSynthesizer(context, VolcanoTtsBackend(settings), listener, voiceForSpeaker)
 
             else -> SystemTtsSynthesizer(
                 context,

@@ -408,9 +408,9 @@ internal fun ReaderScreen(
                     pendingPage = page
                     pendingCount = count
                     needsSave = true
-                    // A manual page turn leaves the fixed-position TTS overlay
-                    // at stale viewport coordinates; clear it here. The next
-                    // spoken sentence re-applies and re-scrolls the highlight.
+                    // A manual page turn scrolls the highlight away with the
+                    // text; clear it here so no stale block lingers on the new
+                    // page before the next sentence re-applies it.
                     if (ttsForThisBook) controller.clearHighlight()
                     if (ttsForThisBook && ttsState.isPlaying) {
                         reportTtsPositionDelayed()
@@ -582,6 +582,7 @@ internal fun ReaderScreen(
                 onNext = { TtsPlaybackController.next(context) },
                 onStop = { TtsPlaybackController.stop(context) },
                 onRateChange = { TtsPlaybackController.setRate(context, it) },
+                onCacheBook = { TtsPlaybackController.cacheWholeBook(context) },
                 choosingStart = choosingStart,
                 onChooseStart = {
                     choosingStart = !choosingStart
@@ -645,7 +646,9 @@ internal fun ReaderScreen(
     }
 
     if (showListeningSettings) {
-        ListeningSettingsSheet(onDismiss = { showListeningSettings = false })
+        // Multi-voice M4: the reader knows the book, so its character list and
+        // voice assignments can be managed right here.
+        ListeningSettingsSheet(onDismiss = { showListeningSettings = false }, book = book)
     }
 
     if (showPageJump) {

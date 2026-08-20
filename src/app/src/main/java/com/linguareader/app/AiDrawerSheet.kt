@@ -121,7 +121,7 @@ internal fun AiDrawerSheet(
                         onSave = onAiSettingsChange,
                         enabled = aiSettings.powerEnabled
                     )
-                    1 -> ListeningSettingsBody(onDismiss = null, onSaved = {})
+                    1 -> ListeningSettingsBody(onDismiss = null, onSaved = {}, books = books)
                     else -> GlossaryTabBody(
                         books = books,
                         onLoad = onLoadGlossary,

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Speed
@@ -49,6 +50,7 @@ internal fun ListeningBar(
     onNext: () -> Unit,
     onStop: () -> Unit,
     onRateChange: (Float) -> Unit,
+    onCacheBook: () -> Unit = {},
     choosingStart: Boolean = false,
     onChooseStart: () -> Unit = {}
 ) {
@@ -71,6 +73,27 @@ internal fun ListeningBar(
             color = Accent,
             trackColor = Accent.copy(alpha = .12f)
         )
+        if (state.isCachingBook) {
+            val cacheProgress =
+                if (state.cachedTotal > 0) state.cachedSentences.toFloat() / state.cachedTotal else 0f
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LinearProgressIndicator(
+                    progress = { cacheProgress.coerceIn(0f, 1f) },
+                    modifier = Modifier.weight(1f).height(4.dp),
+                    color = Accent,
+                    trackColor = Accent.copy(alpha = .12f)
+                )
+                Text(
+                    " 缓存全书 ${(cacheProgress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSoft,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+        }
         Row(
             Modifier.fillMaxWidth().padding(top = 2.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -125,6 +148,19 @@ internal fun ListeningBar(
                     tint = if (choosingStart) Accent else InkFaint,
                     modifier = Modifier.size(18.dp)
                 )
+            }
+            if (state.canCacheBook) {
+                IconButton(
+                    onClick = onCacheBook,
+                    modifier = Modifier.semantics { contentDescription = "缓存全书音频" }
+                ) {
+                    Icon(
+                        Icons.Filled.Download,
+                        contentDescription = null,
+                        tint = if (state.isCachingBook) Accent else InkFaint,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
             Box {
                 TextButton(

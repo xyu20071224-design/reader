@@ -1,0 +1,17 @@
+# ============================================================
+# frp 服务端配置 —— 放在「有公网 IP 的 VPS」上
+# 用法: frps -c frps.toml   (frp v0.52+ 使用 TOML 配置)
+# ============================================================
+
+# frp 控制端口（frpc 连这个口，与家里 frpc.toml 的 serverPort 一致）
+bindPort = 7000
+
+# frp 自身的鉴权（防别人蹭你的 frps 转发）——务必换成强随机串
+auth.method = "token"
+auth.token = "REPLACE_WITH_A_LONG_RANDOM_TOKEN"
+
+# 可选：管理面板（http://VPS_IP:7500 可看在线代理状态）
+webServer.addr = "127.0.0.1"
+webServer.port = 7500
+webServer.user = "admin"
+webServer.password = "REPLACE_WITH_DASHBOARD_PASSWORD"

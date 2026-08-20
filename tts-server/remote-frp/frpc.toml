@@ -1,0 +1,28 @@
+# ============================================================
+# frp 客户端配置 —— 放在「家里跑 TTS 服务的电脑」上
+# 用法: frpc -c frpc.toml   (frp v0.52+ 使用 TOML 配置)
+# ============================================================
+
+# 你的 VPS 公网 IP 和 frp 控制端口（与 frps.toml 的 bindPort 一致）
+serverAddr = "你的VPS公网IP"
+serverPort = 7000
+
+# 与 frps.toml 的 auth.token 相同
+auth.method = "token"
+auth.token = "REPLACE_WITH_A_LONG_RANDOM_TOKEN"
+
+# IndexTTS 2.5（8001）映射到 VPS 的 8001
+[[proxies]]
+name = "indextts-8001"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8001
+remotePort = 8001
+
+# 可选：Kokoro（8000）也映射出去；不需要可整段删除
+[[proxies]]
+name = "kokoro-8000"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 8000
+remotePort = 8000

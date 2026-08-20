@@ -34,6 +34,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.util.Collections
 
 /**
  * Foreground media service — a thin Android shell around [TtsPlaybackEngine].
@@ -46,8 +47,34 @@ import org.json.JSONObject
 class TtsPlaybackService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Multi-voice M2: background speaker tagging, never on the playback path. */
+    private val tagScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val extractor = TtsTextExtractor()
     private val repository by lazy { LibraryRepository(applicationContext) }
+    private val speakerTags by lazy { MultiVoiceSupport.speakerTagRepository(applicationContext) }
+    /** Multi-voice M3: per-book character → voice mapping. */
+    private val voiceMaps by lazy { MultiVoiceSupport.voiceMapRepository(applicationContext) }
+
+    /** Mapping of the book being listened to; null = single-voice playback. */
+    @Volatile
+    private var activeVoiceMap: BookVoiceMap? = null
+
+    /**
+     * Settings snapshot for voice resolution. Reading SharedPreferences (and
+     * decrypting the stored keys) for every sentence would be wasteful, so the
+     * snapshot is cached and dropped on ACTION_RECONFIGURE, which is exactly
+     * what the settings sheet sends after a change.
+     */
+    @Volatile
+    private var cachedVoiceSettings: CloudTtsSettings? = null
+    /**
+     * Chapters whose speaker tags were already resolved this session
+     * ("bookId:chapter"). The engine reloads the chapter for every single
+     * sentence, so without this the cache would be re-read - and a failed
+     * request re-issued - once per sentence.
+     */
+    private val resolvedTagChapters: MutableSet<String> =
+        Collections.synchronizedSet(mutableSetOf())
 
     private var mediaSession: MediaSession? = null
     private var isForeground = false
@@ -61,10 +88,33 @@ class TtsPlaybackService : Service() {
     private val engine by lazy {
         TtsPlaybackEngine(
             synthesizerFactory = { listener ->
-                TtsSynthesizerFactory.create(applicationContext, listener)
+                // The pre-generation path inside the cloud synthesizer must
+                // resolve voices exactly like the playback path, or cached audio
+                // would sit under a voice nobody asks for.
+                TtsSynthesizerFactory.create(applicationContext, listener, ::resolveVoice)
             },
             chapterLoader = { book, index ->
-                withContext(Dispatchers.IO) { extractor.chapter(book, index) }
+                withContext(Dispatchers.IO) {
+                    val loaded = extractor.chapter(book, index)
+                    // Multi-voice M2, once per chapter: cached LLM tags are
+                    // applied immediately, an untagged chapter starts on the
+                    // rule-layer tags while a background request refines them.
+                    // Listening never waits for the network. Later sentences see
+                    // the tags through the extractor cache.
+                    if (!resolvedTagChapters.add(book.id + ":" + index)) {
+                        loaded
+                    } else {
+                        val cached =
+                            speakerTags.cachedSpeakers(book.id, index, loaded.sentenceCount)
+                        if (cached != null) {
+                            extractor.applySpeakers(book.id, index, cached)
+                            loaded.withSpeakers(cached)
+                        } else {
+                            requestSpeakerTags(book, index, loaded)
+                            loaded
+                        }
+                    }
+                }
             },
             isSystemEngine = { it is SystemTtsSynthesizer },
             engineLabelForSettings = {
@@ -74,7 +124,13 @@ class TtsPlaybackService : Service() {
                 (s as? CloudTtsSynthesizer)?.engineLabel ?: "系统语音"
             },
             onChapterRequest = { chapter -> _chapterRequests.tryEmit(chapter) },
-            onBookSwitched = { extractor.clear() },
+            onBookSwitched = {
+                extractor.clear()
+                resolvedTagChapters.clear()
+                // The mapping is per book; never let the old one leak into the
+                // new book while its own mapping is still loading.
+                activeVoiceMap = null
+            },
             onProgressSave = { book, chapter, sentence ->
                 saveProgressNow(book, chapter, sentence)
             },
@@ -83,6 +139,7 @@ class TtsPlaybackService : Service() {
                 updateMediaSession()
                 updateNotification()
             },
+            voiceForSpeaker = ::resolveVoice,
             dispatcher = Dispatchers.Main.immediate,
             readerLoadedChapterFor = { id ->
                 readerChapterByBook?.takeIf { it.first == id }?.second
@@ -124,7 +181,14 @@ class TtsPlaybackService : Service() {
             ACTION_PREVIOUS -> previousSentence()
             ACTION_STOP -> stopPlayback()
             ACTION_RATE -> intent.getFloatExtra(EXTRA_RATE, engine.currentSpeechRate).let(::setRate)
-            ACTION_RECONFIGURE -> engine.reconfigure()
+            ACTION_RECONFIGURE -> {
+                // Settings changed: drop the snapshot and re-assign voices for
+                // the new engine (the voice library may be a different one).
+                cachedVoiceSettings = null
+                engine.currentBook?.let { refreshVoiceMap(it) }
+                engine.reconfigure()
+            }
+            ACTION_CACHE_BOOK -> engine.cacheWholeBook()
         }
         return START_NOT_STICKY
     }
@@ -139,6 +203,7 @@ class TtsPlaybackService : Service() {
             return
         }
         val requestedChapter = intent.getIntExtra(EXTRA_CHAPTER, 0)
+        refreshVoiceMap(newBook)
         engine.startStandby(newBook, requestedChapter)
     }
 
@@ -158,7 +223,106 @@ class TtsPlaybackService : Service() {
         mediaSession?.release()
         mediaSession = null
         scope.cancel()
+        tagScope.cancel()
         super.onDestroy()
+    }
+
+    // ── Multi-voice speaker tagging (M2) ─────────────────────────────────
+
+    /**
+     * Requests LLM speaker tags for one chapter in the background.
+     *
+     * The result is written into the extractor cache and pushed into the
+     * running engine, so the current chapter switches to per-character voices
+     * mid-playback and later loads start already tagged. Every failure path
+     * (disabled AI, no key, no roster, network error) simply leaves the
+     * rule-layer tags in place.
+     */
+    private fun requestSpeakerTags(book: Book, chapterIndex: Int, chapter: TtsChapter) {
+        if (!multiVoiceRequested()) return
+        tagScope.launch {
+            val speakers = runCatching {
+                speakerTags.tagChapter(
+                    bookId = book.id,
+                    chapterIndex = chapterIndex,
+                    chapterTitle = chapter.title,
+                    blocks = chapter.blocks,
+                    sentenceCount = chapter.sentenceCount
+                )
+            }.getOrNull() ?: return@launch
+            extractor.applySpeakers(book.id, chapterIndex, speakers)
+            engine.applySpeakerTags(book.id, chapterIndex, speakers)
+            // Fresh tags mean fresh co-occurrence data for the assigner (M3);
+            // existing assignments are kept, only new characters are added.
+            refreshVoiceMap(book)
+        }
+    }
+
+    /**
+     * The M4 switch decides whether anything multi-voice runs at all; D2 limits
+     * it to the cloud engines. With it off there are no tagging requests and no
+     * voice assignment - playback is exactly the pre-M1 single-voice one plus
+     * the manual narrator/dialogue overrides.
+     */
+    private fun multiVoiceRequested(): Boolean =
+        MultiVoiceSupport.multiVoiceActive(voiceSettings())
+
+    private fun voiceSettings(): CloudTtsSettings =
+        cachedVoiceSettings ?: CloudTtsSettings.load(applicationContext).also {
+            cachedVoiceSettings = it
+        }
+
+    // ── Multi-voice voice assignment (M3) ────────────────────────────────
+
+    /**
+     * Voice for one sentence, used by both the playback queue and the cloud
+     * pre-generation path.
+     *
+     * Order: the assigned per-character / per-language voice (M3, edited by the
+     * M4 panel), then the manually configured narrator / dialogue voice (M1),
+     * then null = "engine default" so the backend keeps its language routing.
+     */
+    private fun resolveVoice(speaker: String, text: String): String? {
+        // The assigned mapping only exists while multi-voice is on, and the M4
+        // panel edits exactly that mapping, so it wins over the M1 fields; those
+        // remain the single-voice fallback (and the narration voice for a
+        // language the mapping has no entry for).
+        activeVoiceMap
+            ?.voiceFor(speaker, TtsLanguage.of(text))
+            ?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+        val settings = voiceSettings()
+        if (speaker.equals(SpeakerRuleTagger.NARRATOR, ignoreCase = true)) {
+            return settings.narratorVoice.takeIf { it.isNotBlank() }
+        }
+        return settings.dialogueVoice.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * Builds (or extends) the character → voice mapping for a book in the
+     * background: refresh the engine voice library, then assign every character
+     * the AI profile knows about. Locked entries and existing assignments are
+     * preserved by [VoiceMapRepository]; any failure just leaves playback on the
+     * M1 narrator/dialogue voices.
+     */
+    private fun refreshVoiceMap(book: Book) {
+        if (!multiVoiceRequested()) {
+            activeVoiceMap = null
+            return
+        }
+        val settings = voiceSettings()
+        tagScope.launch {
+            val map = runCatching {
+                val library = MultiVoiceSupport.library(applicationContext, settings)
+                voiceMaps.ensureFor(
+                    bookId = book.id,
+                    library = library,
+                    narratorLanguages = MultiVoiceSupport.NARRATOR_LANGUAGES,
+                    reserved = MultiVoiceSupport.reservedVoices(settings)
+                )
+            }.getOrNull()
+            if (map != null && map.bookId == book.id) activeVoiceMap = map
+        }
     }
 
     // ── Playback control (thin wrappers over the engine) ─────────────────
@@ -171,6 +335,7 @@ class TtsPlaybackService : Service() {
         val sentenceText = intent.getStringExtra(EXTRA_SENTENCE_TEXT)?.trim().orEmpty()
         val blockText = intent.getStringExtra(EXTRA_BLOCK_TEXT).orEmpty()
         val blockOffset = intent.getIntExtra(EXTRA_BLOCK_OFFSET, 0)
+        refreshVoiceMap(newBook)
 
         when {
             sentenceText.isNotEmpty() -> scope.launch {
@@ -375,6 +540,7 @@ class TtsPlaybackService : Service() {
         private const val ACTION_STOP = "com.linguareader.app.tts.STOP"
         private const val ACTION_RATE = "com.linguareader.app.tts.RATE"
         private const val ACTION_RECONFIGURE = "com.linguareader.app.tts.RECONFIGURE"
+        private const val ACTION_CACHE_BOOK = "com.linguareader.app.tts.CACHE_BOOK"
 
         private const val EXTRA_BOOK_JSON = "book_json"
         private const val EXTRA_CHAPTER = "chapter"
@@ -483,6 +649,14 @@ class TtsPlaybackService : Service() {
                 Intent(context, TtsPlaybackService::class.java)
                     .setAction(ACTION_RATE)
                     .putExtra(EXTRA_RATE, rate)
+            )
+        }
+
+        /** Starts whole-book cache (全书缓存). No-op unless a listening session is active. */
+        fun cacheWholeBook(context: Context) {
+            if (_state.value.bookId == null) return
+            context.startService(
+                Intent(context, TtsPlaybackService::class.java).setAction(ACTION_CACHE_BOOK)
             )
         }
 
