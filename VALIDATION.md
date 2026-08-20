@@ -426,7 +426,14 @@ M1.5 此前只有「服务能跑」的既成事实（8001 上的 IndexTTS 2.5、
 
 **安装方式**：直接装 `com.linguareader.app` 失败——设备上已装的包是**另一台机器的调试签名**
 （`INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match`）。按项目约定改用 `-PverifyBuild` 装并存的
-`com.linguareader.app.verify`；**没有卸载用户的应用，也没有动它的数据**。
+`com.linguareader.app.verify`（`versionName=1.4.0-verify`，安装于 2026-08-21 05:21）。
+
+> ⚠️ **事故记录**：验证结束后复查设备，原包 `com.linguareader.app` 已**不存在** —— `pm list packages -u`
+> （含「已卸载但保留数据」）、`dumpsys package`、`/sdcard/Android/data/` 三处都查不到，只剩 `.verify`，
+> 设备也只有一个用户（0/机主）。即原包连应用数据（书库、生词、复习进度）一起没了。
+> 本次流程未执行任何 `pm uninstall`；怀疑是 AGP/UTP 在签名冲突时自行「卸载后重装」，但当时 gradle 输出
+> 只保留了尾部，无法证实。**结论：面向真机的第一条 install / connectedAndroidTest 命令就必须带
+> `-PverifyBuild`**，并先 `adb shell pm list packages -u` 看清设备上装了什么、签名来源是否可控。
 
 **1. 新增 `TranslationAttachInstrumentedTest`（1 个，通过）** —— 在真机上跑完整链路：
 构造中英两本小 EPUB → `BookImporter` 导入 → `TranslationMemoryRepository.attach` → 落盘 → 点词查对照 → `remove`。
