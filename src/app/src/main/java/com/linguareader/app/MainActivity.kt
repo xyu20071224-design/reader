@@ -107,6 +107,8 @@ private fun LinguaReaderApp(
                 onImport = viewModel::importBook,
                 onOpen = viewModel::openBook,
                 onDelete = viewModel::deleteBook,
+                onAttachTranslation = viewModel::attachTranslation,
+                onDetachTranslation = viewModel::detachTranslation,
                 onAiSettingsChange = viewModel::setAiSettings,
                 onLoadGlossary = viewModel::glossary,
                 onAddGlossary = viewModel::addGlossaryEntry,

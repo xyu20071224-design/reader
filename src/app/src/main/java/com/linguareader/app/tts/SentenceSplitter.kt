@@ -15,6 +15,8 @@ object SentenceSplitter {
     private val whitespace = Regex("\\s+")
     private val abbreviation = Regex("""(?i)\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc)\.""")
     private val initials = Regex("""\b(?:[A-Za-z]\.){2,}""")
+    // "J. R. R. Tolkien"：缩写之间带空格，句点同样不是句末。
+    private val spacedInitials = Regex("""\b[A-Za-z]\.(?:\s+[A-Za-z]\.)+""")
     private val terminators = setOf('.', '!', '?', '…', '。', '！', '？')
     private val cjkTerminators = setOf('。', '！', '？')
     private val closing = setOf('"', '\'', '”', '’', ')', ']', '）', '】', '」', '』')
@@ -85,6 +87,9 @@ object SentenceSplitter {
             if (after != null && after.isLowerCase()) {
                 protected += last
             }
+        }
+        spacedInitials.findAll(text).forEach { match ->
+            match.range.filter { text[it] == '.' }.forEach(protected::add)
         }
         return protected
     }

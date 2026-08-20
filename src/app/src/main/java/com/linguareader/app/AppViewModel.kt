@@ -14,7 +14,10 @@ import com.linguareader.app.ai.BookGlossaryRepository
 import com.linguareader.app.ai.BookContextRepository
 import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.ai.SpeakerTagRepository
+import com.linguareader.app.ai.SentenceTranslationResult
 import com.linguareader.app.ai.SentenceTranslatorFactory
+import com.linguareader.app.translation.TranslationLookupResult
+import com.linguareader.app.translation.TranslationMemoryRepository
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
@@ -58,7 +61,9 @@ data class AppUiState(
     /** 一次性轻提示（Snackbar）：显示后由界面调用 [AppViewModel.clearNotice] 清空。 */
     val notice: String? = null,
     val aiSettings: AiSettings = AiSettings(),
-    val aiStatuses: Map<String, AiBookStatus> = emptyMap()
+    val aiStatuses: Map<String, AiBookStatus> = emptyMap(),
+    /** 正在对齐中文译本的书 id（对齐是数十秒级操作，界面据此显示进度并防重复触发）。 */
+    val attachingTranslation: Set<String> = emptySet()
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -73,6 +78,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val aiSettingsStore = AiSettingsStore(application)
     private val aiRepository = BookContextRepository(application, aiSettingsStore)
     private val glossaryRepository = BookGlossaryRepository(application)
+    private val translationRepository = TranslationMemoryRepository(application)
     /** Multi-voice M2: per-chapter speaker tag cache (invalidated with the profile). */
     private val speakerTagRepository =
         SpeakerTagRepository(application, aiSettingsStore, glossaryRepository)
@@ -188,6 +194,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             aiRepository.delete(book.id)
             glossaryRepository.delete(book.id)
             speakerTagRepository.delete(book.id)
+            // 译本与对齐档案跟着英文书一起删。
+            translationRepository.remove(book)
             // Cloud TTS chapter audio cache is per book; remove it with the book.
             File(getApplication<Application>().filesDir, "tts_cache/${book.id}")
                 .deleteRecursively()
@@ -338,18 +346,81 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun removeGlossaryEntry(bookId: String, term: String): BookGlossary =
         glossaryRepository.remove(bookId, term)
 
-    // --- Azure sentence translation -------------------------------------------
+    // --- 中文译本对照 ---------------------------------------------------------
 
     /**
-     * Translates a sentence with Azure AI Translator, applying the book's
-     * enabled glossary terms as dynamic dictionary markup.
+     * 导入中文译本并与英文原书对齐。整本书是数十秒级操作（本机实测魔戒首部曲
+     * 29s），全程在 IO 上跑；界面靠 [AppUiState.attachingTranslation] 显示进度
+     * 并防止重复触发。
      */
-    suspend fun translateSentence(book: Book, sentence: String): String {
+    fun attachTranslation(book: Book, uri: Uri) {
+        if (book.id in mutableState.value.attachingTranslation) return
+        viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(
+                attachingTranslation = mutableState.value.attachingTranslation + book.id,
+                notice = string(R.string.notice_translation_aligning, book.title)
+            )
+            runCatching { translationRepository.attach(book, uri) }
+                .onSuccess { result ->
+                    library.saveTranslation(
+                        book,
+                        result.translationBook.id,
+                        result.translationBook.title,
+                        result.memory.alignedAt
+                    )
+                    mutableState.value = mutableState.value.copy(
+                        attachingTranslation = mutableState.value.attachingTranslation - book.id,
+                        notice = string(R.string.notice_translation_ready, result.memory.pairs.size)
+                    )
+                    refresh()
+                }
+                .onFailure {
+                    mutableState.value = mutableState.value.copy(
+                        attachingTranslation = mutableState.value.attachingTranslation - book.id,
+                        notice = string(R.string.notice_translation_failed)
+                    )
+                }
+        }
+    }
+
+    fun detachTranslation(book: Book) {
+        viewModelScope.launch {
+            translationRepository.remove(book)
+            library.saveTranslation(book, "", "", 0L)
+            mutableState.value = mutableState.value.copy(
+                notice = string(R.string.notice_translation_removed, book.title)
+            )
+            refresh()
+        }
+    }
+
+    /** 点词时查译本对照；未配译本或档案损坏时返回 null，界面不显示该区块。 */
+    suspend fun translationLookup(
+        book: Book,
+        chapterIndex: Int,
+        lookup: WordLookup
+    ): TranslationLookupResult? {
+        if (!book.hasTranslation) return null
+        return runCatching { translationRepository.lookup(book, chapterIndex, lookup) }.getOrNull()
+    }
+
+    // --- sentence translation -------------------------------------------------
+
+    /**
+     * Translates a sentence with the configured backend (Azure first, DeepSeek
+     * as fallback), applying the book's enabled glossary terms. The returned
+     * [SentenceTranslationResult] carries the provider name so the UI can label
+     * the real source.
+     */
+    suspend fun translateSentence(book: Book, sentence: String): SentenceTranslationResult {
         val settings = mutableState.value.aiSettings
         val translator = SentenceTranslatorFactory.from(settings)
             ?: error("未启用整句翻译（需要 Azure Translator Key 或 DeepSeek API Key）")
         val glossary = glossaryRepository.load(book.id)
-        return translator.translateSentence(sentence, glossary)
+        return SentenceTranslationResult(
+            text = translator.translateSentence(sentence, glossary),
+            provider = translator.displayName
+        )
     }
 
     fun saveWord(

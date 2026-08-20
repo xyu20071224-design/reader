@@ -45,6 +45,27 @@
     <string name="glossary_hint">手动条目优先于 AI 自动条目；开关控制是否参与 Azure 整句翻译，关闭后仅用于点词提示。</string>
     <string name="glossary_empty">还没有术语条目。</string>
 
+    <!-- 整句翻译（查词面板） -->
+    <string name="translate_sentence">整句翻译</string>
+    <string name="translate_sentence_result">整句翻译（%1$s）：%2$s</string>
+    <string name="translate_sentence_unavailable">未配置整句翻译：请在 AI 中心填写 Azure Translator Key 或 DeepSeek API Key。</string>
+    <string name="translate_sentence_failed">整句翻译失败，请检查网络或 Key 后重试。</string>
+
+    <!-- 中文译本对照 -->
+    <string name="shelf_translation_add">加译本</string>
+    <string name="shelf_translation_ready">译本 ✓</string>
+    <string name="shelf_translation_aligning">对齐中…</string>
+    <string name="shelf_translation_remove_title">移除《%1$s》的中文译本？</string>
+    <string name="shelf_translation_remove_body">只删除译本与对齐档案；英文原书、生词和听书进度都不受影响。</string>
+    <string name="notice_translation_aligning">正在为《%1$s》对齐译本，整本书可能需要几十秒…</string>
+    <string name="notice_translation_ready">译本对齐完成：%1$d 个句对</string>
+    <string name="notice_translation_failed">译本对齐失败，请确认选的是同一本书的中文译本</string>
+    <string name="notice_translation_removed">已移除《%1$s》的译本对照</string>
+    <string name="reader_translation_title">译本对照</string>
+    <string name="reader_translation_loading">正在查译本…</string>
+    <string name="reader_translation_meta_sentence">%1$s · 句级 · 置信度 %2$d%%</string>
+    <string name="reader_translation_meta_paragraph">%1$s · 段级（未定位到句）· 置信度 %2$d%%</string>
+
     <!-- 听书播放条 -->
     <string name="player_cache_progress"> 缓存全书 %1$d%%</string>
     <string name="player_previous">上一句</string>

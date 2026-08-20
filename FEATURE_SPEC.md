@@ -43,6 +43,9 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 | F-123 | 词性推断与义项排序 | 已实现 |
 | F-124 | 离线词典查询 | 已实现 |
 | F-125 | 单词朗读 | 已实现 |
+| F-126 | AI 语境翻译 | 已实现（可选联网，1.3.0） |
+| F-127 | 本书术语表与 Azure 整句翻译 | 已实现（可选联网，1.3.0） |
+| F-128 | 中文译本对照（离线句/段/词级对齐） | 已实现（引擎 + 书架入口 + 查词面板展示）；真机验证覆盖 attach→查询→移除链路与 UI 回归，SAF 选择器交互与整本书耗时仍待人工 |
 | F-130 | 生词本 | 已实现 |
 | F-131 | 生词收藏与去重 | 已实现 |
 | F-132 | 生词搜索 | 已实现 |
@@ -256,7 +259,22 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 - 点词查词时，术语表条目优先于档案内嵌术语参与 DeepSeek/本地查询，保证用户修改立即生效。
 - 整句翻译独立于点词语境释义，提供方抽象为 `SentenceTranslator` 接口，由 `SentenceTranslatorFactory` 按设置选择：Azure AI Translator 优先（设置中单独填写 Azure Translator Key，可选区域）；未配置 Azure 时若已启用 DeepSeek，则回退到 DeepSeek 提示词翻译。
 - Azure 请求为 `POST {endpoint}/translate?api-version=3.0&from=en&to=zh-Hans`，句中出现且启用的术语按“最长优先、不重叠”匹配，并用 `<mstrans:dictionary translation="…">…</mstrans:dictionary>` 动态词典标记包裹（区分大小写，保留句中原文大小写）；译法为空时标记为原文以保持不译。
-- 未配置任何整句翻译提供方或请求失败时，按钮提示/忽略结果，不影响本地查词与 AI 语境释义。
+- 未配置任何整句翻译提供方（总开关关闭，或既无 Azure Key 又无 DeepSeek Key）时，「整句翻译」按钮置灰不可点，并在按钮下方说明去哪里配置；请求失败时在面板内以警示色给出失败提示，均不影响本地查词与 AI 语境释义。
+- 翻译结果标注实际提供方（`SentenceTranslationResult.provider` = `Azure` / `DeepSeek`）；同一句的翻译结果在本书阅读期间缓存（上限 64 句），重复点词不再重复请求。
+
+#### F-128 中文译本对照（离线，整句翻译的替代路径）
+
+行为：
+
+- 书架卡片新增「加译本」：选一本中文译本 EPUB → 导入到 `files/translations/<id>/`（**不出现在书架**）→ 与英文原书对齐 → 档案落 `files/translation-memory/<sourceBookId>.json`。`Book` 记录 `translationBookId` / `translationTitle` / `translationAlignedAt`。
+- 对齐是数十秒级操作（本机实测魔戒首部曲 36×29 章、12,697 句对、29s）：期间卡片显示「对齐中…」且按钮禁用（`AppUiState.attachingTranslation` 防重复触发），开始/完成/失败都走全局 Snackbar，完成提示带句对数。
+- 已配译本的卡片显示译本书名与「译本 ✓」；再点一次弹确认框可移除（只删译本与对齐档案，不动原书、生词与听书进度）。删除英文书时译本与档案一并清除。
+- 对齐算法（`TranslationAligner`，纯 Kotlin）三级单调 DP：章节（数量不等时按章节全文再 DP）→ 段落（允许 1:0/0:1/1:1/2:1/1:2）→ 句子（不允许合并）。代价 = 长度比偏差（英文词数 vs 中文字符数 ÷ 1.7）− 数字·拉丁专名锚点命中率 × 0.5；置信度 = 1 − 代价，钳在 [0.15, 1]。段落抽取复用听书的叶级选择器 `TtsTextExtractor`。
+- 点词时查词面板显示「译本对照」区块：中文句 + 提供的译本名 + 句级/段级标识 + 置信度百分比。查询（`TranslationMemoryIndex`）5 级降级：精确段+句 → 精确句 → 同段落句包含 → 同章 Dice 相似度 ≥0.85 模糊 → 段落兜底；**第 4、5 级要求置信度 ≥0.30，1–3 级是精确命中不受限**，全都不命中则不显示该区块。
+- 句级命中时再做词级对照（`WordAligner`）：数字/拉丁专名走锚点直配（置信度 0.95），否则用 ECDICT 义项候选按「长度优先 + 相对位置接近」打分，低于 0.40 或定位越界就不高亮（宁可不高亮，不可错标）。命中的中文词在面板里着色加粗。
+- **全程离线、零联网**，与 F-127 的整句翻译互不依赖；未配译本时该区块不出现。
+- 查询索引按书缓存（章节分桶 + 预归一化英文句/段落），避免每次点词重读整份档案。档案格式 v2 用「段落表 + 句对下标」，同段落文本只存一次（实测同一本书 14.2 MB → 4.8 MB），并兼容读 v1 旧档案。
+- 遗留：本书术语表（`TranslationMemory.terms`）v1 恒空 —— 无监督共现学习实测需要 9.09M 累加键、峰值堆 1.7 GB（512 MB 堆 OOM），手机上不可行；字段与 `WordAligner.prefer` 入口保留。单字中文义项（洞/水/火）因候选过滤 `length ≥ 2` 无法词级对齐，只显示句级对照。
 
 ### 3.4 生词本与复习
 
@@ -608,6 +626,8 @@ v1 范围（当前章节内跳转）：
 | `ai/glossary/<bookId>.json` | 本书术语表（`kind=character` 条目同时是多角色的角色表） |
 | `ai/speaker-tags/<bookId>/<chapter>.json` | 章节说话人打标缓存（LLM 结果；删除书籍或重建语境档案时清除） |
 | `voice_maps/<bookId>.json` | 本书角色 → 音色映射（含旁白音色、用户锁定项与生成时的引擎标识） |
+| `translations/<translationBookId>/...` | 导入的中文译本（结构与 `books/` 相同，但**不出现在书架**） |
+| `translation-memory/<sourceBookId>.json` | 本书译本对齐档案（格式 v2：段落表 + 句对下标；兼容读 v1） |
 | SharedPreferences `reader_preferences` | 阅读外观偏好 |
 
 ### 4.2 Book / Chapter JSON
@@ -742,6 +762,7 @@ CREATE TABLE forms (
 | 1.6.14 | 2026-08-20 | UI 评审整改（第一批）：**外壳夜间模式**——`ThemeColors` 拆成日间/夜间两套 `LinguaPalette`，语义色改为 `LocalLinguaPalette` 取值（调用点不变），配色方案与状态栏/导航栏颜色由调色板派生；外壳配色**跟随正文阅读主题**（选「夜间」整个界面变暗，未设置过则跟随系统深色），阅读设置改主题后即时切换；强调色上的文字改用 `OnAccent`（日间白、夜间墨）保证对比度。**多角色面板整改**：新增「恢复自动」（解除锁定并立刻重跑分配）、音色改用可搜索的分组选择弹层（推荐 / 语言·性别分组，替代 60 项裸下拉）、试听增加播放/停止状态与逐项试听、锁定与下拉改用真图标（替换 ▾ 与 emoji）、移除同方向嵌套滚动。单元测试 269 个通过（新增 10 个：外壳配色规则 5、音色选择器 5） |
 | 1.6.15 | 2026-08-20 | UI 评审整改（第二批）：**全局轻提示**——新增 `AppSnackbar` + `LocalAppSnackbar`，`MainActivity` 承载 `SnackbarHost`（浮于书架与阅读页之上）；`AppUiState.notice` 作为一次性提示通道，导入/删除书籍会提示「已导入《X》/已删除《X》」，多角色面板的锁定/恢复自动/试听失败也改走轻提示（不再是弹层内一行会消失的状态字）。**文案资源化**——建立 `strings.xml` 命名规范并新增 `values-en/strings.xml`（英文界面首次可用，机制已验证）；已迁移 `ListeningBar`、`MultiVoiceSettings`、`BookshelfScreen` 与 ViewModel 提示共约 100 条文案（含 `plurals` 处理英文单复数）；`MultiVoiceSupport.statusMessage` 改为返回 `MultiVoiceStatus` 数据（界面再映射资源，测试改为断言状态而非文案）。单元测试 269 个通过；lint 0 错误且资源无 `MissingTranslation`/`PluralsCandidate` 告警 |
 | 1.6.16 | 2026-08-21 | 真机测试发现的两处修复：**句高亮向下偏移**——分页多列布局下「rect - scrollerRect + scrollTop」的隐含假设（包含块＝滚动容器 padding box）在 WebView 中不成立（实测滚动容器 `style.top=104` 但 `rect.top=136`，覆盖层绝对定位原点在 200），高亮框整体低 64px（≈2.7 行）看起来像高亮了后面几行的句子；改为用零尺寸探针实测绝对定位原点再摆放（真机复测 deltaY 64.0 → 0.0）。**AI 中心保存无反馈**——点「保存」界面毫无变化易被当成无响应，改为按钮旁行内 ✓ 确认并说明保存后的效果（就绪/未填 Key/总开关关闭/已关闭四种），同时对 Key、地址、模型做 `trim()`（粘贴带空格会导致 401 却看不出原因）。新增 2 个脚本回归测试（探针定位 + 诊断代码不得入库） |
+| 1.6.17 | 2026-08-21 | **新增 F-128 中文译本对照（离线）**：从另一台机器的交付包引入纯 Kotlin 对齐引擎并整合进 `:app`（新包 `app/translation/`：`TranslationAligner` 三级单调 DP、`TranslationMemoryIndex` 5 级降级查询、`WordAligner` 词级定位、`TranslationMemoryRepository` 平台层）；`Book` 新增 `translationBookId`/`translationTitle`/`translationAlignedAt` + `hasTranslation`；书架卡片新增「加译本 / 译本 ✓」（独立文件选择器、对齐中禁用、开始/完成/失败走全局 Snackbar、移除有确认框、删书连带清理），查词面板新增「译本对照」区块（句/段级标识 + 置信度 + 词级着色加粗）。**相对交付包的四处改造**：档案格式改 v2「段落表 + 下标」（同书 14.2 MB → 4.8 MB，兼容读 v1）、查询索引按书缓存 + 按章分桶 + 预归一化（原实现每次点词重读整份 15 MB 档案）、章节下标改用 DP 路径（原用 `indexOf` 回查，两章正文相同会整章错配）、DP 内层正则提到对象级 + 前驱矩阵每格 1 字节。**砍掉 `TermLexiconLearner`**：JVM 实测整本小说需 9.09M 累加键、峰值堆 1.7 GB（512/256 MB 堆均 OOM），手机不可行，`terms` 字段保留恒空。同步交付包两处共享文件改动（`SentenceSplitter` 加 `spacedInitials` 保护 `J. R. R.`；`ContextAnalyzer` token 命中改右端排他）。单元测试 308 个通过（新增 27 个：对齐 5 / 格式 4 / 索引 11 / 词级 5 / `Book` 译本字段 2）；真机（PKB110 / Android 16，`-PverifyBuild` 并存包）新增 `TranslationAttachInstrumentedTest` 跑通 attach→对齐→落盘→点词→移除全链路，`BookshelfSmokeTest` + `ReaderAcceptanceTest` 共 5 个 UI 回归通过 |
 
 ## 7. 已知不一致（待处理）
 

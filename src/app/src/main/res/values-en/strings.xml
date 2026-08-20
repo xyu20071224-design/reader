@@ -47,6 +47,27 @@
     <string name="glossary_hint">Manual entries win over AI ones; the switch controls whether the term is used for Azure sentence translation, otherwise it only shows on tap.</string>
     <string name="glossary_empty">No glossary entries yet.</string>
 
+    <!-- Sentence translation (lookup sheet) -->
+    <string name="translate_sentence">Translate sentence</string>
+    <string name="translate_sentence_result">Sentence translation (%1$s): %2$s</string>
+    <string name="translate_sentence_unavailable">Sentence translation is not configured: add an Azure Translator key or a DeepSeek API key in the AI centre.</string>
+    <string name="translate_sentence_failed">Sentence translation failed. Check your network or key, then try again.</string>
+
+    <!-- Chinese translation pairing -->
+    <string name="shelf_translation_add">Add translation</string>
+    <string name="shelf_translation_ready">Translation ✓</string>
+    <string name="shelf_translation_aligning">Aligning…</string>
+    <string name="shelf_translation_remove_title">Remove the Chinese translation of \"%1$s\"?</string>
+    <string name="shelf_translation_remove_body">Only the translation and its alignment archive are deleted; the English book, your words and listening progress stay.</string>
+    <string name="notice_translation_aligning">Aligning the translation of \"%1$s\" — a whole book can take tens of seconds…</string>
+    <string name="notice_translation_ready">Translation aligned: %1$d sentence pairs</string>
+    <string name="notice_translation_failed">Alignment failed. Make sure you picked the Chinese translation of the same book.</string>
+    <string name="notice_translation_removed">Removed the paired translation of \"%1$s\"</string>
+    <string name="reader_translation_title">Paired translation</string>
+    <string name="reader_translation_loading">Looking up the translation…</string>
+    <string name="reader_translation_meta_sentence">%1$s · sentence level · %2$d%% confidence</string>
+    <string name="reader_translation_meta_paragraph">%1$s · paragraph level (no sentence match) · %2$d%% confidence</string>
+
     <!-- Listening player bar -->
     <string name="player_cache_progress"> Caching book %1$d%%</string>
     <string name="player_previous">Previous sentence</string>

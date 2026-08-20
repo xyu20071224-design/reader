@@ -67,6 +67,24 @@ class LibraryRepository(private val context: Context) {
             }
         }
 
+    /** 记录（或清空）这本书配的中文译本；清空时三个字段传空值。 */
+    suspend fun saveTranslation(
+        book: Book,
+        translationBookId: String,
+        translationTitle: String,
+        alignedAt: Long
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            writeMetadata(
+                book.copy(
+                    translationBookId = translationBookId,
+                    translationTitle = translationTitle,
+                    translationAlignedAt = alignedAt
+                )
+            )
+        }
+    }
+
     suspend fun deleteBook(book: Book) = withContext(Dispatchers.IO) {
         mutex.withLock {
             // The per-book directory holds both the extracted content and its

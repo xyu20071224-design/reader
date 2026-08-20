@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -87,6 +88,8 @@ internal fun BookshelfScreen(
     onImport: (android.net.Uri) -> Unit,
     onOpen: (Book) -> Unit,
     onDelete: (Book) -> Unit,
+    onAttachTranslation: (Book, android.net.Uri) -> Unit,
+    onDetachTranslation: (Book) -> Unit,
     onAiSettingsChange: (AiSettings) -> Unit,
     onLoadGlossary: suspend (String) -> BookGlossary,
     onAddGlossary: suspend (String, String, String) -> BookGlossary,
@@ -105,6 +108,15 @@ internal fun BookshelfScreen(
         if (it != null) onImport(it)
     }
     var deleteCandidate by remember { mutableStateOf<Book?>(null) }
+    // 「加译本」用独立的文件选择器：回调里要知道是给哪本英文书配的译本。
+    var pendingTranslationBook by remember { mutableStateOf<Book?>(null) }
+    var detachTranslationCandidate by remember { mutableStateOf<Book?>(null) }
+    val translationLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            val target = pendingTranslationBook
+            pendingTranslationBook = null
+            if (uri != null && target != null) onAttachTranslation(target, uri)
+        }
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
@@ -232,8 +244,24 @@ internal fun BookshelfScreen(
                             book = book,
                             aiEnabled = state.aiSettings.enabled,
                             aiStatus = state.aiStatuses[book.id],
+                            attachingTranslation = book.id in state.attachingTranslation,
                             onOpen = { onOpen(book) },
                             onGlossary = { glossaryBook = book },
+                            onTranslation = {
+                                if (book.hasTranslation) {
+                                    detachTranslationCandidate = book
+                                } else {
+                                    pendingTranslationBook = book
+                                    translationLauncher.launch(
+                                        arrayOf(
+                                            "application/epub+zip",
+                                            "application/zip",
+                                            "application/octet-stream",
+                                            "text/plain"
+                                        )
+                                    )
+                                }
+                            },
                             onLongPressDelete = { deleteCandidate = book }
                         )
                     }
@@ -283,6 +311,27 @@ internal fun BookshelfScreen(
             },
             title = { Text(stringResource(R.string.shelf_delete_title, book.title)) },
             text = { Text(stringResource(R.string.shelf_delete_body)) },
+            containerColor = CardSurface,
+            shape = CardShape
+        )
+    }
+
+    detachTranslationCandidate?.let { book ->
+        AlertDialog(
+            onDismissRequest = { detachTranslationCandidate = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDetachTranslation(book)
+                    detachTranslationCandidate = null
+                }) { Text(stringResource(R.string.common_delete), color = Danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { detachTranslationCandidate = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+            title = { Text(stringResource(R.string.shelf_translation_remove_title, book.title)) },
+            text = { Text(stringResource(R.string.shelf_translation_remove_body)) },
             containerColor = CardSurface,
             shape = CardShape
         )
@@ -355,8 +404,10 @@ private fun BookCard(
     book: Book,
     aiEnabled: Boolean,
     aiStatus: AiBookStatus?,
+    attachingTranslation: Boolean,
     onOpen: () -> Unit,
     onGlossary: () -> Unit,
+    onTranslation: () -> Unit,
     onLongPressDelete: () -> Unit
 ) {
     Column(modifier = Modifier.clickable(onClick = onOpen)) {
@@ -453,6 +504,16 @@ private fun BookCard(
                 maxLines = 1
             )
         }
+        if (attachingTranslation || book.hasTranslation) {
+            Text(
+                if (attachingTranslation) stringResource(R.string.shelf_translation_aligning)
+                else book.translationTitle.ifBlank { stringResource(R.string.shelf_translation_ready) },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (attachingTranslation) InkFaint else Success,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         Row {
             TextButton(onClick = onGlossary, modifier = Modifier.height(30.dp)) {
                 Icon(
@@ -482,6 +543,25 @@ private fun BookCard(
                     color = InkFaint
                 )
             }
+        }
+        TextButton(
+            onClick = onTranslation,
+            enabled = !attachingTranslation,
+            modifier = Modifier.height(30.dp)
+        ) {
+            Icon(
+                Icons.Filled.Translate,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = if (book.hasTranslation) Success else Accent
+            )
+            Spacer(Modifier.width(3.dp))
+            Text(
+                if (book.hasTranslation) stringResource(R.string.shelf_translation_ready)
+                else stringResource(R.string.shelf_translation_add),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (book.hasTranslation) Success else Accent
+            )
         }
     }
 }

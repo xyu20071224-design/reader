@@ -372,3 +372,81 @@ M1.5 此前只有「服务能跑」的既成事实（8001 上的 IndexTTS 2.5、
 真机用 uiautomator 驱动「书架 → 开书 → 听书 → 点正文选起点」全流程复验，日志无异常。
 
 以及用**真实第三方 Piper 模型**（如 lessac/amy）走一遍完整导入流程（本轮用内置模型覆盖了加载路径，但没走文件选择器 UI）。
+
+## 2026-08-21 F-128 中文译本对照（引擎实测 + 整合验证 + 真机验证）
+
+对照引擎来自另一台机器的交付包（`对照模块-运行包.zip`：纯 Kotlin 引擎 + 可运行 `align-cli` + 魔戒中英测试书，
+不含 UI、构建脚本与单测）。本轮做了「先量后并」：先在 JVM 上实测，再按实测结论整合。
+
+**1. 引擎独立复现（`align-cli`，JDK 17 Temurin 17.0.20，无 Android SDK）**
+
+| 指标 | 本机实测 | 交付包 README 自述 |
+|---|---|---|
+| 章节数 | 英 36 / 中 29 | 同 |
+| 对齐句对 | **12,697** | 12,697（复现一致） |
+| 平均置信度 | **0.79** | 0.79（复现一致） |
+| 耗时 | 读英 199ms + 读中 74ms + 对齐 **29.0s** | 对齐 21.9s（机器差异） |
+| 档案体积 | **15,025 KB**（pretty） | README 未提 |
+
+**2. `TermLexiconLearner` 内存实测（决定砍掉它的依据）**
+
+自写 JVM 探针（`artifacts/alignment-package/bench/Bench.java`，直接调 `core.jar` 里的实现）跑同一批 12,697 句对：
+
+| 堆上限 | 结果 |
+|---|---|
+| 4 GB | 6.3s / **峰值堆 1,728 MB** / 产出 10,234 条 |
+| 512 MB | **OutOfMemoryError**（`zhNGrams` 处） |
+| 256 MB | **OutOfMemoryError**（`positionDistance` 处） |
+
+累加器真实键数 **9,087,640** 个（英文词 × 中文 2–4gram，独立计数验证）。Android 单应用堆通常 128–512 MB，
+故该路径在手机上不可行；且高频条目是 `about / after / again / all` 配 2 字 gram，属共现噪声而非专名译法。
+结论：v1 不生成术语表（`terms` 恒空，字段与 `WordAligner.prefer` 入口保留）。
+
+**3. 档案格式 v2 实测（同一本书、同一批句对、同等紧凑度对比）**
+
+| 布局 | 体积 |
+|---|---|
+| v1（每条句对内联段落全文），pretty | 15,025 KB |
+| v1，紧凑 | 14,206 KB |
+| **v2（段落表 + 句对下标），紧凑** | **4,847 KB（34.1%）** |
+
+去重后英文段落 3,469 / 中文 3,468，平均 3.66 句/段 —— 段落按句重复正是旧格式膨胀的原因。
+
+**4. 整合后的构建与测试**
+
+- `testDebugUnitTest`：**308 个通过、0 失败**（新增 27 个：对齐 5 / 格式 4 / 索引 11 / 词级 5 / `Book` 译本字段 2，
+  其中含两条回归：两章正文相同时章节下标不得错配、旧元数据缺译本字段必须按「未配译本」读出）。
+- `assembleDebug`：成功，`app-debug.apk` 386.1 MB。
+- 同步交付包的两处共享文件改动后既有测试全绿：`SentenceSplitter` 新增 `spacedInitials`（保护 `J. R. R.`）、
+  `ContextAnalyzer` token 命中改右端排他（`until`）。
+
+**真机验证见下一节**（同日完成，含新增仪器测试与 UI 回归）。
+
+## 2026-08-21 F-128 真机验证（OnePlus PKB110 / Android 16，设备 ZXJRNJVWY9C6BYDA）
+
+**安装方式**：直接装 `com.linguareader.app` 失败——设备上已装的包是**另一台机器的调试签名**
+（`INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match`）。按项目约定改用 `-PverifyBuild` 装并存的
+`com.linguareader.app.verify`；**没有卸载用户的应用，也没有动它的数据**。
+
+**1. 新增 `TranslationAttachInstrumentedTest`（1 个，通过）** —— 在真机上跑完整链路：
+构造中英两本小 EPUB → `BookImporter` 导入 → `TranslationMemoryRepository.attach` → 落盘 → 点词查对照 → `remove`。
+断言（都是单测覆盖不到的部分：真实解压清洗、Android 上的 Jsoup 叶级抽取、真实文件 IO、只读 ECDICT SQLite）：
+
+- 对齐句对非空，`sourceBookId` / `translationBookId` 正确，`terms` 为空（v1 约定）；
+- 译本落在 `files/translations/<id>/`，且**不出现在** `files/books/<id>/`；
+- 档案是 v2：有 `enParagraphs` 段落表、句对只有 `ep`/`zp` 下标、**没有**内联的 `enParagraph`；
+- 点「1420」→ 句级命中 + `ANCHOR` 词级对齐，且 `start/endExclusive` 能在中文句里正好切出「1420」；
+- 点普通词「left」→ 词级可能失败但**必须保住句级对照**；未知章节（7）→ 返回 null；
+- `remove()` 把对齐档案与译本目录一起清掉，`hasMemory` 变 false。
+
+**2. UI 回归（5 个，通过）**：`BookshelfSmokeTest`（2）+ `ReaderAcceptanceTest`（3）在真机跑通，
+覆盖本轮改过的 `BookshelfScreen`（卡片多了「加译本」按钮与译本状态行）与 `ReaderScreen`（查词面板新增区块）。
+
+**仍未验证（需要人手或真实图书）**
+
+- 手工点「加译本」走 SAF 系统文件选择器的交互（自动化会被系统选择器挡住）。
+- **整本书量级**在手机上的 attach 耗时与内存峰值：本轮真机用的是小样本 EPUB；JVM 上整本魔戒 29s，
+  手机预计更慢，且对齐 DP 的峰值堆没量过。
+- 「译本对照」区块在查词面板里的实际观感，以及真实图书（英文原版 vs 中译本）的命中率。
+- 两处共享文件改动对**听书分句**与**既有点词落词**的主观影响：`ReaderAcceptanceTest` 通过说明没崩、
+  章节与页码恢复正常，但分句/落词的差异要真人听、看才能判断。

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -66,16 +67,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
+import com.linguareader.app.ai.SentenceTranslationResult
+import com.linguareader.app.ai.SentenceTranslatorFactory
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
@@ -90,6 +98,8 @@ import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.reader.EpubPage
 import com.linguareader.app.reader.ReaderController
+import com.linguareader.app.translation.TranslationLookupResult
+import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.TtsPlaybackState
 import kotlinx.coroutines.Job
@@ -163,8 +173,15 @@ internal fun ReaderScreen(
     var dictionaryLoading by remember { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
     var aiLoading by remember { mutableStateOf(false) }
-    var sentenceTranslation by remember { mutableStateOf<String?>(null) }
+    var sentenceTranslation by remember { mutableStateOf<SentenceTranslationResult?>(null) }
+    var translation by remember { mutableStateOf<TranslationLookupResult?>(null) }
+    var translationLoading by remember { mutableStateOf(false) }
+    var sentenceTranslationError by remember { mutableStateOf<String?>(null) }
     var sentenceTranslationLoading by remember { mutableStateOf(false) }
+    // 同一句重复点词不再重复出网（也不重复计费）；换书即失效，超过 64 句整体丢弃。
+    val sentenceTranslationCache = remember(book.id) {
+        mutableMapOf<String, SentenceTranslationResult>()
+    }
     var showingRelatedPhrase by remember { mutableStateOf(false) }
     var reviewDeck by remember { mutableStateOf<List<SavedWord>?>(null) }
     var showReviewSettings by remember { mutableStateOf(false) }
@@ -364,11 +381,19 @@ internal fun ReaderScreen(
         dictionaryLoading = true
         aiResult = null
         aiLoading = false
-        sentenceTranslation = null
+        sentenceTranslation = sentenceTranslationCache[request.sentence.trim()]
+        sentenceTranslationError = null
         sentenceTranslationLoading = false
+        translation = null
+        translationLoading = book.hasTranslation
         dictionaryResult = viewModel.lookup(request)
         showingRelatedPhrase = false
         dictionaryLoading = false
+        // 译本对照是纯本地查询，先于联网 AI 出结果。
+        if (book.hasTranslation) {
+            translation = viewModel.translationLookup(book, chapterIndex, request)
+            translationLoading = false
+        }
         if (aiSettings.enabled) {
             aiLoading = true
             aiResult = runCatching {
@@ -697,8 +722,11 @@ internal fun ReaderScreen(
             loading = dictionaryLoading,
             aiContext = aiResult,
             aiLoading = aiLoading,
-            azureReady = aiSettings.azureReady,
+            translationReady = SentenceTranslatorFactory.isConfigured(aiSettings),
+            translation = translation,
+            translationLoading = translationLoading,
             sentenceTranslation = sentenceTranslation,
+            sentenceTranslationError = sentenceTranslationError,
             sentenceTranslationLoading = sentenceTranslationLoading,
             isSaved = savedId != null && savedWords.any { word -> word.id == savedId },
             isPhraseView = showingRelatedPhrase,
@@ -730,13 +758,33 @@ internal fun ReaderScreen(
                 }
             },
             onTranslateSentence = {
-                if (sentenceTranslationLoading) return@LookupSheet
-                scope.launch {
-                    sentenceTranslationLoading = true
-                    sentenceTranslation = runCatching {
-                        viewModel.translateSentence(book, currentLookup.sentence)
-                    }.getOrNull()
-                    sentenceTranslationLoading = false
+                val key = currentLookup.sentence.trim()
+                val cached = sentenceTranslationCache[key]
+                when {
+                    sentenceTranslationLoading -> Unit
+                    cached != null -> {
+                        sentenceTranslation = cached
+                        sentenceTranslationError = null
+                    }
+                    else -> scope.launch {
+                        sentenceTranslationLoading = true
+                        sentenceTranslationError = null
+                        // 成功与失败都必须留下可见结果：静默失败是历史缺陷。
+                        runCatching { viewModel.translateSentence(book, currentLookup.sentence) }
+                            .onSuccess { result ->
+                                sentenceTranslation = result
+                                if (sentenceTranslationCache.size >= 64) {
+                                    sentenceTranslationCache.clear()
+                                }
+                                sentenceTranslationCache[key] = result
+                            }
+                            .onFailure {
+                                sentenceTranslation = null
+                                sentenceTranslationError =
+                                    context.getString(R.string.translate_sentence_failed)
+                            }
+                        sentenceTranslationLoading = false
+                    }
                 }
             },
             onDismiss = {
@@ -975,6 +1023,31 @@ internal fun parsePageInput(raw: String, pageCount: Int): Int? {
     return page - 1
 }
 
+/**
+ * 译本对照的展示文本：词级对照命中时把中文句里对应的词着色加粗；未命中（或
+ * 偏移越界）就原样显示整句 —— 宁可不高亮，不可错标。
+ */
+@Composable
+private fun highlightedTranslation(result: TranslationLookupResult): AnnotatedString {
+    val text = result.chinese
+    val alignment = result.wordAlignment
+    if (alignment == null ||
+        alignment.start < 0 ||
+        alignment.endExclusive > text.length ||
+        alignment.start >= alignment.endExclusive
+    ) {
+        return AnnotatedString(text)
+    }
+    val accent = Accent
+    return buildAnnotatedString {
+        append(text.substring(0, alignment.start))
+        withStyle(SpanStyle(color = accent, fontWeight = FontWeight.Bold)) {
+            append(text.substring(alignment.start, alignment.endExclusive))
+        }
+        append(text.substring(alignment.endExclusive))
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LookupSheet(
@@ -984,8 +1057,11 @@ private fun LookupSheet(
     loading: Boolean,
     aiContext: AiLookupResult?,
     aiLoading: Boolean,
-    azureReady: Boolean,
-    sentenceTranslation: String?,
+    translationReady: Boolean,
+    translation: TranslationLookupResult?,
+    translationLoading: Boolean,
+    sentenceTranslation: SentenceTranslationResult?,
+    sentenceTranslationError: String?,
     sentenceTranslationLoading: Boolean,
     isSaved: Boolean,
     isPhraseView: Boolean,
@@ -1133,20 +1209,60 @@ private fun LookupSheet(
                     )
                 }
             }
+            if (translationLoading) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    stringResource(R.string.reader_translation_loading),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = InkSoft
+                )
+            }
+            translation?.let { result ->
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    stringResource(R.string.reader_translation_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Accent,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    highlightedTranslation(result),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(
+                        if (result.matchLevel == TranslationMatchLevel.SENTENCE) {
+                            R.string.reader_translation_meta_sentence
+                        } else {
+                            R.string.reader_translation_meta_paragraph
+                        },
+                        result.translationTitle,
+                        (result.confidence * 100).roundToInt()
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Ink.copy(alpha = .62f)
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(
                     onClick = onTranslateSentence,
-                    enabled = !sentenceTranslationLoading
+                    enabled = translationReady && !sentenceTranslationLoading
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.VolumeUp,
+                        Icons.Filled.Translate,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
-                        tint = if (azureReady) Accent else InkFaint
+                        tint = if (translationReady) Accent else InkFaint
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("整句翻译", color = if (azureReady) Accent else InkFaint)
+                    Text(
+                        stringResource(R.string.translate_sentence),
+                        color = if (translationReady) Accent else InkFaint
+                    )
                 }
                 if (sentenceTranslationLoading) {
                     LinearProgressIndicator(
@@ -1158,10 +1274,26 @@ private fun LookupSheet(
                     )
                 }
             }
-            if (sentenceTranslation != null) {
+            if (!translationReady) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.translate_sentence_unavailable),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = InkSoft
+                )
+            }
+            sentenceTranslationError?.let { message ->
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "整句翻译（Azure）：$sentenceTranslation",
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Danger
+                )
+            }
+            sentenceTranslation?.let { result ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    stringResource(R.string.translate_sentence_result, result.provider, result.text),
                     style = MaterialTheme.typography.bodyLarge,
                     color = Ink
                 )

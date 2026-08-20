@@ -33,8 +33,18 @@ data class Book(
     val sourceFormat: String = "epub",
     /** Last listened position: chapter and sentence index inside that chapter. */
     val ttsChapterIndex: Int = 0,
-    val ttsSentenceIndex: Int = 0
+    val ttsSentenceIndex: Int = 0,
+
+    /**
+     * 用户为这本英文书配的中文译本。id 指向导入到 files/translations/ 的书，
+     * 它本身不出现在书架上。
+     */
+    val translationBookId: String = "",
+    val translationTitle: String = "",
+    val translationAlignedAt: Long = 0L
 ) {
+    val hasTranslation: Boolean get() = translationBookId.isNotBlank()
+
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
         .put("title", title)
@@ -49,6 +59,9 @@ data class Book(
         .put("sourceFormat", sourceFormat)
         .put("ttsChapterIndex", ttsChapterIndex)
         .put("ttsSentenceIndex", ttsSentenceIndex)
+        .put("translationBookId", translationBookId)
+        .put("translationTitle", translationTitle)
+        .put("translationAlignedAt", translationAlignedAt)
 
     companion object {
         fun fromJson(json: JSONObject): Book {
@@ -68,7 +81,10 @@ data class Book(
                 progress = json.optDouble("progress").toFloat(),
                 sourceFormat = json.optString("sourceFormat", "epub").ifBlank { "epub" },
                 ttsChapterIndex = json.optInt("ttsChapterIndex"),
-                ttsSentenceIndex = json.optInt("ttsSentenceIndex")
+                ttsSentenceIndex = json.optInt("ttsSentenceIndex"),
+                translationBookId = json.optString("translationBookId"),
+                translationTitle = json.optString("translationTitle"),
+                translationAlignedAt = json.optLong("translationAlignedAt")
             )
         }
     }

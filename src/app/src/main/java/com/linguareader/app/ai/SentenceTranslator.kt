@@ -18,6 +18,12 @@ interface SentenceTranslator {
     suspend fun translateSentence(sentence: String, glossary: BookGlossary): String
 }
 
+/**
+ * One finished sentence translation plus the backend that produced it, so the
+ * UI can name the real provider instead of assuming Azure.
+ */
+data class SentenceTranslationResult(val text: String, val provider: String)
+
 /** Picks the active sentence translator from the user's settings. */
 object SentenceTranslatorFactory {
     fun from(settings: AiSettings): SentenceTranslator? = when {
@@ -27,4 +33,10 @@ object SentenceTranslatorFactory {
         settings.remoteReady -> DeepSeekTranslator(settings)
         else -> null
     }
+
+    /**
+     * True when sentence translation can actually run. The reader uses this to
+     * disable the button up front instead of failing silently on tap.
+     */
+    fun isConfigured(settings: AiSettings): Boolean = from(settings) != null
 }
