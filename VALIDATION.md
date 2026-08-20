@@ -296,3 +296,47 @@ M1.5 此前只有「服务能跑」的既成事实（8001 上的 IndexTTS 2.5、
 - `lintDebug`：通过，0 错误，Piper/Sherpa/听书设置三个文件 0 告警；`assembleDebug`：通过。
 - **仍需真机验证（评审里的 H1 只能靠真机确认）**：导入一个 lessac/amy 模型后英文能出声、切回内置音色也正常、导入过程中界面不卡；以及联网关闭时试听/下载确实置灰。
 - 未修的评审项（留给后续）：M5 多说话人模型固定 `sid = 0`（`libritts_r`/`l2arctic` 只能听到第一个说话人，需要 speaker 选择或明确标注）、M6 tokens 复用仅覆盖 en_US（现在靠加载校验兜底报错）、L1 该界面文案尚未资源化（`ListeningSettingsSheet` 仍有约 105 条中文字面量）、L5 可考虑放开 Piper 的多角色音色（有了多音色后 D2 的前提已不成立）。
+
+## 2026-08-21 真机验证（OnePlus PKB110 / Android 16 / SDK 36 / arm64-v8a）
+
+手机上已装的是另一台机器的调试签名，直接覆盖安装会要求卸载（清数据）。为不动用户的书与设置，
+`app/build.gradle.kts` 增加了 `-PverifyBuild` 开关：加上它时 debug 包变成并存的
+`com.linguareader.app.verify`（`versionNameSuffix=-verify`），验证完再卸载即可，正式包与数据全程未动。
+
+**1. Piper 导入加载路径（评审 H1，只能真机验证）——新增仪器测试 4/4 通过**
+
+`PiperVoiceLoadInstrumentedTest` 把内置 ryan 模型复制到 `filesDir`，再按「导入音色」的文件路径方式加载，
+因此不需要下载任何外部模型就能覆盖同一条代码路径：
+
+| 用例 | 耗时 | 结论 |
+|---|---|---|
+| `importedVoiceLoadsFromAbsoluteFilePaths` | 1.62 s | **H1 已修复**：文件路径构造能加载 63 MB 模型并真的合成出音频 |
+| `bundledVoiceStillLoadsFromAssets` | 0.96 s | 重构未破坏内置音色的 asset 加载 |
+| `garbageModelIsRejectedByLoadValidation` | 0.05 s | M4 的「真加载校验」确实拦下伪造 ONNX（0x08 头能骗过魔数探测） |
+| `engineFallsBackToBundledVoiceWhenSelectionIsBroken` | 0.002 s | M1 过滤失效记录 + resolve 回退内置音色 |
+
+**2. 外壳夜间模式（UI 第一批）——用截图平均亮度客观验证**
+
+系统深色开关切换 + 重启应用，`adb exec-out screencap` 截图后用 ffmpeg `signalstats` 取平均亮度（0–255）：
+
+| 区域 | 浅色 | 深色 | 结论 |
+|---|---|---|---|
+| 整屏 YAVG | 124.8 | **33.4** | 外壳整体变暗（改动前只有 `lightColorScheme`，此处会保持 ~125） |
+| 状态栏（顶部 90px） | 105.6 | **32.9** | `ApplySystemBars` 生效 |
+| 导航栏（底部 60px） | 104.6 | **31.2** | 同上 |
+
+验证后已把系统深色恢复为 `auto`，截图已删除。
+
+**3. Compose 界面回归（真机）**：`BookshelfSmokeTest` + `LaunchPromptUiTest` **5/5 通过** ——
+说明调色板改成 `LocalLinguaPalette` 取值、以及三个界面的文案资源化都没有破坏 Compose 树与既有断言。
+
+**4. 启动日志**：多次冷启动后 logcat 无本应用的 FATAL/异常；进程常驻正常。
+
+**5. 文案本地化**：新增 `StringResourcesTest`（Robolectric，`@Config(qualifiers = "zh"/"en")`）断言中英资源与 `plurals`
+实际取值（`导入`/`Import`、`1 book`/`2 books`、`1 character has a voice.`）——英文界面不是"留了路"而是可验证可用。
+
+当前总计：**单元测试 277 个通过**（新增 `StringResourcesTest` 3 个）、真机仪器测试 9 个通过（Piper 4 + UI 5）、
+`lintDebug` 0 错误、`assembleDebug` 通过。
+
+仍需人工用眼确认（无法自动化）：夜间配色的观感与对比度、Snackbar 是否挡住听书条、英文界面长句在窄屏的换行；
+以及用**真实第三方 Piper 模型**（如 lessac/amy）走一遍完整导入流程（本轮用内置模型覆盖了加载路径，但没走文件选择器 UI）。

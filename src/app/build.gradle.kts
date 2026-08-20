@@ -24,6 +24,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 加 -PverifyBuild 时安装成并存的验证包（com.linguareader.app.verify），
+            // 这样真机上已有的正式调试包（可能是别的调试签名）与其数据都不用动。
+            if (project.hasProperty("verifyBuild")) {
+                applicationIdSuffix = ".verify"
+                versionNameSuffix = "-verify"
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
