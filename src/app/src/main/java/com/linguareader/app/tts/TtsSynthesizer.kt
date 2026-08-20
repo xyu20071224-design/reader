@@ -181,7 +181,7 @@ object TtsSynthesizerFactory {
         }
         return when {
             settings.mode == TtsEngineMode.PIPER && settings.isConfigured ->
-                SherpaTtsSynthesizer(context, listener)
+                SherpaTtsSynthesizer(context, listener, piperEnVoiceId = settings.piperEnVoiceId)
 
             // Networked engines honour the master power switch; when it is off
             // they fall back to the local engines below (offline-first).

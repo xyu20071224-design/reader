@@ -276,3 +276,23 @@ M1.5 此前只有「服务能跑」的既成事实（8001 上的 IndexTTS 2.5、
 - 迁移进度（剩余中文字面量，可作为下一批的度量）：`ListeningSettingsSheet` 105、`ReviewUi` 63、`ReaderScreen` 44、`AiDrawerSheet` 34、`VocabularyScreen` 24、`AppViewModel` 12、`LaunchPromptDialog` 2。
 - **协作提示**：本轮**有意跳过 `ListeningSettingsSheet.kt`**（以及 `CloudTtsSettings/TtsSynthesizer/SherpaTtsSynthesizer/PiperVoice*`）——同一工作区另有会话正在这些文件上开发 Piper 音色导入功能，避免互相覆盖；这批提交只包含本会话改动的文件。
 - 仍待人工：真机确认 Snackbar 位置不挡听书条（当前底部留白 72dp）、切到英文系统语言看 `values-en` 文案排版。
+
+## 2026-08-20 本地 Piper 音色导入：评审问题修复（H1–H3 + M1–M4）
+
+对「导入 Piper 英文音色」这批改动做代码评审后，直接修掉了 7 个问题：
+
+- **H1 导入音色可能加载不了（asset 与文件路径混用）**：`SherpaTtsSynthesizer` 一直用 `OfflineTts(assets, config)` 构造，传 AssetManager 时 sherpa-onnx 会把路径当 asset 解析，而导入音色是 `filesDir` 下的绝对路径。新增 `PiperAssets` 收口加载逻辑：内置音色走 asset 构造、导入音色走 `OfflineTts(config = …)` 文件构造；且导入音色加载失败时**回退内置 Ryan**，不再让一个坏音色把整个 Piper 引擎（含中文）拖死。espeak-ng-data 的复制也从合成器搬到 `PiperAssets.ensureEspeakData`，与导入校验共用同一条路径。
+- **H2 30–90 MB 模型在主线程复制（ANR）**：`PiperVoiceImporter.import` 改为 `suspend` + `withContext(Dispatchers.IO)`；设置页在协程里调用，期间按钮禁用并显示「正在导入并校验模型…」。
+- **H3「离线引擎」里内嵌联网试听且绕过总开关**：样例试听与「下载」按钮现在受 `networkAiEnabled` 总开关控制（关闭时置灰并说明「已导入音色仍可离线使用」），文案明确标出「试听/下载需联网（HuggingFace / GitHub），导入后的朗读依然完全离线」；播放失败与打不开下载页从静默改为明确提示。
+- **M1 失效记录会让英文朗读整体哑掉**：`PiperVoiceStore.imported()` 过滤掉模型/tokens 文件已不存在的记录，并把清理结果写回持久化数据。
+- **M2 导入失败残留半个模型**：改为「先写 `.tmp` → 校验 → rename」的原子流程，失败时删临时文件、新建目录整体回滚。
+- **M3 文件名直接当目录名（路径穿越）**：新增 `sanitizeId()`——取纯文件名、白名单字符（字母数字与 `_ . -`，CJK 作为合法字母保留）、去掉开头点、折叠连续点、限长 64、空名兜底。
+- **M4 只校验扩展名**：新增体积区间（1 MB–400 MB）+ ONNX 结构探测（protobuf 首字段 `0x08` 或前 8 KB 出现 `onnx` 标识）+ **真加载校验**（`PiperAssets.canLoad`，通不过就不登记并提示「可能不是 Piper VITS 模型，或需要匹配的 tokens.txt」）。
+- 顺手：`PiperVoiceStore` 与下载跳转改用项目统一的 KTX 写法（`edit {}`、`String.toUri()`），Piper 相关文件的 lint 告警清零。
+
+验证情况：
+
+- `testDebugUnitTest`：**274 个全部通过**（新增 `PiperVoiceImportTest` 5 个：id 净化与路径穿越、ONNX 结构探测、失效记录过滤与回写、未知 id 回退内置音色、官方目录 URL 形态）。
+- `lintDebug`：通过，0 错误，Piper/Sherpa/听书设置三个文件 0 告警；`assembleDebug`：通过。
+- **仍需真机验证（评审里的 H1 只能靠真机确认）**：导入一个 lessac/amy 模型后英文能出声、切回内置音色也正常、导入过程中界面不卡；以及联网关闭时试听/下载确实置灰。
+- 未修的评审项（留给后续）：M5 多说话人模型固定 `sid = 0`（`libritts_r`/`l2arctic` 只能听到第一个说话人，需要 speaker 选择或明确标注）、M6 tokens 复用仅覆盖 en_US（现在靠加载校验兜底报错）、L1 该界面文案尚未资源化（`ListeningSettingsSheet` 仍有约 105 条中文字面量）、L5 可考虑放开 Piper 的多角色音色（有了多音色后 D2 的前提已不成立）。

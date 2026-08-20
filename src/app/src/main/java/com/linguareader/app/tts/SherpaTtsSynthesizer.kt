@@ -24,7 +24,8 @@ import java.nio.ByteOrder
  */
 class SherpaTtsSynthesizer(
     context: Context,
-    private val listener: TtsSynthesizerListener
+    private val listener: TtsSynthesizerListener,
+    private val piperEnVoiceId: String = ""
 ) : TtsSynthesizer {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -43,12 +44,13 @@ class SherpaTtsSynthesizer(
             try {
                 // sherpa-onnx's Piper phonemizer needs espeak-ng-data as real
                 // files (not asset entries), so copy it out to filesDir once.
-                val espeakDir = File(appContext.filesDir, EN_DATA_ASSET_PATH)
-                if (!espeakDir.isDirectory) {
-                    copyAssetDir(EN_DATA_ASSET_PATH, espeakDir)
-                }
+                PiperAssets.ensureEspeakData(appContext)
                 zhTts = OfflineTts(appContext.assets, zhConfig())
-                enTts = OfflineTts(appContext.assets, enConfig())
+                // 英文：选中的音色可能是用户导入的（文件路径），加载失败时回退内置
+                // Ryan，避免一个坏音色让整个 Piper 引擎（含中文）都不可用。
+                val selected = PiperVoiceStore.resolve(appContext, piperEnVoiceId)
+                enTts = PiperAssets.createEnglishTts(appContext, selected)
+                    ?: PiperAssets.createEnglishTts(appContext, PiperVoiceCatalog.builtin)
                 ready = true
                 listener.onReady()
             } catch (failure: Throwable) {
@@ -119,32 +121,6 @@ class SherpaTtsSynthesizer(
         ).joinToString(","),
     )
 
-    private fun enConfig(): OfflineTtsConfig = OfflineTtsConfig(
-        model = OfflineTtsModelConfig(
-            vits = OfflineTtsVitsModelConfig(
-                model = "sherpa/vits-piper-en_US-ryan-medium/en_US-ryan-medium.onnx",
-                tokens = "sherpa/vits-piper-en_US-ryan-medium/tokens.txt",
-                dataDir = File(appContext.filesDir, EN_DATA_ASSET_PATH).absolutePath,
-            ),
-            numThreads = 2,
-        ),
-    )
-
-    private fun copyAssetDir(assetPath: String, dest: File) {
-        val entries = appContext.assets.list(assetPath) ?: return
-        if (entries.isEmpty()) {
-            // leaf file
-            dest.parentFile?.mkdirs()
-            appContext.assets.open(assetPath).use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
-            }
-        } else {
-            dest.mkdirs()
-            for (entry in entries) {
-                copyAssetDir("$assetPath/$entry", File(dest, entry))
-            }
-        }
-    }
 
     private fun isChinese(text: String): Boolean =
         text.any { char ->
@@ -155,9 +131,6 @@ class SherpaTtsSynthesizer(
                 code in 0x20000..0x2FA1F
         }
 
-    companion object {
-        private const val EN_DATA_ASSET_PATH = "sherpa/vits-piper-en_US-ryan-medium/espeak-ng-data"
-    }
 
     private fun writeWav(samples: FloatArray, sampleRate: Int): File {
         val channels = 1
