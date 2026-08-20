@@ -58,7 +58,7 @@
     <string name="shelf_translation_remove_title">移除《%1$s》的中文译本？</string>
     <string name="shelf_translation_remove_body">只删除译本与对齐档案；英文原书、生词和听书进度都不受影响。</string>
     <string name="notice_translation_aligning">正在为《%1$s》对齐译本，整本书可能需要几十秒…</string>
-    <string name="notice_translation_ready">译本对齐完成：%1$d 个句对</string>
+    <string name="notice_translation_ready">译本对齐完成：%1$d 个句对（耗时 %2$d 秒）</string>
     <string name="notice_translation_failed">译本对齐失败，请确认选的是同一本书的中文译本</string>
     <string name="notice_translation_removed">已移除《%1$s》的译本对照</string>
     <string name="reader_translation_title">译本对照</string>

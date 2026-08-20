@@ -360,6 +360,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 attachingTranslation = mutableState.value.attachingTranslation + book.id,
                 notice = string(R.string.notice_translation_aligning, book.title)
             )
+            val startedAt = System.currentTimeMillis()
             runCatching { translationRepository.attach(book, uri) }
                 .onSuccess { result ->
                     library.saveTranslation(
@@ -368,9 +369,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         result.translationBook.title,
                         result.memory.alignedAt
                     )
+                    val seconds = ((System.currentTimeMillis() - startedAt) / 1000).toInt()
                     mutableState.value = mutableState.value.copy(
                         attachingTranslation = mutableState.value.attachingTranslation - book.id,
-                        notice = string(R.string.notice_translation_ready, result.memory.pairs.size)
+                        notice = string(
+                            R.string.notice_translation_ready,
+                            result.memory.pairs.size,
+                            seconds
+                        )
                     )
                     refresh()
                 }

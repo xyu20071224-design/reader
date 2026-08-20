@@ -60,7 +60,7 @@
     <string name="shelf_translation_remove_title">Remove the Chinese translation of \"%1$s\"?</string>
     <string name="shelf_translation_remove_body">Only the translation and its alignment archive are deleted; the English book, your words and listening progress stay.</string>
     <string name="notice_translation_aligning">Aligning the translation of \"%1$s\" — a whole book can take tens of seconds…</string>
-    <string name="notice_translation_ready">Translation aligned: %1$d sentence pairs</string>
+    <string name="notice_translation_ready">Translation aligned: %1$d sentence pairs in %2$d s</string>
     <string name="notice_translation_failed">Alignment failed. Make sure you picked the Chinese translation of the same book.</string>
     <string name="notice_translation_removed">Removed the paired translation of \"%1$s\"</string>
     <string name="reader_translation_title">Paired translation</string>
