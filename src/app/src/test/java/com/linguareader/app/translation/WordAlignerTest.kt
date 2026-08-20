@@ -69,6 +69,37 @@ class WordAlignerTest {
     }
 
     @Test
+    fun `single character senses align too`() {
+        // 常见词的中文译法往往只有一个字（洞/水/火），以前被 length >= 2 过滤掉，
+        // 结果这些词永远只有句级对照、没有词级高亮。
+        val alignment = WordAligner.align(
+            enWord = "hole",
+            enSentence = "in a hole in the ground",
+            zhSentence = "在地下的洞里",
+            candidates = listOf("洞；孔"),
+            enOffset = 5
+        )
+
+        assertNotNull(alignment)
+        assertEquals("洞", alignment!!.word)
+        assertEquals(WordAlignmentSource.DICTIONARY, alignment.source)
+        assertEquals("洞", "在地下的洞里".substring(alignment.start, alignment.endExclusive))
+    }
+
+    @Test
+    fun `single non chinese fragments are still rejected`() {
+        // 「x」虽然出现在中文句里，也不能当候选去标注。
+        assertNull(
+            WordAligner.align(
+                enWord = "hole",
+                enSentence = "in a hole",
+                zhSentence = "x 在这里",
+                candidates = listOf("洞, x")
+            )
+        )
+    }
+
+    @Test
     fun `returns null when nothing matches so the caller can degrade`() {
         assertNull(
             WordAligner.align(

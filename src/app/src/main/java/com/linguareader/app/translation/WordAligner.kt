@@ -99,10 +99,23 @@ object WordAligner {
             terms += cleaned
             cleaned.split(SENSE_SEPARATORS)
                 .map { it.trim() }
-                .filter { it.length >= 2 && it.any { c -> c in '\u4e00'..'\u9fff' } }
+                .filter { isChineseCandidate(it) }
                 .forEach { terms += it }
         }
         return terms.distinct()
+    }
+
+    /**
+     * 中文候选判定。
+     *
+     * ≥2 字只要含汉字即可；**单字必须整体是汉字** —— 放开单字是为了「洞 / 水 / 火」
+     * 这类常见词的译法（以前一律过滤掉，导致这些词永远只有句级对照），同时不让
+     * 「a」「1」「の」这种碎片混进来乱标。
+     */
+    private fun isChineseCandidate(term: String): Boolean = when {
+        term.isEmpty() -> false
+        term.length == 1 -> term[0] in '\u4e00'..'\u9fff'
+        else -> term.any { it in '\u4e00'..'\u9fff' }
     }
 
     private fun occurrencesOf(term: String, text: String): List<Pair<Int, Int>> {
