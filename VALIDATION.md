@@ -515,3 +515,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 **用户在真机（PKB110 / Android 16）确认以上改动有效，整本书 attach 耗时约 10 秒**。
 
 **仍未做**：手工 SAF 选择器交互的自动化、对齐 DP 在手机上的内存峰值、真实图书上词级高亮的主观准确度。
+
+## 2026-08-21 F-110/F-111 底栏遮挡正文最后一行修复（真机验证）
+
+- 现象：分页模式每章最后一行被半透明底栏盖住（PKB110 / Android 16，targetSdk 35 强制 edge-to-edge）。
+- 根因（两层）：① 底栏含导航栏 inset，实测 78px > 写死的 70px CSS 预留；② 绝对定位滚动容器实际渲染位置比 style.top 整体下移约 32px（known-pitfalls #8 的容器位移，此前只修了高亮定位未修容器），正文实际底缘因此低于底栏上沿。
+- 修复：① Compose 用 onSizeChanged 实测顶/底栏高度，经 ReaderController.applyChromeInsets → JS lrSetChromeInsets 动态注入替换写死的 104px/174px（bootstrap 带初值首帧即正确，值变化才重排且保页）；② updateMetrics 设完样式后实测 getBoundingClientRect() 自校准，把超出「视口高 − 底栏预留」的部分从列高里扣掉。
+- 验证：testDebugUnitTest 通过（316 个，新增 4 条 chrome insets/自校准防回归）；真机并存包实测：最后一行完整显示在栏上方、无半透明残影，页数随列高变化正确重排（7/13 → 7/14）。lintDebug / assembleDebug 通过。

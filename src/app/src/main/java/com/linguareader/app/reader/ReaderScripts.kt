@@ -5,12 +5,18 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object ReaderScripts {
+    /** Legacy reserved space above/below the content when no measurement exists yet. */
+    const val DEFAULT_CHROME_TOP_PX = 104
+    const val DEFAULT_CHROME_BOTTOM_PX = 70
+
     fun bootstrap(
         initialPage: Int,
         preferences: ReaderPreferences,
         initialScrollMode: Boolean = false,
         initialScrollRatio: Float = 0f,
-        initialScrollPageCount: Int = 1
+        initialScrollPageCount: Int = 1,
+        chromeTopPx: Int = DEFAULT_CHROME_TOP_PX,
+        chromeBottomPx: Int = DEFAULT_CHROME_BOTTOM_PX
     ): String = """
         (function() {
           if (window.__linguaReaderInstalled) {
@@ -31,6 +37,13 @@ object ReaderScripts {
           let scrollPageCount = Math.max(1, Number($initialScrollPageCount) || 1);
           let dragScrollActive = false;
           let lastScrollY = 0;
+          // Real heights (CSS px) of the Compose top toolbar and bottom bar,
+          // measured in ReaderScreen and pushed here. They replace the old
+          // hardcoded 104px / 70px reserves so the content never sits under
+          // the chrome regardless of system inset sizes (targetSdk 35 forces
+          // edge-to-edge, so the bottom bar includes the navigation-bar inset).
+          let chromeTop = Math.max(0, $chromeTopPx);
+          let chromeBottom = Math.max(0, $chromeBottomPx);
 
           function clamp(value, min, max) {
             return Math.min(Math.max(value, min), max);
@@ -60,9 +73,15 @@ object ReaderScripts {
                 font-size: var(--lr-size) !important; line-height: var(--lr-line) !important;
                 text-align: left; overflow-wrap: break-word;
               }
+              :root {
+                --lr-chrome-top: ${chromeTopPx}px;
+                --lr-chrome-bottom: ${chromeBottomPx}px;
+              }
               #lr-scroller {
-                position: absolute; left: 0; top: 104px;
-                width: 100vw; height: calc(100vh - 174px);
+                position: absolute; left: 0;
+                top: var(--lr-chrome-top);
+                width: 100vw;
+                height: calc(100vh - var(--lr-chrome-top) - var(--lr-chrome-bottom));
                 padding-left: 28px;
                 overflow-x: auto; overflow-y: hidden;
                 touch-action: none;
@@ -150,10 +169,22 @@ object ReaderScripts {
             const content = layout.content;
             const spacer = layout.spacer;
             const innerW = Math.max(1, window.innerWidth - 56);
-            const columnHeight = Math.max(1, window.innerHeight - 174);
-            scroller.style.top = '104px';
+            const columnHeight = Math.max(1, window.innerHeight - chromeTop - chromeBottom);
+            scroller.style.top = chromeTop + 'px';
             scroller.style.width = window.innerWidth + 'px';
             scroller.style.height = columnHeight + 'px';
+            // 真机实测（PKB110）：绝对定位的 scroller 的渲染位置会比 style.top
+            // 整体下移约 32px（known-pitfalls #8：style.top=104 实测 rect.top=136，
+            // 包含块并非视口原点）。若不补偿，正文实际底缘会低于底栏上沿，
+            // 最后一行被半透明底栏盖住。按项目教训用实测自校准：量出真实
+            // rect，把超出「视口高 − 底栏预留」的部分从高度里扣掉。
+            const __lrRect = scroller.getBoundingClientRect();
+            const __lrOvershoot =
+              __lrRect.bottom - (window.innerHeight - chromeBottom);
+            if (__lrOvershoot > 0.5) {
+              scroller.style.height =
+                Math.max(1, columnHeight - __lrOvershoot) + 'px';
+            }
             content.style.width = innerW + 'px';
             if (scrollMode) {
               // Scroll mode lays the chapter out as one vertical flow; keep the
@@ -926,6 +957,19 @@ object ReaderScripts {
 
           window.lrSetChoosingStart = function(enabled) {
             window.__lrChoosingStart = !!enabled;
+          };
+          window.lrSetChromeInsets = function(topPx, bottomPx) {
+            const t = Math.max(0, Number(topPx) || 0);
+            const b = Math.max(0, Number(bottomPx) || 0);
+            if (t === chromeTop && b === chromeBottom) return;
+            chromeTop = t;
+            chromeBottom = b;
+            const root = document.documentElement;
+            root.style.setProperty('--lr-chrome-top', chromeTop + 'px');
+            root.style.setProperty('--lr-chrome-bottom', chromeBottom + 'px');
+            // Remeasure on the next frame: column height changes re-paginate
+            // the chapter, and updateMetrics keeps the current page stable.
+            setTimeout(updateMetrics, 30);
           };
           window.addEventListener('resize', function() {
             setTimeout(updateMetrics, 80);

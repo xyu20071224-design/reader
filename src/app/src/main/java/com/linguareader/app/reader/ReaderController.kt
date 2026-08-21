@@ -48,6 +48,23 @@ class ReaderController {
         webView.get()?.evaluateJavascript(script, null)
     }
 
+    private var lastChromeInsets: Pair<Int, Int>? = null
+
+    /**
+     * Pushes the measured Compose chrome heights (CSS px) into the reader JS
+     * so the pagination box reserves exactly the space the bars occupy.
+     * Skips no-op updates to avoid pointless chapter repagination.
+     */
+    fun applyChromeInsets(topPx: Int, bottomPx: Int) {
+        val key = topPx to bottomPx
+        if (key == lastChromeInsets) return
+        lastChromeInsets = key
+        webView.get()?.evaluateJavascript(
+            "window.lrSetChromeInsets && window.lrSetChromeInsets($topPx, $bottomPx)",
+            null
+        )
+    }
+
     /**
      * Enables "choose start point" mode: while enabled, the next text tap is
      * consumed as the playback start sentence instead of opening a lookup.
