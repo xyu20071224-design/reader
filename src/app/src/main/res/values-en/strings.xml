@@ -55,11 +55,11 @@
     <string name="glossary_keep_original">keep original</string>
     <string name="glossary_save">Save</string>
     <string name="glossary_delete">Delete term</string>
-    <string name="glossary_added">Added "%1$s"</string>
-    <string name="glossary_saved">Saved translation of "%1$s"</string>
-    <string name="glossary_removed">Removed "%1$s"</string>
-    <string name="glossary_toggle_on">"%1$s" now used in sentence translation</string>
-    <string name="glossary_toggle_off">"%1$s" removed from sentence translation; tap lookup only</string>
+    <string name="glossary_added">Added \"%1$s\"</string>
+    <string name="glossary_saved">Saved translation of \"%1$s\"</string>
+    <string name="glossary_removed">Removed \"%1$s\"</string>
+    <string name="glossary_toggle_on">\"%1$s\" now used in sentence translation</string>
+    <string name="glossary_toggle_off">\"%1$s\" removed from sentence translation; tap lookup only</string>
     <string name="glossary_no_match">No matching terms.</string>
 
     <!-- Sentence translation (lookup sheet) -->
