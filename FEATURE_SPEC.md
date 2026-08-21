@@ -119,7 +119,7 @@ LinguaReader 是一款面向中文母语学习者的离线英文 EPUB 阅读器�
 
 行为：
 
-- 章节在 WebView 中以 CSS 多栏布局横向分页：栏宽为“视口宽度 − 56px”，栏间距 56px，正文区域距顶 104px、高度为“视口高度 − 174px”，内容列左侧留 28px 内边距。
+- 章节在 WebView 中以 CSS 多栏布局横向分页：栏宽为“视口宽度 − 56px”，栏间距 56px；正文区域的上/下预留量由 Compose 实测顶栏与底栏高度后动态注入（`lrSetChromeInsets`，默认回退 104px / 70px），并对滚动容器的实际渲染位移做自校准补偿（真机实测绝对定位 scroller 会比 `style.top` 整体下移约 32px），保证正文底缘精确贴合底栏上沿、最后一行不被遮挡。
 - 页数 = `max(1, ceil(scroller.scrollWidth / window.innerWidth) - 1)`；末尾增加一个全高占位列，保证最后一页（含部分内容）可精确滚动到位。
 - 字体、图片加载完成后会重新测量分页；字号/行距/主题/字体变化后保持当前页号不变，仅重算滚动位置。
 - 书内原有 CSS 无法覆盖阅读器排版：正文与所有子元素统一继承阅读器字号、行距、字体，标题按 1.6/1.4/1.25/1.12em 相对放大。
@@ -765,6 +765,7 @@ CREATE TABLE forms (
 | 1.6.15 | 2026-08-20 | UI 评审整改（第二批）：**全局轻提示**——新增 `AppSnackbar` + `LocalAppSnackbar`，`MainActivity` 承载 `SnackbarHost`（浮于书架与阅读页之上）；`AppUiState.notice` 作为一次性提示通道，导入/删除书籍会提示「已导入《X》/已删除《X》」，多角色面板的锁定/恢复自动/试听失败也改走轻提示（不再是弹层内一行会消失的状态字）。**文案资源化**——建立 `strings.xml` 命名规范并新增 `values-en/strings.xml`（英文界面首次可用，机制已验证）；已迁移 `ListeningBar`、`MultiVoiceSettings`、`BookshelfScreen` 与 ViewModel 提示共约 100 条文案（含 `plurals` 处理英文单复数）；`MultiVoiceSupport.statusMessage` 改为返回 `MultiVoiceStatus` 数据（界面再映射资源，测试改为断言状态而非文案）。单元测试 269 个通过；lint 0 错误且资源无 `MissingTranslation`/`PluralsCandidate` 告警 |
 | 1.6.16 | 2026-08-21 | 真机测试发现的两处修复：**句高亮向下偏移**——分页多列布局下「rect - scrollerRect + scrollTop」的隐含假设（包含块＝滚动容器 padding box）在 WebView 中不成立（实测滚动容器 `style.top=104` 但 `rect.top=136`，覆盖层绝对定位原点在 200），高亮框整体低 64px（≈2.7 行）看起来像高亮了后面几行的句子；改为用零尺寸探针实测绝对定位原点再摆放（真机复测 deltaY 64.0 → 0.0）。**AI 中心保存无反馈**——点「保存」界面毫无变化易被当成无响应，改为按钮旁行内 ✓ 确认并说明保存后的效果（就绪/未填 Key/总开关关闭/已关闭四种），同时对 Key、地址、模型做 `trim()`（粘贴带空格会导致 401 却看不出原因）。新增 2 个脚本回归测试（探针定位 + 诊断代码不得入库） |
 | 1.6.17 | 2026-08-21 | **新增 F-128 中文译本对照（离线）**：从另一台机器的交付包引入纯 Kotlin 对齐引擎并整合进 `:app`（新包 `app/translation/`：`TranslationAligner` 三级单调 DP、`TranslationMemoryIndex` 5 级降级查询、`WordAligner` 词级定位、`TranslationMemoryRepository` 平台层）；`Book` 新增 `translationBookId`/`translationTitle`/`translationAlignedAt` + `hasTranslation`；书架卡片新增「加译本 / 译本 ✓」（独立文件选择器、对齐中禁用、开始/完成/失败走全局 Snackbar、移除有确认框、删书连带清理），查词面板新增「译本对照」区块（句/段级标识 + 置信度 + 词级着色加粗）。**相对交付包的四处改造**：档案格式改 v2「段落表 + 下标」（同书 14.2 MB → 4.8 MB，兼容读 v1）、查询索引按书缓存 + 按章分桶 + 预归一化（原实现每次点词重读整份 15 MB 档案）、章节下标改用 DP 路径（原用 `indexOf` 回查，两章正文相同会整章错配）、DP 内层正则提到对象级 + 前驱矩阵每格 1 字节。**砍掉 `TermLexiconLearner`**：JVM 实测整本小说需 9.09M 累加键、峰值堆 1.7 GB（512/256 MB 堆均 OOM），手机不可行，`terms` 字段保留恒空。同步交付包两处共享文件改动（`SentenceSplitter` 加 `spacedInitials` 保护 `J. R. R.`；`ContextAnalyzer` token 命中改右端排他）。单元测试 308 个通过（新增 27 个：对齐 5 / 格式 4 / 索引 11 / 词级 5 / `Book` 译本字段 2）；真机（PKB110 / Android 16，`-PverifyBuild` 并存包）新增 `TranslationAttachInstrumentedTest` 跑通 attach→对齐→落盘→点词→移除全链路，`BookshelfSmokeTest` + `ReaderAcceptanceTest` 共 5 个 UI 回归通过 |
+| 1.6.18 | 2026-08-21 | **修复 F-110/F-111 底栏遮挡正文最后一行（真机 PKB110/Android 16）**：targetSdk 35 强制 edge-to-edge 后底栏含导航栏 inset（实测 78px > 写死的 70px 预留），且绝对定位滚动容器实际渲染位置比 `style.top` 整体下移约 32px（known-pitfalls #8 的容器位移，此前只修了高亮定位未修容器），正文实际底缘因此低于底栏上沿。双层修复：① Compose 侧用 `onSizeChanged` 实测顶栏/底栏高度（dp = CSS px），经 `ReaderController.applyChromeInsets` → JS `lrSetChromeInsets` 动态注入，替换写死的 104px/174px（bootstrap 带初值首帧即正确，值变化才重排且保页）；② `updateMetrics` 设完样式后实测 `getBoundingClientRect()` 自校准，把超出「视口高 − 底栏预留」的部分从列高里扣掉。单元测试 316 个通过（新增 4 条 chrome insets/自校准防回归）；真机并存包验证：最后一行完整显示在栏上方、无半透明残影，页数随列高变化正确重排 |
 
 ## 7. 已知不一致（待处理）
 

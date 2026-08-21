@@ -273,4 +273,58 @@ class ReaderScriptsTest {
         assertFalse(script.contains("lrHighlightDebug"))
         assertFalse(script.contains("[lr-hl]"))
     }
+
+    @Test
+    fun chromeInsetsDefaultToLegacyGeometry() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 未注入实测值时必须与旧几何完全一致（顶 104 / 底 70），首帧行为不变。
+        assertContains(script, "let chromeTop = Math.max(0, 104)")
+        assertContains(script, "let chromeBottom = Math.max(0, 70)")
+        assertContains(script, "--lr-chrome-top: 104px")
+        assertContains(script, "--lr-chrome-bottom: 70px")
+    }
+
+    @Test
+    fun bootstrapEmbedsMeasuredChromeInsetsInsteadOfHardcodedGeometry() {
+        val script = ReaderScripts.bootstrap(
+            0,
+            ReaderPreferences(),
+            chromeTopPx = 96,
+            chromeBottomPx = 88
+        )
+
+        // targetSdk 35 强制 edge-to-edge 后底栏含导航栏 inset，写死的预留量
+        // 会遮住正文最后一行；分页盒必须由 Kotlin 实测值驱动。
+        assertContains(script, "let chromeTop = Math.max(0, 96)")
+        assertContains(script, "let chromeBottom = Math.max(0, 88)")
+        assertContains(script, "--lr-chrome-top: 96px")
+        assertContains(script, "--lr-chrome-bottom: 88px")
+        // 旧的写死几何不能再出现，否则回归时无法察觉。
+        assertFalse(script.contains("window.innerHeight - 174"))
+        assertFalse(script.contains("top: 104px"))
+        assertFalse(script.contains("top = '104px'"))
+    }
+
+    @Test
+    fun chromeInsetUpdatesRemeasureWithoutReloading() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 运行时的 inset 变化（旋转/切换导航模式）走 lrSetChromeInsets：
+        // 值没变直接返回，变了才重排，且 updateMetrics 自带保页逻辑。
+        assertContains(script, "window.lrSetChromeInsets")
+        assertContains(script, "if (t === chromeTop && b === chromeBottom) return;")
+        assertContains(script, "setTimeout(updateMetrics, 30)")
+    }
+
+    @Test
+    fun paginationBoxSelfCalibratesAgainstScrollerDisplacement() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 真机实测：绝对定位 scroller 的渲染位置比 style.top 整体下移约 32px
+        // （known-pitfalls #8），正文实际底缘因此低于底栏上沿，最后一行被
+        // 半透明底栏盖住。必须实测 rect 并把超出部分从高度里扣掉。
+        assertContains(script, "__lrRect.bottom - (window.innerHeight - chromeBottom)")
+        assertContains(script, "columnHeight - __lrOvershoot")
+    }
 }

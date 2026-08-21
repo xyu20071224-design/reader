@@ -68,6 +68,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -99,6 +101,7 @@ import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.reader.EpubPage
 import com.linguareader.app.reader.ReaderController
+import com.linguareader.app.reader.ReaderScripts
 import com.linguareader.app.translation.TranslationLookupResult
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.tts.TtsPlaybackController
@@ -148,6 +151,16 @@ internal fun ReaderScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val controller = remember { ReaderController() }
+    val density = LocalDensity.current.density
+    // 实测顶栏/底栏高度（px → dp，1dp = 1 CSS px），注入 WebView 作为正文
+    // 预留量。targetSdk 35 强制 edge-to-edge 后底栏含导航栏 inset，写死的
+    // 70px 预留不够，会遮住正文最后一行；改为动态注入后永远精确。
+    var chromeTopPx by remember {
+        mutableFloatStateOf(ReaderScripts.DEFAULT_CHROME_TOP_PX.toFloat())
+    }
+    var chromeBottomPx by remember {
+        mutableFloatStateOf(ReaderScripts.DEFAULT_CHROME_BOTTOM_PX.toFloat())
+    }
     val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
     val ttsForThisBook = ttsState.bookId == book.id
     var ttsPositionReportJob by remember { mutableStateOf<Job?>(null) }
@@ -416,6 +429,8 @@ internal fun ReaderScreen(
                 initialScrollPageCount = scrollPageCount.coerceAtLeast(1),
                 preferences = preferences,
                 savedWords = if (reminders.contextHighlight) savedWords.map { it.headword } else emptyList(),
+                chromeTopPx = chromeTopPx.roundToInt(),
+                chromeBottomPx = chromeBottomPx.roundToInt(),
                 controller = controller,
                 modifier = Modifier.fillMaxSize(),
                 onReady = { page, count ->
@@ -493,6 +508,11 @@ internal fun ReaderScreen(
         ) {
             Column(
                 Modifier.fillMaxWidth()
+                    .onSizeChanged { size ->
+                        // 工具栏隐藏时高度归零，保留最后一次实测值，
+                        // 避免每次开关工具栏都触发整章重排。
+                        if (size.height > 0) chromeTopPx = size.height / density
+                    }
                     .background(Paper.copy(alpha = .96f))
             ) {
                 Row(
@@ -547,6 +567,9 @@ internal fun ReaderScreen(
         Row(
             Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .onSizeChanged { size ->
+                    if (size.height > 0) chromeBottomPx = size.height / density
+                }
                 .background(Color(android.graphics.Color.parseColor(preferences.theme.background)).copy(alpha = .94f))
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(horizontal = 18.dp, vertical = 7.dp),

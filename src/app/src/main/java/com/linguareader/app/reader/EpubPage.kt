@@ -102,6 +102,8 @@ fun EpubPage(
     initialScrollPageCount: Int = 1,
     preferences: ReaderPreferences,
     savedWords: List<String> = emptyList(),
+    chromeTopPx: Int = ReaderScripts.DEFAULT_CHROME_TOP_PX,
+    chromeBottomPx: Int = ReaderScripts.DEFAULT_CHROME_BOTTOM_PX,
     controller: ReaderController,
     modifier: Modifier = Modifier,
     onReady: (Int, Int) -> Unit,
@@ -126,6 +128,8 @@ fun EpubPage(
     val latestScrollModeChanged by rememberUpdatedState(onScrollModeChanged)
     val latestScrollProgress by rememberUpdatedState(onScrollProgress)
     val latestSavedWords by rememberUpdatedState(savedWords)
+    val latestChromeTop by rememberUpdatedState(chromeTopPx)
+    val latestChromeBottom by rememberUpdatedState(chromeBottomPx)
 
     AndroidView(
         modifier = modifier,
@@ -172,7 +176,9 @@ fun EpubPage(
                                 latestPreferences,
                                 initialScrollMode = latestInitialScrollMode,
                                 initialScrollRatio = latestInitialScrollRatio,
-                                initialScrollPageCount = latestInitialScrollPageCount.coerceAtLeast(1)
+                                initialScrollPageCount = latestInitialScrollPageCount.coerceAtLeast(1),
+                                chromeTopPx = latestChromeTop,
+                                chromeBottomPx = latestChromeBottom
                             ),
                             null
                         )
@@ -213,6 +219,7 @@ fun EpubPage(
             view.setBackgroundColor(Color.parseColor(preferences.theme.background))
             view.evaluateJavascript(ReaderScripts.preferenceScript(preferences), null)
             controller.setSavedWords(latestSavedWords)
+            controller.applyChromeInsets(latestChromeTop, latestChromeBottom)
         },
         onRelease = { view ->
             controller.detach(view)
