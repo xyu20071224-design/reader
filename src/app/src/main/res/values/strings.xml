@@ -68,6 +68,7 @@
     <string name="reader_translation_collapse">收起对照</string>
     <string name="reader_translation_english">原句：%1$s</string>
     <string name="reader_translation_paragraph">译文段落：%1$s</string>
+    <string name="reader_translation_miss">本句未对上译本（所在段落或章节没有参与对齐）</string>
 
     <!-- 听书播放条 -->
     <string name="player_cache_progress"> 缓存全书 %1$d%%</string>

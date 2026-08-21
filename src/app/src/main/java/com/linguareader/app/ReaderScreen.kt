@@ -724,6 +724,7 @@ internal fun ReaderScreen(
             aiContext = aiResult,
             aiLoading = aiLoading,
             sentenceTranslationReady = SentenceTranslatorFactory.isConfigured(aiSettings),
+            hasTranslation = book.hasTranslation,
             translation = translation,
             translationLoading = translationLoading,
             sentenceTranslation = sentenceTranslation,
@@ -1059,6 +1060,7 @@ private fun LookupSheet(
     aiContext: AiLookupResult?,
     aiLoading: Boolean,
     sentenceTranslationReady: Boolean,
+    hasTranslation: Boolean,
     translation: TranslationLookupResult?,
     translationLoading: Boolean,
     sentenceTranslation: SentenceTranslationResult?,
@@ -1269,6 +1271,15 @@ private fun LookupSheet(
                         )
                     }
                 }
+            }
+            // 配了译本却没查到：直说是「这段/这章没参与对齐」，而不是让面板凭空少一块。
+            if (hasTranslation && translation == null && !translationLoading) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    stringResource(R.string.reader_translation_miss),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = InkSoft
+                )
             }
             if (sentenceTranslationReady || translation != null) {
                 Spacer(Modifier.height(12.dp))

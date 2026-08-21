@@ -70,6 +70,7 @@
     <string name="reader_translation_collapse">Hide pairing</string>
     <string name="reader_translation_english">Source: %1$s</string>
     <string name="reader_translation_paragraph">Translated paragraph: %1$s</string>
+    <string name="reader_translation_miss">No pairing for this sentence (its paragraph or chapter was not aligned)</string>
 
     <!-- Listening player bar -->
     <string name="player_cache_progress"> Caching book %1$d%%</string>

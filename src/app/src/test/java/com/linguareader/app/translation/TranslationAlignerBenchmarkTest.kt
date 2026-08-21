@@ -42,6 +42,20 @@ class TranslationAlignerBenchmarkTest {
                 " 平均置信度=${"%.2f".format(pairs.map { it.confidence }.average())}"
         )
 
+        // 覆盖率直接决定「点词到底有没有译本对照」的比例。
+        val coveredChapters = pairs.map { it.enChapter }.toSet()
+        val totalParagraphs = enChapters.sumOf { it.size }
+        val coveredParagraphs = pairs.map { it.enParagraph }.toSet()
+        val paragraphsInCoveredChapters = coveredChapters.sumOf { enChapters[it].size }
+        val sentenceLevel = pairs.count { it.enSentence.isNotBlank() }
+        println(
+            "[coverage] 章节覆盖=${coveredChapters.size}/${enChapters.size}" +
+                " 段落覆盖=${coveredParagraphs.size}/$totalParagraphs" +
+                "（已对齐章节内=${coveredParagraphs.size}/$paragraphsInCoveredChapters）" +
+                " 句级=$sentenceLevel 段级降级=${pairs.size - sentenceLevel}" +
+                " 未覆盖章节=${(enChapters.indices.toSet() - coveredChapters).sorted()}"
+        )
+
         assertTrue("句对数异常偏少：${pairs.size}", pairs.size > 10_000)
         // 手机大约比这台机器慢一个数量级，留 3 秒的余量 ≈ 手机 30 秒级。
         assertTrue("整本书对齐退化到 ${elapsed}ms（>3s），DP 内层大概率又在扫描文本", elapsed < 3_000)
