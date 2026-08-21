@@ -2,6 +2,7 @@ package com.linguareader.app.translation
 
 import com.linguareader.app.tts.SentenceSplitter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -53,6 +54,47 @@ class TranslationAlignerTest {
 
         assertEquals(listOf(0, 1), pairs.map { it.enChapter }.distinct().sorted())
         assertEquals(listOf(0, 1), pairs.map { it.zhChapter }.distinct().sorted())
+    }
+
+    @Test
+    fun `paragraphs the dp had to skip fall back to the nearest translated paragraph`() {
+        // 段落级 DP 只能 1:1 / 2:1 / 1:2，5 段英文对 2 段中文必然要合并 + 跳过；
+        // 无论走哪条路，每个源段落都必须能查到对照（合并成分条目 / 邻近段落兜底）。
+        val en = listOf(
+            listOf(
+                "Alpha one here.",
+                "Beta two here.",
+                "Gamma three here.",
+                "Delta four here.",
+                "Epsilon five here."
+            )
+        )
+        val zh = listOf(listOf("中文第一段。", "中文第二段。"))
+
+        val pairs = TranslationAligner.align(en, zh)
+        val index = TranslationMemoryIndex(
+            TranslationMemory(
+                sourceBookId = "s",
+                sourceTitle = "t",
+                translationBookId = "z",
+                translationTitle = "译本",
+                alignedAt = 0L,
+                pairs = pairs
+            )
+        )
+
+        en[0].forEach { paragraph ->
+            val hit = index.lookup(0, paragraph, paragraph)
+            assertNotNull("段落查不到任何对照：$paragraph", hit)
+            assertTrue("对照必须落在真实中文段落上：${hit!!.chinese}", hit.chinese.startsWith("中文"))
+        }
+
+        val paragraphLevel = pairs.filter { it.enSentence.isBlank() }
+        assertTrue("应产出段级条目（合并成分或邻近兜底）", paragraphLevel.isNotEmpty())
+        assertTrue(
+            "段级条目不得低于查询门槛，否则落盘白占体积",
+            paragraphLevel.all { it.confidence >= TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE }
+        )
     }
 
     @Test

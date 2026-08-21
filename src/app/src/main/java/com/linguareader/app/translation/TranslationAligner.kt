@@ -28,6 +28,12 @@ object TranslationAligner {
     /** 启发式：约 1.7 个中文字符对应 1 个英文单词（用于长度归一）。 */
     private const val ZH_CHARS_PER_EN_WORD = 1.7
 
+    /** 邻近段落兜底的置信度缩放：它只是「大致对应」，必须明显低于真配对。 */
+    private const val NEIGHBOUR_CONFIDENCE_SCALE = 0.55
+
+    /** 合并段落的成分条目：是真配对，只是粒度退到段，轻微降权即可。 */
+    private const val MERGED_CONSTITUENT_SCALE = 0.85f
+
     private val ANCHORS = Regex("[0-9]+|[A-Z][a-z]+|[A-Z]{2,}")
     private val LATIN_RUNS = Regex("[A-Za-z0-9]+")
     private val WHITESPACE = Regex("\\s+")
@@ -65,10 +71,14 @@ object TranslationAligner {
             val enSpans = enParagraphSpans[enIdx]
             val zhSpans = zhParagraphSpans[zhIdx]
 
+            // 记录哪些英文段落真的配上了，以及它落在哪个中文段落（供邻近兜底用）。
+            val zhForEn = HashMap<Int, Int>()
+
             for (paragraphPair in alignSpans(enSpans, zhSpans, allowMerge = true)) {
                 val enParagraph = join(enParagraphs, paragraphPair.a)
                 val zhParagraph = join(zhParagraphs, paragraphPair.b)
                 if (enParagraph.isBlank() || zhParagraph.isBlank()) continue
+                for (index in paragraphPair.a) zhForEn[index] = paragraphPair.b[0]
 
                 val enSentences = SentenceSplitter.split(enParagraph).filter { it.isNotBlank() }
                 val zhSentences = splitChinese(zhParagraph)
@@ -106,9 +116,109 @@ object TranslationAligner {
                         )
                     }
                 }
+
+                // 2:1 合并时存下来的 enParagraph 是两段拼起来的文本，用户点其中一段时
+                // 段落文本对不上（标题、诗行这类不以句末标点结尾的段落连句子也切不出来）。
+                // 为每个成分段落补一条段级条目，让这种点词至少落在正确的中文段落上。
+                if (paragraphPair.a.size > 1) {
+                    val merged = confidenceOf(enSpans, paragraphPair.a, zhSpans, paragraphPair.b)
+                    for (index in paragraphPair.a) {
+                        val constituent = enParagraphs[index]
+                        if (constituent.isBlank()) continue
+                        result += AlignedSentencePair(
+                            enChapter = enIdx,
+                            zhChapter = zhIdx,
+                            enParagraph = constituent,
+                            zhParagraph = zhParagraph,
+                            enSentence = "",
+                            zhSentence = "",
+                            confidence = (merged * MERGED_CONSTITUENT_SCALE)
+                                .coerceIn(MIN_CONFIDENCE, 1f)
+                        )
+                    }
+                }
             }
+
+            result += neighbourFallbacks(
+                enChapter = enIdx,
+                zhChapter = zhIdx,
+                enParagraphs = enParagraphs,
+                zhParagraphs = zhParagraphs,
+                enSpans = enSpans,
+                zhSpans = zhSpans,
+                zhForEn = zhForEn
+            )
         }
         return result
+    }
+
+    // --- 邻近段落兜底 --------------------------------------------------------
+
+    /**
+     * 段落级 DP 只允许 1:1 / 2:1 / 1:2，所以英文段落数超过中文段落数两倍时，多出来的
+     * 只能被跳过（实测整本魔戒有 13.3% 的段落落在这里，用户在这些段落里点词完全看不到
+     * 对照）。这里把被跳过的段落挂到**下标最近**的已对齐段落所对应的中文段落上，产出
+     * 段级对照，置信度 = 基准值 × [NEIGHBOUR_CONFIDENCE_SCALE] ÷ 距离。
+     *
+     * 低于 [TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE] 的直接不产出：查询阶段反正
+     * 会拒掉，落盘只是白占体积。
+     */
+    private fun neighbourFallbacks(
+        enChapter: Int,
+        zhChapter: Int,
+        enParagraphs: List<String>,
+        zhParagraphs: List<String>,
+        enSpans: List<Span>,
+        zhSpans: List<Span>,
+        zhForEn: Map<Int, Int>
+    ): List<AlignedSentencePair> {
+        if (zhForEn.isEmpty()) return emptyList()
+        val covered = zhForEn.keys.toIntArray()
+        covered.sort()
+
+        val fallbacks = mutableListOf<AlignedSentencePair>()
+        for (index in enParagraphs.indices) {
+            if (zhForEn.containsKey(index)) continue
+            val enParagraph = enParagraphs[index]
+            if (enParagraph.isBlank()) continue
+            val nearest = nearestCovered(index, covered) ?: continue
+            val zhIndex = zhForEn[nearest] ?: continue
+            val zhParagraph = zhParagraphs.getOrNull(zhIndex) ?: continue
+            if (zhParagraph.isBlank()) continue
+
+            val distance = abs(nearest - index).coerceAtLeast(1)
+            val base = 1.0 - pairCost(enSpans[index], null, zhSpans[zhIndex], null)
+            val confidence = (base * NEIGHBOUR_CONFIDENCE_SCALE / distance)
+                .coerceIn(0.0, 1.0)
+                .toFloat()
+            if (confidence < TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE) continue
+
+            fallbacks += AlignedSentencePair(
+                enChapter = enChapter,
+                zhChapter = zhChapter,
+                enParagraph = enParagraph,
+                zhParagraph = zhParagraph,
+                enSentence = "",
+                zhSentence = "",
+                confidence = confidence
+            )
+        }
+        return fallbacks
+    }
+
+    private fun nearestCovered(index: Int, sorted: IntArray): Int? {
+        if (sorted.isEmpty()) return null
+        val found = java.util.Arrays.binarySearch(sorted, index)
+        if (found >= 0) return sorted[found]
+        val insert = -found - 1
+        val before = if (insert > 0) sorted[insert - 1] else null
+        val after = if (insert < sorted.size) sorted[insert] else null
+        return when {
+            before == null -> after
+            after == null -> before
+            index - before <= after - index -> before
+            else -> after
+        }
     }
 
     // --- 片段特征（进 DP 之前算好） ------------------------------------------

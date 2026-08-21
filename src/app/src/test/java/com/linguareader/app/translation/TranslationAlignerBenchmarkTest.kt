@@ -1,5 +1,6 @@
 package com.linguareader.app.translation
 
+import com.linguareader.app.tts.SentenceSplitter
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -42,18 +43,48 @@ class TranslationAlignerBenchmarkTest {
                 " 平均置信度=${"%.2f".format(pairs.map { it.confidence }.average())}"
         )
 
-        // 覆盖率直接决定「点词到底有没有译本对照」的比例。
-        val coveredChapters = pairs.map { it.enChapter }.toSet()
-        val totalParagraphs = enChapters.sumOf { it.size }
-        val coveredParagraphs = pairs.map { it.enParagraph }.toSet()
-        val paragraphsInCoveredChapters = coveredChapters.sumOf { enChapters[it].size }
-        val sentenceLevel = pairs.count { it.enSentence.isNotBlank() }
+        // 真正要量的是「点词命中率」：模拟在每个英文段落的首句上点词，看查询是否命中。
+        // 注意别用「不同 enParagraph 文本数」当覆盖率——2:1 合并会把两段源文本存成一条，
+        // 那个指标会把合并误算成漏掉。
+        val index = TranslationMemoryIndex(
+            TranslationMemory(
+                sourceBookId = "bench",
+                sourceTitle = "bench",
+                translationBookId = "bench-zh",
+                translationTitle = "译本",
+                alignedAt = 0L,
+                pairs = pairs
+            )
+        )
+        var hits = 0
+        var sentenceHits = 0
+        var misses = 0
+        val missesByChapter = HashMap<Int, Int>()
+        enChapters.forEachIndexed { chapterIndex, paragraphs ->
+            paragraphs.forEach { paragraph ->
+                val sentence = SentenceSplitter.split(paragraph).firstOrNull { it.isNotBlank() }
+                    ?: paragraph
+                val result = index.lookup(chapterIndex, sentence, paragraph)
+                if (result == null) {
+                    misses++
+                    missesByChapter[chapterIndex] = (missesByChapter[chapterIndex] ?: 0) + 1
+                } else {
+                    hits++
+                    if (result.matchLevel == TranslationMatchLevel.SENTENCE) sentenceHits++
+                }
+            }
+        }
+        val total = hits + misses
         println(
-            "[coverage] 章节覆盖=${coveredChapters.size}/${enChapters.size}" +
-                " 段落覆盖=${coveredParagraphs.size}/$totalParagraphs" +
-                "（已对齐章节内=${coveredParagraphs.size}/$paragraphsInCoveredChapters）" +
-                " 句级=$sentenceLevel 段级降级=${pairs.size - sentenceLevel}" +
-                " 未覆盖章节=${(enChapters.indices.toSet() - coveredChapters).sorted()}"
+            "[lookup] 命中=$hits/$total（${"%.1f".format(hits * 100.0 / total)}%）" +
+                " 其中句级=$sentenceHits 段级=${hits - sentenceHits} 未命中=$misses" +
+                " 未命中最多的章节=${missesByChapter.entries.sortedByDescending { it.value }.take(5)
+                    .joinToString { "ch${it.key}:${it.value}" }}"
+        )
+        println(
+            "[coverage] 章节覆盖=${pairs.map { it.enChapter }.toSet().size}/${enChapters.size}" +
+                " 句级句对=${pairs.count { it.enSentence.isNotBlank() }}" +
+                " 段级句对=${pairs.count { it.enSentence.isBlank() }}"
         )
 
         assertTrue("句对数异常偏少：${pairs.size}", pairs.size > 10_000)
