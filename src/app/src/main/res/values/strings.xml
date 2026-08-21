@@ -44,6 +44,21 @@
     <string name="glossary_add">添加术语</string>
     <string name="glossary_hint">手动条目优先于 AI 自动条目；开关控制是否参与 Azure 整句翻译，关闭后仅用于点词提示。</string>
     <string name="glossary_empty">还没有术语条目。</string>
+    <string name="glossary_no_books">书架还没有书，导入后即可管理每本书的术语表。</string>
+    <string name="glossary_search_hint">搜索术语</string>
+    <string name="glossary_filter_all">全部</string>
+    <string name="glossary_origin_manual">手动</string>
+    <string name="glossary_origin_auto">AI 自动</string>
+    <string name="glossary_origin_local">本地词频</string>
+    <string name="glossary_keep_original">保留原文</string>
+    <string name="glossary_save">保存</string>
+    <string name="glossary_delete">删除术语</string>
+    <string name="glossary_added">已添加「%1$s」</string>
+    <string name="glossary_saved">已保存「%1$s」的译法</string>
+    <string name="glossary_removed">已删除「%1$s」</string>
+    <string name="glossary_toggle_on">已启用「%1$s」参与整句翻译</string>
+    <string name="glossary_toggle_off">已停用「%1$s」整句翻译，仅点词提示</string>
+    <string name="glossary_no_match">没有匹配的术语。</string>
 
     <!-- 整句翻译（查词面板） -->
     <string name="translate_sentence">整句翻译</string>

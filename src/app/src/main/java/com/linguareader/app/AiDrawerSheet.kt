@@ -14,19 +14,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -38,7 +31,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -47,7 +39,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.BookGlossary
@@ -344,7 +335,7 @@ private fun AiTranslationSettingsBody(
     }
 }
 
-/** Per-book glossary editor: pick a book, then manage its terms. */
+/** Per-book glossary tab: delegates to the shared editor (also used by the shelf dialog). */
 @Composable
 private fun GlossaryTabBody(
     books: List<Book>,
@@ -353,193 +344,12 @@ private fun GlossaryTabBody(
     onUpdate: suspend (String, GlossaryEntry) -> BookGlossary,
     onRemove: suspend (String, String) -> BookGlossary
 ) {
-    val scope = rememberCoroutineScope()
-    var selectedId by rememberSaveable { mutableStateOf(books.firstOrNull()?.id ?: "") }
-    val book = books.firstOrNull { it.id == selectedId }
-    var entries by remember(selectedId) { mutableStateOf<List<GlossaryEntry>>(emptyList()) }
-    var loading by remember(selectedId) { mutableStateOf(false) }
-    var newTerm by remember { mutableStateOf("") }
-    var newTranslation by remember { mutableStateOf("") }
-
-    LaunchedEffect(selectedId) {
-        if (book != null) {
-            loading = true
-            entries = onLoad(book.id).entries
-            loading = false
-        } else {
-            entries = emptyList()
-        }
-    }
-
-    if (books.isEmpty()) {
-        Text(
-            "书架还没有书，导入后即可管理每本书的术语表。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = InkSoft
-        )
-        return
-    }
-
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-        var bookMenu by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("书目", style = MaterialTheme.typography.labelLarge, color = InkSoft)
-        Spacer(Modifier.width(10.dp))
-        Box(Modifier.weight(1f)) {
-            TextButton(onClick = { bookMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    book?.title ?: "选择书籍",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                    color = Ink
-                )
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
-            }
-            DropdownMenu(expanded = bookMenu, onDismissRequest = { bookMenu = false }) {
-                books.forEach { candidate ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(candidate.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        onClick = {
-                            selectedId = candidate.id
-                            bookMenu = false
-                        }
-                    )
-                }
-            }
-        }
-    }
-    Spacer(Modifier.height(6.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            value = newTerm,
-            onValueChange = { newTerm = it },
-            label = { Text("英文术语") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.width(6.dp))
-        OutlinedTextField(
-            value = newTranslation,
-            onValueChange = { newTranslation = it },
-            label = { Text("译法（留空=保留原文）") },
-            singleLine = true,
-            modifier = Modifier.weight(1.3f)
-        )
-        IconButton(onClick = {
-            val term = newTerm.trim()
-            if (term.isBlank()) return@IconButton
-            val target = book ?: return@IconButton
-            scope.launch {
-                entries = onAdd(target.id, term, newTranslation).entries
-                newTerm = ""
-                newTranslation = ""
-            }
-        }) {
-            Icon(
-                Icons.Default.Add,
-                contentDescription = "添加术语",
-                tint = Accent
-            )
-        }
-    }
-    Text(
-        "手动条目优先于 AI 自动条目；开关控制是否参与 Azure 整句翻译，关闭后仅用于点词提示。",
-        style = MaterialTheme.typography.labelSmall,
-        color = InkSoft
+    GlossaryEditorBody(
+        books = books,
+        lockedBookId = null,
+        onLoad = onLoad,
+        onAdd = onAdd,
+        onUpdate = onUpdate,
+        onRemove = onRemove
     )
-    Spacer(Modifier.height(8.dp))
-    if (loading) {
-        CircularProgressIndicator(color = Accent, modifier = Modifier.size(28.dp))
-    } else if (entries.isEmpty()) {
-        Text("还没有术语条目。", color = InkSoft)
-    } else {
-        entries.forEach { entry ->
-            val target = book ?: return@forEach
-            GlossaryEntryRow(
-                entry = entry,
-                onUpdate = { updated ->
-                    scope.launch {
-                        entries = onUpdate(target.id, updated).entries
-                    }
-                },
-                onRemove = {
-                    scope.launch {
-                        entries = onRemove(target.id, entry.term).entries
-                    }
-                }
-            )
-            HorizontalDivider(color = InkFaint.copy(alpha = .25f))
-        }
-    }
-    }
-}
-
-/** One glossary entry row: origin label, enable switch, editable translation. */
-@Composable
-internal fun GlossaryEntryRow(
-    entry: GlossaryEntry,
-    onUpdate: (GlossaryEntry) -> Unit,
-    onRemove: () -> Unit
-) {
-    var translation by remember(entry.key, entry.translation) {
-        mutableStateOf(entry.translation)
-    }
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(entry.term, fontWeight = FontWeight.Medium)
-                Text(
-                    buildString {
-                        append(
-                            when (entry.origin) {
-                                "manual" -> "手动"
-                                "auto" -> "AI 自动"
-                                else -> "本地词频"
-                            }
-                        )
-                        if (entry.translation.isBlank()) append(" · 保留原文")
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
-                )
-            }
-            Switch(
-                checked = entry.enabled,
-                onCheckedChange = { enabled -> onUpdate(entry.copy(enabled = enabled)) }
-            )
-            IconButton(onClick = onRemove) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "删除术语",
-                    tint = InkFaint,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = translation,
-                onValueChange = { translation = it },
-                label = { Text("译法（留空=保留原文）") },
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(6.dp))
-            TextButton(onClick = {
-                onUpdate(entry.copy(translation = translation.trim(), origin = "manual"))
-            }) { Text("保存") }
-        }
-        if (entry.note.isNotBlank()) {
-            Text(
-                entry.note,
-                style = MaterialTheme.typography.labelSmall,
-                color = InkSoft,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
 }

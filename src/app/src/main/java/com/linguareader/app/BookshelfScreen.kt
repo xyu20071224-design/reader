@@ -37,11 +37,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,7 +50,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,7 +72,6 @@ import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
@@ -575,17 +570,6 @@ private fun GlossaryDialog(
     onRemove: suspend (String, String) -> BookGlossary,
     onDismiss: () -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    var entries by remember(book.id) { mutableStateOf<List<GlossaryEntry>>(emptyList()) }
-    var loading by remember(book.id) { mutableStateOf(true) }
-    var newTerm by remember { mutableStateOf("") }
-    var newTranslation by remember { mutableStateOf("") }
-
-    LaunchedEffect(book.id) {
-        entries = onLoad(book.id).entries
-        loading = false
-    }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -593,72 +577,16 @@ private fun GlossaryDialog(
         },
         title = { Text(stringResource(R.string.glossary_title, book.title)) },
         text = {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 480.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = newTerm,
-                        onValueChange = { newTerm = it },
-                        label = { Text(stringResource(R.string.glossary_term_label)) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    OutlinedTextField(
-                        value = newTranslation,
-                        onValueChange = { newTranslation = it },
-                        label = { Text(stringResource(R.string.glossary_translation_label)) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1.3f)
-                    )
-                    IconButton(onClick = {
-                        val term = newTerm.trim()
-                        if (term.isBlank()) return@IconButton
-                        scope.launch {
-                            entries = onAdd(book.id, term, newTranslation).entries
-                            newTerm = ""
-                            newTranslation = ""
-                        }
-                    }) {
-                        Icon(
-                            Icons.Default.Add,
-                            contentDescription = stringResource(R.string.glossary_add),
-                            tint = Accent
-                        )
-                    }
-                }
-                Text(
-                    stringResource(R.string.glossary_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkSoft
+            Box(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                // 共用编辑器自带滚动；这里只负责限高。
+                GlossaryEditorBody(
+                    books = listOf(book),
+                    lockedBookId = book.id,
+                    onLoad = onLoad,
+                    onAdd = onAdd,
+                    onUpdate = onUpdate,
+                    onRemove = onRemove
                 )
-                Spacer(Modifier.height(8.dp))
-                if (loading) {
-                    CircularProgressIndicator(color = Accent, modifier = Modifier.size(28.dp))
-                } else if (entries.isEmpty()) {
-                    Text(stringResource(R.string.glossary_empty), color = InkSoft)
-                } else {
-                    entries.forEach { entry ->
-                        GlossaryEntryRow(
-                            entry = entry,
-                            onUpdate = { updated ->
-                                scope.launch {
-                                    entries = onUpdate(book.id, updated).entries
-                                }
-                            },
-                            onRemove = {
-                                scope.launch {
-                                    entries = onRemove(book.id, entry.term).entries
-                                }
-                            }
-                        )
-                        HorizontalDivider(color = InkFaint.copy(alpha = .25f))
-                    }
-                }
             }
         },
         containerColor = CardSurface,

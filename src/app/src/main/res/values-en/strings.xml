@@ -46,6 +46,21 @@
     <string name="glossary_add">Add term</string>
     <string name="glossary_hint">Manual entries win over AI ones; the switch controls whether the term is used for Azure sentence translation, otherwise it only shows on tap.</string>
     <string name="glossary_empty">No glossary entries yet.</string>
+    <string name="glossary_no_books">No books yet — import one to manage its glossary.</string>
+    <string name="glossary_search_hint">Search terms</string>
+    <string name="glossary_filter_all">All</string>
+    <string name="glossary_origin_manual">Manual</string>
+    <string name="glossary_origin_auto">AI auto</string>
+    <string name="glossary_origin_local">Local freq</string>
+    <string name="glossary_keep_original">keep original</string>
+    <string name="glossary_save">Save</string>
+    <string name="glossary_delete">Delete term</string>
+    <string name="glossary_added">Added "%1$s"</string>
+    <string name="glossary_saved">Saved translation of "%1$s"</string>
+    <string name="glossary_removed">Removed "%1$s"</string>
+    <string name="glossary_toggle_on">"%1$s" now used in sentence translation</string>
+    <string name="glossary_toggle_off">"%1$s" removed from sentence translation; tap lookup only</string>
+    <string name="glossary_no_match">No matching terms.</string>
 
     <!-- Sentence translation (lookup sheet) -->
     <string name="translate_sentence">Translate sentence</string>
