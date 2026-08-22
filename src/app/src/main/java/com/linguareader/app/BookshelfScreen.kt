@@ -76,6 +76,16 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
 
+/** 书架两个导入入口（顶栏按钮与空态按钮）共用的可选文件类型。 */
+private val IMPORT_MIME_TYPES = arrayOf(
+    "application/epub+zip",
+    "application/zip",
+    "application/octet-stream",
+    "text/plain",
+    "application/x-fictionbook+xml",
+    "application/pdf"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BookshelfScreen(
@@ -171,18 +181,7 @@ internal fun BookshelfScreen(
                             Text(stringResource(R.string.shelf_ai_center))
                         }
                         Button(
-                            onClick = {
-                                launcher.launch(
-                                    arrayOf(
-                                        "application/epub+zip",
-                                        "application/zip",
-                                        "application/octet-stream",
-                                        "text/plain",
-                                        "application/x-fictionbook+xml",
-                                        "application/pdf"
-                                    )
-                                )
-                            },
+                            onClick = { launcher.launch(IMPORT_MIME_TYPES) },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Accent,
                                 contentColor = OnAccent
@@ -216,17 +215,7 @@ internal fun BookshelfScreen(
                     onSpeak = onSpeak
                 )
             } else if (state.books.isEmpty() && !state.loading) {
-                EmptyBookshelf(onImport = {
-                    launcher.launch(
-                        arrayOf(
-                            "application/epub+zip",
-                            "application/octet-stream",
-                            "text/plain",
-                            "application/x-fictionbook+xml",
-                            "application/pdf"
-                        )
-                    )
-                })
+                EmptyBookshelf(onImport = { launcher.launch(IMPORT_MIME_TYPES) })
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(148.dp),
