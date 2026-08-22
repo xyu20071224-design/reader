@@ -106,7 +106,7 @@
     <!-- Multi-voice -->
     <string name="multivoice_title">Character voices (experimental)</string>
     <string name="multivoice_subtitle">Gives narration and every character its own voice; needs the AI context profile for the character list.</string>
-    <string name="multivoice_unsupported">Local Piper ships only two voices and system TTS voices cannot be controlled, so neither supports character voices.</string>
+    <string name="multivoice_unsupported">System TTS voices cannot be controlled, so they do not support character voices; local Piper and the cloud engines all do.</string>
     <string name="multivoice_no_books">No books yet — import one to assign character voices.</string>
     <string name="multivoice_book_label">Book</string>
     <string name="multivoice_pick_book">Choose a book</string>
@@ -134,6 +134,26 @@
     <string name="multivoice_role_minor">Minor character</string>
     <string name="multivoice_gender_male">male</string>
     <string name="multivoice_gender_female">female</string>
+    <string name="multivoice_add_character">Add character</string>
+    <string name="multivoice_add_character_title">New character</string>
+    <string name="multivoice_character_name_label">Name as used in the book, e.g. Harry</string>
+    <string name="multivoice_gender_label">Gender (helps auto voice assignment)</string>
+    <string name="multivoice_gender_unknown">unspecified</string>
+    <string name="multivoice_character_added">Character “%1$s” added</string>
+    <string name="multivoice_character_exists">“%1$s” is already in the list</string>
+    <string name="multivoice_name_required">Enter a name first</string>
+    <string name="multivoice_add_failed">Could not add the character, please retry</string>
+    <string name="multivoice_alias_edit">Edit aliases of %1$s</string>
+    <string name="multivoice_alias_title">Aliases of “%1$s”</string>
+    <string name="multivoice_alias_subtitle">Aliases also feed the AI speaker tagger: the character is recognised when the book calls them differently.</string>
+    <string name="multivoice_alias_label">New alias (another name used in the book)</string>
+    <string name="multivoice_alias_add">Add</string>
+    <string name="multivoice_alias_empty">No aliases yet</string>
+    <string name="multivoice_alias_added">Alias “%1$s” added</string>
+    <string name="multivoice_alias_removed">Alias “%1$s” removed</string>
+    <string name="multivoice_alias_exists">This alias already exists</string>
+    <string name="multivoice_alias_required">Enter an alias first</string>
+    <string name="multivoice_alias_delete">Delete alias %1$s</string>
     <string name="multivoice_locked_notice">Locked the voice for “%1$s”</string>
     <string name="multivoice_released_notice">“%1$s” is back to automatic</string>
     <string name="multivoice_status_no_library">This engine has no voice list yet: fetch or fill in voices above (Azure fetches them; a self-hosted server exposes /voices).</string>

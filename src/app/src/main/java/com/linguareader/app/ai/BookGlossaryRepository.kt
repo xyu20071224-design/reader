@@ -63,6 +63,96 @@ class BookGlossaryRepository(private val context: Context) {
             }
         }
 
+    /**
+     * 给已有角色加别名：别名会进 LLM 标注的角色表提示词与答案校验
+     * （[SpeakerRoster]），让「书中其他称呼」也能命中同一角色。
+     * 大小写去重；与名字相同、空白或条目不存在时返回 null/原样。
+     */
+    suspend fun addAlias(bookId: String, name: String, alias: String): BookGlossary? {
+        val clean = alias.trim()
+        if (bookId.isBlank() || clean.isEmpty()) return null
+        return mutateCharacter(bookId, name) { entry ->
+            if (clean.equals(entry.term, ignoreCase = true) ||
+                entry.aliases.any { it.equals(clean, ignoreCase = true) }
+            ) {
+                null
+            } else {
+                entry.copy(aliases = entry.aliases + clean)
+            }
+        }
+    }
+
+    /** 删除角色的一个别名（大小写不敏感）；条目不存在时返回 null。 */
+    suspend fun removeAlias(bookId: String, name: String, alias: String): BookGlossary? =
+        mutateCharacter(bookId, name) { entry ->
+            val remaining = entry.aliases.filterNot { it.equals(alias.trim(), ignoreCase = true) }
+            if (remaining.size == entry.aliases.size) null else entry.copy(aliases = remaining)
+        }
+
+    /**
+     * 对一个角色条目做原地修改的公共骨架：找不到条目返回 null；
+     * [mutate] 返回 null 表示无需修改（如重复别名），原数据原样返回。
+     */
+    private suspend fun mutateCharacter(
+        bookId: String,
+        name: String,
+        mutate: (GlossaryEntry) -> GlossaryEntry?
+    ): BookGlossary? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val current = read(bookId)
+            val key = name.trim().lowercase()
+            val existing = current.entries.firstOrNull { it.key == key }
+                ?: return@withLock null
+            val mutated = mutate(existing)
+                ?: return@withLock BookGlossary(bookId, current.entries)
+            val updated = mutated.copy(updatedAt = System.currentTimeMillis())
+            val glossary = BookGlossary(
+                bookId,
+                current.entries.filterNot { it.key == key } + updated
+            )
+            write(bookId, glossary)
+            glossary
+        }
+    }
+
+    /**
+     * 多角色面板的「添加角色」：把一个名字以手动条目写进角色表。
+     *
+     * 手动条目（origin=manual）不会被 [BookGlossary.sanitized] 过滤、不会被
+     * 档案重导入覆盖；若同名条目已存在（哪怕是 place/glossary），按用户意图
+     * 改判为 character 并保留已有翻译/别名。返回 null 表示名字无效。
+     */
+    suspend fun addManualCharacter(
+        bookId: String,
+        name: String,
+        gender: String = ""
+    ): BookGlossary? {
+        if (bookId.isBlank()) return null
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) return null
+        return withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val current = read(bookId)
+                val key = cleanName.lowercase()
+                val existing = current.entries.firstOrNull { it.key == key }
+                val entry = (existing ?: GlossaryEntry(term = cleanName)).copy(
+                    term = cleanName,
+                    kind = GlossaryEntry.KIND_CHARACTER,
+                    origin = "manual",
+                    enabled = true,
+                    gender = gender.ifBlank { existing?.gender.orEmpty() },
+                    updatedAt = System.currentTimeMillis()
+                )
+                val glossary = BookGlossary(
+                    bookId,
+                    current.entries.filterNot { it.key == key } + entry
+                )
+                write(bookId, glossary)
+                glossary
+            }
+        }
+    }
+
     suspend fun remove(bookId: String, term: String): BookGlossary =
         withContext(Dispatchers.IO) {
             mutex.withLock {
@@ -154,6 +244,7 @@ class BookGlossaryRepository(private val context: Context) {
         if (!file.isFile) return BookGlossary(bookId)
         return runCatching { BookGlossary.fromJson(JSONObject(file.readText())) }
             .getOrDefault(BookGlossary(bookId))
+            .sanitized()
     }
 
     private fun write(bookId: String, glossary: BookGlossary) {

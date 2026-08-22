@@ -319,6 +319,18 @@ data class BookGlossary(
     val bookId: String,
     val entries: List<GlossaryEntry> = emptyList()
 ) {
+    /**
+     * 历史脏数据清理：旧版 [LocalGlossaryTranslator] 把句首大写的功能词
+     * （And/As/At…）当成了专名，随语境档案导进术语表，在多角色面板里显示为
+     * 「角色」。读取时按同一张停用词表过滤；用户手动添加的条目永远保留。
+     */
+    fun sanitized(): BookGlossary = copy(
+        entries = entries.filterNot { entry ->
+            entry.origin != "manual" &&
+                entry.term.trim().lowercase() in LocalGlossaryTranslator.STOP_WORDS
+        }
+    )
+
     fun toJson(): JSONObject = JSONObject()
         .put("bookId", bookId)
         .put("entries", JSONArray().apply { entries.forEach { put(it.toJson()) } })

@@ -104,7 +104,7 @@
     <!-- 多角色音色 -->
     <string name="multivoice_title">多角色音色（实验）</string>
     <string name="multivoice_subtitle">按「谁在说话」给旁白与各角色分配不同音色；需要 AI 语境档案提供角色表。</string>
-    <string name="multivoice_unsupported">本地 Piper 只有 2 个内置音色，系统语音音色不可控，均不支持多角色。</string>
+    <string name="multivoice_unsupported">系统语音音色不可控，不支持多角色；本地 Piper 与各云端引擎均支持。</string>
     <string name="multivoice_no_books">书架还没有书，导入后即可分配角色音色。</string>
     <string name="multivoice_book_label">书目</string>
     <string name="multivoice_pick_book">选择书籍</string>
@@ -132,6 +132,26 @@
     <string name="multivoice_role_minor">配角</string>
     <string name="multivoice_gender_male">男</string>
     <string name="multivoice_gender_female">女</string>
+    <string name="multivoice_add_character">添加角色</string>
+    <string name="multivoice_add_character_title">新增角色</string>
+    <string name="multivoice_character_name_label">角色名（书中称呼，如 Harry）</string>
+    <string name="multivoice_gender_label">性别（帮助自动挑选音色）</string>
+    <string name="multivoice_gender_unknown">未指定</string>
+    <string name="multivoice_character_added">已添加角色「%1$s」</string>
+    <string name="multivoice_character_exists">「%1$s」已在角色列表中</string>
+    <string name="multivoice_name_required">请先输入角色名</string>
+    <string name="multivoice_add_failed">添加角色失败，请重试</string>
+    <string name="multivoice_alias_edit">编辑 %1$s 的别名</string>
+    <string name="multivoice_alias_title">「%1$s」的别名</string>
+    <string name="multivoice_alias_subtitle">别名会同时用于 AI 说话人标注：书中用别名称呼时也能认出这个角色。</string>
+    <string name="multivoice_alias_label">新别名（书中的其他称呼）</string>
+    <string name="multivoice_alias_add">添加</string>
+    <string name="multivoice_alias_empty">还没有别名</string>
+    <string name="multivoice_alias_added">已添加别名「%1$s」</string>
+    <string name="multivoice_alias_removed">已删除别名「%1$s」</string>
+    <string name="multivoice_alias_exists">该别名已存在</string>
+    <string name="multivoice_alias_required">请先输入别名</string>
+    <string name="multivoice_alias_delete">删除别名 %1$s</string>
     <string name="multivoice_locked_notice">已锁定「%1$s」的音色</string>
     <string name="multivoice_released_notice">「%1$s」已恢复自动分配</string>
     <string name="multivoice_status_no_library">当前引擎还没有可用音色列表：请先在上方获取/填写音色（Azure 拉取音色、自建服务器提供 /voices）。</string>

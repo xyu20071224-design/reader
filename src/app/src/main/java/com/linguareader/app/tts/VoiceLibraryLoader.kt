@@ -88,10 +88,43 @@ object VoiceLibraryLoader {
             // M5 (PLAN-MULTI-VOICE §13): the system library is whatever the
             // user annotated for the last probed engine; empty until then.
             TtsEngineMode.SYSTEM -> systemVoices(context)
-            // D2: Piper has no controllable voice library.
+            // D3: Piper 的音色库 = 已安装（内置 + 导入）的英文模型 + 内置中文模型。
+            TtsEngineMode.PIPER -> VoiceLibrary(piperVoices(context), engine)
             else -> VoiceLibrary(emptyList(), engine)
         }
     }
+
+    /**
+     * Piper 音色库。性别取自目录/导入时的标注；中文只有一个内置模型，多角色下
+     * 中文句子在合成器里固定路由到它，这里列出是为了旁白-中文条目有 id 可锁。
+     */
+    private fun piperVoices(context: Context): List<VoiceInfo> =
+        (PiperVoiceStore.installed(context).map { voice ->
+            VoiceInfo(
+                id = voice.id,
+                language = "en",
+                gender = when (voice.gender) {
+                    "男" -> "male"
+                    "女" -> "female"
+                    else -> ""
+                },
+                quality = when {
+                    voice.sizeMb >= 90 -> 0.7f
+                    voice.sizeMb >= 60 -> 0.6f
+                    voice.sizeMb > 0 -> 0.4f
+                    else -> 0.5f
+                },
+                source = "piper"
+            )
+        } + VoiceInfo(
+            id = PIPER_ZH_VOICE_ID,
+            language = "zh",
+            quality = 0.6f,
+            source = "piper"
+        )).distinctBy { it.id }
+
+    /** 内置中文 VITS 模型在音色库/映射里的 id（与 asset 目录同名）。 */
+    const val PIPER_ZH_VOICE_ID = "vits-zh-hf-fanchen-wnj"
 
     /**
      * Fetches the server voice list once when nothing is cached yet. Safe to

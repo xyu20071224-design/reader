@@ -282,7 +282,8 @@ internal fun ListeningSettingsBody(
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "本地 Piper 语音：内置离线神经语音，无需联网、无需 API Key；" +
-                        "自动按中英文切换。英文音色可选内置或导入的 Piper 模型。",
+                        "自动按中英文切换。英文音色可选内置或导入的 Piper 模型。" +
+                        "支持多角色听书（完全离线；最多驻留 4 个英文音色，超出按最近使用淘汰）。",
                     style = MaterialTheme.typography.labelSmall,
                     color = InkFaint
                 )

@@ -43,23 +43,29 @@ object MultiVoiceSupport {
     val NARRATOR_LANGUAGES = listOf(TtsLanguage.ENGLISH, TtsLanguage.CHINESE)
 
     /**
-     * D2, revised by M5 (PLAN-MULTI-VOICE §13.4): the cloud engines have a
-     * controllable voice library; Piper ships two built-in voices but no
-     * metadata path yet. The system engine joins conditionally — only once the
-     * user annotated at least two usable voices ([SystemVoiceStore]), so the
-     * switch stays off while there is nothing to assign.
+     * D3 + M5 (PLAN-MULTI-VOICE §13.4): the cloud engines have a controllable
+     * voice library; Piper joined via the LRU instance pool ([LruInstancePool]);
+     * the system engine joins conditionally — only once the user annotated at
+     * least two usable voices ([SystemVoiceStore]), so the switch stays off
+     * while there is nothing to assign.
      */
     fun engineSupportsMultiVoice(settings: CloudTtsSettings, systemUsableVoices: Int = 0): Boolean =
         settings.mode == TtsEngineMode.AZURE ||
             settings.mode == TtsEngineMode.VOLC ||
             settings.mode == TtsEngineMode.OPENAI_COMPAT ||
+            settings.mode == TtsEngineMode.PIPER ||
             (settings.mode == TtsEngineMode.SYSTEM && systemUsableVoices >= 2)
 
-    /** Whether multi-voice should run at all right now. */
+    /**
+     * Whether multi-voice should run at all right now. Cloud engines need the
+     * network master switch (their synthesis is remote); Piper is fully local,
+     * so it works offline — only the LLM speaker tagging degrades to rules. The
+     * system engine keeps the M5 gate: it also needs the network switch.
+     */
     fun multiVoiceActive(settings: CloudTtsSettings, systemUsableVoices: Int = 0): Boolean =
         settings.multiVoiceEnabled &&
-            settings.networkAiEnabled &&
-            engineSupportsMultiVoice(settings, systemUsableVoices)
+            engineSupportsMultiVoice(settings, systemUsableVoices) &&
+            (settings.mode == TtsEngineMode.PIPER || settings.networkAiEnabled)
 
     /**
      * Annotated system voices usable for assignment, for callers that hold a
@@ -89,6 +95,10 @@ object MultiVoiceSupport {
         )
     }
 
+    /** 角色表的存储层（多角色面板「添加角色」直接写这里）。 */
+    fun glossaryRepository(context: Context): BookGlossaryRepository =
+        BookGlossaryRepository(context.applicationContext)
+
     /**
      * Characters to assign voices to: the per-book glossary roster, which the AI
      * profile fills and the user can edit (§7).
@@ -104,7 +114,8 @@ object MultiVoiceSupport {
                     ageGroup = profile.ageGroup,
                     style = profile.style,
                     importance = profile.importance,
-                    language = profile.language
+                    language = profile.language,
+                    aliases = profile.aliases
                 )
             }
 
@@ -116,7 +127,14 @@ object MultiVoiceSupport {
             // Per-language narration voices of a self-hosted engine are also
             // "spent": a character must not end up sounding like the narrator.
             settings.serverEnVoice,
-            settings.serverZhVoice
+            settings.serverZhVoice,
+            // Piper: the user's default reading voice doubles as the fallback
+            // narrator, so the assigner must not hand it to a character.
+            if (settings.mode == TtsEngineMode.PIPER) {
+                settings.piperEnVoiceId.ifBlank { PiperVoiceCatalog.DEFAULT_ID }
+            } else {
+                ""
+            }
         )
             .filter { it.isNotBlank() }
             .toSet()
