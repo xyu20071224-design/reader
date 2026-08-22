@@ -39,7 +39,9 @@ from urllib.parse import parse_qs
 # ---------------------------------------------------------------------------
 # 配置
 # ---------------------------------------------------------------------------
-HOST = "0.0.0.0"
+# 控制面/试听台默认只绑回环，避免把 start/stop/试听代理裸暴露到局域网（BUG-018）。
+# 如需局域网访问（不建议），用环境变量 STUDIO_HOST=0.0.0.0 显式开启。
+HOST = os.environ.get("STUDIO_HOST", "127.0.0.1")
 PORT = 8002
 SERVER_VERSION = "TTSVoiceStudio/2.0"
 
@@ -98,6 +100,9 @@ LOG_TAIL_BYTES = 80000
 # 由本进程启动/追踪的子进程，key -> subprocess.Popen；用锁保护并发读写
 _children = {}
 _children_lock = threading.Lock()
+
+# 每个后端一把启动锁，串行化 检查→拉起，避免并发请求产生重复孤儿进程（BUG-016）
+_start_locks = {key: threading.Lock() for key in BACKENDS}
 
 # 记录每个后端最近一次「发起启动」的时间戳（epoch 秒）；housekeeping 用它判定启动超时
 _started_at = {}
@@ -175,7 +180,7 @@ def kill_port(port, wait=6.0):
     pid = port_pid(port)
     if pid:
         try:
-            _run(["taskkill", "/PID", str(pid), "/F"], timeout=15)
+            _run(["taskkill", "/PID", str(pid), "/F", "/T"], timeout=15)
         except Exception as e:
             log("结束端口 %d 的进程失败: %s" % (port, e))
     deadline = time.time() + wait
@@ -232,7 +237,13 @@ def _launch_with_flags(filename, env, cwd, log_file):
 
 
 def start_backend(key):
-    """启动后端（幂等）。返回 {state, pid, message, launched}。"""
+    """启动后端（幂等）。并发安全：检查与拉起整体持锁（BUG-016）。"""
+    with _start_locks[key]:
+        return _start_backend_unlocked(key)
+
+
+def _start_backend_unlocked(key):
+    """启动后端（幂等）。调用方须已持有 _start_locks[key]。"""
     b = BACKENDS[key]
     if is_listening(b["port"]):
         return {"state": "running", "pid": port_pid(b["port"]), "message": "已在运行", "launched": False}
@@ -267,20 +278,33 @@ def start_backend(key):
 
 
 def stop_backend(key):
-    """停止后端（幂等），并等待端口真正释放。"""
+    """停止后端（幂等），并等待端口真正释放。只停止由本工作台启动的进程（BUG-017）。"""
     b = BACKENDS[key]
     with _children_lock:
         child = _children.pop(key, None)
     with _started_lock:
         _started_at.pop(key, None)
-    ok = kill_port(b["port"])
+
+    listening_pid = port_pid(b["port"])
+    owns = child is not None and (
+        child.poll() is None or listening_pid == child.pid
+    )
+    if not owns:
+        return {
+            "state": backend_state(key),
+            "pid": listening_pid,
+            "message": "该端口进程并非本工作台启动，已拒绝停止（属主校验）",
+        }
+
+    killed = False
     if child is not None and child.poll() is None:
         try:
             child.terminate()
         except Exception:
             pass
-    state = "stopped" if ok else backend_state(key)
-    return {"state": state, "pid": port_pid(b["port"]), "message": "已停止" if ok else "仍在运行"}
+    killed = kill_port(b["port"])
+    state = "stopped" if killed else backend_state(key)
+    return {"state": state, "pid": port_pid(b["port"]), "message": "已停止" if killed else "仍在运行"}
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +464,7 @@ def build_voices_payload():
     indextts_state = backend_state("indextts")
 
     return {
-        "lan_ip": LAN_IP,
+        "lan_ip": detect_lan_ip(),
         "poll_seconds": POLL_SECONDS,
         "sample_zh": SAMPLE_ZH,
         "sample_en": SAMPLE_EN,

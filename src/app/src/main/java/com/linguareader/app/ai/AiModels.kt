@@ -358,15 +358,18 @@ data class GlossaryMatch(
  * Longest-first, non-overlapping matches of enabled glossary entries.
  *
  * Azure's dynamic dictionary markup is case-sensitive, so we keep the exact
- * surface text from the sentence while matching case-insensitively.
+ * surface text from the sentence while matching case-insensitively. Every
+ * non-overlapping occurrence of a term is returned (BUG-020: stopping at the
+ * first hit left repeated terms unmarked).
  */
 fun BookGlossary.matchesIn(sentence: String): List<GlossaryMatch> {
     val lower = sentence.lowercase()
     val occupied = mutableListOf<IntRange>()
-    return entries.asSequence()
+    val matches = mutableListOf<GlossaryMatch>()
+    entries.asSequence()
         .filter { it.enabled && it.term.isNotBlank() }
         .sortedByDescending { it.term.length }
-        .mapNotNull { entry ->
+        .forEach { entry ->
             val termLower = entry.term.lowercase()
             var searchFrom = 0
             while (true) {
@@ -378,7 +381,7 @@ fun BookGlossary.matchesIn(sentence: String): List<GlossaryMatch> {
                     boundaryOk(sentence, index, end)
                 ) {
                     occupied += range
-                    return@mapNotNull GlossaryMatch(
+                    matches += GlossaryMatch(
                         entry = entry,
                         text = sentence.substring(index, end),
                         start = index,
@@ -387,9 +390,8 @@ fun BookGlossary.matchesIn(sentence: String): List<GlossaryMatch> {
                 }
                 searchFrom = index + 1
             }
-            null
         }
-        .toList()
+    return matches.sortedBy { it.start }
 }
 
 private fun boundaryOk(sentence: String, start: Int, end: Int): Boolean {

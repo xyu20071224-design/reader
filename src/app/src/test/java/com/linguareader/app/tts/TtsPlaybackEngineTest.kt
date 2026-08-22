@@ -79,12 +79,18 @@ class TtsPlaybackEngineTest {
         isSystem: (TtsSynthesizer) -> Boolean,
         chapters: suspend (Book, Int) -> TtsChapter,
         readerLoaded: (String) -> Int? = { null },
-        voiceForSpeaker: (String, String) -> String? = { _, _ -> null }
+        voiceForSpeaker: (String, String) -> String? = { _, _ -> null },
+        fallbackFactory: ((TtsSynthesizerListener) -> TtsSynthesizer)? = null
     ) {
         val synthesizers = mutableListOf<TtsSynthesizer>()
         private val recordingFactory: (TtsSynthesizerListener) -> TtsSynthesizer = { l ->
             factory(l).also { synthesizers += it }
         }
+        val fallbackSynthesizers = mutableListOf<TtsSynthesizer>()
+        private val recordingFallbackFactory: ((TtsSynthesizerListener) -> TtsSynthesizer)? =
+            fallbackFactory?.let { f ->
+                { l -> f(l).also { fallbackSynthesizers += it } }
+            }
         val chapterRequests = mutableListOf<Int>()
         val progressSaves = mutableListOf<Triple<String, Int, Int>>()
         val states = mutableListOf<TtsPlaybackState>()
@@ -100,6 +106,7 @@ class TtsPlaybackEngineTest {
             onState = { states += it },
             dispatcher = dispatcher,
             readerLoadedChapterFor = readerLoaded,
+            fallbackSynthesizerFactory = recordingFallbackFactory,
             voiceForSpeaker = voiceForSpeaker
         )
         val state: TtsPlaybackState get() = states.last()
@@ -389,32 +396,25 @@ class TtsPlaybackEngineTest {
     @Test
     fun cloudPrepareFailureFallsBackToSystemEngine() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val created = mutableListOf<TtsSynthesizer>()
-        var first = true
-        val factory: (TtsSynthesizerListener) -> TtsSynthesizer = { l ->
-            if (first) {
-                first = false
-                FakeCloudTtsSynthesizer(l, prepareResult = false).also { created += it }
-            } else {
-                FakeTtsSynthesizer(l).also { created += it }
-            }
-        }
         val h = Harness(
             dispatcher = dispatcher,
-            factory = factory,
+            factory = { l -> FakeCloudTtsSynthesizer(l, prepareResult = false) },
             isSystem = { it is FakeTtsSynthesizer },
             chapters = { _, _ -> chapter("A.") },
+            fallbackFactory = { l -> FakeTtsSynthesizer(l) },
         )
         h.engine.startPlayback(book(), 0, 0)
         testScheduler.advanceUntilIdle()
 
-        assertEquals(2, created.size)
-        val cloud = created[0] as FakeCloudTtsSynthesizer
-        val system = created[1] as FakeTtsSynthesizer
+        // BUG-001: the settings factory must never be asked for a second cloud
+        // engine — the fallback comes from fallbackSynthesizerFactory instead.
+        // Rebuilding via the settings factory recreated the same broken cloud
+        // engine (and billed for it) in an endless loop.
+        assertEquals(1, h.synthesizers.size)
+        assertEquals(1, h.fallbackSynthesizers.size)
+        val cloud = h.synthesizers.first() as FakeCloudTtsSynthesizer
+        val system = h.fallbackSynthesizers.first() as FakeTtsSynthesizer
         assertTrue(cloud.spoken.isEmpty())
-        // Fallback re-speaks the first sentence on the system engine (the stale
-        // chapter handshake plus the re-queued load both land on it — a
-        // pre-existing behaviour, not a regression this refactor introduced).
         assertTrue(system.spoken.isNotEmpty())
         assertEquals("A.", system.spoken.first().text)
         assertEquals("系统语音（云 TTS 失败）", h.state.engineLabel)

@@ -85,6 +85,11 @@ class TtsPlaybackService : Service() {
     /** Serializes the version-check + disk write into one critical section. */
     private val progressWriteMutex = Mutex()
 
+    /** BUG-009: bumped on every handlePlay/stopPlayback; stale async chapter
+     *  queries compare against it before starting playback. */
+    @Volatile
+    private var playGeneration = 0
+
     private val engine by lazy {
         TtsPlaybackEngine(
             synthesizerFactory = { listener ->
@@ -117,11 +122,22 @@ class TtsPlaybackService : Service() {
                 }
             },
             isSystemEngine = { it is SystemTtsSynthesizer },
+            // BUG-001: the engine's last resort — a real system engine, never
+            // the settings factory (which would recreate the broken cloud one).
+            fallbackSynthesizerFactory = { listener ->
+                SystemTtsSynthesizer(applicationContext, listener)
+            },
             engineLabelForSettings = {
                 engineLabelFor(CloudTtsSettings.load(applicationContext))
             },
             engineLabelForSynthesizer = { s ->
-                (s as? CloudTtsSynthesizer)?.engineLabel ?: "系统语音"
+                when (s) {
+                    is CloudTtsSynthesizer -> s.engineLabel
+                    // BUG-004: Piper is an offline engine, not the system one —
+                    // the cast-and-fallback used to relabel it "系统语音".
+                    is SherpaTtsSynthesizer -> "本地 Piper 语音"
+                    else -> "系统语音"
+                }
             },
             onChapterRequest = { chapter -> _chapterRequests.tryEmit(chapter) },
             onBookSwitched = {
@@ -340,9 +356,14 @@ class TtsPlaybackService : Service() {
         val blockOffset = intent.getIntExtra(EXTRA_BLOCK_OFFSET, 0)
         refreshVoiceMap(newBook)
 
+        // BUG-009: ACTION_STOP can land while the chapter query below is still
+        // running; without a generation check the query would resurrect the
+        // playback it was meant to stop.
+        val generation = ++playGeneration
         when {
             sentenceText.isNotEmpty() -> scope.launch {
                 val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
+                if (generation != playGeneration) return@launch
                 val index = chapter.sentences.indexOfFirst { it == sentenceText }
                     .takeIf { it >= 0 } ?: 0
                 engine.startPlayback(newBook, requestedChapter, index)
@@ -350,6 +371,7 @@ class TtsPlaybackService : Service() {
 
             blockText.isNotEmpty() -> scope.launch {
                 val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
+                if (generation != playGeneration) return@launch
                 val index = chapter.sentenceIndexAt(blockText, blockOffset) ?: 0
                 engine.startPlayback(newBook, requestedChapter, index)
             }
@@ -372,6 +394,7 @@ class TtsPlaybackService : Service() {
     private fun setRate(rate: Float) = engine.setRate(rate)
 
     private fun stopPlayback() {
+        playGeneration++
         engine.stop()
         mediaSession?.isActive = false
         updateMediaSession()
@@ -429,6 +452,9 @@ class TtsPlaybackService : Service() {
                 0
             }
         )
+        // BUG-003: without ever activating the session, bluetooth headsets and
+        // the system media controls never see this player.
+        mediaSession?.isActive = true
         isForeground = true
     }
 

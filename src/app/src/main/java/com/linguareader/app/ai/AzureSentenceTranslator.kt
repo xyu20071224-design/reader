@@ -78,7 +78,7 @@ class AzureSentenceTranslator(private val settings: AiSettings) : SentenceTransl
                 builder.replace(
                     match.start,
                     match.endExclusive,
-                    "<mstrans:dictionary translation=\"$escaped\">${match.text}</mstrans:dictionary>"
+                    "<mstrans:dictionary translation=\"$escaped\">${xmlEscape(match.text)}</mstrans:dictionary>"
                 )
             }
             return builder.toString()

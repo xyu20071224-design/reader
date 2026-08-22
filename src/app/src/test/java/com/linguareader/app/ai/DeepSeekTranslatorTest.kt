@@ -17,9 +17,16 @@ class DeepSeekTranslatorTest {
     }
 
     @Test
-    fun `unparseable json reply retries without json mode`() {
-        assertTrue(
+    fun `unparseable json reply retries with json mode`() {
+        // BUG-013: dropping the JSON constraint after a parse failure
+        // guarantees another non-JSON reply — the retry must keep it.
+        assertFalse(
             DeepSeekTranslator.shouldRetryWithoutJsonMode(
+                AiRequestException("AI 返回了无法解析的 JSON：hello")
+            )
+        )
+        assertTrue(
+            DeepSeekTranslator.shouldRetryKeepingJsonMode(
                 AiRequestException("AI 返回了无法解析的 JSON：hello")
             )
         )

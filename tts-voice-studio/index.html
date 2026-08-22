@@ -447,6 +447,10 @@
   var state = { kokoro: null, indextts: null };
   var playingBtn = null;
   var playingAudio = null;
+  var currentAudioUrl = null;
+  function revokeCurrentAudio() {
+    if (currentAudioUrl) { try { URL.revokeObjectURL(currentAudioUrl); } catch (e) {} currentAudioUrl = null; }
+  }
   var LAN_IP = "192.168.1.9";
   var SAMPLE_ZH = "你好，欢迎使用本地语音合成。";
   var SAMPLE_EN = "Hello, this is a voice preview.";
@@ -684,9 +688,11 @@
     }
     stopPlayback();
     var text = (lang === "zh") ? SAMPLE_ZH : SAMPLE_EN;
-    btn.classList.add("playing");
-    btn.textContent = "合成中…";
-    btn.setAttribute("aria-busy", "true");
+    if (btn) {
+      btn.classList.add("playing");
+      btn.textContent = "合成中…";
+      btn.setAttribute("aria-busy", "true");
+    }
     playingBtn = btn;
 
     fetch("/api/preview", {
@@ -702,20 +708,23 @@
         return resp.blob();
       })
       .then(function (blob) {
+        revokeCurrentAudio();
         var url = URL.createObjectURL(blob);
+        currentAudioUrl = url;
         var a = new Audio(url);
         playingAudio = a;
-        a.onended = function () { resetBtn(); URL.revokeObjectURL(url); };
-        a.onerror = function () { resetBtn(); toast("音频播放失败"); };
+        a.onended = function () { resetBtn(); revokeCurrentAudio(); playingAudio = null; };
+        a.onerror = function () { resetBtn(); revokeCurrentAudio(); playingAudio = null; toast("音频播放失败"); };
         a.onloadeddata = function () { refreshHistory(); };
-        btn.textContent = "播放中…";
-        a.play().catch(function () { resetBtn(); toast("自动播放被拦截，请再点一次"); });
+        if (btn) { btn.textContent = "播放中…"; }
+        a.play().catch(function () { resetBtn(); revokeCurrentAudio(); playingAudio = null; toast("自动播放被拦截，请再点一次"); });
       })
-      .catch(function (e) { resetBtn(); toast("试听失败：" + e.message); });
+      .catch(function (e) { resetBtn(); revokeCurrentAudio(); toast("试听失败：" + e.message); });
   }
 
   function stopPlayback() {
     if (playingAudio) { try { playingAudio.pause(); } catch (e) {} playingAudio = null; }
+    revokeCurrentAudio();
     resetBtn();
   }
   function resetBtn() {
@@ -820,11 +829,14 @@
         return resp.blob();
       })
       .then(function (blob) {
+        revokeCurrentAudio();
         var url = URL.createObjectURL(blob);
+        currentAudioUrl = url;
         var a = new Audio(url);
         playingAudio = a;
-        a.onended = function () { URL.revokeObjectURL(url); };
-        a.play().catch(function () { toast("自动播放被拦截"); });
+        a.onended = function () { playingAudio = null; revokeCurrentAudio(); };
+        a.onerror = function () { playingAudio = null; revokeCurrentAudio(); toast("音频播放失败"); };
+        a.play().catch(function () { playingAudio = null; revokeCurrentAudio(); toast("自动播放被拦截"); });
       })
       .catch(function (e) { toast("重听失败：" + e.message); });
   }

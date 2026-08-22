@@ -86,6 +86,12 @@ class CloudTtsSynthesizer(
     @Volatile
     private var chapterFailed = false
 
+    /** BUG-005: set by stop() so an in-flight synthesis (still waiting for its
+     *  file) neither posts audio nor flips the UI back to "playing" after a
+     *  pause landed inside that wait window. */
+    @Volatile
+    private var stopped = false
+
     private var prepareJob: Job? = null
     private var bookPrepareJob: Job? = null
     private var preparedChapterKey: String? = null
@@ -165,17 +171,19 @@ class CloudTtsSynthesizer(
         val (bookId, chapterIndex, sentenceIndex) = parsed
         val effectiveVoice = voice?.takeIf { it.isNotBlank() } ?: backend.voiceFor(text)
         val file = cacheFile(bookId, chapterIndex, sentenceIndex, effectiveVoice)
+        stopped = false
         scope.launch {
             val ready = waitForFileOrSynthesize(file, text, effectiveVoice)
-            if (!ready || shutdown) {
-                if (!ready) mainHandler.post { listener.onError(utteranceId) }
+            if (!ready || shutdown || stopped) {
+                if (!ready && !stopped) mainHandler.post { listener.onError(utteranceId) }
                 return@launch
             }
-            mainHandler.post { play(file, rate, utteranceId) }
+            if (!stopped) mainHandler.post { play(file, rate, utteranceId) }
         }
     }
 
     override fun stop() {
+        stopped = true
         mainHandler.post { releaseCurrentPlayer() }
     }
 
@@ -269,23 +277,33 @@ class CloudTtsSynthesizer(
     ): Boolean {
         val deadline = System.currentTimeMillis() + 25_000
         while (!file.exists() && System.currentTimeMillis() < deadline) {
-            if (shutdown || chapterFailed) break
+            if (shutdown || chapterFailed || stopped) break
             delay(100)
         }
         if (file.exists() && file.length() > 0) return true
-        if (chapterFailed || shutdown) return false
+        if (chapterFailed || shutdown || stopped) return false
         // Chapter preparation may simply be slower than the first-sentence
         // deadline (long sentences, slow self-hosted servers). Waiting for the
-        // in-flight preparation avoids synthesizing the same sentence twice.
-        while (!file.exists() && prepareJob?.isActive == true && !shutdown && !chapterFailed) {
+        // in-flight preparation avoids synthesizing the same sentence twice —
+        // but never indefinitely: a cross-chapter "previous" waits here for a
+        // chapter whose file nobody is generating (BUG-015), and the whole-book
+        // cache (bookPrepareJob) may also be producing this very file (OBS-04).
+        val waitDeadline = System.currentTimeMillis() + 30_000
+        while (
+            !file.exists() &&
+            System.currentTimeMillis() < waitDeadline &&
+            (prepareJob?.isActive == true || bookPrepareJob?.isActive == true) &&
+            !shutdown && !chapterFailed && !stopped
+        ) {
             delay(100)
         }
         if (file.exists() && file.length() > 0) return true
-        if (chapterFailed || shutdown) return false
+        if (chapterFailed || shutdown || stopped) return false
         return backend.synthesize(text, voice, file).isSuccess
     }
 
     private fun play(file: File, rate: Float, utteranceId: String) {
+        if (stopped || shutdown) return
         releaseCurrentPlayer()
         val player = MediaPlayer()
         currentPlayer = player

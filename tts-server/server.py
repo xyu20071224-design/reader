@@ -98,21 +98,34 @@ def ensure_espeak_data_path() -> str:
 # ---------------------------------------------------------------------------
 _kokoro = None
 _lock = threading.Lock()
+# 初始化单独一把锁：threaded=True 下并发首请求可能同时看到 _kokoro is None，
+# 双检锁保证只加载一次（BUG-025）
+_init_lock = threading.Lock()
 _voices = None
 
 
 def get_kokoro():
-    global _kokoro, _voices
-    if _kokoro is None:
-        t0 = time.time()
-        espeak_cfg = EspeakConfig(
-            lib_path=espeakng_loader.get_library_path(),
-            data_path=ensure_espeak_data_path(),
-        )
-        _kokoro = Kokoro(MODEL_PATH, VOICES_PATH, espeak_config=espeak_cfg)
-        _voices = set(_kokoro.get_voices())
-        print(f"[init] 模型加载完成（{time.time() - t0:.1f}s），共 {len(_voices)} 个音色")
+    global _kokoro
+    if _kokoro is not None:
+        return _kokoro
+    with _init_lock:
+        if _kokoro is not None:
+            return _kokoro
+        _kokoro = _do_init_kokoro()
     return _kokoro
+
+
+def _do_init_kokoro():
+    global _voices
+    t0 = time.time()
+    espeak_cfg = EspeakConfig(
+        lib_path=espeakng_loader.get_library_path(),
+        data_path=ensure_espeak_data_path(),
+    )
+    kokoro = Kokoro(MODEL_PATH, VOICES_PATH, espeak_config=espeak_cfg)
+    _voices = set(kokoro.get_voices())
+    print(f"[init] 模型加载完成（{time.time() - t0:.1f}s），共 {len(_voices)} 个音色")
+    return kokoro
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +139,8 @@ def detect_lang(text: str) -> str:
     """粗略判断句子主要语言：中文占优返回 zh，否则 en。"""
     cjk = len(_CJK.findall(text))
     latin = len(_LATIN.findall(text))
+    if cjk == 0 and latin == 0:
+        return "en"
     return "zh" if cjk >= latin else "en"
 
 
@@ -226,11 +241,18 @@ def audio_speech():
     if not isinstance(data, dict):
         return jsonify({"error": "请求体必须是 JSON"}), 400
 
-    text = str(data.get("input") or data.get("text") or "").strip()
+    raw_input = data.get("input")
+    raw_voice = data.get("voice")
+    if raw_input is not None and not isinstance(raw_input, str):
+        return jsonify({"error": "input 必须是字符串"}), 400
+    if raw_voice is not None and not isinstance(raw_voice, str):
+        return jsonify({"error": "voice 必须是字符串"}), 400
+
+    text = (raw_input or data.get("text") or "").strip()
     if not text:
         return jsonify({"error": "缺少 input 文本"}), 400
 
-    voice, lang = resolve_voice_and_lang(text, data.get("voice"))
+    voice, lang = resolve_voice_and_lang(text, raw_voice)
     t0 = time.time()
     try:
         mp3 = synthesize_mp3(text, voice, lang)
@@ -292,6 +314,9 @@ def main():
     else:
         print(f"  本机回环地址: http://127.0.0.1:{PORT}")
     print("=" * 62)
+    if not TOKEN:
+        print("[警告] 未设置 TTS_TOKEN：本服务未鉴权，任一可达网络的设备都可调用合成接口。")
+        print("[建议] 仅在可信网络使用；通过 frp 等暴露公网时必须设置 TTS_TOKEN。")
     app.run(host=HOST, port=PORT, threaded=True)
 
 
