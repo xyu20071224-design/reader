@@ -60,3 +60,12 @@ tts-server/voices/*.ogg
 
 # Local debug/verification artefacts (APKs, logcats, ffmpeg, audio samples)
 artifacts/
+
+# AI assistant local artifacts
+.agents/
+
+# Unrelated local experiment page
+silkweaver/
+
+# Local verification screenshots
+验证截图/
