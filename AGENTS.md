@@ -26,7 +26,7 @@
 .\scripts\download_tts_models.ps1      # 取回被 gitignore 的 sherpa-onnx .onnx 模型
 ```
 
-桌面版命令见 `.agents/memory/desktop-port.md`；自建 TTS 服务端见 `.agents/memory/tts-server-stack.md`。
+自建 TTS 服务端见 `.agents/memory/tts-server-stack.md`。
 
 ## 构建事实（`src/app/build.gradle.kts`、`src/build.gradle.kts`）
 
@@ -55,14 +55,13 @@
 | `.../app/` | 顶层 Compose 屏幕与外壳：`MainActivity`、`AppViewModel`、`ReaderScreen`、`BookshelfScreen`、`VocabularyScreen`、`ReviewUi`、`ListeningBar`、`ListeningSettingsSheet`、`MultiVoiceSettings`、`AiDrawerSheet`、`AppSnackbar`、`ThemeColors` |
 | `.../app/reader/` | WebView 阅读渲染：`ReaderScreen` 的引擎侧（`ReaderScripts` 注入 JS、`EpubPage`、`ReaderController`） |
 | `.../app/data/` | 导入器（EPUB/TXT/FB2/PDF）、词典、语境分析、书库、生词本、复习与提醒 |
-| `.../app/tts/` | 听书全部实现（33 个文件）：播放状态机、合成器、5 类引擎后端、多角色音色 |
+| `.../app/tts/` | 听书全部实现（35 个文件）：播放状态机、合成器、5 类引擎后端、多角色音色 |
 | `.../app/ai/` | 可选联网 AI：语境档案、整句翻译、术语表、说话人 LLM 标注 |
 | `.../app/translation/` | 中文译本对照（F-128，纯离线）：三级 DP 对齐、句/段/词级查询、对齐档案读写 |
-| `src/app/src/test/` | JVM 单测（46 个文件：tts 20 / ai 9 / data 9 / translation 4 / reader 1 / 外壳 3） |
+| `src/app/src/test/` | JVM 单测（51 个文件：tts 23 / ai 10 / data 9 / translation 5 / reader 1 / 外壳 3） |
 | `src/app/src/androidTest/` | 仪器测试（14 个文件） |
 | `src/app/src/main/assets/` | `dictionary/ecdict.sqlite`（离线词典）、`sherpa/<voice>/`（离线音色，`.onnx` 被 gitignore） |
-| `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，各 98 个 string + 4 个 plurals |
-| `desktop/` | 迁移中的 Compose Multiplatform 工程（Android + Windows 桌面，桌面用 JavaFX WebView） |
+| `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，各 151 个 string + 4 个 plurals |
 | `tts-server/` | 自建 OpenAI 兼容 TTS 服务端（Python）+ IndexTTS 克隆音色 + frp 内网穿透配置 |
 | `tts-voice-studio/` | 本地音色调试工作台（Python + 单页 HTML） |
 | `scripts/`、`src/scripts/` | 模型下载、克隆音色制作、音频对比、词典构建、示例 EPUB 生成 |
@@ -79,6 +78,19 @@
 - **不要提交大文件**：APK、logcat、`.onnx` 模型、参考音频、ffmpeg 都在 `.gitignore` 里，保持这样。
 - **密钥不入库、不入文档**：API Key 由用户在应用内填写。任何文档/记忆文件只写字段名。
 
+## Git / GitHub 工作流
+
+远端 `origin` = `github.com/xyu20071224-design/reader`，`main` 是唯一权威线。分布式格局一句话：**本地随便折腾（试验分支、worktree、reset 都行），但任何不想丢的工作必须落在 `main` 或已 push 的分支上**——`git status` 干净且 `git log origin/main..main` 为空，才可安心关机。
+
+- **合并即推送**：feature 分支合并回 `main` 后立刻 `git push origin main`。曾发生过本地 main 领先远端二十多个提交一周没推的情况，等于没有备份。
+- **feature 分支也要推**：`git push -u origin feat/<主题>`。单人项目推分支不是为了评审，是异地备份 + 在网页上翻 diff。
+- **动手前先 `git fetch`；push 被拒说明远端分叉，停下来查清再动**。曾发生过两条线平行开发同一批功能（译本对照、TTS 修复、tts-server），main 真正分叉、四十多个文件两边都改的事故——多机/多会话并行开发时尤其危险。**绝不 force-push main**，确需覆盖时必须先把远端现状备份成分支。
+- **分支命名统一 `feat/<主题>`**（与提交前缀一致，不混用 `feature/`）；合并后即删：`git branch -d <name>`，推过远端的加 `git push origin --delete <name>`。
+- **提交身份保持统一**：`git config user.name / user.email` 全仓库一致。历史上出现过两个身份各推一条线，加剧了分叉排查难度。
+- **同机并行用 `git worktree add`**，试验目录删掉后记得 `git worktree prune` 清残留。
+- **版本发布**：tag 用 `v<x.y.z>`（与 `versionName` 一致）并 `git push origin v<x.y.z>`；正式版可在 GitHub 建 Release 附 APK——Release 资产不进 git 历史，不受大文件规则约束。
+- **大文件红线对远端同样生效**：截图、logcat、APK、模型、测试电子书不入库；远端历史上混入过整目录工件，清理时分批 commit，别再犯。
+
 ## 验证纪律
 
 - 改纯逻辑 → `testDebugUnitTest` 必跑。
@@ -90,7 +102,7 @@
 
 项目记忆与规则在 `.agents/`：
 
-- `.agents/memory/MEMORY.md` — **索引，先看这里**，再按主题深入 18 个记忆文件（含跨模块的 `architecture-map.md`）。
+- `.agents/memory/MEMORY.md` — **索引，先看这里**，再按主题深入 17 个记忆文件（含跨模块的 `architecture-map.md`）。
 - `.agents/rules/` — 工作规则：`memory-maintenance.md`（何时、怎么把新知识写回记忆库）、`code-and-verification.md`（实现范围、平台约束、文案、测试与验证矩阵、联网硬约束、提交规范）。
 
 动手前先读 `MEMORY.md`；发现记忆与代码不符，以代码为准并顺手修正记忆文件。
