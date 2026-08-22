@@ -84,7 +84,7 @@
 
 - **合并即推送**：feature 分支合并回 `main` 后立刻 `git push origin main`。曾发生过本地 main 领先远端二十多个提交一周没推的情况，等于没有备份。
 - **feature 分支也要推**：`git push -u origin feat/<主题>`。单人项目推分支不是为了评审，是异地备份 + 在网页上翻 diff。
-- **动手前先 `git fetch`；push 被拒说明远端分叉，停下来查清再动**。曾发生过两条线平行开发同一批功能（译本对照、TTS 修复、tts-server），main 真正分叉、四十多个文件两边都改的事故——多机/多会话并行开发时尤其危险。**绝不 force-push main**，确需覆盖时必须先把远端现状备份成分支。
+- **动手前先 `git fetch`；push 被拒说明远端分叉，停下来查清再动**。曾发生过两条线平行开发同一批功能（译本对照、TTS 修复、tts-server），main 真正分叉、四十多个文件两边都改的事故——多机/多会话并行开发时尤其危险。**绝不 force-push main**，确需覆盖时必须先把远端现状备份成分支；`main` 已开 GitHub 分支保护（禁 force-push、禁删除），应急覆盖前需先用仓库所有者令牌经 API 临时解除。
 - **分支命名统一 `feat/<主题>`**（与提交前缀一致，不混用 `feature/`）；合并后即删：`git branch -d <name>`，推过远端的加 `git push origin --delete <name>`。
 - **提交身份保持统一**：`git config user.name / user.email` 全仓库一致。历史上出现过两个身份各推一条线，加剧了分叉排查难度。
 - **同机并行用 `git worktree add`**，试验目录删掉后记得 `git worktree prune` 清残留。
