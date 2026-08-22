@@ -10,6 +10,8 @@
     <!-- 一次性轻提示（Snackbar） -->
     <string name="notice_book_imported">已导入《%1$s》</string>
     <string name="notice_book_deleted">已删除《%1$s》</string>
+    <string name="notice_word_saved">已收藏「%1$s」</string>
+    <string name="notice_word_removed">已移出生词「%1$s」</string>
 
     <!-- 书架 -->
     <plurals name="shelf_book_count">

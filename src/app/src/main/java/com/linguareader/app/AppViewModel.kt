@@ -442,15 +442,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 pace = mutableState.value.reviewPace,
                 aiResult = aiResult
             )
-            mutableState.value = mutableState.value.copy(savedWords = words)
+            mutableState.value = mutableState.value.copy(
+                savedWords = words,
+                notice = string(R.string.notice_word_saved, lookup.word)
+            )
             rescheduleReviewReminders()
         }
     }
 
     fun removeSavedWord(id: String) {
         viewModelScope.launch {
+            val removedWord = mutableState.value.savedWords.firstOrNull { it.id == id }?.headword
             val words = vocabulary.remove(id)
-            mutableState.value = mutableState.value.copy(savedWords = words)
+            mutableState.value = mutableState.value.copy(
+                savedWords = words,
+                notice = removedWord?.let { string(R.string.notice_word_removed, it) }
+            )
             rescheduleReviewReminders()
         }
     }

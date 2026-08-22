@@ -10,6 +10,8 @@
     <!-- Transient notices (Snackbar) -->
     <string name="notice_book_imported">Imported \"%1$s\"</string>
     <string name="notice_book_deleted">Deleted \"%1$s\"</string>
+    <string name="notice_word_saved">Saved \"%1$s\"</string>
+    <string name="notice_word_removed">Removed \"%1$s\"</string>
 
     <!-- Bookshelf -->
     <plurals name="shelf_book_count">
