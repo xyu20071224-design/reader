@@ -62,6 +62,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -118,6 +119,22 @@ import kotlin.math.roundToInt
  * block/offset location published by the service so repeated sentences never
  * highlight the first occurrence; text search stays as a fallback.
  */
+/** 查词请求旋转屏后可恢复（字段全为 Bundle 安全类型），恢复后由 LaunchedEffect 重建结果。 */
+private val WordLookupSaver = Saver<WordLookup?, List<Any>>(
+    save = { it?.let { l -> listOf(l.word, l.sentence, l.paragraph, l.sentenceOffset, l.x, l.y) } ?: emptyList() },
+    restore = { values ->
+        if (values.isEmpty()) null
+        else WordLookup(
+            word = values[0] as String,
+            sentence = values[1] as String,
+            paragraph = values[2] as String,
+            sentenceOffset = values[3] as Int,
+            x = values[4] as Float,
+            y = values[5] as Float
+        )
+    }
+)
+
 private fun highlightCurrentTts(controller: ReaderController, ttsState: TtsPlaybackState) {
     if (ttsState.highlightBlockIndex >= 0 && ttsState.highlightLength > 0) {
         controller.highlightBlock(
@@ -177,12 +194,12 @@ internal fun ReaderScreen(
     var pendingCount by remember { mutableIntStateOf(1) }
     var needsSave by remember { mutableStateOf(false) }
     var toolbarVisible by remember { mutableStateOf(true) }
-    var choosingStart by remember { mutableStateOf(false) }
+    var choosingStart by rememberSaveable { mutableStateOf(false) }
     var showContents by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showListeningSettings by remember { mutableStateOf(false) }
     var showPageJump by remember { mutableStateOf(false) }
-    var lookup by remember { mutableStateOf<WordLookup?>(null) }
+    var lookup by rememberSaveable(stateSaver = WordLookupSaver) { mutableStateOf<WordLookup?>(null) }
     var dictionaryResult by remember { mutableStateOf<DictionaryLookupResult?>(null) }
     var dictionaryLoading by remember { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
@@ -198,7 +215,11 @@ internal fun ReaderScreen(
         mutableMapOf<String, SentenceTranslationResult>()
     }
     var showingRelatedPhrase by remember { mutableStateOf(false) }
-    var reviewDeck by remember { mutableStateOf<List<SavedWord>?>(null) }
+    // 复习卡组旋转屏后按 id 从 ViewModel 的 savedWords 恢复（SavedWord 本身不可 Bundle 化）。
+    var reviewDeckIds by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    val reviewDeck = remember(savedWords, reviewDeckIds) {
+        reviewDeckIds?.let { ids -> savedWords.filter { it.id in ids } }?.takeIf { it.isNotEmpty() }
+    }
     var showReviewSettings by remember { mutableStateOf(false) }
     var showReviewPrompt by remember { mutableStateOf(false) }
     var pendingClose by remember { mutableStateOf(false) }
@@ -534,7 +555,7 @@ internal fun ReaderScreen(
                         fontWeight = FontWeight.Medium
                     )
                     if (reminders.toolbarBadge && dueWords.isNotEmpty()) {
-                        TextButton(onClick = { reviewDeck = dueWords.take(reviewPace.sessionMaxWords) }) {
+                        TextButton(onClick = { reviewDeckIds = dueWords.take(reviewPace.sessionMaxWords).map { it.id } }) {
                             Text("复习 ${dueWords.size}", color = Accent, fontWeight = FontWeight.SemiBold)
                         }
                     }
@@ -657,7 +678,7 @@ internal fun ReaderScreen(
                     onStart = {
                         showReviewPrompt = false
                         pendingClose = false
-                        reviewDeck = dueWords.take(reviewPace.sessionMaxWords)
+                        reviewDeckIds = dueWords.take(reviewPace.sessionMaxWords).map { it.id }
                     },
                     onDismiss = {
                         showReviewPrompt = false
@@ -732,7 +753,7 @@ internal fun ReaderScreen(
             deck = deck,
             onReview = viewModel::reviewWord,
             onSpeak = onSpeak,
-            onDismiss = { reviewDeck = null }
+            onDismiss = { reviewDeckIds = null }
         )
     }
 
@@ -763,7 +784,7 @@ internal fun ReaderScreen(
                 val word = savedId?.let { id -> savedWords.firstOrNull { w -> w.id == id } }
                 if (word != null) {
                     lookup = null
-                    reviewDeck = listOf(word)
+                    reviewDeckIds = listOf(word.id)
                 }
             },
             onShowPhrase = { showingRelatedPhrase = true },

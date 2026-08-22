@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,11 +80,11 @@ internal fun ReviewSheet(
     onSpeak: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var index by remember(deck) { mutableIntStateOf(0) }
-    var revealed by remember(deck) { mutableStateOf(false) }
+    var index by rememberSaveable(deck) { mutableIntStateOf(0) }
+    var revealed by rememberSaveable(deck) { mutableStateOf(false) }
     var busy by remember(deck) { mutableStateOf(false) }
-    var completedCount by remember(deck) { mutableIntStateOf(0) }
-    var allDone by remember(deck) { mutableStateOf(false) }
+    var completedCount by rememberSaveable(deck) { mutableIntStateOf(0) }
+    var allDone by rememberSaveable(deck) { mutableStateOf(false) }
     val word = deck[index.coerceAtMost(deck.lastIndex)]
 
     fun finish(remembered: Boolean) {
