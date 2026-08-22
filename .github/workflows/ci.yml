@@ -1,0 +1,37 @@
+# 单元测试 CI：JVM 单测（Robolectric），Gradle 根在 src/（仓库根没有 gradlew）
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**', 'ci/**', 'legacy/**']
+  pull_request:
+
+# 同一 ref 的新推送取消旧 run，节省额度
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: JVM 单元测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 赋予 Gradle wrapper 执行权限
+        run: chmod +x gradlew
+
+      - name: 安装 JDK 17（temurin）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: 运行单元测试
+        run: ./gradlew testDebugUnitTest --stacktrace
