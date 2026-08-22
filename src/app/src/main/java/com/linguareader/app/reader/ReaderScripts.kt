@@ -88,6 +88,15 @@ object ReaderScripts {
                 scrollbar-width: none; -ms-overflow-style: none;
               }
               #lr-scroller::-webkit-scrollbar { display: none; }
+              /* EPUB stylesheets often style bare div elements (e.g.
+                 margin-top: 2em). The TTS overlay and its boxes are divs too,
+                 and absolute positioning insets place the margin box, so any
+                 leaked vertical margin shifts every highlight bar down. Reset
+                 all box model properties on the highlight elements. */
+              #lr-tts-overlay,
+              #lr-tts-overlay > div {
+                margin: 0 !important; padding: 0 !important; border: 0 !important;
+              }
               #lingua-reader-content,
               #lingua-reader-content * {
                 box-sizing: border-box; max-width: 100%;
@@ -851,8 +860,49 @@ object ReaderScripts {
 
           window.lrClearHighlight = clearTtsOverlay;
 
+          // While audio is playing the highlight must stay visible: when the
+          // spoken sentence sits on another page (paged columns) or outside the
+          // vertical band (scroll mode), bring it into view before drawing.
+          // Manual reading is unaffected — this only runs on the TTS highlight
+          // path.
+          function followRangeIntoView(range) {
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller) return;
+            const sr = scroller.getBoundingClientRect();
+            const rects = range.getClientRects();
+            let first = null;
+            for (let i = 0; i < rects.length; i++) {
+              if (rects[i].width > 0 && rects[i].height > 0) { first = rects[i]; break; }
+            }
+            if (!first) return;
+            if (scrollMode) {
+              const contentTop = first.top - sr.top + scroller.scrollTop;
+              const viewTop = scroller.scrollTop;
+              const viewBottom = scroller.scrollTop + scroller.clientHeight;
+              if (contentTop < viewTop + 8 || contentTop + first.height > viewBottom - 8) {
+                const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+                scroller.scrollTop = clamp(contentTop - scroller.clientHeight * 0.25, 0, max);
+                scrollRatio = currentScrollRatio();
+                page = pageFromRatio(scrollRatio);
+                updateEndHint();
+                ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+              }
+            } else {
+              const contentLeft = first.left - sr.left + scroller.scrollLeft;
+              const targetPage = clamp(
+                Math.floor(contentLeft / Math.max(1, window.innerWidth)),
+                0, Math.max(1, pageCount) - 1);
+              if (targetPage !== page) {
+                page = targetPage;
+                restoreTarget = page;
+                applyPage();
+              }
+            }
+          }
+
           function showTtsHighlight(range) {
             if (!range || range.collapsed) return;
+            followRangeIntoView(range);
             // 覆盖层挂在滚动容器内，随内容一起滚动（早期版本用 position:fixed +
             // 视口坐标，文字滚走了高亮还钉在屏幕上）。
             const scroller = document.getElementById('lr-scroller');
@@ -860,6 +910,7 @@ object ReaderScripts {
             overlay.id = 'lr-tts-overlay';
             overlay.style.cssText =
               'position:absolute;left:0;top:0;width:0;height:0;' +
+              'margin:0;padding:0;border:0;' +
               'pointer-events:none;z-index:2147483647;';
             (scroller || document.body).appendChild(overlay);
             // 用零尺寸探针实测「left:0;top:0 实际落在视口的哪个位置」，再把每个
@@ -881,7 +932,7 @@ object ReaderScripts {
               if (rect.width === 0 && rect.height === 0) continue;
               const box = document.createElement('div');
               box.style.cssText =
-                'position:absolute;' +
+                'position:absolute;margin:0;padding:0;border:0;' +
                 'left:' + (rect.left - originRect.left) + 'px;' +
                 'top:' + (rect.top - originRect.top) + 'px;' +
                 'width:' + rect.width + 'px;height:' + rect.height + 'px;' +
@@ -908,8 +959,6 @@ object ReaderScripts {
             }
             if (!target) return;
             showTtsHighlight(rangeFromNormalizedOffset(target.el, index - cursor, text.length));
-            // The highlight only repositions itself; the reader page is never
-            // force-scrolled, so a manual page turn is not yanked back.
           };
 
           window.lrHighlightBlock = function(blockIndex, offset, length) {
