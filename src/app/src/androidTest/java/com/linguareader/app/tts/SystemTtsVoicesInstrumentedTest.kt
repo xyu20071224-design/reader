@@ -32,7 +32,13 @@ class SystemTtsVoicesInstrumentedTest {
             if (rawInitOk) {
                 val v = raw.voices
                 rawNull = v == null
-                rawNames = v.orEmpty().map { it.name }
+                // The loader deliberately skips voices that require a network
+                // download (offline-first), so the raw probe must apply the
+                // same exclusion — otherwise the equality below fails on any
+                // device whose engine reports online voices.
+                rawNames = v.orEmpty()
+                    .filterNot { it.isNetworkConnectionRequired }
+                    .map { it.name }
             }
             rawLatch.countDown()
         }
