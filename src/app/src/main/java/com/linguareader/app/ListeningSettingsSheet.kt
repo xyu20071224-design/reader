@@ -78,6 +78,21 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit, book: Book? = null) {
     }
 }
 
+/** 行内反馈的语义（决定颜色），与文案解耦——禁止再用文案前缀判断样式。 */
+internal enum class StatusTone { SUCCESS, DANGER, NEUTRAL }
+
+/** 听书设置的行内状态：文本 + 显式语义。 */
+internal data class SettingsStatus(
+    val text: String,
+    val tone: StatusTone = StatusTone.NEUTRAL
+) {
+    companion object {
+        fun success(text: String) = SettingsStatus(text, StatusTone.SUCCESS)
+        fun danger(text: String) = SettingsStatus(text, StatusTone.DANGER)
+        fun info(text: String) = SettingsStatus(text, StatusTone.NEUTRAL)
+    }
+}
+
 /**
  * Reusable body of the listening settings (engine / voices / speed / test).
  * Shared by the reader's quick sheet and the AI drawer's "听书语音" tab.
@@ -101,9 +116,9 @@ internal fun ListeningSettingsBody(
     var systemVoices by remember { mutableStateOf<List<SystemVoiceInfo>>(emptyList()) }
     var systemVoicesLoaded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf<String?>(null) }
+    var status by remember { mutableStateOf<SettingsStatus?>(null) }
     var piperVoices by remember { mutableStateOf(PiperVoiceStore.installed(context)) }
-    var piperStatus by remember { mutableStateOf<String?>(null) }
+    var piperStatus by remember { mutableStateOf<SettingsStatus?>(null) }
     var piperImporting by remember { mutableStateOf(false) }
     val onnxPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -111,15 +126,15 @@ internal fun ListeningSettingsBody(
         if (uri == null) return@rememberLauncherForActivityResult
         // 模型有 30–90 MB：复制与校验都在 IO 线程做，主线程只更新状态。
         piperImporting = true
-        piperStatus = "正在导入并校验模型…"
+        piperStatus = SettingsStatus.info("正在导入并校验模型…")
         scope.launch {
             PiperVoiceImporter.import(context, uri)
                 .onSuccess { voice ->
                     piperVoices = PiperVoiceStore.installed(context)
                     settings = settings.copy(piperEnVoiceId = voice.id)
-                    piperStatus = "已导入 ${voice.id}，保存后即可使用"
+                    piperStatus = SettingsStatus.success("已导入 ${voice.id}，保存后即可使用")
                 }
-                .onFailure { piperStatus = it.message ?: "导入失败" }
+                .onFailure { piperStatus = SettingsStatus.danger(it.message ?: "导入失败") }
             piperImporting = false
         }
     }
@@ -131,16 +146,16 @@ internal fun ListeningSettingsBody(
             systemVoices = list
             systemVoicesLoaded = true
             status = if (list.isEmpty()) {
-                "未找到可用的系统音色，将使用系统默认"
+                SettingsStatus.info("未找到可用的系统音色，将使用系统默认")
             } else {
-                "已获取 ${list.size} 个系统音色"
+                SettingsStatus.success("已获取 ${list.size} 个系统音色")
             }
         }
     }
 
     fun fetchAzureVoices() {
         if (settings.region.isBlank() || settings.apiKey.isBlank()) {
-            status = "请先填写 Region 和 API Key"
+            status = SettingsStatus.danger("请先填写 Region 和 API Key")
             return
         }
         busy = true
@@ -158,9 +173,9 @@ internal fun ListeningSettingsBody(
                             .ifBlank { multilingual.orEmpty() },
                         useMultilingual = if (multilingual != null) settings.useMultilingual else false
                     )
-                    status = "已获取 ${list.size} 个可用音色"
+                    status = SettingsStatus.success("已获取 ${list.size} 个可用音色")
                 }
-                .onFailure { status = it.message ?: "获取音色失败，请检查 Region 与 Key" }
+                .onFailure { status = SettingsStatus.danger(it.message ?: "获取音色失败，请检查 Region 与 Key") }
             busy = false
         }
     }
@@ -169,7 +184,7 @@ internal fun ListeningSettingsBody(
      *  key but not that speech synthesis itself works. */
     fun testAzure() {
         if (settings.region.isBlank() || settings.apiKey.isBlank()) {
-            status = "请先填写 Region 和 API Key"
+            status = SettingsStatus.danger("请先填写 Region 和 API Key")
             return
         }
         val voice = when {
@@ -179,7 +194,7 @@ internal fun ListeningSettingsBody(
             else -> settings.enVoice
         }
         if (voice.isBlank()) {
-            status = "请先获取可用音色并选择音色"
+            status = SettingsStatus.danger("请先获取可用音色并选择音色")
             return
         }
         busy = true
@@ -190,11 +205,11 @@ internal fun ListeningSettingsBody(
                 .synthesize("测试。Test.", voice, probe)
                 .onSuccess {
                     probe.delete()
-                    status = "连接成功，Azure 可正常合成"
+                    status = SettingsStatus.success("连接成功，Azure 可正常合成")
                 }
                 .onFailure {
                     probe.delete()
-                    status = it.message ?: "连接失败"
+                    status = SettingsStatus.danger(it.message ?: "连接失败")
                 }
             busy = false
         }
@@ -202,7 +217,7 @@ internal fun ListeningSettingsBody(
 
     fun testServer() {
         if (!settings.isConfigured) {
-            status = "请先填写服务器地址"
+            status = SettingsStatus.danger("请先填写服务器地址")
             return
         }
         busy = true
@@ -213,16 +228,16 @@ internal fun ListeningSettingsBody(
             backend.synthesize("测试。Test.", backend.voiceFor("测试。Test."), probe)
                 .onSuccess {
                     probe.delete()
-                    status = "连接成功，服务器可正常合成"
+                    status = SettingsStatus.success("连接成功，服务器可正常合成")
                 }
-                .onFailure { status = it.message ?: "连接失败" }
+                .onFailure { status = SettingsStatus.danger(it.message ?: "连接失败") }
             busy = false
         }
     }
 
     fun testVolcano() {
         if (!settings.isConfigured) {
-            status = "请填写 API Key，或 App ID + Access Token"
+            status = SettingsStatus.danger("请填写 API Key，或 App ID + Access Token")
             return
         }
         busy = true
@@ -244,10 +259,11 @@ internal fun ListeningSettingsBody(
             zhProbe.delete()
             enProbe.delete()
             if (zh.isSuccess && en.isSuccess) {
-                status = "连接成功，中英文音色均可合成"
+                status = SettingsStatus.success("连接成功，中英文音色均可合成")
             } else {
-                status = (zh.exceptionOrNull() ?: en.exceptionOrNull())
-                    ?.message ?: "连接失败"
+                status = SettingsStatus.danger(
+                    (zh.exceptionOrNull() ?: en.exceptionOrNull())?.message ?: "连接失败"
+                )
             }
             busy = false
         }
@@ -255,12 +271,12 @@ internal fun ListeningSettingsBody(
 
     fun save() {
         if (settings.mode != TtsEngineMode.SYSTEM && !settings.isConfigured) {
-            status = "启用云 TTS 前请先完成对应配置"
+            status = SettingsStatus.danger("启用云 TTS 前请先完成对应配置")
             return
         }
         CloudTtsSettings.save(context, settings)
         TtsPlaybackController.onCloudSettingsChanged(context)
-        status = "已保存"
+        status = SettingsStatus.success("已保存")
         onSaved()
     }
 
@@ -347,12 +363,14 @@ internal fun ListeningSettingsBody(
                     Text(if (piperImporting) "正在导入…" else "导入模型（选择 .onnx 文件）")
                 }
                 piperStatus?.let {
-                    val failed = it.contains("失败") || it.contains("无法") || it.contains("不是") ||
-                        it.contains("太小") || it.contains("超过")
                     Text(
-                        it,
+                        it.text,
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (failed) Danger else Success
+                        color = when (it.tone) {
+                            StatusTone.SUCCESS -> Success
+                            StatusTone.DANGER -> Danger
+                            StatusTone.NEUTRAL -> InkFaint
+                        }
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -367,7 +385,7 @@ internal fun ListeningSettingsBody(
                     PiperCatalogRow(
                         voice = voice,
                         networkEnabled = settings.networkAiEnabled,
-                        onMessage = { piperStatus = it }
+                        onMessage = { piperStatus = SettingsStatus.danger(it) }
                     )
                 }
             }
@@ -388,8 +406,12 @@ internal fun ListeningSettingsBody(
                 }
                 status?.let {
                     Text(
-                        it,
-                        color = if (it.startsWith("已获取")) Success else InkFaint,
+                        it.text,
+                        color = when (it.tone) {
+                            StatusTone.SUCCESS -> Success
+                            StatusTone.DANGER -> Danger
+                            StatusTone.NEUTRAL -> InkFaint
+                        },
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
@@ -454,8 +476,12 @@ internal fun ListeningSettingsBody(
                 }
                 status?.let {
                     Text(
-                        it,
-                        color = if (it.startsWith("已获取") || it.startsWith("连接成功")) Success else Danger,
+                        it.text,
+                        color = when (it.tone) {
+                            StatusTone.SUCCESS -> Success
+                            StatusTone.DANGER -> Danger
+                            StatusTone.NEUTRAL -> InkFaint
+                        },
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
@@ -588,8 +614,12 @@ internal fun ListeningSettingsBody(
                 }
                 status?.let {
                     Text(
-                        it,
-                        color = if (it.startsWith("连接成功")) Success else Danger,
+                        it.text,
+                        color = when (it.tone) {
+                            StatusTone.SUCCESS -> Success
+                            StatusTone.DANGER -> Danger
+                            StatusTone.NEUTRAL -> InkFaint
+                        },
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
@@ -650,8 +680,12 @@ internal fun ListeningSettingsBody(
                 }
                 status?.let {
                     Text(
-                        it,
-                        color = if (it.startsWith("连接成功")) Success else Danger,
+                        it.text,
+                        color = when (it.tone) {
+                            StatusTone.SUCCESS -> Success
+                            StatusTone.DANGER -> Danger
+                            StatusTone.NEUTRAL -> InkFaint
+                        },
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
