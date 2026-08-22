@@ -187,6 +187,7 @@ internal fun ReaderScreen(
     var dictionaryLoading by remember { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
     var aiLoading by remember { mutableStateOf(false) }
+    var aiFailed by remember { mutableStateOf(false) }
     var sentenceTranslation by remember { mutableStateOf<SentenceTranslationResult?>(null) }
     var translation by remember { mutableStateOf<TranslationLookupResult?>(null) }
     var translationLoading by remember { mutableStateOf(false) }
@@ -395,6 +396,7 @@ internal fun ReaderScreen(
         dictionaryLoading = true
         aiResult = null
         aiLoading = false
+        aiFailed = false
         sentenceTranslation = sentenceTranslationCache[request.sentence.trim()]
         sentenceTranslationError = null
         sentenceTranslationLoading = false
@@ -412,7 +414,7 @@ internal fun ReaderScreen(
             aiLoading = true
             aiResult = runCatching {
                 viewModel.aiLookup(book, request, dictionaryResult?.entry)
-            }.getOrNull()
+            }.onFailure { aiFailed = true }.getOrNull()
             aiLoading = false
         }
     }
@@ -746,6 +748,7 @@ internal fun ReaderScreen(
             loading = dictionaryLoading,
             aiContext = aiResult,
             aiLoading = aiLoading,
+            aiFailed = aiFailed,
             sentenceTranslationReady = SentenceTranslatorFactory.isConfigured(aiSettings),
             hasTranslation = book.hasTranslation,
             translation = translation,
@@ -1082,6 +1085,7 @@ private fun LookupSheet(
     loading: Boolean,
     aiContext: AiLookupResult?,
     aiLoading: Boolean,
+    aiFailed: Boolean,
     sentenceTranslationReady: Boolean,
     hasTranslation: Boolean,
     translation: TranslationLookupResult?,
@@ -1203,6 +1207,14 @@ private fun LookupSheet(
                         color = InkSoft
                     )
                 }
+            }
+            if (!aiLoading && aiFailed && aiContext == null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    stringResource(R.string.reader_ai_lookup_failed),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = InkSoft
+                )
             }
             if (!aiLoading && aiContext != null) {
                 Spacer(Modifier.height(14.dp))

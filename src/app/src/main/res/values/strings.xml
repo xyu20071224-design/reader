@@ -12,6 +12,7 @@
     <string name="notice_book_deleted">已删除《%1$s》</string>
     <string name="notice_word_saved">已收藏「%1$s」</string>
     <string name="notice_word_removed">已移出生词「%1$s」</string>
+    <string name="reader_ai_lookup_failed">AI 语境获取失败，已显示本地词典结果</string>
 
     <!-- 书架 -->
     <plurals name="shelf_book_count">
