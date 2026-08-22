@@ -72,4 +72,33 @@ class BookGlossaryTest {
 
         assertTrue(glossary.matchesIn("Hogwarts is far away.").isEmpty())
     }
+
+    @Test
+    fun `sanitized drops auto-imported function words that used to become characters`() {
+        val glossary = BookGlossary(
+            bookId = "book-1",
+            entries = listOf(
+                GlossaryEntry(term = "And", kind = "character", origin = "local"),
+                GlossaryEntry(term = "As", kind = "character", origin = "auto"),
+                GlossaryEntry(term = "At", kind = "character", origin = "auto"),
+                GlossaryEntry(term = "Frodo", kind = "character", origin = "auto")
+            )
+        )
+
+        val kept = glossary.sanitized().entries.map { it.term }
+
+        assertEquals(listOf("Frodo"), kept)
+    }
+
+    @Test
+    fun `sanitized never touches manual entries`() {
+        val glossary = BookGlossary(
+            bookId = "book-1",
+            entries = listOf(
+                GlossaryEntry(term = "So", kind = "character", origin = "manual")
+            )
+        )
+
+        assertEquals(listOf("So"), glossary.sanitized().entries.map { it.term })
+    }
 }

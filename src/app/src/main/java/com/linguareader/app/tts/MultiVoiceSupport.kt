@@ -43,20 +43,25 @@ object MultiVoiceSupport {
     val NARRATOR_LANGUAGES = listOf(TtsLanguage.ENGLISH, TtsLanguage.CHINESE)
 
     /**
-     * D2: only the cloud engines have a controllable voice library. Piper ships
-     * two built-in voices and the system engine cannot guarantee any, so the
-     * switch stays disabled there.
+     * D3: Piper joined the multi-voice engines via an LRU instance pool
+     * ([LruInstancePool]); the system engine still cannot guarantee any voice
+     * library, so the switch stays disabled there.
      */
     fun engineSupportsMultiVoice(settings: CloudTtsSettings): Boolean =
         settings.mode == TtsEngineMode.AZURE ||
             settings.mode == TtsEngineMode.VOLC ||
-            settings.mode == TtsEngineMode.OPENAI_COMPAT
+            settings.mode == TtsEngineMode.OPENAI_COMPAT ||
+            settings.mode == TtsEngineMode.PIPER
 
-    /** Whether multi-voice should run at all right now. */
+    /**
+     * Whether multi-voice should run at all right now. Cloud engines need the
+     * network master switch (their synthesis is remote); Piper is fully local,
+     * so it works offline — only the LLM speaker tagging degrades to rules.
+     */
     fun multiVoiceActive(settings: CloudTtsSettings): Boolean =
         settings.multiVoiceEnabled &&
-            settings.networkAiEnabled &&
-            engineSupportsMultiVoice(settings)
+            engineSupportsMultiVoice(settings) &&
+            (settings.mode == TtsEngineMode.PIPER || settings.networkAiEnabled)
 
     fun voiceMapRepository(context: Context): VoiceMapRepository {
         val appContext = context.applicationContext
@@ -79,6 +84,10 @@ object MultiVoiceSupport {
         )
     }
 
+    /** 角色表的存储层（多角色面板「添加角色」直接写这里）。 */
+    fun glossaryRepository(context: Context): BookGlossaryRepository =
+        BookGlossaryRepository(context.applicationContext)
+
     /**
      * Characters to assign voices to: the per-book glossary roster, which the AI
      * profile fills and the user can edit (§7).
@@ -94,7 +103,8 @@ object MultiVoiceSupport {
                     ageGroup = profile.ageGroup,
                     style = profile.style,
                     importance = profile.importance,
-                    language = profile.language
+                    language = profile.language,
+                    aliases = profile.aliases
                 )
             }
 
@@ -106,7 +116,14 @@ object MultiVoiceSupport {
             // Per-language narration voices of a self-hosted engine are also
             // "spent": a character must not end up sounding like the narrator.
             settings.serverEnVoice,
-            settings.serverZhVoice
+            settings.serverZhVoice,
+            // Piper: the user's default reading voice doubles as the fallback
+            // narrator, so the assigner must not hand it to a character.
+            if (settings.mode == TtsEngineMode.PIPER) {
+                settings.piperEnVoiceId.ifBlank { PiperVoiceCatalog.DEFAULT_ID }
+            } else {
+                ""
+            }
         )
             .filter { it.isNotBlank() }
             .toSet()

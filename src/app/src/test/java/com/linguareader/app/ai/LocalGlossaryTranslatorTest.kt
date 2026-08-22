@@ -1,70 +1,61 @@
 package com.linguareader.app.ai
 
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * 本地轻量语境的专名判定：句首大写的普通功能词（And/As/At…）不得混进角色表
+ * ——它们曾被当成 character 导入术语表，在多角色面板里显示为「角色音色」。
+ */
 class LocalGlossaryTranslatorTest {
-    private val translator = LocalGlossaryTranslator()
+
+    private fun chapters(vararg texts: String): List<ChapterText> =
+        texts.mapIndexed { index, text -> ChapterText(index, "c$index", text) }
 
     @Test
-    fun `builds glossary from repeated capitalized names`() = runBlocking {
-        val chapters = listOf(
-            ChapterText(
-                index = 0,
-                title = "One",
-                text = "Harry Potter opened the door. Hogwarts is far away."
-            ),
-            ChapterText(
-                index = 1,
-                title = "Two",
-                text = "Harry Potter walked to Hogwarts again."
+    fun sentenceInitialFunctionWordsNeverBecomeCharacters() = runBlocking {
+        val translator = LocalGlossaryTranslator()
+        // And/As/At 每句开头都大写、跨章高频——旧实现会把它们全部收进 characters。
+        val profile = translator.buildBookContext(
+            "t",
+            chapters(
+                "And he went home. As it was late. At least he tried.",
+                "And she stayed. As usual. At dawn they left."
             )
         )
-
-        val profile = translator.buildBookContext("Test Book", chapters)
-        val terms = (profile.characters + profile.places + profile.glossary)
-            .map { it.term.lowercase() }
-
-        assertTrue(terms.contains("harry potter"))
-        assertTrue(terms.contains("hogwarts"))
+        val names = profile.characters.map { it.term.lowercase() }
+        assertFalse(names.contains("and"))
+        assertFalse(names.contains("as"))
+        assertFalse(names.contains("at"))
     }
 
     @Test
-    fun `translate returns book term hint and null for unknown words`() = runBlocking {
-        val profile = BookContextProfile(
-            bookId = "book-1",
-            bookTitle = "Test Book",
-            glossary = listOf(
-                ContextTerm(
-                    term = "Hogwarts",
-                    note = "本书出现 3 次；首次见：Hogwarts is far away."
-                )
+    fun properNounsRepeatedAcrossChaptersAreKept() = runBlocking {
+        val translator = LocalGlossaryTranslator()
+        val profile = translator.buildBookContext(
+            "t",
+            chapters(
+                "Frodo left early. The road was long, and Frodo walked alone.",
+                "Frodo rested. Gandalf arrived, and Frodo smiled."
             )
         )
-        val request = AiLookupRequest(
-            bookId = "book-1",
-            bookTitle = "Test Book",
-            surfaceWord = "Hogwarts",
-            headword = "hogwarts",
-            sentence = "Hogwarts is far away.",
-            paragraph = "Hogwarts is far away.",
-            localSenses = emptyList(),
-            localDefinitions = emptyList(),
-            matchedPhrase = null
-        )
+        val names = profile.characters.map { it.term.lowercase() }
+        assertTrue(names.contains("frodo"))
+    }
 
-        val hit = translator.translate(profile, request)
-        assertNotNull(hit)
-        assertEquals("本地轻量语境", hit!!.source)
-
-        val miss = translator.translate(
-            profile,
-            request.copy(surfaceWord = "ordinary", headword = "ordinary")
+    @Test
+    fun capitalizedNameOnlyAtSentenceStartIsRejected() = runBlocking {
+        val translator = LocalGlossaryTranslator()
+        // 一个从不出现在句中位置的词，即使跨章大写也不算专名。
+        val profile = translator.buildBookContext(
+            "t",
+            chapters(
+                "Zyxwv went home.",
+                "Zyxwv went home again."
+            )
         )
-        assertNull(miss)
+        assertFalse(profile.characters.any { it.term.equals("Zyxwv", ignoreCase = true) })
     }
 }

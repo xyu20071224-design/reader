@@ -4,23 +4,19 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import com.k2fsa.sherpa.onnx.OfflineTts
-import com.k2fsa.sherpa.onnx.OfflineTtsConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 /**
- * Offline TTS backed by sherpa-onnx. Two models are held in memory — a Chinese
- * VITS voice and an English Piper voice — so mixed-language playback switches
- * instantly without reloading. Synthesis returns float PCM which is wrapped as
- * a WAV and played with [MediaPlayer] to map onto [TtsSynthesizerListener].
+ * Offline TTS backed by sherpa-onnx. The Chinese VITS voice is held as one
+ * fixed instance; English Piper voices live in an LRU pool ([LruInstancePool],
+ * D3) so multi-voice playback can switch per sentence without reloading —
+ * synthesis returns float PCM which is wrapped as a WAV and played with
+ * [MediaPlayer] to map onto [TtsSynthesizerListener].
  */
 class SherpaTtsSynthesizer(
     context: Context,
@@ -30,13 +26,27 @@ class SherpaTtsSynthesizer(
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** 池清理走独立 scope：shutdown 已取消 [scope]，再用它 launch 不会执行。 */
+    private val poolScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** 英文实例驻留上限（含默认音色）；每个 medium 模型约 60-110MB。 */
+    private val maxEnglishInstances = 4
+
     @Volatile
     private var ready = false
 
     private var zhTts: OfflineTts? = null
-    private var enTts: OfflineTts? = null
+    private val enPool = LruInstancePool<String, OfflineTts>(
+        capacity = maxEnglishInstances,
+        create = { id ->
+            // resolve 对未知 id 回退内置 Ryan，所以坏映射不会让整句无声。
+            PiperAssets.createEnglishTts(appContext, PiperVoiceStore.resolve(appContext, id))
+        },
+        destroy = { tts -> runCatching { tts.release() } }
+    )
 
     private var player: MediaPlayer? = null
+    private val generationLock = Any()
     private var generation = 0
 
     init {
@@ -45,12 +55,10 @@ class SherpaTtsSynthesizer(
                 // sherpa-onnx's Piper phonemizer needs espeak-ng-data as real
                 // files (not asset entries), so copy it out to filesDir once.
                 PiperAssets.ensureEspeakData(appContext)
-                zhTts = OfflineTts(appContext.assets, zhConfig())
-                // 英文：选中的音色可能是用户导入的（文件路径），加载失败时回退内置
-                // Ryan，避免一个坏音色让整个 Piper 引擎（含中文）都不可用。
-                val selected = PiperVoiceStore.resolve(appContext, piperEnVoiceId)
-                enTts = PiperAssets.createEnglishTts(appContext, selected)
-                    ?: PiperAssets.createEnglishTts(appContext, PiperVoiceCatalog.builtin)
+                zhTts = OfflineTts(appContext.assets, PiperAssets.chineseConfig())
+                // 默认英文音色常驻池内（pin 持有一份引用），既保证单音色路径
+                // 零加载延迟，也不会被后续角色音色挤出去。
+                enPool.pin(defaultEnglishId)
                 ready = true
                 listener.onReady()
             } catch (failure: Throwable) {
@@ -61,32 +69,59 @@ class SherpaTtsSynthesizer(
 
     override val isReady: Boolean get() = ready
 
+    private val defaultEnglishId: String =
+        PiperVoiceStore.resolve(appContext, piperEnVoiceId).id
+
     override fun speak(text: String, rate: Float, utteranceId: String, voice: String?) {
-        // Piper ignores per-utterance voice (only 2 bundled voices, auto
-        // switched by language) — multi-voice is disabled for it (D2).
         if (!ready || text.isBlank()) return
-        val gen = ++generation
+        val gen = nextGeneration()
         scope.launch {
-            val tts = if (isChinese(text)) zhTts else enTts
-            val audio = runCatching {
-                tts?.generate(text, sid = 0, speed = rate.coerceIn(0.5f, 2f))
-            }.getOrNull()
-            if (gen != generation) return@launch
-            if (audio == null || audio.samples.isEmpty()) {
-                listener.onError(utteranceId)
-                return@launch
+            if (isChinese(text)) {
+                // 中文只有一个内置模型，角色映射里的中文条目在这里自然汇合。
+                synthesize(zhTts, text, rate, utteranceId, gen)
+            } else {
+                val requested = voice?.trim()?.takeUnless { it.isEmpty() } ?: defaultEnglishId
+                val tts = enPool.acquire(requested) ?: return@launch synthesize(
+                    enPool.acquire(defaultEnglishId), text, rate, utteranceId, gen
+                )
+                try {
+                    synthesize(tts, text, rate, utteranceId, gen)
+                } finally {
+                    enPool.release(requested)
+                }
             }
-            val wav = writeWav(audio.samples, audio.sampleRate)
-            if (gen != generation) {
-                wav.delete()
-                return@launch
-            }
-            play(wav, utteranceId, gen)
         }
     }
 
+    private fun nextGeneration(): Int = synchronized(generationLock) { ++generation }
+
+    private suspend fun synthesize(
+        tts: OfflineTts?,
+        text: String,
+        rate: Float,
+        utteranceId: String,
+        gen: Int
+    ) {
+        val audio = runCatching {
+            tts?.generate(text, sid = 0, speed = rate.coerceIn(0.5f, 2f))
+        }.getOrNull()
+        if (gen != currentGeneration()) return
+        if (audio == null || audio.samples.isEmpty()) {
+            listener.onError(utteranceId)
+            return
+        }
+        val wav = PiperAssets.writeWav(audio.samples, audio.sampleRate, appContext.cacheDir)
+        if (gen != currentGeneration()) {
+            wav.delete()
+            return
+        }
+        play(wav, utteranceId, gen)
+    }
+
+    private fun currentGeneration(): Int = synchronized(generationLock) { generation }
+
     override fun stop() {
-        generation++
+        nextGeneration()
         runCatching {
             player?.stop()
             player?.release()
@@ -98,29 +133,9 @@ class SherpaTtsSynthesizer(
         stop()
         scope.cancel()
         runCatching { zhTts?.release() }
-        runCatching { enTts?.release() }
         zhTts = null
-        enTts = null
+        poolScope.launch { enPool.close() }
     }
-
-    private fun zhConfig(): OfflineTtsConfig = OfflineTtsConfig(
-        model = OfflineTtsModelConfig(
-            vits = OfflineTtsVitsModelConfig(
-                model = "sherpa/vits-zh-hf-fanchen-wnj/vits-zh-hf-fanchen-wnj.onnx",
-                tokens = "sherpa/vits-zh-hf-fanchen-wnj/tokens.txt",
-                lexicon = "sherpa/vits-zh-hf-fanchen-wnj/lexicon.txt",
-                dictDir = "sherpa/vits-zh-hf-fanchen-wnj/dict",
-            ),
-            numThreads = 2,
-        ),
-        ruleFsts = listOf(
-            "sherpa/vits-zh-hf-fanchen-wnj/date.fst",
-            "sherpa/vits-zh-hf-fanchen-wnj/number.fst",
-            "sherpa/vits-zh-hf-fanchen-wnj/phone.fst",
-            "sherpa/vits-zh-hf-fanchen-wnj/new_heteronym.fst",
-        ).joinToString(","),
-    )
-
 
     private fun isChinese(text: String): Boolean =
         text.any { char ->
@@ -131,42 +146,6 @@ class SherpaTtsSynthesizer(
                 code in 0x20000..0x2FA1F
         }
 
-
-    private fun writeWav(samples: FloatArray, sampleRate: Int): File {
-        val channels = 1
-        val bitsPerSample = 16
-        val byteRate = sampleRate * channels * bitsPerSample / 8
-        val blockAlign = channels * bitsPerSample / 8
-
-        val pcm = ByteArray(samples.size * 2)
-        for (i in samples.indices) {
-            val s = (samples[i].coerceIn(-1f, 1f) * 32767f).toInt()
-            pcm[i * 2] = (s and 0xff).toByte()
-            pcm[i * 2 + 1] = ((s shr 8) and 0xff).toByte()
-        }
-
-        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
-        header.put("RIFF".toByteArray(Charsets.US_ASCII))
-        header.putInt(36 + pcm.size)
-        header.put("WAVE".toByteArray(Charsets.US_ASCII))
-        header.put("fmt ".toByteArray(Charsets.US_ASCII))
-        header.putInt(16)
-        header.putShort(1) // PCM
-        header.putShort(channels.toShort())
-        header.putInt(sampleRate)
-        header.putInt(byteRate)
-        header.putShort(blockAlign.toShort())
-        header.putShort(bitsPerSample.toShort())
-        header.put("data".toByteArray(Charsets.US_ASCII))
-        header.putInt(pcm.size)
-
-        val file = File.createTempFile("sherpa-", ".wav", appContext.cacheDir)
-        file.outputStream().use { out ->
-            out.write(header.array())
-            out.write(pcm)
-        }
-        return file
-    }
 
     private fun play(file: File, utteranceId: String, gen: Int) {
         runCatching {
@@ -180,7 +159,7 @@ class SherpaTtsSynthesizer(
             )
             mp.setDataSource(file.absolutePath)
             mp.setOnPreparedListener {
-                if (gen == generation) {
+                if (gen == currentGeneration()) {
                     listener.onStart(utteranceId)
                     it.start()
                 } else {
@@ -189,12 +168,12 @@ class SherpaTtsSynthesizer(
                 }
             }
             mp.setOnCompletionListener {
-                if (gen == generation) listener.onDone(utteranceId)
+                if (gen == currentGeneration()) listener.onDone(utteranceId)
                 it.release()
                 file.delete()
             }
             mp.setOnErrorListener { _, _, _ ->
-                if (gen == generation) listener.onError(utteranceId)
+                if (gen == currentGeneration()) listener.onError(utteranceId)
                 mp.release()
                 file.delete()
                 true

@@ -19,12 +19,12 @@ class MultiVoiceSupportTest {
     ) = CloudTtsSettings(mode = mode, networkAiEnabled = network, multiVoiceEnabled = enabled)
 
     @Test
-    fun onlyCloudEnginesSupportMultiVoice() {
+    fun cloudAndPiperEnginesSupportMultiVoice() {
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.AZURE)))
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.VOLC)))
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.OPENAI_COMPAT)))
-        // D2: Piper has two built-in voices, the system engine none it controls.
-        assertFalse(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.PIPER)))
+        // D3: Piper joined via the LRU instance pool; system engine stays out.
+        assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.PIPER)))
         assertFalse(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.SYSTEM)))
     }
 
@@ -33,7 +33,9 @@ class MultiVoiceSupportTest {
         assertTrue(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.AZURE)))
         assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.AZURE, enabled = false)))
         assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.AZURE, network = false)))
-        assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.PIPER)))
+        // Piper is fully local: it works with the network master switch off.
+        assertTrue(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.PIPER, network = false)))
+        assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.PIPER, enabled = false)))
         // Default settings keep the feature off (§8.1).
         assertFalse(MultiVoiceSupport.multiVoiceActive(CloudTtsSettings()))
     }
@@ -43,6 +45,17 @@ class MultiVoiceSupportTest {
         val configured = CloudTtsSettings(narratorVoice = "af_maple", dialogueVoice = "af_sol")
         assertEquals(setOf("af_maple", "af_sol"), MultiVoiceSupport.reservedVoices(configured))
         assertTrue(MultiVoiceSupport.reservedVoices(CloudTtsSettings()).isEmpty())
+    }
+
+    @Test
+    fun piperDefaultVoiceIsReserved() {
+        val piper = CloudTtsSettings(mode = TtsEngineMode.PIPER)
+        assertEquals(
+            setOf(PiperVoiceCatalog.DEFAULT_ID),
+            MultiVoiceSupport.reservedVoices(piper)
+        )
+        val imported = CloudTtsSettings(mode = TtsEngineMode.PIPER, piperEnVoiceId = "en_US-amy-medium")
+        assertEquals(setOf("en_US-amy-medium"), MultiVoiceSupport.reservedVoices(imported))
     }
 
     @Test

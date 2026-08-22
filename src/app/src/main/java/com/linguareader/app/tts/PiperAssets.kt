@@ -6,6 +6,8 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * 本地 Piper（sherpa-onnx）资源与模型加载的共用逻辑。
@@ -74,6 +76,29 @@ internal object PiperAssets {
         }.getOrNull()
     }
 
+    /** 内置中文 VITS 模型的配置（多角色试听与播放共用）。 */
+    fun chineseConfig(): OfflineTtsConfig = OfflineTtsConfig(
+        model = OfflineTtsModelConfig(
+            vits = OfflineTtsVitsModelConfig(
+                model = "sherpa/vits-zh-hf-fanchen-wnj/vits-zh-hf-fanchen-wnj.onnx",
+                tokens = "sherpa/vits-zh-hf-fanchen-wnj/tokens.txt",
+                lexicon = "sherpa/vits-zh-hf-fanchen-wnj/lexicon.txt",
+                dictDir = "sherpa/vits-zh-hf-fanchen-wnj/dict",
+            ),
+            numThreads = 2,
+        ),
+        ruleFsts = listOf(
+            "sherpa/vits-zh-hf-fanchen-wnj/date.fst",
+            "sherpa/vits-zh-hf-fanchen-wnj/number.fst",
+            "sherpa/vits-zh-hf-fanchen-wnj/phone.fst",
+            "sherpa/vits-zh-hf-fanchen-wnj/new_heteronym.fst",
+        ).joinToString(","),
+    )
+
+    /** 创建内置中文合成器；失败返回 null。 */
+    fun createChineseTts(context: Context): OfflineTts? =
+        runCatching { OfflineTts(assetManager = context.assets, config = chineseConfig()) }.getOrNull()
+
     /**
      * 导入校验：真的把模型加载一次再释放。这是唯一能确定「这个 .onnx 能用」的办法
      * ——扩展名与魔数只能挡住明显错误的文件，tokens 不匹配、不是 VITS/Piper 结构
@@ -95,5 +120,42 @@ internal object PiperAssets {
         val tts = createEnglishTts(context, probe) ?: return false
         runCatching { tts.release() }
         return true
+    }
+
+    /** 把 sherpa-onnx 的 float PCM 包成 16-bit 单声道 WAV，供 MediaPlayer 播放。 */
+    fun writeWav(samples: FloatArray, sampleRate: Int, dir: File): File {
+        val channels = 1
+        val bitsPerSample = 16
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val blockAlign = channels * bitsPerSample / 8
+
+        val pcm = ByteArray(samples.size * 2)
+        for (i in samples.indices) {
+            val s = (samples[i].coerceIn(-1f, 1f) * 32767f).toInt()
+            pcm[i * 2] = (s and 0xff).toByte()
+            pcm[i * 2 + 1] = ((s shr 8) and 0xff).toByte()
+        }
+
+        val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+        header.put("RIFF".toByteArray(Charsets.US_ASCII))
+        header.putInt(36 + pcm.size)
+        header.put("WAVE".toByteArray(Charsets.US_ASCII))
+        header.put("fmt ".toByteArray(Charsets.US_ASCII))
+        header.putInt(16)
+        header.putShort(1) // PCM
+        header.putShort(channels.toShort())
+        header.putInt(sampleRate)
+        header.putInt(byteRate)
+        header.putShort(blockAlign.toShort())
+        header.putShort(bitsPerSample.toShort())
+        header.put("data".toByteArray(Charsets.US_ASCII))
+        header.putInt(pcm.size)
+
+        val file = File.createTempFile("sherpa-", ".wav", dir)
+        file.outputStream().use { out ->
+            out.write(header.array())
+            out.write(pcm)
+        }
+        return file
     }
 }

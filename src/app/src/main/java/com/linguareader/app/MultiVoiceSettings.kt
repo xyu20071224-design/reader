@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PlayArrow
@@ -26,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -96,6 +100,10 @@ internal fun MultiVoiceSection(
     var loading by remember { mutableStateOf(false) }
     var reloadToken by remember { mutableIntStateOf(0) }
     var picker by remember { mutableStateOf<VoicePickerTarget?>(null) }
+    var addingCharacter by remember { mutableStateOf(false) }
+    // 只记名字：增删别名后 characters 会整体刷新，弹层从最新列表取数据。
+    var aliasTargetName by remember { mutableStateOf<String?>(null) }
+    val aliasTarget = characters.firstOrNull { it.name == aliasTargetName }
 
     val bookTitle = (preselectedBook ?: books.firstOrNull { it.id == bookId })?.title
 
@@ -178,6 +186,77 @@ internal fun MultiVoiceSection(
                 snackbar.show(it.message ?: auditionFailed)
                 playingVoice = null
             }
+        }
+    }
+
+    /** 手动添加角色：写进术语表（origin=manual），成功后刷新角色列表。 */
+    fun addCharacter(name: String, gender: String): Boolean {
+        val clean = name.trim()
+        if (clean.isEmpty()) {
+            snackbar.show(context.getString(R.string.multivoice_name_required))
+            return false
+        }
+        if (characters.any { it.name.equals(clean, ignoreCase = true) }) {
+            snackbar.show(context.getString(R.string.multivoice_character_exists, clean))
+            return false
+        }
+        scope.launch {
+            val created = runCatching {
+                MultiVoiceSupport.glossaryRepository(context)
+                    .addManualCharacter(bookId, clean, gender)
+            }.getOrNull()
+            if (created == null) {
+                snackbar.show(context.getString(R.string.multivoice_add_failed))
+                return@launch
+            }
+            TtsPlaybackController.onCloudSettingsChanged(context)
+            snackbar.show(context.getString(R.string.multivoice_character_added, clean))
+            reloadToken++
+        }
+        return true
+    }
+
+    /** 给角色加别名：写进术语表条目，LLM 标注的角色表随之更新。 */
+    fun addAlias(character: VoiceCharacter, alias: String): Boolean {
+        val clean = alias.trim()
+        if (clean.isEmpty()) {
+            snackbar.show(context.getString(R.string.multivoice_alias_required))
+            return false
+        }
+        if (clean.equals(character.name, ignoreCase = true) ||
+            character.aliases.any { it.equals(clean, ignoreCase = true) }
+        ) {
+            snackbar.show(context.getString(R.string.multivoice_alias_exists))
+            return false
+        }
+        scope.launch {
+            val updated = runCatching {
+                MultiVoiceSupport.glossaryRepository(context)
+                    .addAlias(bookId, character.name, clean)
+            }.getOrNull()
+            if (updated == null) {
+                snackbar.show(context.getString(R.string.multivoice_add_failed))
+                return@launch
+            }
+            snackbar.show(context.getString(R.string.multivoice_alias_added, clean))
+            reloadToken++
+        }
+        return true
+    }
+
+    /** 删除角色的一个别名。 */
+    fun removeAlias(character: VoiceCharacter, alias: String) {
+        scope.launch {
+            val updated = runCatching {
+                MultiVoiceSupport.glossaryRepository(context)
+                    .removeAlias(bookId, character.name, alias)
+            }.getOrNull()
+            if (updated == null) {
+                snackbar.show(context.getString(R.string.multivoice_add_failed))
+                return@launch
+            }
+            snackbar.show(context.getString(R.string.multivoice_alias_removed, alias.trim()))
+            reloadToken++
         }
     }
 
@@ -302,11 +381,24 @@ internal fun MultiVoiceSection(
     }
 
     Spacer(Modifier.height(12.dp))
-    Text(
-        stringResource(R.string.multivoice_characters_section),
-        style = MaterialTheme.typography.labelLarge,
-        color = InkSoft
-    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            stringResource(R.string.multivoice_characters_section),
+            style = MaterialTheme.typography.labelLarge,
+            color = InkSoft,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = { addingCharacter = true }) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = null,
+                tint = Accent,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(2.dp))
+            Text(stringResource(R.string.multivoice_add_character))
+        }
+    }
     if (characters.isEmpty()) {
         Text(
             stringResource(R.string.multivoice_no_characters),
@@ -334,7 +426,8 @@ internal fun MultiVoiceSection(
                 playing = playingVoice != null && playingVoice == current,
                 onOpenPicker = { picker = target },
                 onAudition = { audition(character.name, current) },
-                onRelease = { releaseVoice(target) }
+                onRelease = { releaseVoice(target) },
+                onEditAliases = { aliasTargetName = character.name }
             )
         }
     Spacer(Modifier.height(6.dp))
@@ -378,6 +471,24 @@ internal fun MultiVoiceSection(
             onDismiss = { picker = null }
         )
     }
+
+    if (addingCharacter) {
+        AddCharacterDialog(
+            onConfirm = { name, gender ->
+                if (addCharacter(name, gender)) addingCharacter = false
+            },
+            onDismiss = { addingCharacter = false }
+        )
+    }
+
+    aliasTarget?.let { character ->
+        AliasDialog(
+            character = character,
+            onAdd = { alias -> addAlias(character, alias) },
+            onRemove = { alias -> removeAlias(character, alias) },
+            onDismiss = { aliasTargetName = null }
+        )
+    }
 }
 
 /** 正在挑音色的对象：一个角色，或某个语言的旁白。 */
@@ -388,6 +499,162 @@ private data class VoicePickerTarget(
     val gender: String?,
     val narratorLanguage: String?
 )
+
+/**
+ * 手动添加角色的弹层：名字必填，性别可选（空 = 未指定，交给自动分配推断）。
+ * 确认时先做重名/空名校验，失败不关弹层，反馈走全局 Snackbar。
+ */
+@Composable
+private fun AddCharacterDialog(
+    onConfirm: (name: String, gender: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var gender by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardSurface,
+        title = { Text(stringResource(R.string.multivoice_add_character_title)) },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.multivoice_character_name_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.multivoice_gender_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSoft
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_gender_male),
+                        selected = gender == "male",
+                        onClick = { gender = if (gender == "male") "" else "male" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_gender_female),
+                        selected = gender == "female",
+                        onClick = { gender = if (gender == "female") "" else "female" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_gender_unknown),
+                        selected = gender.isEmpty(),
+                        onClick = { gender = "" }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(name, gender) }) {
+                Text(stringResource(R.string.multivoice_add_character))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun GenderChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) }
+    )
+}
+
+/**
+ * 别名编辑弹层：列出已有别名（可删），输入新别名即时添加。
+ * 增删立即写库并 Snackbar 反馈；重名/空名不关弹层。
+ */
+@Composable
+private fun AliasDialog(
+    character: VoiceCharacter,
+    onAdd: (alias: String) -> Boolean,
+    onRemove: (alias: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var draft by remember { mutableStateOf("") }
+    val deleteTemplate = stringResource(R.string.multivoice_alias_delete, "%s")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardSurface,
+        title = { Text(stringResource(R.string.multivoice_alias_title, character.name)) },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.multivoice_alias_subtitle),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSoft
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        label = { Text(stringResource(R.string.multivoice_alias_label)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = {
+                            if (onAdd(draft)) draft = ""
+                        }
+                    ) {
+                        Text(stringResource(R.string.multivoice_alias_add))
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                if (character.aliases.isEmpty()) {
+                    Text(
+                        stringResource(R.string.multivoice_alias_empty),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkFaint
+                    )
+                } else {
+                    character.aliases.forEach { alias ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                alias,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Ink,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { onRemove(alias) },
+                                modifier = Modifier.semantics {
+                                    contentDescription = deleteTemplate.replace("%s", alias)
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = null,
+                                    tint = InkFaint,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) }
+        }
+    )
+}
 
 @Composable
 private fun characterSubtitle(character: VoiceCharacter): String {
@@ -436,12 +703,14 @@ private fun VoiceRow(
     onOpenPicker: () -> Unit,
     onAudition: () -> Unit,
     onRelease: () -> Unit,
-    subtitle: String? = null
+    subtitle: String? = null,
+    onEditAliases: (() -> Unit)? = null
 ) {
     // semantics{} 不是 composable 作用域，标签先取出来。
     val auditionLabel = stringResource(R.string.multivoice_audition, title)
     val stopAuditionLabel = stringResource(R.string.multivoice_audition_stop)
     val releaseLabel = stringResource(R.string.multivoice_release, title)
+    val editAliasesLabel = stringResource(R.string.multivoice_alias_edit, title)
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -501,6 +770,19 @@ private fun VoiceRow(
                     contentDescription = null,
                     tint = InkFaint,
                     modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+        if (onEditAliases != null) {
+            IconButton(
+                onClick = onEditAliases,
+                modifier = Modifier.semantics { contentDescription = editAliasesLabel }
+            ) {
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = InkFaint,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }

@@ -10,7 +10,9 @@ data class VoiceCharacter(
     val ageGroup: String = "",
     val style: List<String> = emptyList(),
     val importance: String = "minor",
-    val language: String = TtsLanguage.ENGLISH
+    val language: String = TtsLanguage.ENGLISH,
+    /** 书中其他称呼；分配用不到，供多角色面板展示与编辑。 */
+    val aliases: List<String> = emptyList()
 ) {
     val key: String get() = BookVoiceMap.keyOf(name)
 
