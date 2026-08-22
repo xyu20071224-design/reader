@@ -29,6 +29,28 @@ class MultiVoiceSupportTest {
     }
 
     @Test
+    fun systemEngineJoinsOnceEnoughVoicesAreAnnotated() {
+        // D2' (PLAN-MULTI-VOICE §13.4): the default count keeps every existing
+        // call site and verdict unchanged; the system engine needs ≥2 usable
+        // annotated voices.
+        assertFalse(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.SYSTEM), 0))
+        assertFalse(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.SYSTEM), 1))
+        assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.SYSTEM), 2))
+        // Cloud engines ignore the count entirely.
+        assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.AZURE), 0))
+
+        assertTrue(
+            MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.SYSTEM), 2)
+        )
+        assertFalse(
+            MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.SYSTEM, enabled = false), 2)
+        )
+        assertFalse(
+            MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.SYSTEM, network = false), 2)
+        )
+    }
+
+    @Test
     fun multiVoiceNeedsSwitchNetworkAndACloudEngine() {
         assertTrue(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.AZURE)))
         assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.AZURE, enabled = false)))

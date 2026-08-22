@@ -3,8 +3,11 @@ package com.linguareader.app.tts
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import java.util.Locale
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * One voice exposed by the Android system TTS engine (API 21+).
@@ -25,6 +28,19 @@ data class SystemVoiceInfo(
     val isChinese: Boolean get() = language in CHINESE_LANGUAGE_CODES
     val isEnglish: Boolean get() = language in ENGLISH_LANGUAGE_CODES
 
+    /**
+     * Assigner language for the multi-voice hard filter (PLAN-MULTI-VOICE
+     * §13.2): "zh"/"en" when the engine's locale code is recognised (including
+     * the ISO 639-3 and vendor codes above), blank (= multilingual, no language
+     * constraint) for anything else.
+     */
+    val assignerLanguage: String
+        get() = when {
+            isChinese -> TtsLanguage.CHINESE
+            isEnglish -> TtsLanguage.ENGLISH
+            else -> ""
+        }
+
     fun displayName(): String {
         val networkMark = if (isNetwork) "（网络）" else ""
         return "${locale.displayName} · $name$networkMark"
@@ -42,8 +58,50 @@ data class SystemVoiceInfo(
     }
 }
 
+/**
+ * Engine detection for the SYSTEM-mode guidance panel (PLAN-MULTI-VOICE §13.5,
+ * M5c): which of the three guidance states applies, and whether Google TTS is
+ * installed. Pure queries — never switches anything automatically.
+ */
+object SystemTtsEngines {
+
+    const val GOOGLE_TTS_PACKAGE = "com.google.android.tts"
+
+    /** 三态引导：当前就是 Google TTS / 已装未启用 / 未安装。 */
+    enum class Guide { RECOMMENDED, SWITCH_AVAILABLE, NOT_INSTALLED }
+
+    fun guideState(currentEngine: String, googleTtsInstalled: Boolean): Guide = when {
+        currentEngine == GOOGLE_TTS_PACKAGE -> Guide.RECOMMENDED
+        googleTtsInstalled -> Guide.SWITCH_AVAILABLE
+        else -> Guide.NOT_INSTALLED
+    }
+
+    fun isGoogleTtsInstalled(context: Context): Boolean =
+        isInstalled(context, GOOGLE_TTS_PACKAGE)
+
+    fun isInstalled(context: Context, packageName: String): Boolean =
+        packageName.isNotBlank() && runCatching {
+            context.applicationContext.packageManager.getPackageInfo(packageName, 0)
+            true
+        }.getOrDefault(false)
+}
+
 /** Loads the voices of the currently selected system TTS engine. */
 object SystemTtsVoices {
+
+    /**
+     * The engine package a default-constructed [TextToSpeech] binds to (the
+     * user's selection in system settings). Synchronous — no connection needed.
+     * Blank when the device never configured an engine.
+     */
+    fun currentEngine(context: Context): String =
+        runCatching {
+            Settings.Secure.getString(
+                context.applicationContext.contentResolver,
+                Settings.Secure.TTS_DEFAULT_SYNTH
+            )
+        }.getOrNull().orEmpty().trim()
+
     fun load(context: Context, onResult: (List<SystemVoiceInfo>) -> Unit) {
         lateinit var created: TextToSpeech
         created = TextToSpeech(context.applicationContext) { status ->
@@ -69,6 +127,12 @@ object SystemTtsVoices {
             }
         }
     }
+
+    /** Suspend variant of [load]. */
+    suspend fun probe(context: Context): List<SystemVoiceInfo> =
+        suspendCancellableCoroutine { continuation ->
+            load(context) { continuation.resume(it) }
+        }
 
     private fun readVoices(tts: TextToSpeech): List<SystemVoiceInfo> =
         // `getVoices()` is a platform type that may be null (e.g. while the

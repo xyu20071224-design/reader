@@ -85,7 +85,10 @@ object VoiceLibraryLoader {
             TtsEngineMode.AZURE -> VoiceLibrary(azureVoices(context), engine)
             TtsEngineMode.VOLC -> VoiceLibrary(configuredVoices(settings, "volc"), engine)
             TtsEngineMode.OPENAI_COMPAT -> VoiceLibrary(serverVoices(context, settings), engine)
-            // D2: Piper / 系统语音 have no controllable voice library.
+            // M5 (PLAN-MULTI-VOICE §13): the system library is whatever the
+            // user annotated for the last probed engine; empty until then.
+            TtsEngineMode.SYSTEM -> systemVoices(context)
+            // D2: Piper has no controllable voice library.
             else -> VoiceLibrary(emptyList(), engine)
         }
     }
@@ -96,11 +99,41 @@ object VoiceLibraryLoader {
      * server whose list was already stored.
      */
     suspend fun refresh(context: Context, settings: CloudTtsSettings) {
+        if (settings.mode == TtsEngineMode.SYSTEM) {
+            refreshSystem(context)
+            return
+        }
         if (settings.mode != TtsEngineMode.OPENAI_COMPAT) return
         if (settings.serverUrl.isBlank()) return
         if (ServerVoiceStore.load(context, settings.serverUrl).isNotEmpty()) return
         val voices = OpenAiCompatTtsBackend(settings).listVoices().getOrNull().orEmpty()
         if (voices.isNotEmpty()) ServerVoiceStore.save(context, settings.serverUrl, voices)
+    }
+
+    /**
+     * Probes the connected system engine once and stores its offline voice
+     * snapshot (M5 §13.3). The engine package comes from the framework setting
+     * a default-constructed TextToSpeech binds to; a transiently empty probe
+     * must not wipe an existing snapshot (engines may still be loading their
+     * voice list).
+     */
+    private suspend fun refreshSystem(context: Context) {
+        val appContext = context.applicationContext
+        val enginePackage = SystemTtsVoices.currentEngine(appContext)
+        if (enginePackage.isBlank()) return
+        SystemVoiceStore.setCurrentEngine(appContext, enginePackage)
+        val voices = SystemTtsVoices.probe(appContext)
+        if (voices.isNotEmpty()) {
+            SystemVoiceStore.saveSnapshot(appContext, SystemVoiceStore.Snapshot(enginePackage, voices))
+        }
+    }
+
+    /** Annotated voices of the last probed engine, keyed so that switching
+     *  engines re-triggers assignment ([BookVoiceMap.engine]). */
+    private fun systemVoices(context: Context): VoiceLibrary {
+        val enginePackage = SystemVoiceStore.currentEngine(context)
+        if (enginePackage.isBlank()) return VoiceLibrary(emptyList(), "system")
+        return VoiceLibrary(SystemVoiceStore.usableVoices(context, enginePackage), "system:$enginePackage")
     }
 
     private fun azureVoices(context: Context): List<VoiceInfo> =

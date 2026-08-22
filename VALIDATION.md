@@ -522,3 +522,25 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 根因（两层）：① 底栏含导航栏 inset，实测 78px > 写死的 70px CSS 预留；② 绝对定位滚动容器实际渲染位置比 style.top 整体下移约 32px（known-pitfalls #8 的容器位移，此前只修了高亮定位未修容器），正文实际底缘因此低于底栏上沿。
 - 修复：① Compose 用 onSizeChanged 实测顶/底栏高度，经 ReaderController.applyChromeInsets → JS lrSetChromeInsets 动态注入替换写死的 104px/174px（bootstrap 带初值首帧即正确，值变化才重排且保页）；② updateMetrics 设完样式后实测 getBoundingClientRect() 自校准，把超出「视口高 − 底栏预留」的部分从列高里扣掉。
 - 验证：testDebugUnitTest 通过（316 个，新增 4 条 chrome insets/自校准防回归）；真机并存包实测：最后一行完整显示在栏上方、无半透明残影，页数随列高变化正确重排（7/13 → 7/14）。lintDebug / assembleDebug 通过。
+
+## 2026-08-21 M5 系统引擎多角色（M5a/M5b/M5c 代码完成，真机矩阵待做）
+
+按 `PLAN-MULTI-VOICE.md` §13 实施系统引擎多角色（用户标注音色库 + Google TTS 优先）：
+
+- **M5a 数据层**：`SystemVoiceStore`（标注 + 音色快照按引擎包名隔离存储 + 当前引擎指针取自 `Settings.Secure.TTS_DEFAULT_SYNTH`）；`VoiceLibraryLoader` SYSTEM 分支（探测落盘快照、空探测不覆盖旧缓存、engine key = `system:<包名>` 触发换引擎重分配）；门控 D2'——`engineSupportsMultiVoice(settings, systemUsableVoices)` 默认参数保证云引擎路径零改动，SYSTEM 需 ≥2 个「已标注+启用+性别已知」音色。
+- **M5b 标注 UI**：`MultiVoiceSection` SYSTEM 条件置灰 + 「标注系统音色」对话框（快照优先/空则探测、性别三态胶囊、启用开关、逐行试听、保存后即时重算门控）；`VoiceAudition` 新增 SYSTEM 直播路径（专用 TextToSpeech 实例、与播放侧一致的 setVoice→setLanguage 回退链）。验收修正两处：`onFinished` 统一走字段注册（原系统路径未存字段，stop() 的通知拿不到回调）、删除与 `TtsLanguage.of` 重复的 `isHan`。
+- **M5c 引擎引导**：`SystemTtsEngines.guideState` 三态纯函数（当前即 Google TTS=推荐 / 已装未启用=提示+跳系统 TTS 设置 / 未安装=纯文案）；实施时核实 `Settings.ACTION_TTS_SETTINGS` 不在公开 SDK（javap 查证 android.jar），改用字面值 `"com.android.settings.TTS_SETTINGS"`；绝不自动切换引擎。
+
+验证情况：
+
+- `testDebugUnitTest`：**325 个全部通过**（新增 9 个：`SystemVoiceStoreTest` 6——round-trip/按引擎隔离/坏 JSON/locale 归一化含 cmn·chn·usa/merge 过滤/指针跟随；`MultiVoiceSupportTest` +1——D2' 门控两态与云引擎不受默认参数影响；`SystemTtsEnginesTest` 2——三态映射/探测容错）。
+- `assembleDebug` 与 `-PverifyBuild` 并存包构建通过。
+
+**仍未验证（真机矩阵，需设备连接后执行；安装一律先 `-PverifyBuild`，见上方事故记录）**：
+
+1. Google TTS 基准：标注 ≥2 音色 → 开关解灰 → 多角色逐句切换生效、角色声可辨、无串声；
+2. 国产 ROM 自带引擎：回退链不静音、`getVoices()` 延迟重试路径、试听能听到 setVoice 是否被服从；
+3. ColorOS（`chn` 非标码）：中文音色归一化为 zh 并参与分配；
+4. M5b 遗留交互：标注对话框关闭时试听仍在播的观感；从系统 TTS 设置返回后引导态是否刷新（`remember` 缓存，可能需重进面板）。
+
+**真机首测反馈修复（2026-08-21 晚）**：点「标注系统音色」无反应——`MultiVoiceSection` 里对话框渲染点在 `if (!engineSupported || !multiVoiceEnabled) return` 之后，SYSTEM 未标注时必然提前返回，对话框永不组合。已把 `SystemVoiceAnnotateDialog` 块移到提前 return 之前。同轮发现另一会话并发改仓库致 strings.xml 丢 14 个 key（从 APK 资源表恢复）；修复后 325 单测通过、并存包重新构建。

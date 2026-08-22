@@ -14,6 +14,7 @@
 | **M2** | N 角色逐句归属 | 规则层 + LLM 打标（带缓存与降级） | 同上 |
 | **M3** | 角色 → 音色自动分配 | 分配算法（硬约束+软评分+共现区分） | 同上 + 音色库画像 |
 | **M4** | 用户可调、可试听 | 手动覆盖 + 持久化 | 全引擎 |
+| **M5（计划中）** | 系统引擎多角色 | 复用 M1–M3 全链路 | 系统引擎（音色库由用户标注构建，Google TTS 为推荐基准） |
 
 设计原则：**每一阶段都可独立上线**；M1 先出可用闭环，后续增量叠加。
 
@@ -391,3 +392,155 @@ interface TtsSynthesizer {
   - 中文章节：IndexTTS 2.5 效果确认（预期明显优于 Kokoro）；
   - 英文章节：与 Kokoro `af_maple`/`bf_*` 对比，决定英文主引擎；
   - 单角色克隆冒烟：`clone_gandalf` 端到端出声。
+
+---
+
+## 13. 系统引擎多角色（M5）：用户标注音色库 + Google TTS 优先（设计，未实施）
+
+> 背景：D2 原判定「系统语音没有可控音色库」（`MultiVoiceSupport.engineSupportsMultiVoice`
+> 只认三类云引擎）。修订为：**系统引擎的音色库由用户手动标注构建**——分配器
+> （`VoiceAssigner`）只消费 `VoiceLibrary`，而 `VoiceInfo` 的元数据全部可空容忍，
+> 用户标到哪算哪。sherpa/Piper 本地引擎不在本期范围（Piper 多说话人 `sid=0`
+> 是另一笔技术债，另案）。
+
+### 13.1 设计基准与红线
+
+- **Google TTS 为行为基准与推荐引擎**：`getVoices()` 稳定、元数据齐全、逐句
+  `setVoice` 服从度高。但**零硬编码依赖**——所有 Google 特有行为只用于「探测 +
+  引导」，代码路径必须对任意系统引擎成立。
+- **不自动切换用户的系统 TTS 引擎**：检测到更优引擎只提示，切换动作由用户在
+  系统设置里完成。
+- **不做性别自动猜测**：系统音色名（如 `cmn-cn-x-ccc-local`）无可靠命名先验，
+  猜错比留空危害大（硬过滤会据此排除/选中）。性别一律由用户标注。
+- **离线红线沿用**：网络型 voice 继续被过滤（`SystemTtsVoices.readVoices` 已做），
+  标注列表只出现离线可用音色。
+
+### 13.2 数据模型
+
+```kotlin
+/** 用户对一条系统音色的标注；voiceName = android.speech.tts.Voice#getName()。 */
+data class SystemVoiceAnnotation(
+    val voiceName: String,
+    val gender: String = "",      // "male" / "female" / ""（未知）
+    val enabled: Boolean = true   // 不参与分配但保留标注
+)
+```
+
+- `ageGroup` / `style` 本期不标（系统音色没有风格标签来源），`VoiceInfo` 对应字段
+  留空即可，分配器按「未知=中性分」处理。
+- **language 不标注**：从 `SystemVoiceInfo.locale` 自动归一化。`SystemVoiceInfo`
+  已有 `isChinese`/`isEnglish` 集合（含 `cmn`/`chn`/`usa` 等 ISO 639-3 与厂商
+  非标码，见 `tts/.../SystemTtsVoice.kt`），新增派生属性：
+
+```kotlin
+val assignerLanguage: String get() = when {
+    isChinese -> "zh"
+    isEnglish -> "en"
+    else -> ""                 // 其它语言=多语言容忍，参与分配但不做语言硬过滤
+}
+```
+
+### 13.3 存储与库构建（完全复刻 ServerVoiceStore 模式）
+
+- 新增 `SystemVoiceStore`（仿 `ServerVoiceStore`）：SharedPreferences
+  `"system_voice_annotations"`，key = `"voices@" + enginePackage`——换系统引擎后
+  旧标注互不干扰、也不误用。存两样东西：
+  1. **音色快照**：`List<SystemVoiceInfo>`（name/locale/isNetwork 过滤后），
+     解决 `SystemTtsVoices.load` 回调式异步与 `VoiceLibraryLoader.load` 同步签名
+     的矛盾；
+  2. **标注表**：`List<SystemVoiceAnnotation>`。
+- `VoiceLibraryLoader.refresh()` 增加 SYSTEM 分支：用 `suspendCoroutine` 包装一次
+  `SystemTtsVoices.load` 探测，结果连同已有标注写入 `SystemVoiceStore`（调用方
+  `MultiVoiceSupport.library` 本就是 suspend，零接口改动）。
+- `VoiceLibraryLoader.load()` SYSTEM 分支改为：
+
+```kotlin
+TtsEngineMode.SYSTEM -> VoiceLibrary(systemVoices(context, settings), engine)
+
+// 快照 × 标注 → VoiceInfo(source = "system")；quality 沿用默认 0.5
+```
+
+### 13.4 门控修订（D2 → D2'）
+
+```kotlin
+fun engineSupportsMultiVoice(settings: CloudTtsSettings,
+                             systemUsableVoices: Int = 0): Boolean =
+    settings.mode == TtsEngineMode.AZURE ||
+        settings.mode == TtsEngineMode.VOLC ||
+        settings.mode == TtsEngineMode.OPENAI_COMPAT ||
+        (settings.mode == TtsEngineMode.SYSTEM && systemUsableVoices >= 2)
+```
+
+- 「可用」= `enabled` 且 gender 已知且 language 可归一化（zh/en 或空）。**≥2 才放行**：
+  只有 1 个音色时分配无从谈起，此时面板维持置灰并引导去标注。
+- 默认参数 `= 0` 保证云引擎路径与全部现有调用点/单测零改动。
+- `MultiVoiceStatusKind` 复用 `NO_LIBRARY` 表达「还没标够」，UI 文案区分
+  「引擎不支持」与「去标注」两种引导。
+
+### 13.5 引擎探测与引导
+
+新增纯查询 helper（建议落 `SystemTtsVoice.kt` 内，如 `SystemTtsEngines`）：
+
+| 探测 | API | 用途 |
+| --- | --- | --- |
+| 当前引擎包名 | `Settings.Secure.getString(resolver, TTS_DEFAULT_SYNTH)`（公开常量；实施时发现 `TextToSpeech.getCurrentEngine()` 不存在于 SDK，`getDefaultEngine()` 返回的是系统默认而非用户所选，均不可用） | 标注存储 key、面板显示当前引擎名 |
+| Google TTS 是否已装 | PackageManager 查 `com.google.android.tts` | 三态引导 |
+
+面板三态（SYSTEM 模式下）：
+
+1. 当前就是 Google TTS → 正常流程，状态行标注「推荐引擎」；
+2. 已安装但未启用 → 提示文案 + 跳系统 TTS 设置的 intent（不自动切）；
+3. 未安装 → 安装引导文案（说明需自行下载语音数据）。三段文案走
+   `strings.xml`（zh 默认 + values-en，key 形如 `multi_voice_system_*`）。
+
+### 13.6 UI（改 MultiVoiceSection，不动框架）
+
+- 现状「Piper/系统语音下开关置灰 + D2 说明」改为：**Piper 维持置灰**；SYSTEM
+  改为条件置灰 + 「标注系统音色」入口按钮。
+- 标注对话框：每行 = 音色 `displayName()` + 性别单选（男/女/未知）+ 启用开关，
+  底部保存。保存后即时重算门控，≥2 即解灰开关。
+- 角色列表/试听/锁定逻辑零改动：`VoiceAudition` 走当前引擎合成，系统引擎已支持
+  per-utterance voice 参数。
+
+### 13.7 播放侧
+
+**零接口改动**。`SystemTtsSynthesizer.speak(text, rate, utteranceId, voice)` 已支持
+逐句 voice 覆盖，回退链（`setVoice` 失败 → `setLanguage` → 引擎默认）已存在。
+已知风险不变：部分 OEM 引擎对 `setVoice` 静默忽略——缓解手段是 13.6 的逐音色
+试听（用户可自行确认每个音色真的出不同声）+ 13.8 真机矩阵。
+
+### 13.8 测试计划
+
+JVM 单测（先写，纯逻辑全部可测）：
+
+- `SystemVoiceAnnotationStoreTest`（Robolectric）：读写 round-trip、按引擎包名隔离、坏 JSON 容错；
+- `assignerLanguage` 归一化：`zh/cmn/yue/chn→zh`、`en/eng/usa→en`、`fr→""`；
+- 库构建 merge：标注覆盖缺省、未知性别留空、disabled 音色不入库；
+- `MultiVoiceSupportTest` 扩展：SYSTEM + <2 可用 = false / ≥2 = true / 云引擎不受默认参数影响；
+- `status()` 映射：SYSTEM 未标够 → `NO_LIBRARY`。
+
+真机验证矩阵（缺一不可，结论进 `VALIDATION.md`）：
+
+| 引擎 | 验证点 |
+| --- | --- |
+| Google TTS（基准） | 逐句 setVoice 切换生效、角色声可辨、无串声 |
+| 一台国产 ROM 自带引擎 | 回退链不静音、`getVoices` 延迟重试路径 |
+| ColorOS（已知 `chn` 非标码） | 中文音色可被归一化为 zh 并参与分配 |
+
+### 13.9 里程碑拆分
+
+| 步骤 | 内容 | 估时 |
+| --- | --- | --- |
+| M5a | 数据层（annotation store + 快照缓存）+ 库构建 + 门控 + 全部 JVM 单测 | ✅ 2026-08-21 |
+| M5b | 标注对话框 + 试听接线 + 开关条件置灰 | ✅ 2026-08-21（`VoiceAudition` 增加 SYSTEM 直播路径；验收修正：`onFinished` 统一走字段注册、复用 `TtsLanguage.of` 去重 `isHan`） |
+| M5c | 引擎探测 + 三态引导文案（strings.xml zh/en 双份） | ✅ 2026-08-21（`ACTION_TTS_SETTINGS` 不在公开 SDK，用字面值；javap 查证） |
+| M5d | 真机验证矩阵 + VALIDATION.md + 记忆文件回写 | 部分：VALIDATION.md 已记录，单测 325 通过、并存包构建通过；**真机矩阵待设备连接**（Google TTS 基准 / 国产 ROM / ColorOS 三项 + 两条交互遗留） |
+
+M5b 验收遗留（不阻塞，M5d 真机时顺带确认）：标注对话框关闭时若试听仍在播，音频会继续到句末（无可见停止入口）；对话框打开期间用户切换系统引擎的极端场景未处理。
+
+### 13.10 明确不做
+
+- 性别/风格的自动推断（名字先验对系统音色不可靠）；
+- Piper 多说话人 `sid` 映射放开（另案，可与本节并行）；
+- 自动切换或代下载任何系统 TTS 引擎；
+- f0 采样分析（§3.4 遗留项，继续搁置）。

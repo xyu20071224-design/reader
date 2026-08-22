@@ -265,7 +265,10 @@ class TtsPlaybackService : Service() {
      * the manual narrator/dialogue overrides.
      */
     private fun multiVoiceRequested(): Boolean =
-        MultiVoiceSupport.multiVoiceActive(voiceSettings())
+        MultiVoiceSupport.multiVoiceActive(
+            voiceSettings(),
+            MultiVoiceSupport.systemUsableVoiceCount(applicationContext)
+        )
 
     private fun voiceSettings(): CloudTtsSettings =
         cachedVoiceSettings ?: CloudTtsSettings.load(applicationContext).also {

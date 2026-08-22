@@ -43,20 +43,30 @@ object MultiVoiceSupport {
     val NARRATOR_LANGUAGES = listOf(TtsLanguage.ENGLISH, TtsLanguage.CHINESE)
 
     /**
-     * D2: only the cloud engines have a controllable voice library. Piper ships
-     * two built-in voices and the system engine cannot guarantee any, so the
-     * switch stays disabled there.
+     * D2, revised by M5 (PLAN-MULTI-VOICE §13.4): the cloud engines have a
+     * controllable voice library; Piper ships two built-in voices but no
+     * metadata path yet. The system engine joins conditionally — only once the
+     * user annotated at least two usable voices ([SystemVoiceStore]), so the
+     * switch stays off while there is nothing to assign.
      */
-    fun engineSupportsMultiVoice(settings: CloudTtsSettings): Boolean =
+    fun engineSupportsMultiVoice(settings: CloudTtsSettings, systemUsableVoices: Int = 0): Boolean =
         settings.mode == TtsEngineMode.AZURE ||
             settings.mode == TtsEngineMode.VOLC ||
-            settings.mode == TtsEngineMode.OPENAI_COMPAT
+            settings.mode == TtsEngineMode.OPENAI_COMPAT ||
+            (settings.mode == TtsEngineMode.SYSTEM && systemUsableVoices >= 2)
 
     /** Whether multi-voice should run at all right now. */
-    fun multiVoiceActive(settings: CloudTtsSettings): Boolean =
+    fun multiVoiceActive(settings: CloudTtsSettings, systemUsableVoices: Int = 0): Boolean =
         settings.multiVoiceEnabled &&
             settings.networkAiEnabled &&
-            engineSupportsMultiVoice(settings)
+            engineSupportsMultiVoice(settings, systemUsableVoices)
+
+    /**
+     * Annotated system voices usable for assignment, for callers that hold a
+     * [Context] (service / UI). Pure call sites pass the count themselves.
+     */
+    fun systemUsableVoiceCount(context: Context): Int =
+        SystemVoiceStore.usableVoices(context).size
 
     fun voiceMapRepository(context: Context): VoiceMapRepository {
         val appContext = context.applicationContext

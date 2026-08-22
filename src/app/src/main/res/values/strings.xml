@@ -138,6 +138,20 @@
     <string name="multivoice_status_no_roster">本书还没有角色表：请在 AI 中心生成语境档案，生成后角色会出现在这里。</string>
     <string name="multivoice_status_rule_mode">未配置 DeepSeek Key：说话人识别使用规则模式（只区分旁白与对白），角色音色暂不会生效。</string>
     <string name="multivoice_status_no_map">尚未生成音色映射。</string>
+    <string name="multi_voice_annotate_empty">没有探测到离线系统音色：引擎可能还在加载，请稍后重新打开。</string>
+    <string name="multi_voice_annotate_entry">标注系统音色</string>
+    <string name="multi_voice_annotate_hint">标注至少两个系统音色（选好性别并启用）后即可开启多角色。</string>
+    <string name="multi_voice_annotate_loading">正在读取系统音色…</string>
+    <string name="multi_voice_annotate_no_engine">无法确定当前的系统 TTS 引擎。</string>
+    <string name="multi_voice_annotate_save">保存</string>
+    <string name="multi_voice_annotate_title">标注系统音色</string>
+    <string name="multi_voice_gender_unknown">未知</string>
+    <string name="multi_voice_saved">已保存系统音色标注</string>
+    <string name="multi_voice_system_engine_recommended">当前使用 Google TTS，多角色效果最佳。</string>
+    <string name="multi_voice_system_not_installed">提示：安装 Google TTS 可获得更多可用音色（需自行下载语音数据）。</string>
+    <string name="multi_voice_system_open_settings">去系统语音设置</string>
+    <string name="multi_voice_system_settings_open_failed">无法打开系统语音设置</string>
+    <string name="multi_voice_system_switch_hint">检测到已安装 Google TTS，切换后音色更多、效果更佳。</string>
     <plurals name="multivoice_status_shared">
         <item quantity="other">音色数量不足：已为 %1$d 个角色分配音色，其中 %2$d 个与不同场的角色共用音色。</item>
     </plurals>

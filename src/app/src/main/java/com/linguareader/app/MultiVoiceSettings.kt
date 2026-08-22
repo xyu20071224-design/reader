@@ -1,5 +1,6 @@
 package com.linguareader.app
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Lock
@@ -38,12 +40,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -58,6 +62,12 @@ import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.MultiVoiceStatus
 import com.linguareader.app.tts.MultiVoiceStatusKind
 import com.linguareader.app.tts.MultiVoiceSupport
+import com.linguareader.app.tts.SystemTtsEngines
+import com.linguareader.app.tts.SystemTtsVoices
+import com.linguareader.app.tts.SystemVoiceAnnotation
+import com.linguareader.app.tts.SystemVoiceInfo
+import com.linguareader.app.tts.SystemVoiceStore
+import com.linguareader.app.tts.TtsEngineMode
 import com.linguareader.app.tts.TtsLanguage
 import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.VoiceAudition
@@ -82,7 +92,12 @@ internal fun MultiVoiceSection(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalAppSnackbar.current
-    val engineSupported = MultiVoiceSupport.engineSupportsMultiVoice(settings)
+    val engineSupported = MultiVoiceSupport.engineSupportsMultiVoice(
+        settings,
+        MultiVoiceSupport.systemUsableVoiceCount(context)
+    )
+    // M5b（§13.6）：Piper 仍一律置灰；SYSTEM 改为条件置灰 + 标注入口。
+    val systemMode = settings.mode == TtsEngineMode.SYSTEM
     val auditionFailed = stringResource(R.string.multivoice_audition_failed)
 
     var bookId by remember(preselectedBook?.id) {
@@ -96,6 +111,7 @@ internal fun MultiVoiceSection(
     var loading by remember { mutableStateOf(false) }
     var reloadToken by remember { mutableIntStateOf(0) }
     var picker by remember { mutableStateOf<VoicePickerTarget?>(null) }
+    var annotating by remember { mutableStateOf(false) }
 
     val bookTitle = (preselectedBook ?: books.firstOrNull { it.id == bookId })?.title
 
@@ -181,6 +197,30 @@ internal fun MultiVoiceSection(
         }
     }
 
+    /** 标注对话框里的逐音色试听：语言取音色 locale 归一化结果（未知则按英文）。 */
+    fun auditionSystemVoice(voice: SystemVoiceInfo) {
+        if (playingVoice == voice.name) {
+            VoiceAudition.stop()
+            playingVoice = null
+            return
+        }
+        playingVoice = voice.name
+        scope.launch {
+            val language = voice.assignerLanguage.ifBlank { TtsLanguage.ENGLISH }
+            val text = MultiVoiceSupport.sampleText("", language)
+            VoiceAudition.play(
+                context = context,
+                settings = settings,
+                voiceId = voice.name,
+                text = text,
+                onFinished = { if (playingVoice == voice.name) playingVoice = null }
+            ).onFailure {
+                snackbar.show(it.message ?: auditionFailed)
+                playingVoice = null
+            }
+        }
+    }
+
     Spacer(Modifier.height(18.dp))
     HorizontalDivider(color = Ink.copy(alpha = .1f))
     Spacer(Modifier.height(12.dp))
@@ -192,10 +232,10 @@ internal fun MultiVoiceSection(
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                if (engineSupported) {
-                    stringResource(R.string.multivoice_subtitle)
-                } else {
-                    stringResource(R.string.multivoice_unsupported)
+                when {
+                    engineSupported -> stringResource(R.string.multivoice_subtitle)
+                    systemMode -> stringResource(R.string.multi_voice_annotate_hint)
+                    else -> stringResource(R.string.multivoice_unsupported)
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
@@ -205,6 +245,43 @@ internal fun MultiVoiceSection(
             checked = settings.multiVoiceEnabled && engineSupported,
             enabled = engineSupported,
             onCheckedChange = { onSettingsChange(settings.copy(multiVoiceEnabled = it)) }
+        )
+    }
+
+    // M5c（§13.5）：SYSTEM 模式三态引导（推荐 / 可切换 / 未安装），纯提示不自动切换。
+    if (systemMode) {
+        val openSettingsFailed = stringResource(R.string.multi_voice_system_settings_open_failed)
+        SystemEngineGuidance(
+            onOpenSettingsFailed = { scope.launch { snackbar.show(openSettingsFailed) } }
+        )
+    }
+
+    if (systemMode && !engineSupported) {
+        TextButton(onClick = { annotating = true }) {
+            Text(stringResource(R.string.multi_voice_annotate_entry))
+        }
+    }
+
+    // 标注对话框必须放在提前 return 之前：SYSTEM 引擎未完成标注时 engineSupported == false，
+    // 否则入口按钮点了也不会弹出对话框。
+    if (annotating) {
+        SystemVoiceAnnotateDialog(
+            playingVoice = playingVoice,
+            onAudition = { voice -> auditionSystemVoice(voice) },
+            onSave = { annotations ->
+                scope.launch {
+                    val enginePackage = SystemTtsVoices.currentEngine(context)
+                    if (enginePackage.isNotBlank()) {
+                        // 以 voiceName 为 key 覆盖合并（对话框已把存量标注并入草稿）。
+                        SystemVoiceStore.saveAnnotations(context, enginePackage, annotations)
+                        SystemVoiceStore.setCurrentEngine(context, enginePackage)
+                    }
+                    snackbar.show(context.getString(R.string.multi_voice_saved))
+                    annotating = false
+                    reloadToken++
+                }
+            },
+            onDismiss = { annotating = false }
         )
     }
 
@@ -378,6 +455,7 @@ internal fun MultiVoiceSection(
             onDismiss = { picker = null }
         )
     }
+
 }
 
 /** 正在挑音色的对象：一个角色，或某个语言的旁白。 */
@@ -608,5 +686,234 @@ private fun VoicePickerDialog(
                 TextButton(onClick = onRelease) { Text(stringResource(R.string.multivoice_release_action)) }
             }
         }
+    )
+}
+
+/**
+ * SYSTEM 模式三态引导（M5c, PLAN-MULTI-VOICE §13.5）：
+ * 态1 当前就是 Google TTS → 推荐提示；态2 已装未启用 → 提示 + 跳系统 TTS 设置
+ * （`ACTION_TTS_SETTINGS`，绝不自动切换）；态3 未安装 → 安装引导文案。
+ */
+@Composable
+private fun SystemEngineGuidance(onOpenSettingsFailed: () -> Unit) {
+    val context = LocalContext.current
+    val state = remember {
+        SystemTtsEngines.guideState(
+            currentEngine = SystemTtsVoices.currentEngine(context),
+            googleTtsInstalled = SystemTtsEngines.isGoogleTtsInstalled(context)
+        )
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            when (state) {
+                SystemTtsEngines.Guide.RECOMMENDED ->
+                    stringResource(R.string.multi_voice_system_engine_recommended)
+                SystemTtsEngines.Guide.SWITCH_AVAILABLE ->
+                    stringResource(R.string.multi_voice_system_switch_hint)
+                SystemTtsEngines.Guide.NOT_INSTALLED ->
+                    stringResource(R.string.multi_voice_system_not_installed)
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = InkSoft
+        )
+        if (state == SystemTtsEngines.Guide.SWITCH_AVAILABLE) {
+            // startActivity 需在非 Activity context 下加 NEW_TASK；失败静默降级为 Snackbar。
+            TextButton(
+                onClick = {
+                    runCatching {
+                        // Settings.ACTION_TTS_SETTINGS 未进公开 SDK，用其字面值。
+                        context.startActivity(
+                            Intent("com.android.settings.TTS_SETTINGS")
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }.onFailure { onOpenSettingsFailed() }
+                }
+            ) {
+                Text(stringResource(R.string.multi_voice_system_open_settings))
+            }
+        }
+    }
+}
+
+/** 一行系统音色的标注草稿（PLAN-MULTI-VOICE §13.6）。 */
+private data class SystemVoiceDraft(
+    val gender: String = "",
+    val enabled: Boolean = true
+)
+
+/**
+ * 系统音色标注弹层（M5b, §13.6）。
+ *
+ * 打开时优先用已落盘的快照；没有快照才现场探测一次并保存（探测为空 = 引擎还在
+ * 加载音色表，展示加载/空态即可，不做复杂重试）。每行：音色名 + 性别三态 +
+ * 启用开关 + 逐音色试听。保存把整份草稿按 voiceName 覆盖写回标注存储。
+ */
+@Composable
+private fun SystemVoiceAnnotateDialog(
+    playingVoice: String?,
+    onAudition: (SystemVoiceInfo) -> Unit,
+    onSave: (List<SystemVoiceAnnotation>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val engine = remember { SystemTtsVoices.currentEngine(context) }
+    var voices by remember { mutableStateOf<List<SystemVoiceInfo>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(engine) {
+        val cached = if (engine.isBlank()) emptyList() else {
+            SystemVoiceStore.loadSnapshot(context, engine).voices
+        }
+        voices = if (cached.isNotEmpty()) {
+            cached
+        } else {
+            runCatching { SystemTtsVoices.probe(context) }.getOrDefault(emptyList())
+                .also { probed ->
+                    // 探测成功才落盘；空结果绝不覆盖已有快照。
+                    if (probed.isNotEmpty() && engine.isNotBlank()) {
+                        SystemVoiceStore.saveSnapshot(
+                            context,
+                            SystemVoiceStore.Snapshot(engine, probed)
+                        )
+                    }
+                }
+        }
+        loading = false
+    }
+
+    val drafts = remember(engine) {
+        mutableStateMapOf<String, SystemVoiceDraft>().apply {
+            if (engine.isNotBlank()) {
+                SystemVoiceStore.loadAnnotations(context, engine).forEach { annotation ->
+                    put(annotation.voiceName, SystemVoiceDraft(annotation.gender, annotation.enabled))
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardSurface,
+        title = { Text(stringResource(R.string.multi_voice_annotate_title)) },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                when {
+                    engine.isBlank() -> Text(
+                        stringResource(R.string.multi_voice_annotate_no_engine),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSoft
+                    )
+
+                    loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(color = Accent, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            stringResource(R.string.multi_voice_annotate_loading),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSoft
+                        )
+                    }
+
+                    voices.isEmpty() -> Text(
+                        stringResource(R.string.multi_voice_annotate_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSoft
+                    )
+
+                    else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+                        items(voices, key = { it.name }) { voice ->
+                            val draft = drafts[voice.name] ?: SystemVoiceDraft()
+                            // semantics{} 不是 composable 作用域，标签先取出来。
+                            val auditionLabel =
+                                stringResource(R.string.multivoice_audition, voice.name)
+                            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        voice.displayName(),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Ink,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = { onAudition(voice) },
+                                        modifier = Modifier.semantics {
+                                            contentDescription = auditionLabel
+                                        }
+                                    ) {
+                                        Icon(
+                                            if (playingVoice == voice.name) {
+                                                Icons.Default.Stop
+                                            } else {
+                                                Icons.Default.PlayArrow
+                                            },
+                                            contentDescription = null,
+                                            tint = if (playingVoice == voice.name) Accent else InkSoft,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Switch(
+                                        checked = draft.enabled,
+                                        onCheckedChange = {
+                                            drafts[voice.name] = draft.copy(enabled = it)
+                                        }
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    GenderPill(
+                                        label = stringResource(R.string.multivoice_gender_male),
+                                        selected = draft.gender == "male",
+                                        onSelect = { drafts[voice.name] = draft.copy(gender = "male") }
+                                    )
+                                    GenderPill(
+                                        label = stringResource(R.string.multivoice_gender_female),
+                                        selected = draft.gender == "female",
+                                        onSelect = { drafts[voice.name] = draft.copy(gender = "female") }
+                                    )
+                                    GenderPill(
+                                        label = stringResource(R.string.multi_voice_gender_unknown),
+                                        selected = draft.gender.isEmpty(),
+                                        onSelect = { drafts[voice.name] = draft.copy(gender = "") }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !loading && !engine.isBlank() && voices.isNotEmpty(),
+                onClick = {
+                    onSave(
+                        voices.mapNotNull { voice ->
+                            drafts[voice.name]?.let {
+                                SystemVoiceAnnotation(voice.name, it.gender, it.enabled)
+                            }
+                        }
+                    )
+                }
+            ) { Text(stringResource(R.string.multi_voice_annotate_save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        }
+    )
+}
+
+/** 性别三态小胶囊：选中反色，未选中淡底。 */
+@Composable
+private fun GenderPill(label: String, selected: Boolean, onSelect: () -> Unit) {
+    Text(
+        label,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (selected) CardSurface else InkSoft,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) Accent else Ink.copy(alpha = .08f))
+            .clickable(onClick = onSelect)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
     )
 }
