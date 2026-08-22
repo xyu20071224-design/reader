@@ -52,6 +52,9 @@ class TtsPlaybackEngine(
     private val chapterReadyTimeoutMs: Long = 2_000L,
     private val progressSaveDelayMs: Long = 5_000L,
     private val fallbackEngineLabel: String = "系统语音（云 TTS 失败）",
+    /** Creates the system engine used when the configured engine fails
+     *  mid-playback (BUG-001). Null = no fallback engine available (tests). */
+    private val fallbackSynthesizerFactory: ((TtsSynthesizerListener) -> TtsSynthesizer)? = null,
     /** Maps a speaker tag ("narrator" / name / "dialogue") plus the sentence
      *  text (M3 uses it to route the narration language) to the voice to
      *  synthesize with; null keeps the engine default. */
@@ -76,6 +79,13 @@ class TtsPlaybackEngine(
     private var speakAttempt = 0
     private var engineLabel = "系统语音"
     private var state = TtsPlaybackState()
+    /** True while playback runs on the BUG-001 fallback engine; guards both
+     *  re-entering [fallbackToSystemTts] and the ready-label being overwritten. */
+    private var fallbackActive = false
+    /** Bumped by every control entry; async work captures the value at start
+     *  and aborts when it went stale (BUG-006/009: rapid skips / stop races
+     *  must not resurrect an outdated load). */
+    private var navigationVersion = 0
     /** Refined (M2 LLM) speaker tags per chapter index of the current book. */
     private val refinedSpeakers = mutableMapOf<Int, List<String>>()
     private var refinedSpeakersBookId: String? = null
@@ -83,7 +93,7 @@ class TtsPlaybackEngine(
     /** Listener handed to [synthesizerFactory]; routes engine callbacks here. */
     val synthesizerListener: TtsSynthesizerListener = object : TtsSynthesizerListener {
         override fun onReady() { scope.launch { handleSynthesizerReady() } }
-        override fun onInitFailed(status: Int) { scope.launch { pause() } }
+        override fun onInitFailed(status: Int) { scope.launch { handleInitFailed() } }
         override fun onStart(utteranceId: String) { scope.launch { handleUtteranceStart(utteranceId) } }
         override fun onDone(utteranceId: String) { scope.launch { handleUtteranceDone(utteranceId) } }
         override fun onError(utteranceId: String) { scope.launch { handleUtteranceError(utteranceId) } }
@@ -100,6 +110,8 @@ class TtsPlaybackEngine(
 
     fun startPlayback(newBook: Book, requestedChapter: Int, requestedSentence: Int) {
         val switchedBook = book?.id != newBook.id
+        navigationVersion++
+        fallbackActive = false
         synthesizer?.stop()
         if (switchedBook) {
             onBookSwitched()
@@ -132,6 +144,8 @@ class TtsPlaybackEngine(
 
     fun startStandby(newBook: Book, requestedChapter: Int) {
         val switchedBook = book?.id != newBook.id
+        navigationVersion++
+        fallbackActive = false
         synthesizer?.stop()
         if (switchedBook) {
             onBookSwitched()
@@ -167,6 +181,7 @@ class TtsPlaybackEngine(
 
     fun resume() {
         if (book == null) return
+        navigationVersion++
         playing = true
         updateState { it.copy(isPlaying = true) }
         ensureSynthesizer { loadAndSpeakCurrent() }
@@ -175,6 +190,7 @@ class TtsPlaybackEngine(
 
     fun pause() {
         if (book == null) return
+        navigationVersion++
         playing = false
         synthesizer?.stop()
         saveProgressNow()
@@ -183,6 +199,7 @@ class TtsPlaybackEngine(
 
     fun next() {
         if (book == null) return
+        navigationVersion++
         playing = true
         synthesizer?.stop()
         sentenceIndex++
@@ -191,24 +208,45 @@ class TtsPlaybackEngine(
 
     fun previous() {
         val currentBook = book ?: return
+        navigationVersion++
         playing = true
         synthesizer?.stop()
         if (sentenceIndex > 0) {
             sentenceIndex--
             loadAndSpeakCurrent()
         } else if (chapterIndex > 0) {
-            chapterIndex--
-            sentenceIndex = 0
-            lastLoadedChapter = null
-            // Capture the chapter this request targets; a slower (older) load
-            // must not overwrite `chapter` after the queue has moved on again.
-            val targetChapter = chapterIndex
+            // BUG-007/015: walk backwards to the previous non-blank sentence.
+            // Landing on a blank tail sentence used to bounce playback back to
+            // the chapter the user just left, and calling speakCurrent() here
+            // skipped the old chapter's prepare entirely (cloud engines then
+            // waited minutes for a file nobody was generating). Reusing
+            // loadAndSpeakCurrent() triggers the normal prepare for the old
+            // chapter; the version check aborts if the queue moved on again.
+            val version = navigationVersion
             scope.launch {
-                val previous = chapterLoader(currentBook, targetChapter)
-                if (chapterIndex != targetChapter || book !== currentBook) return@launch
-                chapter = previous
-                sentenceIndex = (previous.sentenceCount - 1).coerceAtLeast(0)
-                speakCurrent()
+                var target = chapterIndex - 1
+                while (true) {
+                    val previous = chapterLoader(currentBook, target)
+                    if (version != navigationVersion || book !== currentBook) return@launch
+                    val lastSpoken = previous.sentences.indexOfLast { it.isNotBlank() }
+                    if (lastSpoken >= 0) {
+                        chapterIndex = target
+                        sentenceIndex = lastSpoken
+                        lastLoadedChapter = null
+                        loadAndSpeakCurrent()
+                        return@launch
+                    }
+                    if (target <= 0) {
+                        // Everything before this point is blank — restart at
+                        // the very beginning instead of looping forever.
+                        chapterIndex = 0
+                        sentenceIndex = 0
+                        lastLoadedChapter = null
+                        loadAndSpeakCurrent()
+                        return@launch
+                    }
+                    target--
+                }
             }
         } else {
             loadAndSpeakCurrent()
@@ -218,6 +256,7 @@ class TtsPlaybackEngine(
     fun setRate(rate: Float) {
         val clamped = rate.coerceIn(0.5f, 2f)
         if (clamped == speechRate) return
+        navigationVersion++
         speechRate = clamped
         updateState { it.copy(speechRate = clamped) }
         if (playing && book != null && chapter != null && lastLoadedChapter == chapterIndex) {
@@ -262,6 +301,8 @@ class TtsPlaybackEngine(
     }
 
     fun stop() {
+        navigationVersion++
+        fallbackActive = false
         saveProgressNow()
         playing = false
         synthesizer?.stop()
@@ -279,6 +320,8 @@ class TtsPlaybackEngine(
     }
 
     fun reconfigure() {
+        navigationVersion++
+        fallbackActive = false
         val wasPlaying = playing
         synthesizer?.stop()
         synthesizer?.shutdown()
@@ -382,6 +425,12 @@ class TtsPlaybackEngine(
 
     fun onReaderChapterSelected(bookId: String, selectedChapter: Int) {
         if (book?.id != bookId) return
+        navigationVersion++
+        // BUG-014: a pending chapter handshake for the old chapter must not
+        // linger — waitingForChapter() would drop speaker-tag upgrades and
+        // page-follow until the next speak replaces the deferred.
+        chapterReadyDeferred?.complete(-1)
+        chapterReadyDeferred = null
         chapterIndex = selectedChapter.coerceIn(0, book?.chapters?.lastIndex?.coerceAtLeast(0) ?: 0)
         sentenceIndex = 0
         preparedChapterKey = null
@@ -403,8 +452,10 @@ class TtsPlaybackEngine(
         val currentBook = book ?: return
         if (currentBook.id != bookId || !playing || blockText.isBlank()) return
         if (changedChapter != chapterIndex || waitingForChapter()) return
+        val version = navigationVersion
         scope.launch {
             val loadedChapter = chapterLoader(currentBook, changedChapter)
+            if (version != navigationVersion) return@launch
             if (loadedChapter.sentenceBelongsToBlock(sentenceIndex, blockText)) return@launch
             val target = loadedChapter.firstSentenceIndexInBlock(blockText) ?: return@launch
             if (target == sentenceIndex) return@launch
@@ -449,12 +500,14 @@ class TtsPlaybackEngine(
     private fun loadAndSpeakCurrent() {
         val currentBook = book ?: return
         if (!playing) return
+        val version = navigationVersion
         if (chapterIndex !in currentBook.chapters.indices) {
             finishPlayback()
             return
         }
         scope.launch {
             val loadedChapter = withRefinedSpeakers(chapterLoader(currentBook, chapterIndex))
+            if (version != navigationVersion) return@launch
             chapter = loadedChapter
             if (sentenceIndex >= loadedChapter.sentenceCount) {
                 if (chapterIndex >= currentBook.chapters.lastIndex) {
@@ -536,10 +589,22 @@ class TtsPlaybackEngine(
             onChapterRequest(chapterIndex)
             val deferred = CompletableDeferred<Int>()
             chapterReadyDeferred = deferred
+            val version = navigationVersion
             scope.launch {
                 val loaded = withTimeoutOrNull(chapterReadyTimeoutMs) { deferred.await() }
                 if (chapterReadyDeferred !== deferred) return@launch
-                if (chapter !== currentChapter) return@launch
+                if (version != navigationVersion) {
+                    chapterReadyDeferred = null
+                    return@launch
+                }
+                if (chapter !== currentChapter) {
+                    // BUG-014: the queue moved to another chapter while this
+                    // handshake waited — complete and drop the stale deferred
+                    // instead of leaving waitingForChapter() stuck true.
+                    chapterReadyDeferred?.complete(-1)
+                    chapterReadyDeferred = null
+                    return@launch
+                }
                 chapterReadyDeferred = null
                 when {
                     loaded == chapterIndex && playing -> speakNow(text)
@@ -584,25 +649,59 @@ class TtsPlaybackEngine(
 
     private fun fallbackToSystemTts() {
         val current = synthesizer ?: return
-        if (isSystemEngine(current)) return
+        if (fallbackActive || isSystemEngine(current)) return
+        // BUG-001: the fallback must create a *system* engine. Rebuilding via
+        // the settings factory just recreated the same broken cloud engine in
+        // an endless (and billable) loop.
+        val factory = fallbackSynthesizerFactory ?: return
         synthesizer?.stop()
         synthesizer?.shutdown()
         synthesizer = null
         pendingReady.clear()
+        preparedChapterKey = null
+        fallbackActive = true
         engineLabel = fallbackEngineLabel
+        val created = factory(synthesizerListener)
+        synthesizer = created
         updateState {
             it.copy(
                 engineLabel = fallbackEngineLabel,
                 isPreparing = false,
                 preparedCount = 0,
-                preparedTotal = 0
+                preparedTotal = 0,
+                canCacheBook = canCacheWholeBook(created)
             )
         }
-        ensureSynthesizer { loadAndSpeakCurrent() }
+        if (created.isReady) loadAndSpeakCurrent() else pendingReady += { loadAndSpeakCurrent() }
+    }
+
+    /**
+     * BUG-002: an engine that failed to initialize used to just pause() while
+     * the dead instance kept occupying `synthesizer`, so every later resume()
+     * queued its callback behind a ready that never came — playback was stuck
+     * until the service restarted. Non-system engines fall back (BUG-001);
+     * a system/fallback engine that itself fails is dropped so the next
+     * resume() rebuilds a fresh one.
+     */
+    private fun handleInitFailed() {
+        val current = synthesizer ?: return
+        if (fallbackSynthesizerFactory != null && !fallbackActive && !isSystemEngine(current)) {
+            fallbackToSystemTts()
+            return
+        }
+        synthesizer?.stop()
+        synthesizer?.shutdown()
+        synthesizer = null
+        pendingReady.clear()
+        if (playing) pause()
     }
 
     private fun handleSynthesizerReady() {
-        engineLabel = engineLabelForSynthesizer(synthesizer)
+        // While on the fallback engine the label must stay the fallback one —
+        // engineLabelForSynthesizer would flip it back to the cloud engine.
+        if (!fallbackActive) {
+            engineLabel = engineLabelForSynthesizer(synthesizer)
+        }
         updateState {
             it.copy(
                 engineLabel = engineLabel,
@@ -614,6 +713,7 @@ class TtsPlaybackEngine(
     }
 
     private fun handleUtteranceStart(utteranceId: String) {
+        if (!playing) return
         if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt)) {
             // Only a successful start clears the error streak.
             consecutiveErrors = 0
