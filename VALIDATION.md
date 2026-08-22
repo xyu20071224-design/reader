@@ -543,4 +543,15 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 3. ColorOS（`chn` 非标码）：中文音色归一化为 zh 并参与分配；
 4. M5b 遗留交互：标注对话框关闭时试听仍在播的观感；从系统 TTS 设置返回后引导态是否刷新（`remember` 缓存，可能需重进面板）。
 
-**真机首测反馈修复（2026-08-21 晚）**：点「标注系统音色」无反应——`MultiVoiceSection` 里对话框渲染点在 `if (!engineSupported || !multiVoiceEnabled) return` 之后，SYSTEM 未标注时必然提前返回，对话框永不组合。已把 `SystemVoiceAnnotateDialog` 块移到提前 return 之前。同轮发现另一会话并发改仓库致 strings.xml 丢 14 个 key（从 APK 资源表恢复）；修复后 325 单测通过、并存包重新构建。
+**真机首测反馈修复（2026-08-21 晚）**：点「标注系统音色」无反应——`MultiVoiceSection` 里对话框渲染点在 `if (!engineSupported || !multiVoiceEnabled) return` 之后，SYSTEM 未标注时必然提前返回，对话框永不组合。已把 `SystemVoiceAnnotateDialog` 块移到提前 return 之前。同轮发现另一会话并发改仓库致 strings.xml 丢 14 个 key（从 APK 资源恢复）；修复后 325 单测通过、并存包重新构建。
+
+## 2026-08-23 legacy 线修复移植（真机验收，含一次回归发现与修复）
+
+背景：另一开发线（`legacy/remote-main-20260820` 分支）的 26 项缺陷修复移植到本线（bug收集/ 文档 31 篇、服务端/工作室并发安全 9 处、听书链路 11 项、AI/翻译 4 项）。真机验收于 PKB110 / Android 16。
+
+- **仪器测试**：`connectedDebugAndroidTest` 39 项 0 失败 1 跳过。两处环境适配：SystemTtsVoices 裸探测按 `isNetworkConnectionRequired` 对齐 loader 的离线过滤（设备上报 network 音色时不再误报）；ReviewReminder 在 OEM 无法授予通知权限时 assumeTrue 跳过（`pm grant` 成功但权限检查仍 false，legacy 线同款已知问题）。
+- **MediaSession（BUG-003）A/B 实证**：main 线播放中 `active=false`（外部媒体控制不可达）；移植线 `ensureForeground` 激活后 `active=true`，`cmd media_session dispatch pause/play` 均正确驱动应用（状态翻转 + 应用内按钮同步）。
+- **回归发现（移植③分页跟随）**：移植的 `followRangeIntoView` 分页分支在章末触发翻页 → `onPageChanged` → 阅读器位置回报（`reportTtsPositionDelayed`，350ms）把引擎拽回页面首个可见块——跨界瞬间引擎 sentenceIndex 越界，两次回报依次拽到 block 4 → block 0，第 1 章从头重播死循环，随后假 PLAYING 卡死。WebView 桥接插桩（CDP 挂 `lrHighlightBlock`/`lrClearHighlight`/`lrFirstVisibleBlock` 记录器）捕获完整轨迹；main 线对照同书同流程 ~110s 干净跨章，确认移植回归。
+- **回归修复**：`followRangeIntoView` 只保留滚动模式分支，分页模式维持移植前行为（高亮可画在屏外，等下一轮用桥接标记方案再做分页跟随）；修复后真机 122s 干净跨 ch1→ch2→ch3，快速连按下一句×3 精确推进 3 句无重复（BUG-006），章内连按上一句逐句回退正常，「停止听书」后会话释放 10s+ 无复活（BUG-009），全程无崩溃；`testDebugUnitTest` 344 项通过。
+- 验证截图：`验证截图/legacy移植-启动冒烟.png`、`legacy移植-播放中1/2.png`（本地工件不入库）。
+- 设备通知栏被 OEM 应用级 importance=NONE 压制（与 ReviewReminder 同源），不影响媒体会话与播放；后续人工验收通知栏时可复核。

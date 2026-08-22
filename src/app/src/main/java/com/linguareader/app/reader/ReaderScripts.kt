@@ -860,12 +860,17 @@ object ReaderScripts {
 
           window.lrClearHighlight = clearTtsOverlay;
 
-          // While audio is playing the highlight must stay visible: when the
-          // spoken sentence sits on another page (paged columns) or outside the
-          // vertical band (scroll mode), bring it into view before drawing.
-          // Manual reading is unaffected — this only runs on the TTS highlight
-          // path.
+          // While audio is playing the highlight must stay visible: in scroll
+          // mode bring the spoken sentence into view before drawing. Paged
+          // mode deliberately does NOT flip pages here: a page turn emits
+          // onPageChanged, which this app's reader answers with a
+          // position report that drags the engine back to the page's first
+          // visible block — at chapter boundaries that feedback loop restarts
+          // the old chapter from sentence 0 (verified on PKB110). Paged mode
+          // keeps the pre-existing behaviour: the highlight may draw outside
+          // the viewport until the next manual turn.
           function followRangeIntoView(range) {
+            if (!scrollMode) return;
             const scroller = document.getElementById('lr-scroller');
             if (!scroller) return;
             const sr = scroller.getBoundingClientRect();
@@ -875,28 +880,16 @@ object ReaderScripts {
               if (rects[i].width > 0 && rects[i].height > 0) { first = rects[i]; break; }
             }
             if (!first) return;
-            if (scrollMode) {
-              const contentTop = first.top - sr.top + scroller.scrollTop;
-              const viewTop = scroller.scrollTop;
-              const viewBottom = scroller.scrollTop + scroller.clientHeight;
-              if (contentTop < viewTop + 8 || contentTop + first.height > viewBottom - 8) {
-                const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-                scroller.scrollTop = clamp(contentTop - scroller.clientHeight * 0.25, 0, max);
-                scrollRatio = currentScrollRatio();
-                page = pageFromRatio(scrollRatio);
-                updateEndHint();
-                ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
-              }
-            } else {
-              const contentLeft = first.left - sr.left + scroller.scrollLeft;
-              const targetPage = clamp(
-                Math.floor(contentLeft / Math.max(1, window.innerWidth)),
-                0, Math.max(1, pageCount) - 1);
-              if (targetPage !== page) {
-                page = targetPage;
-                restoreTarget = page;
-                applyPage();
-              }
+            const contentTop = first.top - sr.top + scroller.scrollTop;
+            const viewTop = scroller.scrollTop;
+            const viewBottom = scroller.scrollTop + scroller.clientHeight;
+            if (contentTop < viewTop + 8 || contentTop + first.height > viewBottom - 8) {
+              const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+              scroller.scrollTop = clamp(contentTop - scroller.clientHeight * 0.25, 0, max);
+              scrollRatio = currentScrollRatio();
+              page = pageFromRatio(scrollRatio);
+              updateEndHint();
+              ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
             }
           }
 
