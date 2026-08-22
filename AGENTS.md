@@ -64,6 +64,8 @@
 | `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，各 151 个 string + 4 个 plurals |
 | `tts-server/` | 自建 OpenAI 兼容 TTS 服务端（Python）+ IndexTTS 克隆音色 + frp 内网穿透配置 |
 | `tts-voice-studio/` | 本地音色调试工作台（Python + 单页 HTML） |
+| `bug收集/` | 缺陷文档库（BUG-001~026 分析/分级/验证方案，2026-08 自 legacy 线收录）；修 TTS/AI/服务端相关 bug 前先来这里查有没有前人分析 |
+| `.github/workflows/ci.yml` | GitHub Actions 单测 CI（push/PR 自动跑 `testDebugUnitTest`） |
 | `scripts/`、`src/scripts/` | 模型下载、克隆音色制作、音频对比、词典构建、示例 EPUB 生成 |
 | `artifacts/`、`验证截图/` | 本地验证产物（APK / logcat / 截图），`artifacts/` 被 gitignore |
 
@@ -85,6 +87,9 @@
 - **合并即推送**：feature 分支合并回 `main` 后立刻 `git push origin main`。曾发生过本地 main 领先远端二十多个提交一周没推的情况，等于没有备份。
 - **feature 分支也要推**：`git push -u origin feat/<主题>`。单人项目推分支不是为了评审，是异地备份 + 在网页上翻 diff。
 - **动手前先 `git fetch`；push 被拒说明远端分叉，停下来查清再动**。曾发生过两条线平行开发同一批功能（译本对照、TTS 修复、tts-server），main 真正分叉、四十多个文件两边都改的事故——多机/多会话并行开发时尤其危险。**绝不 force-push main**，确需覆盖时必须先把远端现状备份成分支；`main` 已开 GitHub 分支保护（禁 force-push、禁删除），应急覆盖前需先用仓库所有者令牌经 API 临时解除。
+- **CI（GitHub Actions）**：`.github/workflows/ci.yml` 在 push（main / feat / ci / legacy 分支）与所有 PR 上自动跑 `testDebugUnitTest`（Gradle 根在 `src/`，workflow 已设 working-directory）。红了先修再合并；远端状态以 Actions 页为准。
+- **同一时间尽量只开一个会话操作本仓库**。2026-08-21 与 08-23 两次并行会话撞车：strings.xml 被 concurrent 改动丢 14 个 key、CI 搭建被另一会话抢先完成。确需并行：每个会话开工前 `git fetch`，分工不重叠文件。
+- **legacy 备份分支**：`legacy/remote-main-20260820`（本地+远端长期保留）封存另一账号 2026-08-19/20 的平行开发——`:core` 模块化、ui/ 包重组、facade 层、TermLexiconLearner/TranslationMemorySearch 双实现。其缺陷修复已于 2026-08-23 审阅移植完毕（见 `bug收集/` 与 VALIDATION.md 当日条目）；剩余是架构方向决策，未表决前不要从该分支合并代码。
 - **分支命名统一 `feat/<主题>`**（与提交前缀一致，不混用 `feature/`）；合并后即删：`git branch -d <name>`，推过远端的加 `git push origin --delete <name>`。
 - **提交身份保持统一**：`git config user.name / user.email` 全仓库一致。历史上出现过两个身份各推一条线，加剧了分叉排查难度。
 - **同机并行用 `git worktree add`**，试验目录删掉后记得 `git worktree prune` 清残留。
@@ -93,8 +98,10 @@
 
 ## 验证纪律
 
-- 改纯逻辑 → `testDebugUnitTest` 必跑。
+- 改纯逻辑 → `testDebugUnitTest` 必跑（本地或 CI 皆可，CI 在 push 时自动兜底）。
 - 改 WebView 渲染、手势、TTS 播放、通知栏媒体控制 → **必须真机或模拟器实测**，这些行为单测覆盖不到。历史真机验证设备：PKB110 / Android 16。
+- **TTS 高亮的分页跟随是禁区**：`ReaderScripts.kt` 的 `followRangeIntoView` 只允许滚动模式；分页模式翻页会触发阅读器位置回报，与引擎形成反馈回路导致章末死循环（2026-08-23 真机事故，轨迹与根因见 VALIDATION.md 当日条目）。要做分页跟随必须先设计桥接标记抑制位置回报。
+- **PKB110（ColorOS）已知怪癖**：通知权限 `pm grant` 命令成功但检查仍 false、应用通知被 importance=NONE 压制——通知相关仪器测试 assumeTrue 跳过属预期，不是回归。
 - 验证结论写进 `VALIDATION.md`，截图放 `验证截图/`。
 - sideload 同一 `versionCode` 覆盖安装有坑，需要并存包时用 `-PverifyBuild`。
 
