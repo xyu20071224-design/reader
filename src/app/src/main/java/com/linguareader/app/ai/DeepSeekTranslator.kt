@@ -283,8 +283,15 @@ class DeepSeekTranslator(private val settings: AiSettings) :
     ): JSONObject = withContext(Dispatchers.IO) {
         val first = runCatching { request(system, user, jsonMode) }
         first.getOrElse { error ->
-            if (!jsonMode || !shouldRetryWithoutJsonMode(error)) throw error
-            request(system, user, jsonMode = false)
+            if (!jsonMode) throw error
+            when {
+                shouldRetryWithoutJsonMode(error) -> request(system, user, jsonMode = false)
+                // BUG-013: a parse failure means the model ignored the JSON
+                // constraint — dropping the constraint on retry guarantees
+                // another non-JSON reply. Keep it and ask again.
+                shouldRetryKeepingJsonMode(error) -> request(system, user, jsonMode = true)
+                else -> throw error
+            }
         }
     }
 
@@ -359,10 +366,13 @@ class DeepSeekTranslator(private val settings: AiSettings) :
          * recover a JSON object from the reply.
          */
         internal fun shouldRetryWithoutJsonMode(error: Throwable): Boolean =
-            error is AiRequestException && (
-                error.message?.contains("response_format", ignoreCase = true) == true ||
-                    error.message?.contains("无法解析的 JSON", ignoreCase = true) == true
-                )
+            error is AiRequestException &&
+                error.message?.contains("response_format", ignoreCase = true) == true
+
+        /** BUG-013: response-parse failures retry *with* the JSON constraint. */
+        internal fun shouldRetryKeepingJsonMode(error: Throwable): Boolean =
+            error is AiRequestException &&
+                error.message?.contains("无法解析的 JSON", ignoreCase = true) == true
 
         private const val CONTEXT_SYSTEM_PROMPT =
             "你是一个英语阅读辅助工具。阅读用户提供的英文书籍章节，提取翻译语境信息，并顺带整理有台词的角色画像（用于听书多音色分配）。" +
