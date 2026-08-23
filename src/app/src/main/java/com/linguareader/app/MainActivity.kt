@@ -64,14 +64,22 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** 状态栏/导航栏颜色与图标亮度跟随调色板，夜间不再是白条。 */
+/**
+ * 状态栏/导航栏颜色与图标亮度跟随调色板，夜间不再是白条。
+ *
+ * 图标明暗已走 WindowCompat.getInsetsController 返回的 WindowInsetsControllerCompat
+ * （迁移完毕）。窗口栏「颜色」没有对应的 compat API：targetSdk 35 强制 edge-to-edge
+ * 后这两个 setter 在新系统上被忽略（栏透明、由 Compose Surface(Paper) 自己垫底），
+ * 仅在 < 35 的旧系统上仍然生效，因此保留并 @Suppress 弃用告警。冷启动首帧的
+ * 栏/窗口底色由 res/values(-night)/themes.xml 决定，与此处运行时值保持一致。
+ */
 @Composable
 private fun ApplySystemBars(palette: LinguaPalette) {
     val view = LocalView.current
     if (view.isInEditMode) return
     LaunchedEffect(palette.isDark) {
         val window = (view.context as? Activity)?.window ?: return@LaunchedEffect
-        @Suppress("DEPRECATION")
+        @Suppress("DEPRECATION") // 见上：仅旧系统生效，新系统由 edge-to-edge + Compose 垫底
         window.statusBarColor = palette.paper.toArgb()
         @Suppress("DEPRECATION")
         window.navigationBarColor = palette.paper.toArgb()

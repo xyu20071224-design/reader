@@ -1,6 +1,10 @@
 <resources>
+    <!-- windowBackground 显式钉在纸色（而非 Material Light 默认纯白）：
+         冷启动首帧与 Compose 首帧的 Paper(#F7F3EA) 之间不再有白→米跳变。
+         夜间版本见 values-night/themes.xml（#171717，修深色冷启动闪白）。 -->
     <style name="Theme.LinguaReader" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#F7F3EA</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">#F7F3EA</item>
         <item name="android:statusBarColor">#F7F3EA</item>
