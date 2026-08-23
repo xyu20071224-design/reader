@@ -5,6 +5,7 @@ import com.linguareader.app.data.ReaderTheme
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ReaderScriptsTest {
     @Test
@@ -69,6 +70,64 @@ class ReaderScriptsTest {
         assertContains(script, "125%")
         // Preference changes from Kotlin still re-sync the current page.
         assertContains(script, "window.lrSyncPage")
+    }
+
+    @Test
+    fun markColorsFollowReaderThemeVariant() {
+        val dark = ReaderScripts.preferenceScript(ReaderPreferences(theme = ReaderTheme.DARK))
+        val paper = ReaderScripts.preferenceScript(ReaderPreferences(theme = ReaderTheme.PAPER))
+
+        // 夜间主题注入提亮变体（与外壳 DarkLinguaPalette.accent 同源），
+        // 浅色主题维持历史值不动。
+        assertContains(dark, "'--lr-mark', \"#C98A5E\"")
+        assertContains(dark, "'--lr-link', \"#D7A072\"")
+        assertContains(paper, "'--lr-mark', \"#8D5535\"")
+        assertContains(paper, "'--lr-link', \"#9b6b43\"")
+    }
+
+    @Test
+    fun injectedCssReferencesMarkVariablesNotHardcodedColors() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 生词下划线/链接/选区/TTS 高亮必须走 CSS 变量，主题切换才能生效；
+        // 写死的浅色值在夜间底上对比不足（2026-08-24 真机确认的缺陷）。
+        // 注意：bootstrap 里仍会出现 PAPER 默认主题的十六进制值（那是注入的
+        // 变量值本身），要防的是 CSS 规则里写死颜色。
+        assertContains(script, "text-decoration-color: var(--lr-mark)")
+        assertContains(script, "text-decoration-color: var(--lr-link)")
+        assertContains(script, "::selection { background: var(--lr-selection); }")
+        assertContains(script, "'background:var(--lr-highlight);border-radius:3px;'")
+        assertFalse(script.contains("text-decoration-color: #"))
+        assertFalse(script.contains("background:rgba(184,132,83,.32);border-radius"))
+    }
+
+    @Test
+    fun markColorsKeepAtLeastThreeToOneContrastOnTheirBackground() {
+        // WCAG 相对亮度对比度：夜间正文底上 2.97:1 的旧值就是缺陷根源，
+        // 所有主题的标记/链接色对自己的正文底必须 ≥3:1。
+        fun luminance(hex: String): Double {
+            val value = hex.removePrefix("#").toLong(16)
+            fun channel(shift: Int): Double {
+                val c = ((value shr shift) and 0xFF).toDouble() / 255.0
+                return if (c <= 0.03928) c / 12.92 else Math.pow((c + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+        }
+        fun contrast(a: String, b: String): Double {
+            val la = luminance(a)
+            val lb = luminance(b)
+            return (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
+        }
+        ReaderTheme.entries.forEach { theme ->
+            assertTrue(
+                contrast(theme.markColor, theme.background) >= 3.0,
+                "markColor of ${theme.name} must contrast >= 3:1 (was ${contrast(theme.markColor, theme.background)})"
+            )
+            assertTrue(
+                contrast(theme.linkColor, theme.background) >= 3.0,
+                "linkColor of ${theme.name} must contrast >= 3:1 (was ${contrast(theme.linkColor, theme.background)})"
+            )
+        }
     }
 
     @Test

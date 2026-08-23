@@ -162,11 +162,30 @@ data class ReaderPreferences(
     val fontFamily: ReaderFont = ReaderFont.SERIF
 )
 
-enum class ReaderTheme(val label: String, val background: String, val foreground: String) {
-    PAPER("纸张", "#F7F3EA", "#27231F"),
-    WHITE("明亮", "#FFFFFF", "#181818"),
-    SEPIA("护眼", "#E9DFC7", "#352F26"),
-    DARK("夜间", "#171717", "#E8E3DA")
+/**
+ * 阅读主题。除正文底/字色外，还携带「标记类」颜色的主题变体：生词下划线、链接
+ * 装饰、选区与 TTS 高亮的浅色值在夜间(#171717)底上对比不足（#8D5535 约 2.97:1，
+ * 卡在 3:1 门槛下，真机人工判「费劲」辨认），深色主题换提亮变体（#C98A5E 约
+ * 6.2:1，与外壳 DarkLinguaPalette.accent 同源，保持色相只提亮度）。这些值经
+ * ReaderScripts.preferenceScript 注入为 CSS 变量。
+ */
+enum class ReaderTheme(
+    val label: String,
+    val background: String,
+    val foreground: String,
+    /** 生词点状下划线（.lr-saved-word 的 text-decoration-color）。 */
+    val markColor: String,
+    /** 链接下划线装饰色（正文链接文字仍是 foreground）。 */
+    val linkColor: String,
+    /** 文本选区背景（半透明棕）。 */
+    val selectionWash: String,
+    /** TTS 整句高亮底（半透明棕）。 */
+    val highlightWash: String
+) {
+    PAPER("纸张", "#F7F3EA", "#27231F", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    WHITE("明亮", "#FFFFFF", "#181818", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    SEPIA("护眼", "#E9DFC7", "#352F26", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    DARK("夜间", "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)")
 }
 
 enum class ReaderFont(val label: String, val css: String) {

@@ -120,12 +120,12 @@ object ReaderScripts {
               #lingua-reader-content h3 { font-size: 1.25em !important; }
               #lingua-reader-content h4 { font-size: 1.12em !important; }
               img, svg, video { max-width: calc(100vw - 56px) !important; max-height: 72vh; }
-              a { color: inherit; text-decoration-color: #9b6b43; }
+              a { color: inherit; text-decoration-color: var(--lr-link); }
               p { orphans: 2; widows: 2; }
-              ::selection { background: rgba(184, 132, 83, .28); }
+              ::selection { background: var(--lr-selection); }
               .lr-saved-word {
                 text-decoration: underline dotted;
-                text-decoration-color: #8D5535;
+                text-decoration-color: var(--lr-mark);
                 text-underline-offset: 3px;
               }
             `;
@@ -929,7 +929,7 @@ object ReaderScripts {
                 'left:' + (rect.left - originRect.left) + 'px;' +
                 'top:' + (rect.top - originRect.top) + 'px;' +
                 'width:' + rect.width + 'px;height:' + rect.height + 'px;' +
-                'background:rgba(184,132,83,.32);border-radius:3px;' +
+                'background:var(--lr-highlight);border-radius:3px;' +
                 'pointer-events:none;';
               overlay.appendChild(box);
             }
@@ -1057,6 +1057,12 @@ object ReaderScripts {
         val font = JSONObject.quote(preferences.fontFamily.css)
         val size = JSONObject.quote("${preferences.fontPercent}%")
         val line = JSONObject.quote(preferences.lineHeight.toString())
+        // 标记类颜色随主题变体：夜间给提亮版（对比度 ≥3:1，见 ReaderTheme 注释），
+        // 浅色主题维持历史值。bootstrap 里 installStyle 后同步注入，首帧即生效。
+        val mark = JSONObject.quote(preferences.theme.markColor)
+        val link = JSONObject.quote(preferences.theme.linkColor)
+        val selection = JSONObject.quote(preferences.theme.selectionWash)
+        val highlight = JSONObject.quote(preferences.theme.highlightWash)
         // Bootstrap must NOT sync the page: at that moment the scroller has not
         // scrolled yet, so syncing would read page 0 and clobber the restored
         // reading position. Preference changes from Kotlin still re-sync.
@@ -1070,6 +1076,10 @@ object ReaderScripts {
               root.style.setProperty('--lr-font', $font);
               root.style.setProperty('--lr-size', $size);
               root.style.setProperty('--lr-line', $line);
+              root.style.setProperty('--lr-mark', $mark);
+              root.style.setProperty('--lr-link', $link);
+              root.style.setProperty('--lr-selection', $selection);
+              root.style.setProperty('--lr-highlight', $highlight);
               $sync
             })();
         """.trimIndent()
