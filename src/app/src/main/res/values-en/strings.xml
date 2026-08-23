@@ -438,4 +438,50 @@
         <item quantity="one">%1$d word ready for a quick review</item>
         <item quantity="other">%1$d words ready for a quick review</item>
     </plurals>
+
+    <!-- Reader (toolbar / contents / reading settings / page jump / lookup panel) -->
+    <string name="reader_back">Back</string>
+    <string name="reader_contents">Contents</string>
+    <string name="reader_listening">Listen</string>
+    <string name="reader_listening_active">Listening</string>
+    <string name="reader_prev_page">Previous page</string>
+    <string name="reader_next_page">Next page</string>
+    <string name="reader_page_indicator">Page indicator</string>
+    <string name="reader_scroll_progress">%1$d/%2$d · chapter progress %3$d%%</string>
+    <string name="reader_pages_label">%1$d/%2$d · %3$d/%4$d</string>
+    <string name="reader_pagination">Paged</string>
+    <string name="reader_settings_title">Reading settings</string>
+    <string name="reader_font_size">Font size %1$d%%</string>
+    <string name="reader_line_height">Line height %1$s</string>
+    <string name="reader_theme_label">Theme</string>
+    <string name="reader_font_label">Font</string>
+    <string name="reader_font_selected">● %1$s</string>
+    <string name="reader_jump_title">Jump to page</string>
+    <string name="reader_jump_hint">This chapter has %1$d pages; enter 1–%2$d.</string>
+    <string name="reader_jump_page_label">Page number</string>
+    <string name="reader_jump_error">Enter a page between 1 and %1$d</string>
+    <string name="reader_jump_action">Go</string>
+    <string name="reader_phrase_view">Phrase meaning: %1$s</string>
+    <string name="reader_phrase_first">Matched phrase: %1$s</string>
+    <string name="reader_lemma">Base form: %1$s</string>
+    <string name="reader_related_phrase">Related phrase: %1$s</string>
+    <string name="reader_view">View</string>
+    <string name="reader_back_to_word">Back to the word</string>
+    <string name="reader_pos_inferred">In this sentence: %1$s</string>
+    <string name="reader_add_to_vocab">Add to vocabulary</string>
+    <string name="reader_remove_from_vocab">Remove from vocabulary</string>
+    <string name="reader_ai_loading">Combining with this book\'s context…</string>
+    <string name="reader_ai_context_title">In-book contextual meaning (%1$s)</string>
+    <string name="reader_ai_phrase">Phrase: %1$s</string>
+    <string name="reader_sense_preferred">In this sentence</string>
+    <string name="reader_no_senses">No Chinese meaning for this entry yet.</string>
+    <string name="reader_word_not_found">Not in the offline dictionary.</string>
+    <string name="reader_current_context">Current context</string>
+    <string name="reader_dict_source">Meanings from ECDICT (MIT License). Phrase matching, lemmatization, and sense ordering all happen on this device.</string>
+    <string name="reader_scroll_end_hint">End of chapter · swipe or tap for the next one</string>
+    <string name="reader_scroll_start_hint">Start of chapter · swipe or tap for the previous one</string>
+    <plurals name="reader_review_badge">
+        <item quantity="one">Review %1$d</item>
+        <item quantity="other">Review %1$d</item>
+    </plurals>
 </resources>

@@ -429,4 +429,49 @@
     <plurals name="review_banner_due">
         <item quantity="other">有 %1$d 个词可快速复习</item>
     </plurals>
+
+    <!-- 阅读器（工具栏/目录/阅读设置/页码跳转/查词面板） -->
+    <string name="reader_back">返回</string>
+    <string name="reader_contents">目录</string>
+    <string name="reader_listening">听书</string>
+    <string name="reader_listening_active">听书中</string>
+    <string name="reader_prev_page">上一页</string>
+    <string name="reader_next_page">下一页</string>
+    <string name="reader_page_indicator">页码指示</string>
+    <string name="reader_scroll_progress">%1$d/%2$d · 章节进度 %3$d%%</string>
+    <string name="reader_pages_label">%1$d/%2$d · %3$d/%4$d</string>
+    <string name="reader_pagination">分页</string>
+    <string name="reader_settings_title">阅读设置</string>
+    <string name="reader_font_size">字号 %1$d%%</string>
+    <string name="reader_line_height">行距 %1$s</string>
+    <string name="reader_theme_label">主题</string>
+    <string name="reader_font_label">字体</string>
+    <string name="reader_font_selected">● %1$s</string>
+    <string name="reader_jump_title">跳转到页码</string>
+    <string name="reader_jump_hint">当前章节共 %1$d 页，可输入 1–%2$d。</string>
+    <string name="reader_jump_page_label">页码</string>
+    <string name="reader_jump_error">请输入 1–%1$d 之间的页码</string>
+    <string name="reader_jump_action">跳转</string>
+    <string name="reader_phrase_view">短语释义：%1$s</string>
+    <string name="reader_phrase_first">短语优先：%1$s</string>
+    <string name="reader_lemma">原形：%1$s</string>
+    <string name="reader_related_phrase">相关短语：%1$s</string>
+    <string name="reader_view">查看</string>
+    <string name="reader_back_to_word">返回单词释义</string>
+    <string name="reader_pos_inferred">本句推断：%1$s</string>
+    <string name="reader_add_to_vocab">加入生词本</string>
+    <string name="reader_remove_from_vocab">移出生词本</string>
+    <string name="reader_ai_loading">正在结合本书语境…</string>
+    <string name="reader_ai_context_title">本书语境释义（%1$s）</string>
+    <string name="reader_ai_phrase">短语：%1$s</string>
+    <string name="reader_sense_preferred">本句优先</string>
+    <string name="reader_no_senses">该词条暂无中文释义。</string>
+    <string name="reader_word_not_found">本地词典中暂未收录该词。</string>
+    <string name="reader_current_context">当前语境</string>
+    <string name="reader_dict_source">释义来源：ECDICT（MIT License）。短语匹配、词形还原与义项排序均在设备本地完成。</string>
+    <string name="reader_scroll_end_hint">已到本章末尾 · 快滑或点击进入下一章</string>
+    <string name="reader_scroll_start_hint">已到本章开头 · 快滑或点击返回上一章</string>
+    <plurals name="reader_review_badge">
+        <item quantity="other">复习 %1$d</item>
+    </plurals>
 </resources>

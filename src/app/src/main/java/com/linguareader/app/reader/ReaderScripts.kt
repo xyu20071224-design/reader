@@ -16,7 +16,10 @@ object ReaderScripts {
         initialScrollRatio: Float = 0f,
         initialScrollPageCount: Int = 1,
         chromeTopPx: Int = DEFAULT_CHROME_TOP_PX,
-        chromeBottomPx: Int = DEFAULT_CHROME_BOTTOM_PX
+        chromeBottomPx: Int = DEFAULT_CHROME_BOTTOM_PX,
+        /** 滚动模式首/尾提示文案（展示用，由 EpubPage 按当前语言传入；默认值仅供测试兜底）。 */
+        scrollEndHint: String = "已到本章末尾 · 快滑或点击进入下一章",
+        scrollStartHint: String = "已到本章开头 · 快滑或点击返回上一章"
     ): String = """
         (function() {
           if (window.__linguaReaderInstalled) {
@@ -350,11 +353,11 @@ object ReaderScripts {
               document.body.appendChild(hint);
             }
             if (atBottom) {
-              hint.textContent = '已到本章末尾 · 快滑或点击进入下一章';
+              hint.textContent = '$scrollEndHint';
               hint.setAttribute('data-direction', '1');
               hint.style.display = '';
             } else if (atTop) {
-              hint.textContent = '已到本章开头 · 快滑或点击返回上一章';
+              hint.textContent = '$scrollStartHint';
               hint.setAttribute('data-direction', '-1');
               hint.style.display = '';
             } else {
