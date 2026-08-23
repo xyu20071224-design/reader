@@ -71,6 +71,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -556,7 +557,10 @@ internal fun ReaderScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = ::closeWithFlush) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.reader_back)
+                        )
                     }
                     Text(
                         book.chapters[chapterIndex].title,
@@ -567,13 +571,17 @@ internal fun ReaderScreen(
                     )
                     if (reminders.toolbarBadge && dueWords.isNotEmpty()) {
                         TextButton(onClick = { reviewDeckIds = dueWords.take(reviewPace.sessionMaxWords).map { it.id } }) {
-                            Text("复习 ${dueWords.size}", color = Accent, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                pluralStringResource(R.plurals.reader_review_badge, dueWords.size, dueWords.size),
+                                color = Accent,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                     TextButton(onClick = { showContents = true }) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("目录")
+                        Text(stringResource(R.string.reader_contents))
                     }
                     TextButton(onClick = ::startOrToggleListening) {
                         Icon(
@@ -583,7 +591,11 @@ internal fun ReaderScreen(
                             tint = if (ttsForThisBook) Accent else InkSoft
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(if (ttsForThisBook) "听书中" else "听书", color = Ink)
+                        Text(
+                            if (ttsForThisBook) stringResource(R.string.reader_listening_active)
+                            else stringResource(R.string.reader_listening),
+                            color = Ink
+                        )
                     }
                     TextButton(onClick = { showSettings = true }) {
                         Text("Aa", fontWeight = FontWeight.Bold)
@@ -598,6 +610,10 @@ internal fun ReaderScreen(
             }
         }
 
+        // semantics 作用域不是 @Composable，无障碍标签先在这里取出来。
+        val prevPageLabel = stringResource(R.string.reader_prev_page)
+        val nextPageLabel = stringResource(R.string.reader_next_page)
+        val pageIndicatorLabel = stringResource(R.string.reader_page_indicator)
         Row(
             Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
@@ -612,7 +628,9 @@ internal fun ReaderScreen(
         ) {
             IconButton(
                 onClick = controller::previousPage,
-                modifier = Modifier.semantics { contentDescription = "上一页" }
+                modifier = Modifier.semantics {
+                    contentDescription = prevPageLabel
+                }
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowLeft,
@@ -622,32 +640,45 @@ internal fun ReaderScreen(
             }
             if (scrollMode) {
                 Text(
-                    "${chapterIndex + 1}/${book.chapters.size} · 章节进度 ${(scrollRatio * 100).roundToInt()}%",
+                    stringResource(
+                        R.string.reader_scroll_progress,
+                        chapterIndex + 1,
+                        book.chapters.size,
+                        (scrollRatio * 100).roundToInt()
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
                     modifier = Modifier
-                        .semantics { contentDescription = "页码指示" }
+                        .semantics { contentDescription = pageIndicatorLabel }
                         .clickable { showPageJump = true }
                 )
                 TextButton(onClick = controller::exitScrollMode) {
                     Text(
-                        "分页",
+                        stringResource(R.string.reader_pagination),
                         color = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
                     )
                 }
             } else {
                 Text(
-                    "${chapterIndex + 1}/${book.chapters.size} · ${currentPage + 1}/$pageCount",
+                    stringResource(
+                        R.string.reader_pages_label,
+                        chapterIndex + 1,
+                        book.chapters.size,
+                        currentPage + 1,
+                        pageCount
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
                     modifier = Modifier
-                        .semantics { contentDescription = "页码指示" }
+                        .semantics { contentDescription = pageIndicatorLabel }
                         .clickable { showPageJump = true }
                 )
             }
             IconButton(
                 onClick = controller::nextPage,
-                modifier = Modifier.semantics { contentDescription = "下一页" }
+                modifier = Modifier.semantics {
+                    contentDescription = nextPageLabel
+                }
             ) {
                 Icon(
                     Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -880,7 +911,7 @@ private fun ContentsSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
         Text(
-            "目录",
+            stringResource(R.string.reader_contents),
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
         )
@@ -922,9 +953,9 @@ private fun SettingsSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 28.dp)) {
-            Text("阅读设置", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.reader_settings_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(20.dp))
-            Text("字号 ${fontSize.roundToInt()}%")
+            Text(stringResource(R.string.reader_font_size, fontSize.roundToInt()))
             Slider(
                 value = fontSize,
                 onValueChange = {
@@ -934,7 +965,7 @@ private fun SettingsSheet(
                 valueRange = 80f..150f,
                 steps = 6
             )
-            Text("行距 ${"%.1f".format(lineHeight)}")
+            Text(stringResource(R.string.reader_line_height, "%.1f".format(lineHeight)))
             Slider(
                 value = lineHeight,
                 onValueChange = {
@@ -945,7 +976,7 @@ private fun SettingsSheet(
                 steps = 4
             )
             Spacer(Modifier.height(8.dp))
-            Text("主题", color = InkSoft)
+            Text(stringResource(R.string.reader_theme_label), color = InkSoft)
             Spacer(Modifier.height(8.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -978,7 +1009,7 @@ private fun SettingsSheet(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            theme.label,
+                            stringResource(theme.labelRes),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (selected) Accent else InkSoft,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
@@ -987,14 +1018,21 @@ private fun SettingsSheet(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Text("字体", color = InkSoft)
+            Text(stringResource(R.string.reader_font_label), color = InkSoft)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ReaderFont.entries.forEach { font ->
+                    val fontLabel = stringResource(font.labelRes)
                     TextButton(onClick = { onChange(preferences.copy(fontFamily = font)) }) {
-                        Text(if (font == preferences.fontFamily) "● ${font.label}" else font.label)
+                        Text(
+                            if (font == preferences.fontFamily) {
+                                stringResource(R.string.reader_font_selected, fontLabel)
+                            } else {
+                                fontLabel
+                            }
+                        )
                     }
                 }
             }
@@ -1005,13 +1043,13 @@ private fun SettingsSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "复习节奏",
+                    stringResource(R.string.review_pace_section),
                     modifier = Modifier.weight(1f),
                     color = Ink,
                     style = MaterialTheme.typography.bodyMedium
                 )
                 TextButton(onClick = onOpenReviewSettings) {
-                    Text("${reviewPace.label} ›", color = Accent)
+                    Text("${stringResource(reviewPace.labelRes)} ›", color = Accent)
                 }
             }
             Row(
@@ -1019,7 +1057,7 @@ private fun SettingsSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "听书设置",
+                    stringResource(R.string.tts_settings_title),
                     modifier = Modifier.weight(1f),
                     color = Ink,
                     style = MaterialTheme.typography.bodyMedium
@@ -1041,14 +1079,16 @@ private fun PageJumpDialog(
 ) {
     var input by remember { mutableStateOf((currentPage + 1).toString()) }
     var error by remember { mutableStateOf<String?>(null) }
+    // onClick 不是 @Composable 作用域，错误文案先在这里取出来。
+    val jumpErrorText = stringResource(R.string.reader_jump_error, pageCount)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("跳转到页码") },
+        title = { Text(stringResource(R.string.reader_jump_title)) },
         text = {
             Column {
                 Text(
-                    "当前章节共 $pageCount 页，可输入 1–$pageCount。",
+                    stringResource(R.string.reader_jump_hint, pageCount, pageCount),
                     color = InkSoft,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -1061,7 +1101,7 @@ private fun PageJumpDialog(
                     },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    label = { Text("页码") },
+                    label = { Text(stringResource(R.string.reader_jump_page_label)) },
                     isError = error != null,
                     supportingText = {
                         val message = error
@@ -1075,16 +1115,16 @@ private fun PageJumpDialog(
                 onClick = {
                     val target = parsePageInput(input, pageCount)
                     if (target == null) {
-                        error = "请输入 1–$pageCount 之间的页码"
+                        error = jumpErrorText
                     } else {
                         onJump(target)
                         onDismiss()
                     }
                 }
-            ) { Text("跳转") }
+            ) { Text(stringResource(R.string.reader_jump_action)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
         containerColor = CardSurface,
         shape = CardShape
@@ -1177,14 +1217,17 @@ private fun LookupSheet(
             }
             if (entry?.matchedPhrase != null) {
                 Text(
-                    if (isPhraseView) "短语释义：${entry.matchedPhrase}"
-                    else "短语优先：${entry.matchedPhrase}",
+                    if (isPhraseView) {
+                        stringResource(R.string.reader_phrase_view, entry.matchedPhrase)
+                    } else {
+                        stringResource(R.string.reader_phrase_first, entry.matchedPhrase)
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = Accent
                 )
             } else if (entry != null && !entry.headword.equals(lookup.word, ignoreCase = true)) {
                 Text(
-                    "原形：${entry.headword}",
+                    stringResource(R.string.reader_lemma, entry.headword),
                     style = MaterialTheme.typography.labelMedium,
                     color = Accent
                 )
@@ -1195,20 +1238,26 @@ private fun LookupSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "相关短语：${relatedPhrase.matchedPhrase ?: relatedPhrase.headword}",
+                        stringResource(
+                            R.string.reader_related_phrase,
+                            relatedPhrase.matchedPhrase ?: relatedPhrase.headword
+                        ),
                         style = MaterialTheme.typography.labelLarge,
                         color = Ink.copy(alpha = .72f),
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = onShowPhrase) { Text("查看") }
+                    TextButton(onClick = onShowPhrase) { Text(stringResource(R.string.reader_view)) }
                 }
             }
             if (isPhraseView) {
-                TextButton(onClick = onShowWord) { Text("返回单词释义") }
+                TextButton(onClick = onShowWord) { Text(stringResource(R.string.reader_back_to_word)) }
             }
             if (entry != null && entry.inferredPartOfSpeech != PartOfSpeech.UNKNOWN) {
                 Text(
-                    "本句推断：${entry.inferredPartOfSpeech.label}",
+                    stringResource(
+                        R.string.reader_pos_inferred,
+                        stringResource(entry.inferredPartOfSpeech.labelRes)
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = Ink.copy(alpha = .56f)
                 )
@@ -1218,13 +1267,13 @@ private fun LookupSheet(
                     TextButton(onClick = onSpeak) {
                         Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("朗读")
+                        Text(stringResource(R.string.common_speak))
                     }
                     if (isSaved && showReviewEntry) {
                         TextButton(onClick = onReviewSaved) {
                             Icon(Icons.Filled.School, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("复习")
+                            Text(stringResource(R.string.common_review))
                         }
                     }
                     TextButton(onClick = onToggleSave) {
@@ -1235,7 +1284,10 @@ private fun LookupSheet(
                             tint = if (isSaved) Accent else InkSoft
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(if (isSaved) "移出生词本" else "加入生词本")
+                        Text(
+                            if (isSaved) stringResource(R.string.reader_remove_from_vocab)
+                            else stringResource(R.string.reader_add_to_vocab)
+                        )
                     }
                 }
             }
@@ -1256,7 +1308,7 @@ private fun LookupSheet(
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "正在结合本书语境…",
+                        stringResource(R.string.reader_ai_loading),
                         style = MaterialTheme.typography.labelMedium,
                         color = InkSoft
                     )
@@ -1286,7 +1338,7 @@ private fun LookupSheet(
             if (!aiLoading && aiContext != null) {
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    "本书语境释义（${aiContext.source}）",
+                    stringResource(R.string.reader_ai_context_title, aiContext.source),
                     style = MaterialTheme.typography.labelLarge,
                     color = Accent,
                     fontWeight = FontWeight.SemiBold
@@ -1300,7 +1352,7 @@ private fun LookupSheet(
                 aiContext.phrase?.let {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "短语：$it",
+                        stringResource(R.string.reader_ai_phrase, it),
                         style = MaterialTheme.typography.labelMedium,
                         color = Ink.copy(alpha = .62f)
                     )
@@ -1458,7 +1510,11 @@ private fun LookupSheet(
                             verticalAlignment = Alignment.Top
                         ) {
                             Text(
-                                if (sense.contextPreferred && index == 0) "本句优先" else "•",
+                                if (sense.contextPreferred && index == 0) {
+                                    stringResource(R.string.reader_sense_preferred)
+                                } else {
+                                    "•"
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (sense.contextPreferred && index == 0) Accent
                                 else Ink.copy(alpha = .38f),
@@ -1472,7 +1528,10 @@ private fun LookupSheet(
                         }
                     }
                     if (entry.senses.isEmpty()) {
-                        Text("该词条暂无中文释义。", color = Ink.copy(alpha = .62f))
+                        Text(
+                            stringResource(R.string.reader_no_senses),
+                            color = Ink.copy(alpha = .62f)
+                        )
                     }
                     if (entry.definitions.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
@@ -1484,10 +1543,17 @@ private fun LookupSheet(
                         )
                     }
                 }
-                else -> Text("本地词典中暂未收录该词。", color = Ink.copy(alpha = .62f))
+                else -> Text(
+                    stringResource(R.string.reader_word_not_found),
+                    color = Ink.copy(alpha = .62f)
+                )
             }
             Spacer(Modifier.height(18.dp))
-            Text("当前语境", style = MaterialTheme.typography.labelLarge, color = Accent)
+            Text(
+                stringResource(R.string.reader_current_context),
+                style = MaterialTheme.typography.labelLarge,
+                color = Accent
+            )
             Spacer(Modifier.height(5.dp))
             Text(
                 lookup.sentence.ifBlank { lookup.paragraph },
@@ -1496,7 +1562,7 @@ private fun LookupSheet(
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "释义来源：ECDICT（MIT License）。短语匹配、词形还原与义项排序均在设备本地完成。",
+                stringResource(R.string.reader_dict_source),
                 style = MaterialTheme.typography.labelSmall,
                 color = Ink.copy(alpha = .45f)
             )

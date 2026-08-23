@@ -10,6 +10,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import com.linguareader.app.R
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -178,7 +179,9 @@ fun EpubPage(
                                 initialScrollRatio = latestInitialScrollRatio,
                                 initialScrollPageCount = latestInitialScrollPageCount.coerceAtLeast(1),
                                 chromeTopPx = latestChromeTop,
-                                chromeBottomPx = latestChromeBottom
+                                chromeBottomPx = latestChromeBottom,
+                                scrollEndHint = context.getString(R.string.reader_scroll_end_hint),
+                                scrollStartHint = context.getString(R.string.reader_scroll_start_hint)
                             ),
                             null
                         )

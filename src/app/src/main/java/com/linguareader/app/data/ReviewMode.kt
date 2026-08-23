@@ -1,6 +1,8 @@
 package com.linguareader.app.data
 
 import android.content.SharedPreferences
+import androidx.annotation.StringRes
+import com.linguareader.app.R
 import org.json.JSONObject
 import kotlin.math.exp
 import kotlin.math.ln
@@ -12,8 +14,10 @@ import kotlin.math.roundToInt
  * [ReviewReminders] (F-137).
  */
 enum class ReviewMode(
+    /** 持久化与历史兼容用的文字名；界面显示请用 [labelRes]。 */
     val label: String,
-    val description: String,
+    @StringRes val labelRes: Int,
+    @StringRes val descriptionRes: Int,
     val firstDelayMillis: Long,
     val intervalMultiplier: Double,
     val minIntervalMillis: Long,
@@ -23,7 +27,8 @@ enum class ReviewMode(
 ) {
     IMMERSIVE(
         label = "沉浸阅读",
-        description = "节奏宽松：首次复习最早 2 小时后，间隔 ×1.5，适合低打扰阅读。",
+        labelRes = R.string.review_mode_immersive,
+        descriptionRes = R.string.review_mode_immersive_desc,
         firstDelayMillis = 2 * 60 * 60 * 1_000L,
         intervalMultiplier = 1.5,
         minIntervalMillis = 30 * 60 * 1_000L,
@@ -33,7 +38,8 @@ enum class ReviewMode(
     ),
     GENTLE(
         label = "温和节奏",
-        description = "默认节奏：首次复习最早 30 分钟后，间隔与基础艾宾浩斯曲线一致。",
+        labelRes = R.string.review_mode_gentle,
+        descriptionRes = R.string.review_mode_gentle_desc,
         firstDelayMillis = 30 * 60 * 1_000L,
         intervalMultiplier = 1.0,
         minIntervalMillis = 30 * 60 * 1_000L,
@@ -43,7 +49,8 @@ enum class ReviewMode(
     ),
     DILIGENT(
         label = "勤学模式",
-        description = "节奏紧凑：首次复习最早 5 分钟后，间隔 ×0.75；可搭配定时轻提醒。",
+        labelRes = R.string.review_mode_diligent,
+        descriptionRes = R.string.review_mode_diligent_desc,
         firstDelayMillis = 5 * 60 * 1_000L,
         intervalMultiplier = 0.75,
         minIntervalMillis = 30 * 60 * 1_000L,
@@ -60,6 +67,7 @@ enum class ReviewMode(
     /** The effective pace parameters for this preset. */
     fun toPace(): ReviewPace = ReviewPace(
         label = label,
+        labelRes = labelRes,
         firstDelayMillis = firstDelayMillis,
         intervalMultiplier = intervalMultiplier,
         minIntervalMillis = minIntervalMillis,
@@ -92,7 +100,9 @@ enum class ReviewMode(
  * Reminder channels are deliberately not part of a pace (F-137).
  */
 data class ReviewPace(
+    /** 持久化字段（自定义节奏的 JSON 里保存）；界面显示请用 [labelRes]。 */
     val label: String,
+    @StringRes val labelRes: Int = R.string.review_pace_custom,
     val firstDelayMillis: Long,
     val intervalMultiplier: Double,
     val minIntervalMillis: Long,

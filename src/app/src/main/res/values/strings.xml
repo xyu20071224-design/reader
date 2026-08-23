@@ -17,6 +17,17 @@
     <string name="tts_settings_saved">已保存，即将关闭…</string>
     <string name="review_context_explanation">收藏时的语境解释：%1$s</string>
 
+    <!-- 全局模态消息（AppViewModel message/messageTitle） -->
+    <string name="message_import_failed">导入失败</string>
+    <string name="message_import_failed_title">无法导入</string>
+    <string name="message_ai_context_failed">语境档案生成失败</string>
+    <string name="message_review_save_failed">保存复习结果失败，已恢复本地记录。</string>
+    <string name="message_review_save_failed_title">保存失败</string>
+    <string name="message_export_done">生词表已导出为 CSV。</string>
+    <string name="message_export_done_title">导出完成</string>
+    <string name="message_export_failed">导出失败</string>
+    <string name="message_export_failed_title">无法导出</string>
+
     <!-- 书架 -->
     <plurals name="shelf_book_count">
         <item quantity="other">%d 本书</item>
@@ -108,6 +119,75 @@
     <string name="player_stop">停止听书</string>
 
     <!-- 多角色音色 -->
+    <!-- 通用（跨模块复用） -->
+    <string name="common_save">保存</string>
+    <string name="common_notice_title">提示</string>
+    <string name="common_speak">朗读</string>
+    <string name="common_review">复习</string>
+
+    <!-- 阅读主题 / 字体 / 词性（模型层显示名） -->
+    <string name="reader_theme_paper">纸张</string>
+    <string name="reader_theme_white">明亮</string>
+    <string name="reader_theme_sepia">护眼</string>
+    <string name="reader_theme_dark">夜间</string>
+    <string name="reader_font_serif">衬线</string>
+    <string name="reader_font_sans">无衬线</string>
+    <string name="reader_font_mono">等宽</string>
+    <string name="reader_font_condensed">窄体</string>
+    <string name="reader_font_cursive">手写</string>
+    <string name="pos_noun">名词</string>
+    <string name="pos_verb">动词</string>
+    <string name="pos_adjective">形容词</string>
+    <string name="pos_adverb">副词</string>
+    <string name="pos_unknown">未判定</string>
+
+    <!-- 复习节奏（模型层显示名与说明） -->
+    <string name="review_mode_immersive">沉浸阅读</string>
+    <string name="review_mode_immersive_desc">节奏宽松：首次复习最早 2 小时后，间隔 ×1.5，适合低打扰阅读。</string>
+    <string name="review_mode_gentle">温和节奏</string>
+    <string name="review_mode_gentle_desc">默认节奏：首次复习最早 30 分钟后，间隔与基础艾宾浩斯曲线一致。</string>
+    <string name="review_mode_diligent">勤学模式</string>
+    <string name="review_mode_diligent_desc">节奏紧凑：首次复习最早 5 分钟后，间隔 ×0.75；可搭配定时轻提醒。</string>
+    <string name="review_pace_custom">自定义</string>
+
+    <!-- 启动问候与更新说明 -->
+    <string name="launch_greeting_dawn_title">清晨</string>
+    <string name="launch_greeting_dawn_message">被崭新的一天唤醒，迎接美好的朝阳</string>
+    <string name="launch_greeting_noon_title">正午</string>
+    <string name="launch_greeting_noon_message">在重叠的光影中游戏，世间万物欣欣向荣</string>
+    <string name="launch_greeting_dusk_title">黄昏</string>
+    <string name="launch_greeting_dusk_message">同疲倦的归鸟还家，消失于天空尽头的晚霞</string>
+    <string name="launch_greeting_night_title">深夜</string>
+    <string name="launch_greeting_night_message">忙碌的人们陷入好梦，窗外是闪烁的星河</string>
+    <string name="launch_greeting_hours_dawn">5–11 点</string>
+    <string name="launch_greeting_hours_noon">12–17 点</string>
+    <string name="launch_greeting_hours_dusk">18–21 点</string>
+    <string name="launch_greeting_hours_night">22–4 点</string>
+    <string name="launch_greeting_start">开始阅读</string>
+    <string name="launch_update_note_title">版本更新 %1$s</string>
+    <string name="launch_note_v4_1">新增 EPUB、TXT、FB2 与文字版 PDF 导入</string>
+    <string name="launch_note_v4_2">新增本章内页码跳转</string>
+    <string name="launch_note_v4_3">修复屏幕旋转丢失阅读页与短语释义误匹配</string>
+    <string name="launch_note_v4_4">新增复习提醒：三套节奏预设、语境高亮、角标、停顿点提示</string>
+    <string name="launch_note_v4_5">勤学模式支持本地到期通知（可拒绝权限）</string>
+    <string name="launch_note_v5_1">启动问候升级为四时段情景卡</string>
+    <string name="launch_note_v5_2">新增深夜时段问候</string>
+    <string name="launch_note_v6_1">新增听书：整章/全书连续朗读，支持中英文</string>
+    <string name="launch_note_v6_2">朗读时当前句高亮并自动翻页，点击句子从此句开始听</string>
+    <string name="launch_note_v6_3">支持暂停/继续、语速调节、后台播放与通知栏控制</string>
+    <string name="launch_note_v6_4">自动记住每本书的收听进度，下次接着听</string>
+    <string name="launch_note_v7_1">修复听书待选状态切后台被系统停止的问题</string>
+    <string name="launch_note_v7_2">修复云 TTS 凭证偶发丢失与解密健壮性</string>
+    <string name="launch_note_v7_3">修复朗读高亮在含内联样式的章节中错位</string>
+    <string name="launch_note_v7_4">修复快速切句跳章、进度回退等播放稳定性问题</string>
+    <string name="launch_note_v8_1">修复系统音色列表加载在部分引擎下的崩溃问题</string>
+    <string name="launch_note_v8_2">增强 getVoices() 返回 null 或异常时的健壮性</string>
+    <string name="launch_note_v9_1">全新离线朗读引擎：中文女声与英文男声，无需联网</string>
+    <string name="launch_note_v9_2">修复 Piper 音色对生僻词逐字母朗读的问题</string>
+    <string name="launch_note_v9_3">支持在应用内自由切换离线/系统音色</string>
+    <string name="launch_note_v9_4">重构听书播放状态机，提升播放稳定性</string>
+    <string name="launch_note_generic">欢迎使用新版本，功能与体验均有改进。</string>
+
     <string name="multivoice_title">多角色音色（实验）</string>
     <string name="multivoice_subtitle">按「谁在说话」给旁白与各角色分配不同音色；需要 AI 语境档案提供角色表。</string>
     <string name="multivoice_unsupported">系统语音音色不可控，不支持多角色；本地 Piper 与各云端引擎均支持。</string>
@@ -184,4 +264,262 @@
     <plurals name="multivoice_status_ready">
         <item quantity="other">已为 %1$d 个角色分配音色。</item>
     </plurals>
+
+    <!-- 听书设置 -->
+    <string name="tts_settings_title">听书设置</string>
+    <string name="tts_engine_section">朗读引擎</string>
+    <string name="tts_engine_system">系统语音</string>
+    <string name="tts_engine_piper">本地 Piper</string>
+    <string name="tts_engine_azure">Azure 云 TTS</string>
+    <string name="tts_engine_volc">火山引擎（豆包语音）</string>
+    <string name="tts_engine_openai_compat">自建服务器（OpenAI 兼容）</string>
+    <string name="tts_piper_intro">本地 Piper 语音：内置离线神经语音，无需联网、无需 API Key；自动按中英文切换。英文音色可选内置或导入的 Piper 模型。支持多角色听书（完全离线；最多驻留 4 个英文音色，超出按最近使用淘汰）。</string>
+    <string name="tts_piper_download_more">下载更多 Piper 音色</string>
+    <string name="tts_piper_download_hint">点「下载」跳到官方页面下载模型包，再点「导入」选择其中的 .onnx 文件即可离线使用。注意：「试听」与「下载」需要联网（HuggingFace / GitHub），受顶部「联网 AI 总开关」控制；导入完成后的朗读依然完全离线。</string>
+    <string name="tts_piper_import_checking">正在导入并校验模型…</string>
+    <string name="tts_piper_imported">已导入 %1$s，保存后即可使用</string>
+    <string name="tts_piper_import_failed">导入失败</string>
+    <string name="tts_piper_importing">正在导入…</string>
+    <string name="tts_piper_import_model">导入模型（选择 .onnx 文件）</string>
+    <string name="tts_piper_network_off">联网 AI 总开关已关闭：试听与下载暂不可用（已导入的音色仍可离线使用）。</string>
+    <string name="tts_piper_voice_label">Piper 英文音色</string>
+    <string name="tts_piper_open_failed">无法打开下载页面</string>
+    <string name="tts_download">下载</string>
+    <string name="tts_audition">试听</string>
+    <string name="tts_sample_failed">样例试听失败，请检查网络（HuggingFace 可能不可达）</string>
+    <string name="tts_sample_play_failed">无法播放样例音频</string>
+    <string name="tts_piper_voice_meta">%1$s · %2$s声 · %3$s</string>
+    <string name="tts_voice_builtin">%1$s（内置）</string>
+    <string name="tts_voice_imported">%1$s（已导入）</string>
+    <string name="tts_system_section">系统音色</string>
+    <string name="tts_system_hint">选择手机系统 TTS 引擎中的音色；不选则跟随系统默认。中文和英文可分别指定。</string>
+    <string name="tts_system_hidden_hint">已隐藏需要联网下载的音色，确保离线可正常朗读。</string>
+    <string name="tts_system_voices_empty">未找到可用的系统音色，将使用系统默认</string>
+    <string name="tts_load_voices">加载音色</string>
+    <string name="tts_refresh_voices">刷新音色</string>
+    <string name="tts_voice_chinese">中文音色</string>
+    <string name="tts_voice_english">英文音色</string>
+    <string name="tts_follow_system_default">跟随系统默认</string>
+    <string name="tts_voice_multilingual">多语言音色</string>
+    <string name="tts_multilingual_toggle">中英混读音色</string>
+    <string name="tts_multilingual_toggle_hint">同一个声音朗读中英文，混排更连贯</string>
+    <string name="tts_voice_unselected">未选择</string>
+    <string name="tts_voice_with_locale">%1$s（%2$s）</string>
+    <string name="tts_fetch_voices">获取可用音色</string>
+    <string name="tts_fetch_voices_failed">获取音色失败，请检查 Region 与 Key</string>
+    <string name="tts_fill_region_key">请先填写 Region 和 API Key</string>
+    <string name="tts_select_voice_first">请先获取可用音色并选择音色</string>
+    <string name="tts_azure_region_hint">中国北部 3：chinanorth3</string>
+    <string name="tts_test_connection">测试连接</string>
+    <string name="tts_azure_test_ok">连接成功，Azure 可正常合成</string>
+    <string name="tts_server_test_ok">连接成功，服务器可正常合成</string>
+    <string name="tts_volc_test_ok">连接成功，中英文音色均可合成</string>
+    <string name="tts_test_failed">连接失败</string>
+    <string name="tts_server_url_label">服务器地址</string>
+    <string name="tts_server_url_hint">如 https://your-server.example.com</string>
+    <string name="tts_server_model_label">模型名</string>
+    <string name="tts_server_model_hint">Fish Speech S2 等服务器发布的模型名</string>
+    <string name="tts_server_token_label">API Token（可选）</string>
+    <string name="tts_server_voice_label">音色/voice（可选，通用兜底）</string>
+    <string name="tts_server_voice_hint">Fish Speech 通常为 default；IndexTTS 可填参考音频名，如 voice_03.wav</string>
+    <string name="tts_server_en_voice_label">英文音色（可选）</string>
+    <string name="tts_server_en_voice_hint">英文句子用此音色；留空跟随上方通用音色</string>
+    <string name="tts_server_zh_voice_label">中文音色（可选）</string>
+    <string name="tts_server_zh_voice_hint">中文句子用此音色；IndexTTS 一次只克隆一个说话人，中英分开填更自然</string>
+    <string name="tts_server_narrator_label">旁白音色 Narrator（可选）</string>
+    <string name="tts_server_narrator_hint">多角色听书 M1：旁白句子用此音色；留空则跟随上方「音色/voice」</string>
+    <string name="tts_server_dialogue_label">对白音色 Dialogue（可选）</string>
+    <string name="tts_server_dialogue_hint">引号内对白用此音色；两个都留空 = 单音色模式（原有行为）</string>
+    <string name="tts_fill_server_url">请先填写服务器地址</string>
+    <string name="tts_volc_api_key_label">API Key（新版控制台，推荐）</string>
+    <string name="tts_volc_app_id_label">App ID（旧版控制台）</string>
+    <string name="tts_volc_token_label">Access Token（旧版控制台）</string>
+    <string name="tts_volc_resource_label">Resource ID / 模型</string>
+    <string name="tts_volc_resource_hint">2.0 音色配 seed-tts-2.0；1.0 音色配 seed-tts-1.0</string>
+    <string name="tts_fill_volc_credentials">请填写 API Key，或 App ID + Access Token</string>
+    <string name="tts_volc_model_2">豆包语音合成模型 2.0（推荐）</string>
+    <string name="tts_volc_model_1">豆包语音合成模型 1.0</string>
+    <string name="tts_volc_model_1_concurr">豆包语音合成模型 1.0（并发版）</string>
+    <string name="tts_volc_voice_shuangkuaisisi">爽快思思 2.0</string>
+    <string name="tts_volc_voice_cancan_2">灿灿 2.0</string>
+    <string name="tts_volc_voice_vv">VV 2.0</string>
+    <string name="tts_volc_voice_xiaohe">晓荷 2.0</string>
+    <string name="tts_volc_voice_yunzhou">云舟 2.0</string>
+    <string name="tts_volc_voice_xiaotian">小田 2.0</string>
+    <string name="tts_volc_voice_nuanyang">暖阳女声 2.0</string>
+    <string name="tts_volc_voice_standard_female">通用女声</string>
+    <string name="tts_volc_voice_standard_male">通用男声</string>
+    <string name="tts_volc_voice_cancan">灿灿</string>
+    <string name="tts_volc_voice_qingcang">青苍（有声书）</string>
+    <string name="tts_volc_voice_dacey">Dacey（英文女声）</string>
+    <string name="tts_volc_voice_tim">Tim（英文男声）</string>
+    <string name="tts_volc_voice_ariana">Ariana（英文女声）</string>
+    <string name="tts_preset">预设</string>
+    <string name="tts_preset_item">%1$s（%2$s）</string>
+    <string name="tts_cloud_incomplete">启用云 TTS 前请先完成对应配置</string>
+    <string name="tts_cloud_notice">启用后，朗读文本会发送到对应云端/自建服务，按实际服务计费；章节音频首次生成后缓存在本机。合成失败会自动回退系统语音。</string>
+    <string name="tts_saved">已保存</string>
+    <plurals name="tts_system_voices_loaded">
+        <item quantity="other">已获取 %1$d 个系统音色</item>
+    </plurals>
+    <plurals name="tts_voices_fetched">
+        <item quantity="other">已获取 %1$d 个可用音色</item>
+    </plurals>
+
+    <!-- 复习（卡片/设置/停顿点横幅） -->
+    <string name="common_book_context">本书语境：%1$s</string>
+    <string name="common_book_context_source">本书语境（%1$s）：%2$s</string>
+    <string name="review_done_title">复习完成</string>
+    <string name="review_done_body">已完成 %1$d / %2$d 个单词，均已安排下次复习。</string>
+    <string name="review_card_position">第 %1$d / %2$d 张</string>
+    <string name="review_card_progress">已完成 %1$d / %2$d</string>
+    <string name="review_learn_again">再学一次</string>
+    <string name="review_known">认识</string>
+    <string name="review_reveal">显示释义</string>
+    <string name="review_settings_title">复习设置</string>
+    <string name="review_settings_hint">提醒方式与复习节奏彼此独立：先组合提醒载体，再选择复习频率。</string>
+    <string name="review_reminder_section">提醒方式</string>
+    <string name="review_reminder_context_title">语境浮现</string>
+    <string name="review_reminder_context_desc">已收藏词再次出现时加细点线；点击该词可在释义面板复习。</string>
+    <string name="review_reminder_pause_title">停顿点提示</string>
+    <string name="review_reminder_pause_desc">翻章或返回书架时，显示一行“有 N 个词可快速复习”。</string>
+    <string name="review_reminder_badge_title">工具栏角标</string>
+    <string name="review_reminder_badge_desc">阅读页顶部显示待复习数量，不主动打扰。</string>
+    <string name="review_reminder_notification_title">定时轻提醒</string>
+    <string name="review_reminder_notification_desc">到期时发送本地通知（需系统通知权限）。</string>
+    <string name="review_notification_denied">未授予通知权限，定时轻提醒保持关闭。</string>
+    <string name="review_reminder_manual_title">仅手动</string>
+    <string name="review_reminder_manual_desc">关闭以上所有主动提醒，只从生词本进入复习。</string>
+    <string name="review_pace_section">复习节奏</string>
+    <string name="review_preset_hint">选择预设会恢复其经典提醒组合，之后仍可单独调整。</string>
+    <string name="review_default_badge">默认</string>
+    <string name="review_pace_summary">首次 %1$d 分钟 · 间隔 ×%2$s · 每日 %3$d 次 · 单次 %4$d 词</string>
+    <string name="review_custom_desc">在记忆曲线上选择复习时还想记住多少，并调整首次复习与提醒方式。</string>
+    <string name="review_custom_in_use">正在使用 · 点击编辑</string>
+    <string name="review_custom_start">点击开始调整</string>
+    <string name="review_no_fullscreen_note">阅读中不会弹出全屏复习；所有提示都可一键忽略。</string>
+    <string name="review_custom_editor_title">自定义节奏</string>
+    <string name="review_custom_editor_hint">点越靠左复习越勤快（忘得少），越靠右越宽松。曲线是示意，不是对个人记忆的测量。</string>
+    <string name="review_retention_label">复习时约剩 %1$d%% 记忆</string>
+    <string name="review_retention_scale">参考刻度：沉浸 %1$d%% · 温和 %2$d%% · 勤学 %3$d%%</string>
+    <string name="review_first_delay_label">首次复习</string>
+    <string name="review_delay_5m">5 分钟</string>
+    <string name="review_delay_30m">30 分钟</string>
+    <string name="review_delay_2h">2 小时</string>
+    <string name="review_delay_next_day">次日</string>
+    <string name="review_in_minutes_approx">约 %1$d 分钟后</string>
+    <string name="review_in_hours_approx">约 %1$d 小时后</string>
+    <string name="review_in_days_approx">约 %1$d 天后</string>
+    <string name="review_pace_preview_title">按此节奏</string>
+    <string name="review_pace_preview_first">首次：%1$s</string>
+    <string name="review_pace_preview_nth">第 %1$d 次：%2$s</string>
+    <string name="review_more_options">更多选项</string>
+    <string name="review_fewer_options">收起更多选项</string>
+    <string name="review_daily_limit_label">每日主动提示上限</string>
+    <string name="review_session_max_label">单次最多复习</string>
+    <string name="review_reset_default">恢复默认</string>
+    <string name="review_save_enable">保存并启用</string>
+    <string name="review_save_enable_hint">节奏修改后需点“保存并启用”才会应用。</string>
+    <string name="review_curve_desc">记忆曲线</string>
+    <string name="review_banner_start">开始</string>
+    <string name="review_banner_dismiss">忽略</string>
+    <plurals name="review_count_times">
+        <item quantity="other">%1$d 次</item>
+    </plurals>
+    <plurals name="review_count_words">
+        <item quantity="other">%1$d 词</item>
+    </plurals>
+    <plurals name="review_banner_due">
+        <item quantity="other">有 %1$d 个词可快速复习</item>
+    </plurals>
+
+    <!-- 阅读器（工具栏/目录/阅读设置/页码跳转/查词面板） -->
+    <string name="reader_back">返回</string>
+    <string name="reader_contents">目录</string>
+    <string name="reader_listening">听书</string>
+    <string name="reader_listening_active">听书中</string>
+    <string name="reader_prev_page">上一页</string>
+    <string name="reader_next_page">下一页</string>
+    <string name="reader_page_indicator">页码指示</string>
+    <string name="reader_scroll_progress">%1$d/%2$d · 章节进度 %3$d%%</string>
+    <string name="reader_pages_label">%1$d/%2$d · %3$d/%4$d</string>
+    <string name="reader_pagination">分页</string>
+    <string name="reader_settings_title">阅读设置</string>
+    <string name="reader_font_size">字号 %1$d%%</string>
+    <string name="reader_line_height">行距 %1$s</string>
+    <string name="reader_theme_label">主题</string>
+    <string name="reader_font_label">字体</string>
+    <string name="reader_font_selected">● %1$s</string>
+    <string name="reader_jump_title">跳转到页码</string>
+    <string name="reader_jump_hint">当前章节共 %1$d 页，可输入 1–%2$d。</string>
+    <string name="reader_jump_page_label">页码</string>
+    <string name="reader_jump_error">请输入 1–%1$d 之间的页码</string>
+    <string name="reader_jump_action">跳转</string>
+    <string name="reader_phrase_view">短语释义：%1$s</string>
+    <string name="reader_phrase_first">短语优先：%1$s</string>
+    <string name="reader_lemma">原形：%1$s</string>
+    <string name="reader_related_phrase">相关短语：%1$s</string>
+    <string name="reader_view">查看</string>
+    <string name="reader_back_to_word">返回单词释义</string>
+    <string name="reader_pos_inferred">本句推断：%1$s</string>
+    <string name="reader_add_to_vocab">加入生词本</string>
+    <string name="reader_remove_from_vocab">移出生词本</string>
+    <string name="reader_ai_loading">正在结合本书语境…</string>
+    <string name="reader_ai_context_title">本书语境释义（%1$s）</string>
+    <string name="reader_ai_phrase">短语：%1$s</string>
+    <string name="reader_sense_preferred">本句优先</string>
+    <string name="reader_no_senses">该词条暂无中文释义。</string>
+    <string name="reader_word_not_found">本地词典中暂未收录该词。</string>
+    <string name="reader_current_context">当前语境</string>
+    <string name="reader_dict_source">释义来源：ECDICT（MIT License）。短语匹配、词形还原与义项排序均在设备本地完成。</string>
+    <string name="reader_scroll_end_hint">已到本章末尾 · 快滑或点击进入下一章</string>
+    <string name="reader_scroll_start_hint">已到本章开头 · 快滑或点击返回上一章</string>
+    <plurals name="reader_review_badge">
+        <item quantity="other">复习 %1$d</item>
+    </plurals>
+
+    <!-- 生词本 -->
+    <string name="common_settings">设置</string>
+    <string name="vocab_title">我的生词</string>
+    <string name="vocab_due_done">今日复习已完成</string>
+    <string name="vocab_export">导出</string>
+    <string name="vocab_stat_total">生词总数</string>
+    <string name="vocab_stat_due">待复习</string>
+    <string name="vocab_stat_mastered">已掌握</string>
+    <string name="vocab_search_hint">搜索单词、释义或例句</string>
+    <string name="vocab_empty_title">还没有收藏生词</string>
+    <string name="vocab_empty_body">阅读时点击单词，再选择“加入生词本”。</string>
+    <string name="vocab_no_match_title">没有匹配结果</string>
+    <string name="vocab_no_match_body">尝试缩短搜索内容。</string>
+    <string name="vocab_source_line">%1$s · %2$s · %3$s</string>
+    <string name="vocab_status_due">待复习</string>
+    <string name="vocab_status_in_minutes">%1$d 分钟后复习</string>
+    <string name="vocab_status_in_hours">%1$d 小时后复习</string>
+    <string name="vocab_status_in_days">%1$d 天后复习</string>
+    <string name="vocab_review_all">复习全部</string>
+    <plurals name="vocab_due_count">
+        <item quantity="other">%1$d 个待复习</item>
+    </plurals>
+    <plurals name="vocab_review_all_body">
+        <item quantity="other">当前没有到期待复习的单词。是否复习全部 %1$d 个生词？</item>
+    </plurals>
+
+    <!-- AI 中心抽屉 -->
+    <string name="aidrawer_title">AI 中心</string>
+    <string name="aidrawer_power_hint">联网 AI 总开关：关闭后翻译与云端朗读全部离线。</string>
+    <string name="aidrawer_tab_translation">翻译</string>
+    <string name="aidrawer_tab_tts">听书语音</string>
+    <string name="aidrawer_deepseek_title">DeepSeek 语境翻译</string>
+    <string name="aidrawer_base_url_label">接口地址</string>
+    <string name="aidrawer_model_label">模型</string>
+    <string name="aidrawer_deepseek_on_hint">启用后，书籍章节文本与点击的词句会发送到 DeepSeek 以生成/更新本书语境档案；未填 API Key 时自动使用不联网的本地轻量语境。</string>
+    <string name="aidrawer_deepseek_off_hint">关闭时查词保持纯本地词典，不发送任何文本。</string>
+    <string name="aidrawer_azure_title">Azure 整句翻译</string>
+    <string name="aidrawer_azure_region_label">区域（如 eastasia，可留空）</string>
+    <string name="aidrawer_azure_on_hint">整句翻译会把当前句发送到 Azure AI Translator；本书术语表条目会用动态词典标记（&lt;mstrans:dictionary&gt;）随请求生效，保证专名译法一致。</string>
+    <string name="aidrawer_azure_off_hint">关闭时查词面板不显示整句翻译。</string>
+    <string name="aidrawer_saved_power_off">已保存（联网 AI 总开关关闭，暂不生效）</string>
+    <string name="aidrawer_saved_ready">已保存：DeepSeek 已就绪，打开书即可生成语境档案</string>
+    <string name="aidrawer_saved_local">已保存：未填 API Key，将使用本地轻量语境</string>
+    <string name="aidrawer_saved_off">已保存：AI 语境已关闭，查词保持纯本地</string>
 </resources>

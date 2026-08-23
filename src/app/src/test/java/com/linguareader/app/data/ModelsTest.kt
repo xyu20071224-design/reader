@@ -79,7 +79,7 @@ class ModelsTest {
         val fonts = ReaderFont.entries
 
         fonts.forEach { font ->
-            assertTrue(font.label.isNotBlank(), "${font.name} label must not be blank")
+            assertTrue(font.labelRes != 0, "${font.name} labelRes must be set")
             assertTrue(font.css.isNotBlank(), "${font.name} css must not be blank")
         }
         assertEquals(
@@ -89,8 +89,8 @@ class ModelsTest {
         )
         assertEquals(
             fonts.size,
-            fonts.map { it.label }.toSet().size,
-            "every ReaderFont must have a distinct label"
+            fonts.map { it.labelRes }.toSet().size,
+            "every ReaderFont must have a distinct labelRes"
         )
     }
 

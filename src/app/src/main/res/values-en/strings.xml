@@ -17,6 +17,17 @@
     <string name="tts_settings_saved">Saved, closing…</string>
     <string name="review_context_explanation">Context note from when you saved it: %1$s</string>
 
+    <!-- Global modal messages (AppViewModel message/messageTitle) -->
+    <string name="message_import_failed">Import failed</string>
+    <string name="message_import_failed_title">Cannot import</string>
+    <string name="message_ai_context_failed">Could not build the context profile</string>
+    <string name="message_review_save_failed">Could not save the review result; the local record was restored.</string>
+    <string name="message_review_save_failed_title">Save failed</string>
+    <string name="message_export_done">Vocabulary exported as CSV.</string>
+    <string name="message_export_done_title">Export complete</string>
+    <string name="message_export_failed">Export failed</string>
+    <string name="message_export_failed_title">Cannot export</string>
+
     <!-- Bookshelf -->
     <plurals name="shelf_book_count">
         <item quantity="one">%d book</item>
@@ -110,6 +121,75 @@
     <string name="player_stop">Stop listening</string>
 
     <!-- Multi-voice -->
+    <!-- Common (shared across modules) -->
+    <string name="common_save">Save</string>
+    <string name="common_notice_title">Notice</string>
+    <string name="common_speak">Speak</string>
+    <string name="common_review">Review</string>
+
+    <!-- Reader themes / fonts / parts of speech (model-layer labels) -->
+    <string name="reader_theme_paper">Paper</string>
+    <string name="reader_theme_white">Bright</string>
+    <string name="reader_theme_sepia">Sepia</string>
+    <string name="reader_theme_dark">Night</string>
+    <string name="reader_font_serif">Serif</string>
+    <string name="reader_font_sans">Sans</string>
+    <string name="reader_font_mono">Mono</string>
+    <string name="reader_font_condensed">Condensed</string>
+    <string name="reader_font_cursive">Cursive</string>
+    <string name="pos_noun">noun</string>
+    <string name="pos_verb">verb</string>
+    <string name="pos_adjective">adjective</string>
+    <string name="pos_adverb">adverb</string>
+    <string name="pos_unknown">undetermined</string>
+
+    <!-- Review paces (model-layer labels and descriptions) -->
+    <string name="review_mode_immersive">Immersive reading</string>
+    <string name="review_mode_immersive_desc">Relaxed pace: first review no sooner than 2 hours, intervals ×1.5 — for low-interruption reading.</string>
+    <string name="review_mode_gentle">Gentle pace</string>
+    <string name="review_mode_gentle_desc">Default pace: first review no sooner than 30 minutes, intervals matching the base Ebbinghaus curve.</string>
+    <string name="review_mode_diligent">Diligent mode</string>
+    <string name="review_mode_diligent_desc">Tight pace: first review no sooner than 5 minutes, intervals ×0.75; pairs well with scheduled reminders.</string>
+    <string name="review_pace_custom">Custom</string>
+
+    <!-- Launch greeting and update notes -->
+    <string name="launch_greeting_dawn_title">Morning</string>
+    <string name="launch_greeting_dawn_message">Awake to a brand-new day and the morning sun</string>
+    <string name="launch_greeting_noon_title">Midday</string>
+    <string name="launch_greeting_noon_message">Play among the layered light and shade — everything under the sun is thriving</string>
+    <string name="launch_greeting_dusk_title">Dusk</string>
+    <string name="launch_greeting_dusk_message">Head home with the tired birds, fading into the sunset at the sky’s edge</string>
+    <string name="launch_greeting_night_title">Night</string>
+    <string name="launch_greeting_night_message">The busy world drifts into dreams beneath a sky of twinkling stars</string>
+    <string name="launch_greeting_hours_dawn">5–11</string>
+    <string name="launch_greeting_hours_noon">12–17</string>
+    <string name="launch_greeting_hours_dusk">18–21</string>
+    <string name="launch_greeting_hours_night">22–4</string>
+    <string name="launch_greeting_start">Start reading</string>
+    <string name="launch_update_note_title">What’s new in %1$s</string>
+    <string name="launch_note_v4_1">Import EPUB, TXT, FB2 and text-based PDF books</string>
+    <string name="launch_note_v4_2">Jump to a page within the current chapter</string>
+    <string name="launch_note_v4_3">Fixed reading position lost on rotation and mis-matched phrase senses</string>
+    <string name="launch_note_v4_4">Review reminders: three pace presets, context highlighting, toolbar badge, pause prompts</string>
+    <string name="launch_note_v4_5">Diligent mode supports local due-word notifications (permission can be declined)</string>
+    <string name="launch_note_v5_1">The launch greeting is now a four-period scene card</string>
+    <string name="launch_note_v5_2">Added the late-night greeting</string>
+    <string name="launch_note_v6_1">Listening: continuous narration of a chapter or whole book, in Chinese and English</string>
+    <string name="launch_note_v6_2">The sentence being read is highlighted and pages turn automatically; tap a sentence to start there</string>
+    <string name="launch_note_v6_3">Pause/resume, playback speed, background playback and notification controls</string>
+    <string name="launch_note_v6_4">Listening progress is remembered per book — pick up where you left off</string>
+    <string name="launch_note_v7_1">Fixed listening standby being stopped by the system in the background</string>
+    <string name="launch_note_v7_2">Fixed intermittent loss of cloud TTS credentials and hardened decryption</string>
+    <string name="launch_note_v7_3">Fixed narration highlight drifting in chapters with inline styles</string>
+    <string name="launch_note_v7_4">Fixed playback stability: fast sentence switching, chapter skips, progress regressions</string>
+    <string name="launch_note_v8_1">Fixed a crash while loading the system voice list on some engines</string>
+    <string name="launch_note_v8_2">Hardened handling of getVoices() returning null or throwing</string>
+    <string name="launch_note_v9_1">Brand-new offline narration engine: Chinese female and English male voices, no network needed</string>
+    <string name="launch_note_v9_2">Fixed Piper spelling out rare words letter by letter</string>
+    <string name="launch_note_v9_3">Switch freely between offline and system voices in the app</string>
+    <string name="launch_note_v9_4">Rebuilt the playback state machine for steadier playback</string>
+    <string name="launch_note_generic">Welcome to the new version — features and experience improved.</string>
+
     <string name="multivoice_title">Character voices (experimental)</string>
     <string name="multivoice_subtitle">Gives narration and every character its own voice; needs the AI context profile for the character list.</string>
     <string name="multivoice_unsupported">System TTS voices cannot be controlled, so they do not support character voices; local Piper and the cloud engines all do.</string>
@@ -188,4 +268,270 @@
         <item quantity="one">%1$d character has a voice.</item>
         <item quantity="other">%1$d characters have a voice.</item>
     </plurals>
+
+    <!-- Listening settings -->
+    <string name="tts_settings_title">Listening settings</string>
+    <string name="tts_engine_section">Speech engine</string>
+    <string name="tts_engine_system">System speech</string>
+    <string name="tts_engine_piper">Local Piper</string>
+    <string name="tts_engine_azure">Azure cloud TTS</string>
+    <string name="tts_engine_volc">Volcano Engine (Doubao)</string>
+    <string name="tts_engine_openai_compat">Self-hosted server (OpenAI-compatible)</string>
+    <string name="tts_piper_intro">Local Piper voices: offline neural speech with no network or API key; Chinese and English switch automatically. The English voice can be the built-in one or an imported Piper model. Multi-voice listening is supported (fully offline; at most 4 English voices stay loaded, the least recently used are evicted).</string>
+    <string name="tts_piper_download_more">Download more Piper voices</string>
+    <string name="tts_piper_download_hint">Tap “Download” to get the model package from the official page, then tap “Import” and pick the .onnx file inside to use it offline. Note: “Sample” and “Download” need network access (HuggingFace / GitHub) and follow the online-AI master switch above; narration stays fully offline once a voice is imported.</string>
+    <string name="tts_piper_import_checking">Importing and verifying the model…</string>
+    <string name="tts_piper_imported">Imported %1$s — save to use it</string>
+    <string name="tts_piper_import_failed">Import failed</string>
+    <string name="tts_piper_importing">Importing…</string>
+    <string name="tts_piper_import_model">Import model (pick a .onnx file)</string>
+    <string name="tts_piper_network_off">The online-AI master switch is off: samples and downloads are unavailable (imported voices still work offline).</string>
+    <string name="tts_piper_voice_label">Piper English voice</string>
+    <string name="tts_piper_open_failed">Could not open the download page</string>
+    <string name="tts_download">Download</string>
+    <string name="tts_audition">Sample</string>
+    <string name="tts_sample_failed">Sample playback failed; check the network (HuggingFace may be unreachable)</string>
+    <string name="tts_sample_play_failed">Could not play the sample audio</string>
+    <string name="tts_piper_voice_meta">%1$s · %2$s · %3$s</string>
+    <string name="tts_voice_builtin">%1$s (built-in)</string>
+    <string name="tts_voice_imported">%1$s (imported)</string>
+    <string name="tts_system_section">System voices</string>
+    <string name="tts_system_hint">Pick a voice from the phone\'s system TTS engines; leaving one unset follows the system default. Chinese and English can be set separately.</string>
+    <string name="tts_system_hidden_hint">Voices that need a network download are hidden so narration always works offline.</string>
+    <string name="tts_system_voices_empty">No usable system voices found; the system default will be used</string>
+    <string name="tts_load_voices">Load voices</string>
+    <string name="tts_refresh_voices">Refresh voices</string>
+    <string name="tts_voice_chinese">Chinese voice</string>
+    <string name="tts_voice_english">English voice</string>
+    <string name="tts_follow_system_default">Follow system default</string>
+    <string name="tts_voice_multilingual">Multilingual voice</string>
+    <string name="tts_multilingual_toggle">One voice for Chinese &amp; English</string>
+    <string name="tts_multilingual_toggle_hint">The same voice reads both languages, so mixed passages stay consistent</string>
+    <string name="tts_voice_unselected">Not selected</string>
+    <string name="tts_voice_with_locale">%1$s (%2$s)</string>
+    <string name="tts_fetch_voices">Fetch available voices</string>
+    <string name="tts_fetch_voices_failed">Failed to fetch voices; check the Region and Key</string>
+    <string name="tts_fill_region_key">Fill in Region and API Key first</string>
+    <string name="tts_select_voice_first">Fetch the voice list and pick a voice first</string>
+    <string name="tts_azure_region_hint">China North 3: chinanorth3</string>
+    <string name="tts_test_connection">Test connection</string>
+    <string name="tts_azure_test_ok">Connected — Azure synthesis works</string>
+    <string name="tts_server_test_ok">Connected — the server can synthesize</string>
+    <string name="tts_volc_test_ok">Connected — both Chinese and English voices work</string>
+    <string name="tts_test_failed">Connection failed</string>
+    <string name="tts_server_url_label">Server address</string>
+    <string name="tts_server_url_hint">e.g. https://your-server.example.com</string>
+    <string name="tts_server_model_label">Model name</string>
+    <string name="tts_server_model_hint">A model name exposed by your server, e.g. Fish Speech S2</string>
+    <string name="tts_server_token_label">API token (optional)</string>
+    <string name="tts_server_voice_label">Voice (optional, general fallback)</string>
+    <string name="tts_server_voice_hint">Fish Speech usually uses default; for IndexTTS enter a reference audio name such as voice_03.wav</string>
+    <string name="tts_server_en_voice_label">English voice (optional)</string>
+    <string name="tts_server_en_voice_hint">Used for English sentences; leave blank to follow the general voice above</string>
+    <string name="tts_server_zh_voice_label">Chinese voice (optional)</string>
+    <string name="tts_server_zh_voice_hint">Used for Chinese sentences; IndexTTS clones one speaker at a time, so separate voices sound more natural</string>
+    <string name="tts_server_narrator_label">Narrator voice (optional)</string>
+    <string name="tts_server_narrator_hint">Multi-voice listening: narration uses this voice; leave blank to follow the general voice above</string>
+    <string name="tts_server_dialogue_label">Dialogue voice (optional)</string>
+    <string name="tts_server_dialogue_hint">Quoted dialogue uses this voice; leaving both blank keeps single-voice mode</string>
+    <string name="tts_fill_server_url">Fill in the server address first</string>
+    <string name="tts_volc_api_key_label">API Key (new console, recommended)</string>
+    <string name="tts_volc_app_id_label">App ID (legacy console)</string>
+    <string name="tts_volc_token_label">Access Token (legacy console)</string>
+    <string name="tts_volc_resource_label">Resource ID / model</string>
+    <string name="tts_volc_resource_hint">2.0 voices pair with seed-tts-2.0; 1.0 voices pair with seed-tts-1.0</string>
+    <string name="tts_fill_volc_credentials">Fill in the API Key, or App ID + Access Token</string>
+    <string name="tts_volc_model_2">Doubao TTS model 2.0 (recommended)</string>
+    <string name="tts_volc_model_1">Doubao TTS model 1.0</string>
+    <string name="tts_volc_model_1_concurr">Doubao TTS model 1.0 (concurrent)</string>
+    <string name="tts_volc_voice_shuangkuaisisi">Shuangkuaisisi 2.0</string>
+    <string name="tts_volc_voice_cancan_2">Cancan 2.0</string>
+    <string name="tts_volc_voice_vv">VV 2.0</string>
+    <string name="tts_volc_voice_xiaohe">Xiaohe 2.0</string>
+    <string name="tts_volc_voice_yunzhou">Yunzhou 2.0</string>
+    <string name="tts_volc_voice_xiaotian">Xiaotian 2.0</string>
+    <string name="tts_volc_voice_nuanyang">Nuanyang (warm female) 2.0</string>
+    <string name="tts_volc_voice_standard_female">Standard female</string>
+    <string name="tts_volc_voice_standard_male">Standard male</string>
+    <string name="tts_volc_voice_cancan">Cancan</string>
+    <string name="tts_volc_voice_qingcang">Qingcang (audiobooks)</string>
+    <string name="tts_volc_voice_dacey">Dacey (English female)</string>
+    <string name="tts_volc_voice_tim">Tim (English male)</string>
+    <string name="tts_volc_voice_ariana">Ariana (English female)</string>
+    <string name="tts_preset">Presets</string>
+    <string name="tts_preset_item">%1$s (%2$s)</string>
+    <string name="tts_cloud_incomplete">Finish the engine configuration before enabling cloud TTS</string>
+    <string name="tts_cloud_notice">When enabled, the text to speak is sent to the matching cloud or self-hosted service and billed there; chapter audio is cached locally after the first render. Failed synthesis falls back to the system voice automatically.</string>
+    <string name="tts_saved">Saved</string>
+    <plurals name="tts_system_voices_loaded">
+        <item quantity="one">Fetched %1$d system voice</item>
+        <item quantity="other">Fetched %1$d system voices</item>
+    </plurals>
+    <plurals name="tts_voices_fetched">
+        <item quantity="one">Fetched %1$d available voice</item>
+        <item quantity="other">Fetched %1$d available voices</item>
+    </plurals>
+
+    <!-- Review (cards / settings / pause banner) -->
+    <string name="common_book_context">In this book: %1$s</string>
+    <string name="common_book_context_source">In this book (%1$s): %2$s</string>
+    <string name="review_done_title">Review complete</string>
+    <string name="review_done_body">Finished %1$d of %2$d words — the next review is scheduled for each.</string>
+    <string name="review_card_position">Card %1$d of %2$d</string>
+    <string name="review_card_progress">Completed %1$d of %2$d</string>
+    <string name="review_learn_again">Learn again</string>
+    <string name="review_known">I know it</string>
+    <string name="review_reveal">Show meaning</string>
+    <string name="review_settings_title">Review settings</string>
+    <string name="review_settings_hint">Reminders and review pacing are independent: combine the reminder channels first, then pick a frequency.</string>
+    <string name="review_reminder_section">Reminders</string>
+    <string name="review_reminder_context_title">Context highlighting</string>
+    <string name="review_reminder_context_desc">Saved words get a dotted underline when they reappear; tap one to review it in the meaning panel.</string>
+    <string name="review_reminder_pause_title">Pause-point prompts</string>
+    <string name="review_reminder_pause_desc">When you turn a chapter or leave the book, show a line saying “N words are ready for a quick review”.</string>
+    <string name="review_reminder_badge_title">Toolbar badge</string>
+    <string name="review_reminder_badge_desc">Shows the due count at the top of the reading page without interrupting you.</string>
+    <string name="review_reminder_notification_title">Scheduled gentle reminders</string>
+    <string name="review_reminder_notification_desc">Sends a local notification when words are due (needs the notification permission).</string>
+    <string name="review_notification_denied">Notification permission not granted; scheduled reminders stay off.</string>
+    <string name="review_reminder_manual_title">Manual only</string>
+    <string name="review_reminder_manual_desc">Turns off every proactive reminder above; review only from the vocabulary list.</string>
+    <string name="review_pace_section">Review pace</string>
+    <string name="review_preset_hint">Picking a preset restores its classic reminder combination; you can still adjust each one afterwards.</string>
+    <string name="review_default_badge">Default</string>
+    <string name="review_pace_summary">First review in %1$d min · interval ×%2$s · %3$d prompts a day · %4$d words a session</string>
+    <string name="review_custom_desc">Pick how much you still want to remember at review time on the memory curve, then tune the first delay and reminders.</string>
+    <string name="review_custom_in_use">In use · tap to edit</string>
+    <string name="review_custom_start">Tap to adjust</string>
+    <string name="review_no_fullscreen_note">Reading never pops a fullscreen review; every prompt can be dismissed in one tap.</string>
+    <string name="review_custom_editor_title">Custom pace</string>
+    <string name="review_custom_editor_hint">Further left reviews more often (less forgetting); further right is more relaxed. The curve is illustrative, not a measurement of your memory.</string>
+    <string name="review_retention_label">About %1$d%% memory left at review</string>
+    <string name="review_retention_scale">Reference: immersive %1$d%% · gentle %2$d%% · diligent %3$d%%</string>
+    <string name="review_first_delay_label">First review</string>
+    <string name="review_delay_5m">5 min</string>
+    <string name="review_delay_30m">30 min</string>
+    <string name="review_delay_2h">2 hours</string>
+    <string name="review_delay_next_day">Next day</string>
+    <string name="review_in_minutes_approx">in ~%1$d min</string>
+    <string name="review_in_hours_approx">in ~%1$d h</string>
+    <string name="review_in_days_approx">in ~%1$d days</string>
+    <string name="review_pace_preview_title">With this pace</string>
+    <string name="review_pace_preview_first">First: %1$s</string>
+    <string name="review_pace_preview_nth">Review %1$d: %2$s</string>
+    <string name="review_more_options">More options</string>
+    <string name="review_fewer_options">Hide options</string>
+    <string name="review_daily_limit_label">Daily prompt limit</string>
+    <string name="review_session_max_label">Max words per session</string>
+    <string name="review_reset_default">Reset to default</string>
+    <string name="review_save_enable">Save &amp; enable</string>
+    <string name="review_save_enable_hint">Pace changes apply only after you tap “Save &amp; enable”.</string>
+    <string name="review_curve_desc">Memory curve</string>
+    <string name="review_banner_start">Start</string>
+    <string name="review_banner_dismiss">Ignore</string>
+    <plurals name="review_count_times">
+        <item quantity="one">%1$d time</item>
+        <item quantity="other">%1$d times</item>
+    </plurals>
+    <plurals name="review_count_words">
+        <item quantity="one">%1$d word</item>
+        <item quantity="other">%1$d words</item>
+    </plurals>
+    <plurals name="review_banner_due">
+        <item quantity="one">%1$d word ready for a quick review</item>
+        <item quantity="other">%1$d words ready for a quick review</item>
+    </plurals>
+
+    <!-- Reader (toolbar / contents / reading settings / page jump / lookup panel) -->
+    <string name="reader_back">Back</string>
+    <string name="reader_contents">Contents</string>
+    <string name="reader_listening">Listen</string>
+    <string name="reader_listening_active">Listening</string>
+    <string name="reader_prev_page">Previous page</string>
+    <string name="reader_next_page">Next page</string>
+    <string name="reader_page_indicator">Page indicator</string>
+    <string name="reader_scroll_progress">%1$d/%2$d · chapter progress %3$d%%</string>
+    <string name="reader_pages_label">%1$d/%2$d · %3$d/%4$d</string>
+    <string name="reader_pagination">Paged</string>
+    <string name="reader_settings_title">Reading settings</string>
+    <string name="reader_font_size">Font size %1$d%%</string>
+    <string name="reader_line_height">Line height %1$s</string>
+    <string name="reader_theme_label">Theme</string>
+    <string name="reader_font_label">Font</string>
+    <string name="reader_font_selected">● %1$s</string>
+    <string name="reader_jump_title">Jump to page</string>
+    <string name="reader_jump_hint">This chapter has %1$d pages; enter 1–%2$d.</string>
+    <string name="reader_jump_page_label">Page number</string>
+    <string name="reader_jump_error">Enter a page between 1 and %1$d</string>
+    <string name="reader_jump_action">Go</string>
+    <string name="reader_phrase_view">Phrase meaning: %1$s</string>
+    <string name="reader_phrase_first">Matched phrase: %1$s</string>
+    <string name="reader_lemma">Base form: %1$s</string>
+    <string name="reader_related_phrase">Related phrase: %1$s</string>
+    <string name="reader_view">View</string>
+    <string name="reader_back_to_word">Back to the word</string>
+    <string name="reader_pos_inferred">In this sentence: %1$s</string>
+    <string name="reader_add_to_vocab">Add to vocabulary</string>
+    <string name="reader_remove_from_vocab">Remove from vocabulary</string>
+    <string name="reader_ai_loading">Combining with this book\'s context…</string>
+    <string name="reader_ai_context_title">In-book contextual meaning (%1$s)</string>
+    <string name="reader_ai_phrase">Phrase: %1$s</string>
+    <string name="reader_sense_preferred">In this sentence</string>
+    <string name="reader_no_senses">No Chinese meaning for this entry yet.</string>
+    <string name="reader_word_not_found">Not in the offline dictionary.</string>
+    <string name="reader_current_context">Current context</string>
+    <string name="reader_dict_source">Meanings from ECDICT (MIT License). Phrase matching, lemmatization, and sense ordering all happen on this device.</string>
+    <string name="reader_scroll_end_hint">End of chapter · swipe or tap for the next one</string>
+    <string name="reader_scroll_start_hint">Start of chapter · swipe or tap for the previous one</string>
+    <plurals name="reader_review_badge">
+        <item quantity="one">Review %1$d</item>
+        <item quantity="other">Review %1$d</item>
+    </plurals>
+
+    <!-- Vocabulary -->
+    <string name="common_settings">Settings</string>
+    <string name="vocab_title">My words</string>
+    <string name="vocab_due_done">Today\'s review is done</string>
+    <string name="vocab_export">Export</string>
+    <string name="vocab_stat_total">Total words</string>
+    <string name="vocab_stat_due">Due</string>
+    <string name="vocab_stat_mastered">Mastered</string>
+    <string name="vocab_search_hint">Search words, meanings, or sentences</string>
+    <string name="vocab_empty_title">No saved words yet</string>
+    <string name="vocab_empty_body">Tap a word while reading, then choose “Add to vocabulary”.</string>
+    <string name="vocab_no_match_title">No matches</string>
+    <string name="vocab_no_match_body">Try a shorter search.</string>
+    <string name="vocab_source_line">%1$s · %2$s · %3$s</string>
+    <string name="vocab_status_due">Due</string>
+    <string name="vocab_status_in_minutes">Review in %1$d min</string>
+    <string name="vocab_status_in_hours">Review in %1$d hours</string>
+    <string name="vocab_status_in_days">Review in %1$d days</string>
+    <string name="vocab_review_all">Review all</string>
+    <plurals name="vocab_due_count">
+        <item quantity="one">%1$d due</item>
+        <item quantity="other">%1$d due</item>
+    </plurals>
+    <plurals name="vocab_review_all_body">
+        <item quantity="one">Nothing is due right now. Review all %1$d word?</item>
+        <item quantity="other">Nothing is due right now. Review all %1$d words?</item>
+    </plurals>
+
+    <!-- AI center drawer -->
+    <string name="aidrawer_title">AI center</string>
+    <string name="aidrawer_power_hint">Master online-AI switch: off keeps translation and cloud narration fully offline.</string>
+    <string name="aidrawer_tab_translation">Translation</string>
+    <string name="aidrawer_tab_tts">Narration</string>
+    <string name="aidrawer_deepseek_title">DeepSeek contextual translation</string>
+    <string name="aidrawer_base_url_label">Endpoint URL</string>
+    <string name="aidrawer_model_label">Model</string>
+    <string name="aidrawer_deepseek_on_hint">When enabled, chapter text and the words or sentences you tap are sent to DeepSeek to build or update this book\'s context profile; with no API key it automatically falls back to the lightweight on-device context.</string>
+    <string name="aidrawer_deepseek_off_hint">While off, lookups stay on the local dictionary and nothing is sent anywhere.</string>
+    <string name="aidrawer_azure_title">Azure sentence translation</string>
+    <string name="aidrawer_azure_region_label">Region (e.g. eastasia; optional)</string>
+    <string name="aidrawer_azure_on_hint">Sentence translation sends the current sentence to Azure AI Translator; this book\'s glossary entries ride along as a dynamic dictionary (&lt;mstrans:dictionary&gt;) so proper nouns stay consistent.</string>
+    <string name="aidrawer_azure_off_hint">While off, the lookup panel hides sentence translation.</string>
+    <string name="aidrawer_saved_power_off">Saved (the online-AI master switch is off, so it is not active yet)</string>
+    <string name="aidrawer_saved_ready">Saved: DeepSeek is ready — open a book to build its context profile</string>
+    <string name="aidrawer_saved_local">Saved: no API key, the lightweight local context will be used</string>
+    <string name="aidrawer_saved_off">Saved: AI context off — lookups stay fully local</string>
 </resources>

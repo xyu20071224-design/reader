@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -87,9 +88,9 @@ internal fun AiDrawerSheet(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("AI 中心", style = MaterialTheme.typography.headlineSmall)
+                    Text(stringResource(R.string.aidrawer_title), style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "联网 AI 总开关：关闭后翻译与云端朗读全部离线。",
+                        stringResource(R.string.aidrawer_power_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = InkSoft
                     )
@@ -101,9 +102,9 @@ internal fun AiDrawerSheet(
             }
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                DrawerTab("翻译", tab == 0) { tab = 0 }
-                DrawerTab("听书语音", tab == 1) { tab = 1 }
-                DrawerTab("术语表", tab == 2) { tab = 2 }
+                DrawerTab(stringResource(R.string.aidrawer_tab_translation), tab == 0) { tab = 0 }
+                DrawerTab(stringResource(R.string.aidrawer_tab_tts), tab == 1) { tab = 1 }
+                DrawerTab(stringResource(R.string.shelf_glossary), tab == 2) { tab = 2 }
             }
             HorizontalDivider(color = Ink.copy(alpha = .1f))
             Spacer(Modifier.height(12.dp))
@@ -163,7 +164,7 @@ private fun AiTranslationSettingsBody(
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "DeepSeek 语境翻译",
+                stringResource(R.string.aidrawer_deepseek_title),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f)
             )
@@ -188,7 +189,7 @@ private fun AiTranslationSettingsBody(
             OutlinedTextField(
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
-                label = { Text("接口地址") },
+                label = { Text(stringResource(R.string.aidrawer_base_url_label)) },
                 singleLine = true,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth()
@@ -197,22 +198,21 @@ private fun AiTranslationSettingsBody(
             OutlinedTextField(
                 value = model,
                 onValueChange = { model = it },
-                label = { Text("模型") },
+                label = { Text(stringResource(R.string.aidrawer_model_label)) },
                 singleLine = true,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                "启用后，书籍章节文本与点击的词句会发送到 DeepSeek 以生成/更新本书语境档案；" +
-                    "未填 API Key 时自动使用不联网的本地轻量语境。",
+                stringResource(R.string.aidrawer_deepseek_on_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
             )
         } else {
             Spacer(Modifier.height(8.dp))
             Text(
-                "关闭时查词保持纯本地词典，不发送任何文本。",
+                stringResource(R.string.aidrawer_deepseek_off_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
             )
@@ -220,7 +220,7 @@ private fun AiTranslationSettingsBody(
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Azure 整句翻译",
+                stringResource(R.string.aidrawer_azure_title),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f)
             )
@@ -245,7 +245,7 @@ private fun AiTranslationSettingsBody(
             OutlinedTextField(
                 value = azureRegion,
                 onValueChange = { azureRegion = it },
-                label = { Text("区域（如 eastasia，可留空）") },
+                label = { Text(stringResource(R.string.aidrawer_azure_region_label)) },
                 singleLine = true,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth()
@@ -254,22 +254,21 @@ private fun AiTranslationSettingsBody(
             OutlinedTextField(
                 value = azureEndpoint,
                 onValueChange = { azureEndpoint = it },
-                label = { Text("接口地址") },
+                label = { Text(stringResource(R.string.aidrawer_base_url_label)) },
                 singleLine = true,
                 enabled = enabled,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                "整句翻译会把当前句发送到 Azure AI Translator；本书术语表条目会用动态词典标记" +
-                    "（<mstrans:dictionary>）随请求生效，保证专名译法一致。",
+                stringResource(R.string.aidrawer_azure_on_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
             )
         } else {
             Spacer(Modifier.height(6.dp))
             Text(
-                "关闭时查词面板不显示整句翻译。",
+                stringResource(R.string.aidrawer_azure_off_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
             )
@@ -304,6 +303,11 @@ private fun AiTranslationSettingsBody(
                     )
                 }
             } ?: Spacer(Modifier.weight(1f))
+            // onClick 不是 @Composable 作用域，四种「保存后会发生什么」文案先取出来。
+            val savedPowerOffText = stringResource(R.string.aidrawer_saved_power_off)
+            val savedReadyText = stringResource(R.string.aidrawer_saved_ready)
+            val savedLocalText = stringResource(R.string.aidrawer_saved_local)
+            val savedOffText = stringResource(R.string.aidrawer_saved_off)
             Button(
                 onClick = {
                     val updated = settings.copy(
@@ -319,10 +323,10 @@ private fun AiTranslationSettingsBody(
                     onSave(updated)
                     // 说清「保存后会发生什么」，而不是只说“已保存”。
                     savedNotice = when {
-                        !enabled -> "已保存（联网 AI 总开关关闭，暂不生效）"
-                        updated.remoteReady -> "已保存：DeepSeek 已就绪，打开书即可生成语境档案"
-                        deepSeekEnabled -> "已保存：未填 API Key，将使用本地轻量语境"
-                        else -> "已保存：AI 语境已关闭，查词保持纯本地"
+                        !enabled -> savedPowerOffText
+                        updated.remoteReady -> savedReadyText
+                        deepSeekEnabled -> savedLocalText
+                        else -> savedOffText
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
@@ -330,7 +334,7 @@ private fun AiTranslationSettingsBody(
                     contentColor = OnAccent
                 ),
                 shape = PillShape
-            ) { Text("保存") }
+            ) { Text(stringResource(R.string.common_save)) }
         }
     }
 }
