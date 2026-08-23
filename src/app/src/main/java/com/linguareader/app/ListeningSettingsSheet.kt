@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -126,15 +127,21 @@ internal fun ListeningSettingsBody(
         if (uri == null) return@rememberLauncherForActivityResult
         // 模型有 30–90 MB：复制与校验都在 IO 线程做，主线程只更新状态。
         piperImporting = true
-        piperStatus = SettingsStatus.info("正在导入并校验模型…")
+        piperStatus = SettingsStatus.info(context.getString(R.string.tts_piper_import_checking))
         scope.launch {
             PiperVoiceImporter.import(context, uri)
                 .onSuccess { voice ->
                     piperVoices = PiperVoiceStore.installed(context)
                     settings = settings.copy(piperEnVoiceId = voice.id)
-                    piperStatus = SettingsStatus.success("已导入 ${voice.id}，保存后即可使用")
+                    piperStatus = SettingsStatus.success(
+                        context.getString(R.string.tts_piper_imported, voice.id)
+                    )
                 }
-                .onFailure { piperStatus = SettingsStatus.danger(it.message ?: "导入失败") }
+                .onFailure {
+                    piperStatus = SettingsStatus.danger(
+                        it.message ?: context.getString(R.string.tts_piper_import_failed)
+                    )
+                }
             piperImporting = false
         }
     }
@@ -146,16 +153,20 @@ internal fun ListeningSettingsBody(
             systemVoices = list
             systemVoicesLoaded = true
             status = if (list.isEmpty()) {
-                SettingsStatus.info("未找到可用的系统音色，将使用系统默认")
+                SettingsStatus.info(context.getString(R.string.tts_system_voices_empty))
             } else {
-                SettingsStatus.success("已获取 ${list.size} 个系统音色")
+                SettingsStatus.success(
+                    context.resources.getQuantityString(
+                        R.plurals.tts_system_voices_loaded, list.size, list.size
+                    )
+                )
             }
         }
     }
 
     fun fetchAzureVoices() {
         if (settings.region.isBlank() || settings.apiKey.isBlank()) {
-            status = SettingsStatus.danger("请先填写 Region 和 API Key")
+            status = SettingsStatus.danger(context.getString(R.string.tts_fill_region_key))
             return
         }
         busy = true
@@ -173,9 +184,17 @@ internal fun ListeningSettingsBody(
                             .ifBlank { multilingual.orEmpty() },
                         useMultilingual = if (multilingual != null) settings.useMultilingual else false
                     )
-                    status = SettingsStatus.success("已获取 ${list.size} 个可用音色")
+                    status = SettingsStatus.success(
+                        context.resources.getQuantityString(
+                            R.plurals.tts_voices_fetched, list.size, list.size
+                        )
+                    )
                 }
-                .onFailure { status = SettingsStatus.danger(it.message ?: "获取音色失败，请检查 Region 与 Key") }
+                .onFailure {
+                    status = SettingsStatus.danger(
+                        it.message ?: context.getString(R.string.tts_fetch_voices_failed)
+                    )
+                }
             busy = false
         }
     }
@@ -184,7 +203,7 @@ internal fun ListeningSettingsBody(
      *  key but not that speech synthesis itself works. */
     fun testAzure() {
         if (settings.region.isBlank() || settings.apiKey.isBlank()) {
-            status = SettingsStatus.danger("请先填写 Region 和 API Key")
+            status = SettingsStatus.danger(context.getString(R.string.tts_fill_region_key))
             return
         }
         val voice = when {
@@ -194,7 +213,7 @@ internal fun ListeningSettingsBody(
             else -> settings.enVoice
         }
         if (voice.isBlank()) {
-            status = SettingsStatus.danger("请先获取可用音色并选择音色")
+            status = SettingsStatus.danger(context.getString(R.string.tts_select_voice_first))
             return
         }
         busy = true
@@ -205,11 +224,13 @@ internal fun ListeningSettingsBody(
                 .synthesize("测试。Test.", voice, probe)
                 .onSuccess {
                     probe.delete()
-                    status = SettingsStatus.success("连接成功，Azure 可正常合成")
+                    status = SettingsStatus.success(context.getString(R.string.tts_azure_test_ok))
                 }
                 .onFailure {
                     probe.delete()
-                    status = SettingsStatus.danger(it.message ?: "连接失败")
+                    status = SettingsStatus.danger(
+                        it.message ?: context.getString(R.string.tts_test_failed)
+                    )
                 }
             busy = false
         }
@@ -217,7 +238,7 @@ internal fun ListeningSettingsBody(
 
     fun testServer() {
         if (!settings.isConfigured) {
-            status = SettingsStatus.danger("请先填写服务器地址")
+            status = SettingsStatus.danger(context.getString(R.string.tts_fill_server_url))
             return
         }
         busy = true
@@ -228,16 +249,20 @@ internal fun ListeningSettingsBody(
             backend.synthesize("测试。Test.", backend.voiceFor("测试。Test."), probe)
                 .onSuccess {
                     probe.delete()
-                    status = SettingsStatus.success("连接成功，服务器可正常合成")
+                    status = SettingsStatus.success(context.getString(R.string.tts_server_test_ok))
                 }
-                .onFailure { status = SettingsStatus.danger(it.message ?: "连接失败") }
+                .onFailure {
+                    status = SettingsStatus.danger(
+                        it.message ?: context.getString(R.string.tts_test_failed)
+                    )
+                }
             busy = false
         }
     }
 
     fun testVolcano() {
         if (!settings.isConfigured) {
-            status = SettingsStatus.danger("请填写 API Key，或 App ID + Access Token")
+            status = SettingsStatus.danger(context.getString(R.string.tts_fill_volc_credentials))
             return
         }
         busy = true
@@ -259,10 +284,11 @@ internal fun ListeningSettingsBody(
             zhProbe.delete()
             enProbe.delete()
             if (zh.isSuccess && en.isSuccess) {
-                status = SettingsStatus.success("连接成功，中英文音色均可合成")
+                status = SettingsStatus.success(context.getString(R.string.tts_volc_test_ok))
             } else {
                 status = SettingsStatus.danger(
-                    (zh.exceptionOrNull() ?: en.exceptionOrNull())?.message ?: "连接失败"
+                    (zh.exceptionOrNull() ?: en.exceptionOrNull())?.message
+                        ?: context.getString(R.string.tts_test_failed)
                 )
             }
             busy = false
@@ -271,12 +297,12 @@ internal fun ListeningSettingsBody(
 
     fun save() {
         if (settings.mode != TtsEngineMode.SYSTEM && !settings.isConfigured) {
-            status = SettingsStatus.danger("启用云 TTS 前请先完成对应配置")
+            status = SettingsStatus.danger(context.getString(R.string.tts_cloud_incomplete))
             return
         }
         CloudTtsSettings.save(context, settings)
         TtsPlaybackController.onCloudSettingsChanged(context)
-        status = SettingsStatus.success("已保存")
+        status = SettingsStatus.success(context.getString(R.string.tts_saved))
         onSaved()
     }
 
@@ -292,38 +318,38 @@ internal fun ListeningSettingsBody(
             .padding(horizontal = 24.dp)
             .padding(bottom = 30.dp)
     ) {
-        Text("听书设置", style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.tts_settings_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(14.dp))
-            Text("朗读引擎", style = MaterialTheme.typography.labelLarge, color = InkSoft)
+            Text(stringResource(R.string.tts_engine_section), style = MaterialTheme.typography.labelLarge, color = InkSoft)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 EngineChoice(
-                    label = "系统语音",
+                    label = stringResource(R.string.tts_engine_system),
                     selected = settings.mode == TtsEngineMode.SYSTEM,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.SYSTEM) }
                 )
                 Spacer(Modifier.weight(1f))
                 EngineChoice(
-                    label = "本地 Piper",
+                    label = stringResource(R.string.tts_engine_piper),
                     selected = settings.mode == TtsEngineMode.PIPER,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.PIPER) }
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 EngineChoice(
-                    label = "Azure 云 TTS",
+                    label = stringResource(R.string.tts_engine_azure),
                     selected = settings.mode == TtsEngineMode.AZURE,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.AZURE) }
                 )
                 Spacer(Modifier.weight(1f))
                 EngineChoice(
-                    label = "火山引擎（豆包语音）",
+                    label = stringResource(R.string.tts_engine_volc),
                     selected = settings.mode == TtsEngineMode.VOLC,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.VOLC) }
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 EngineChoice(
-                    label = "自建服务器（OpenAI 兼容）",
+                    label = stringResource(R.string.tts_engine_openai_compat),
                     selected = settings.mode == TtsEngineMode.OPENAI_COMPAT,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.OPENAI_COMPAT) }
                 )
@@ -332,9 +358,7 @@ internal fun ListeningSettingsBody(
             if (settings.mode == TtsEngineMode.PIPER) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "本地 Piper 语音：内置离线神经语音，无需联网、无需 API Key；" +
-                        "自动按中英文切换。英文音色可选内置或导入的 Piper 模型。" +
-                        "支持多角色听书（完全离线；最多驻留 4 个英文音色，超出按最近使用淘汰）。",
+                    stringResource(R.string.tts_piper_intro),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkFaint
                 )
@@ -347,11 +371,9 @@ internal fun ListeningSettingsBody(
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider(color = Ink.copy(alpha = .1f))
                 Spacer(Modifier.height(10.dp))
-                Text("下载更多 Piper 音色", style = MaterialTheme.typography.labelLarge, color = InkSoft)
+                Text(stringResource(R.string.tts_piper_download_more), style = MaterialTheme.typography.labelLarge, color = InkSoft)
                 Text(
-                    "点「下载」跳到官方页面下载模型包，再点「导入」选择其中的 .onnx 文件即可离线使用。" +
-                        "注意：「试听」与「下载」需要联网（HuggingFace / GitHub），受顶部「联网 AI 总开关」控制；" +
-                        "导入完成后的朗读依然完全离线。",
+                    stringResource(R.string.tts_piper_download_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkFaint
                 )
@@ -360,7 +382,10 @@ internal fun ListeningSettingsBody(
                     onClick = { onnxPicker.launch(arrayOf("*/*")) },
                     enabled = !piperImporting
                 ) {
-                    Text(if (piperImporting) "正在导入…" else "导入模型（选择 .onnx 文件）")
+                    Text(
+                        if (piperImporting) stringResource(R.string.tts_piper_importing)
+                        else stringResource(R.string.tts_piper_import_model)
+                    )
                 }
                 piperStatus?.let {
                     Text(
@@ -376,7 +401,7 @@ internal fun ListeningSettingsBody(
                 Spacer(Modifier.height(4.dp))
                 if (!settings.networkAiEnabled) {
                     Text(
-                        "联网 AI 总开关已关闭：试听与下载暂不可用（已导入的音色仍可离线使用）。",
+                        stringResource(R.string.tts_piper_network_off),
                         style = MaterialTheme.typography.labelSmall,
                         color = Danger
                     )
@@ -392,17 +417,19 @@ internal fun ListeningSettingsBody(
 
             if (settings.mode == TtsEngineMode.SYSTEM) {
                 Spacer(Modifier.height(16.dp))
-                Text("系统音色", style = MaterialTheme.typography.labelLarge, color = InkSoft)
+                Text(stringResource(R.string.tts_system_section), style = MaterialTheme.typography.labelLarge, color = InkSoft)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "选择手机系统 TTS 引擎中的音色；不选则跟随系统默认。" +
-                        "中文和英文可分别指定。",
+                    stringResource(R.string.tts_system_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkFaint
                 )
                 Spacer(Modifier.height(4.dp))
                 TextButton(onClick = { loadSystemVoices(refresh = true) }) {
-                    Text(if (systemVoices.isEmpty()) "加载音色" else "刷新音色")
+                    Text(
+                        if (systemVoices.isEmpty()) stringResource(R.string.tts_load_voices)
+                        else stringResource(R.string.tts_refresh_voices)
+                    )
                 }
                 status?.let {
                     Text(
@@ -425,21 +452,21 @@ internal fun ListeningSettingsBody(
                     val englishVoices = systemVoices.filter { it.isEnglish }
                     val hasLanguageSplit = chineseVoices.isNotEmpty() || englishVoices.isNotEmpty()
                     SystemVoiceDropdown(
-                        label = "中文音色",
+                        label = stringResource(R.string.tts_voice_chinese),
                         voices = if (hasLanguageSplit) chineseVoices else systemVoices,
                         selected = settings.systemZhVoice,
                         onSelect = { settings = settings.copy(systemZhVoice = it) }
                     )
                     Spacer(Modifier.height(6.dp))
                     SystemVoiceDropdown(
-                        label = "英文音色",
+                        label = stringResource(R.string.tts_voice_english),
                         voices = if (hasLanguageSplit) englishVoices else systemVoices,
                         selected = settings.systemEnVoice,
                         onSelect = { settings = settings.copy(systemEnVoice = it) }
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "已隐藏需要联网下载的音色，确保离线可正常朗读。",
+                        stringResource(R.string.tts_system_hidden_hint),
                         style = MaterialTheme.typography.labelSmall,
                         color = InkFaint
                     )
@@ -452,7 +479,7 @@ internal fun ListeningSettingsBody(
                     value = settings.region,
                     onValueChange = { settings = settings.copy(region = it.trim()) },
                     label = { Text("Region") },
-                    supportingText = { Text("中国北部 3：chinanorth3") },
+                    supportingText = { Text(stringResource(R.string.tts_azure_region_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -468,10 +495,10 @@ internal fun ListeningSettingsBody(
                 Spacer(Modifier.height(8.dp))
                 Row {
                     TextButton(onClick = ::fetchAzureVoices, enabled = !busy) {
-                        Text("获取可用音色")
+                        Text(stringResource(R.string.tts_fetch_voices))
                     }
                     TextButton(onClick = ::testAzure, enabled = !busy) {
-                        Text("测试连接")
+                        Text(stringResource(R.string.tts_test_connection))
                     }
                 }
                 status?.let {
@@ -495,9 +522,9 @@ internal fun ListeningSettingsBody(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("中英混读音色", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.tts_multilingual_toggle), style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                "同一个声音朗读中英文，混排更连贯",
+                                stringResource(R.string.tts_multilingual_toggle_hint),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = InkFaint
                             )
@@ -512,21 +539,21 @@ internal fun ListeningSettingsBody(
                     Spacer(Modifier.height(8.dp))
                     if (settings.useMultilingual) {
                         VoiceDropdown(
-                            label = "多语言音色",
+                            label = stringResource(R.string.tts_voice_multilingual),
                             voices = voices,
                             selected = settings.multilingualVoice,
                             onSelect = { settings = settings.copy(multilingualVoice = it) }
                         )
                     } else {
                         VoiceDropdown(
-                            label = "英文音色",
+                            label = stringResource(R.string.tts_voice_english),
                             voices = voices.filter { it.supportsEnglish() },
                             selected = settings.enVoice,
                             onSelect = { settings = settings.copy(enVoice = it) }
                         )
                         Spacer(Modifier.height(6.dp))
                         VoiceDropdown(
-                            label = "中文音色",
+                            label = stringResource(R.string.tts_voice_chinese),
                             voices = voices.filter { it.supportsChinese() },
                             selected = settings.zhVoice,
                             onSelect = { settings = settings.copy(zhVoice = it) }
@@ -540,8 +567,8 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.serverUrl,
                     onValueChange = { settings = settings.copy(serverUrl = it.trim()) },
-                    label = { Text("服务器地址") },
-                    supportingText = { Text("如 https://your-server.example.com") },
+                    label = { Text(stringResource(R.string.tts_server_url_label)) },
+                    supportingText = { Text(stringResource(R.string.tts_server_url_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -549,8 +576,8 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.serverModel,
                     onValueChange = { settings = settings.copy(serverModel = it.trim()) },
-                    label = { Text("模型名") },
-                    supportingText = { Text("Fish Speech S2 等服务器发布的模型名") },
+                    label = { Text(stringResource(R.string.tts_server_model_label)) },
+                    supportingText = { Text(stringResource(R.string.tts_server_model_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -558,7 +585,7 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.serverToken,
                     onValueChange = { settings = settings.copy(serverToken = it.trim()) },
-                    label = { Text("API Token（可选）") },
+                    label = { Text(stringResource(R.string.tts_server_token_label)) },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -567,8 +594,8 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.serverVoice,
                     onValueChange = { settings = settings.copy(serverVoice = it.trim()) },
-                    label = { Text("音色/voice（可选，通用兜底）") },
-                    supportingText = { Text("Fish Speech 通常为 default；IndexTTS 可填参考音频名，如 voice_03.wav") },
+                    label = { Text(stringResource(R.string.tts_server_voice_label)) },
+                    supportingText = { Text(stringResource(R.string.tts_server_voice_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -576,8 +603,8 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.serverEnVoice,
                     onValueChange = { settings = settings.copy(serverEnVoice = it.trim()) },
-                    label = { Text("英文音色（可选）") },
-                    supportingText = { Text("英文句子用此音色；留空跟随上方通用音色") },
+                    label = { Text(stringResource(R.string.tts_server_en_voice_label)) },
+                    supportingText = { Text(stringResource(R.string.tts_server_en_voice_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -585,8 +612,8 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.serverZhVoice,
                     onValueChange = { settings = settings.copy(serverZhVoice = it.trim()) },
-                    label = { Text("中文音色（可选）") },
-                    supportingText = { Text("中文句子用此音色；IndexTTS 一次只克隆一个说话人，中英分开填更自然") },
+                    label = { Text(stringResource(R.string.tts_server_zh_voice_label)) },
+                    supportingText = { Text(stringResource(R.string.tts_server_zh_voice_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -594,8 +621,8 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.narratorVoice,
                     onValueChange = { settings = settings.copy(narratorVoice = it.trim()) },
-                    label = { Text("旁白音色 Narrator（可选）") },
-                    supportingText = { Text("多角色听书 M1：旁白句子用此音色；留空则跟随上方「音色/voice」") },
+                    label = { Text(stringResource(R.string.tts_server_narrator_label)) },
+                    supportingText = { Text(stringResource(R.string.tts_server_narrator_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -603,14 +630,14 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.dialogueVoice,
                     onValueChange = { settings = settings.copy(dialogueVoice = it.trim()) },
-                    label = { Text("对白音色 Dialogue（可选）") },
-                    supportingText = { Text("引号内对白用此音色；两个都留空 = 单音色模式（原有行为）") },
+                    label = { Text(stringResource(R.string.tts_server_dialogue_label)) },
+                    supportingText = { Text(stringResource(R.string.tts_server_dialogue_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = ::testServer, enabled = !busy) {
-                    Text("测试连接")
+                    Text(stringResource(R.string.tts_test_connection))
                 }
                 status?.let {
                     Text(
@@ -630,7 +657,7 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.volcApiKey,
                     onValueChange = { settings = settings.copy(volcApiKey = it.trim()) },
-                    label = { Text("API Key（新版控制台，推荐）") },
+                    label = { Text(stringResource(R.string.tts_volc_api_key_label)) },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -639,7 +666,7 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.volcAppId,
                     onValueChange = { settings = settings.copy(volcAppId = it.trim()) },
-                    label = { Text("App ID（旧版控制台）") },
+                    label = { Text(stringResource(R.string.tts_volc_app_id_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -647,36 +674,36 @@ internal fun ListeningSettingsBody(
                 OutlinedTextField(
                     value = settings.volcToken,
                     onValueChange = { settings = settings.copy(volcToken = it.trim()) },
-                    label = { Text("Access Token（旧版控制台）") },
+                    label = { Text(stringResource(R.string.tts_volc_token_label)) },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(10.dp))
                 PresetField(
-                    label = "Resource ID / 模型",
+                    label = stringResource(R.string.tts_volc_resource_label),
                     value = settings.volcResourceId,
                     onValueChange = { settings = settings.copy(volcResourceId = it.trim()) },
-                    presets = volcResourcePresets,
-                    supportingText = "2.0 音色配 seed-tts-2.0；1.0 音色配 seed-tts-1.0"
+                    presets = volcResourcePresets(),
+                    supportingText = stringResource(R.string.tts_volc_resource_hint)
                 )
                 Spacer(Modifier.height(10.dp))
                 PresetField(
-                    label = "中文音色",
+                    label = stringResource(R.string.tts_voice_chinese),
                     value = settings.volcZhVoice,
                     onValueChange = { settings = settings.copy(volcZhVoice = it.trim()) },
                     presets = volcZhVoicePresets(settings.volcResourceId)
                 )
                 Spacer(Modifier.height(10.dp))
                 PresetField(
-                    label = "英文音色",
+                    label = stringResource(R.string.tts_voice_english),
                     value = settings.volcEnVoice,
                     onValueChange = { settings = settings.copy(volcEnVoice = it.trim()) },
                     presets = volcEnVoicePresets(settings.volcResourceId)
                 )
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = ::testVolcano, enabled = !busy) {
-                    Text("测试连接")
+                    Text(stringResource(R.string.tts_test_connection))
                 }
                 status?.let {
                     Text(
@@ -702,8 +729,7 @@ internal fun ListeningSettingsBody(
             if (settings.mode != TtsEngineMode.SYSTEM && settings.mode != TtsEngineMode.PIPER) {
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    "启用后，朗读文本会发送到对应云端/自建服务，按实际服务计费；" +
-                        "章节音频首次生成后缓存在本机。合成失败会自动回退系统语音。",
+                    stringResource(R.string.tts_cloud_notice),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkFaint
                 )
@@ -712,7 +738,7 @@ internal fun ListeningSettingsBody(
             Spacer(Modifier.height(20.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (onDismiss != null) {
-                    TextButton(onClick = onDismiss) { Text("取消") }
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
                     Spacer(Modifier.width(8.dp))
                 }
                 Button(
@@ -723,7 +749,7 @@ internal fun ListeningSettingsBody(
                         contentColor = OnAccent
                     ),
                     shape = PillShape
-                ) { Text("保存") }
+                ) { Text(stringResource(R.string.common_save)) }
             }
         }
     }
@@ -751,14 +777,16 @@ private fun PresetField(
                 modifier = Modifier.weight(1f)
             )
             Box {
-                TextButton(onClick = { expanded = true }) { Text("预设") }
+                TextButton(onClick = { expanded = true }) { Text(stringResource(R.string.tts_preset)) }
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
                     presets.forEach { (preset, name) ->
                         DropdownMenuItem(
-                            text = { Text("$name（$preset）") },
+                            text = {
+                                Text(stringResource(R.string.tts_preset_item, name, preset))
+                            },
                             onClick = {
                                 onValueChange(preset)
                                 expanded = false
@@ -771,40 +799,43 @@ private fun PresetField(
     }
 }
 
-private val volcResourcePresets = listOf(
-    "seed-tts-2.0" to "豆包语音合成模型 2.0（推荐）",
-    "seed-tts-1.0" to "豆包语音合成模型 1.0",
-    "seed-tts-1.0-concurr" to "豆包语音合成模型 1.0（并发版）"
+@Composable
+private fun volcResourcePresets(): List<Pair<String, String>> = listOf(
+    "seed-tts-2.0" to stringResource(R.string.tts_volc_model_2),
+    "seed-tts-1.0" to stringResource(R.string.tts_volc_model_1),
+    "seed-tts-1.0-concurr" to stringResource(R.string.tts_volc_model_1_concurr)
 )
 
+@Composable
 private fun volcZhVoicePresets(resourceId: String): List<Pair<String, String>> =
     if (resourceId.startsWith("seed-tts-2.0")) {
         listOf(
-            "zh_female_shuangkuaisisi_uranus_bigtts" to "爽快思思 2.0",
-            "zh_female_cancan_uranus_bigtts" to "灿灿 2.0",
-            "zh_female_vv_uranus_bigtts" to "VV 2.0",
-            "zh_female_xiaohe_uranus_bigtts" to "晓荷 2.0",
-            "zh_male_m191_uranus_bigtts" to "云舟 2.0",
-            "zh_male_taocheng_uranus_bigtts" to "小田 2.0",
-            "zh_female_kefunvsheng_uranus_bigtts" to "暖阳女声 2.0"
+            "zh_female_shuangkuaisisi_uranus_bigtts" to stringResource(R.string.tts_volc_voice_shuangkuaisisi),
+            "zh_female_cancan_uranus_bigtts" to stringResource(R.string.tts_volc_voice_cancan_2),
+            "zh_female_vv_uranus_bigtts" to stringResource(R.string.tts_volc_voice_vv),
+            "zh_female_xiaohe_uranus_bigtts" to stringResource(R.string.tts_volc_voice_xiaohe),
+            "zh_male_m191_uranus_bigtts" to stringResource(R.string.tts_volc_voice_yunzhou),
+            "zh_male_taocheng_uranus_bigtts" to stringResource(R.string.tts_volc_voice_xiaotian),
+            "zh_female_kefunvsheng_uranus_bigtts" to stringResource(R.string.tts_volc_voice_nuanyang)
         )
     } else {
         listOf(
-            "BV001_streaming" to "通用女声",
-            "BV002_streaming" to "通用男声",
-            "BV700_streaming" to "灿灿",
-            "BV701_streaming" to "青苍（有声书）"
+            "BV001_streaming" to stringResource(R.string.tts_volc_voice_standard_female),
+            "BV002_streaming" to stringResource(R.string.tts_volc_voice_standard_male),
+            "BV700_streaming" to stringResource(R.string.tts_volc_voice_cancan),
+            "BV701_streaming" to stringResource(R.string.tts_volc_voice_qingcang)
         )
     }
 
+@Composable
 private fun volcEnVoicePresets(resourceId: String): List<Pair<String, String>> =
     if (resourceId.startsWith("seed-tts-2.0")) {
         listOf(
-            "en_female_dacey_uranus_bigtts" to "Dacey（英文女声）",
-            "en_male_tim_uranus_bigtts" to "Tim（英文男声）"
+            "en_female_dacey_uranus_bigtts" to stringResource(R.string.tts_volc_voice_dacey),
+            "en_male_tim_uranus_bigtts" to stringResource(R.string.tts_volc_voice_tim)
         )
     } else {
-        listOf("BV503_streaming" to "Ariana（英文女声）")
+        listOf("BV503_streaming" to stringResource(R.string.tts_volc_voice_ariana))
     }
 
 @Composable
@@ -847,8 +878,8 @@ private fun VoiceDropdown(
             ) {
                 Text(
                     available.firstOrNull { it.shortName == selected }
-                        ?.let { "${it.displayName}（${it.locale}）" }
-                        ?: selected.ifBlank { "未选择" },
+                        ?.let { stringResource(R.string.tts_voice_with_locale, it.displayName, it.locale) }
+                        ?: selected.ifBlank { stringResource(R.string.tts_voice_unselected) },
                     modifier = Modifier.weight(1f),
                     color = Ink
                 )
@@ -861,7 +892,13 @@ private fun VoiceDropdown(
                 available.forEach { voice ->
                     DropdownMenuItem(
                         text = {
-                            Text("${voice.displayName}（${voice.locale}）")
+                            Text(
+                                stringResource(
+                                    R.string.tts_voice_with_locale,
+                                    voice.displayName,
+                                    voice.locale
+                                )
+                            )
                         },
                         onClick = {
                             onSelect(voice.shortName)
@@ -891,7 +928,7 @@ private fun SystemVoiceDropdown(
             ) {
                 Text(
                     voices.firstOrNull { it.name == selected }?.displayName()
-                        ?: "跟随系统默认",
+                        ?: stringResource(R.string.tts_follow_system_default),
                     modifier = Modifier.weight(1f),
                     color = Ink
                 )
@@ -902,7 +939,7 @@ private fun SystemVoiceDropdown(
                 onDismissRequest = { expanded = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("跟随系统默认") },
+                    text = { Text(stringResource(R.string.tts_follow_system_default)) },
                     onClick = {
                         onSelect("")
                         expanded = false
@@ -931,7 +968,7 @@ private fun PiperVoiceDropdown(
     var expanded by remember { mutableStateOf(false) }
     val selected = voices.firstOrNull { it.id == selectedId }
     Column(Modifier.fillMaxWidth()) {
-        Text("Piper 英文音色", style = MaterialTheme.typography.labelMedium, color = InkSoft)
+        Text(stringResource(R.string.tts_piper_voice_label), style = MaterialTheme.typography.labelMedium, color = InkSoft)
         Box(Modifier.fillMaxWidth()) {
             TextButton(
                 onClick = { expanded = true },
@@ -951,7 +988,13 @@ private fun PiperVoiceDropdown(
                 voices.forEach { voice ->
                     DropdownMenuItem(
                         text = {
-                            Text(voice.displayName + if (voice.builtin) "（内置）" else "（已导入）")
+                            Text(
+                                stringResource(
+                                    if (voice.builtin) R.string.tts_voice_builtin
+                                    else R.string.tts_voice_imported,
+                                    voice.displayName
+                                )
+                            )
                         },
                         onClick = {
                             onSelect(voice.id)
@@ -980,7 +1023,16 @@ private fun PiperCatalogRow(
             Column(Modifier.weight(1f)) {
                 Text(voice.displayName, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "${voice.language} · ${voice.gender}声 · ${voice.sizeLabel}",
+                    stringResource(
+                        R.string.tts_piper_voice_meta,
+                        voice.language,
+                        when (voice.gender) {
+                            "男" -> stringResource(R.string.multivoice_gender_male)
+                            "女" -> stringResource(R.string.multivoice_gender_female)
+                            else -> voice.gender
+                        },
+                        voice.sizeLabel
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkFaint
                 )
@@ -995,9 +1047,11 @@ private fun PiperCatalogRow(
                 onClick = {
                     runCatching {
                         context.startActivity(Intent(Intent.ACTION_VIEW, voice.packageUrl.toUri()))
-                    }.onFailure { onMessage("无法打开下载页面") }
+                    }.onFailure {
+                        onMessage(context.getString(R.string.tts_piper_open_failed))
+                    }
                 }
-            ) { Text("下载") }
+            ) { Text(stringResource(R.string.tts_download)) }
         }
     }
 }
@@ -1008,6 +1062,7 @@ private fun PlaySampleButton(
     enabled: Boolean,
     onMessage: (String) -> Unit
 ) {
+    val context = LocalContext.current
     val playerState = remember { mutableStateOf<MediaPlayer?>(null) }
     DisposableEffect(Unit) {
         onDispose { playerState.value?.release() }
@@ -1035,7 +1090,7 @@ private fun PlaySampleButton(
                     it.release()
                     if (playerState.value == it) playerState.value = null
                     // 之前失败是完全静默的；HuggingFace 在部分网络不可达，必须给反馈。
-                    onMessage("样例试听失败，请检查网络（HuggingFace 可能不可达）")
+                    onMessage(context.getString(R.string.tts_sample_failed))
                     true
                 }
                 mp.prepareAsync()
@@ -1043,8 +1098,8 @@ private fun PlaySampleButton(
             if (!ok) {
                 runCatching { mp.release() }
                 playerState.value = null
-                onMessage("无法播放样例音频")
+                onMessage(context.getString(R.string.tts_sample_play_failed))
             }
         }
-    ) { Text("试听") }
+    ) { Text(stringResource(R.string.tts_audition)) }
 }
