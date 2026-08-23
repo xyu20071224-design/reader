@@ -11,8 +11,6 @@ class AzureTtsBackend(
     private val client = AzureSpeechClient(settings.region, settings.apiKey)
     private val voices: List<AzureVoice> = CloudVoiceStore.load(context)
 
-    override val label: String = "Azure 云 TTS"
-
     override fun isConfigured(): Boolean =
         settings.region.isNotBlank() && settings.apiKey.isNotBlank()
 

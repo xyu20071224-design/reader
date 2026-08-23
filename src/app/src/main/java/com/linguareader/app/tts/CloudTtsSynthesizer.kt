@@ -100,8 +100,6 @@ class CloudTtsSynthesizer(
     /** Cache files currently being synthesized, so two preparers never double-bill one sentence. */
     private val inflightFiles = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
-    val engineLabel: String get() = backend.label
-
     override val isReady: Boolean get() = backend.isConfigured()
 
     override val supportsWholeBookCache: Boolean get() = backend.supportsWholeBookCache

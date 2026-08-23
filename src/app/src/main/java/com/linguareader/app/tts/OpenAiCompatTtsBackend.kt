@@ -27,8 +27,6 @@ data class ServerVoice(
 class OpenAiCompatTtsBackend(
     private val settings: CloudTtsSettings
 ) : CloudTtsBackend {
-    override val label: String = "自建服务器（OpenAI 兼容）"
-
     /** Probe result: null until [refreshCapabilities] ran (optimistic true). */
     @Volatile
     private var probedWholeBookCache: Boolean? = null

@@ -9,8 +9,6 @@ import java.io.File
  * swapped in from settings without touching the playback queue.
  */
 interface CloudTtsBackend {
-    val label: String
-
     fun isConfigured(): Boolean
 
     /** Synthesize one sentence into an audio file. */

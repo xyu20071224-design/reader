@@ -98,8 +98,6 @@ class TtsPlaybackEngineTest {
             synthesizerFactory = recordingFactory,
             chapterLoader = chapters,
             isSystemEngine = isSystem,
-            engineLabelForSettings = { "系统语音" },
-            engineLabelForSynthesizer = { "系统语音" },
             onChapterRequest = { chapterRequests += it },
             onBookSwitched = {},
             onProgressSave = { b, c, s -> progressSaves += Triple(b.id, c, s) },
@@ -389,7 +387,6 @@ class TtsPlaybackEngineTest {
         assertEquals(1, cloud.prepareCalls)
         assertEquals(1, cloud.spoken.size)
         assertEquals("A.", cloud.spoken[0].text)
-        assertFalse(h.state.isPreparing)
         h.engine.shutdown()
     }
 
@@ -417,7 +414,6 @@ class TtsPlaybackEngineTest {
         assertTrue(cloud.spoken.isEmpty())
         assertTrue(system.spoken.isNotEmpty())
         assertEquals("A.", system.spoken.first().text)
-        assertEquals("系统语音（云 TTS 失败）", h.state.engineLabel)
         h.engine.shutdown()
     }
 

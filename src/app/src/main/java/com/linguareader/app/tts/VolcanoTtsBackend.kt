@@ -29,8 +29,6 @@ class VolcanoTtsBackend(
     private val settings: CloudTtsSettings,
     private val endpoint: String = ENDPOINT
 ) : CloudTtsBackend {
-    override val label: String = "火山引擎（豆包语音）"
-
     override fun isConfigured(): Boolean = settings.isConfigured
 
     override suspend fun synthesize(

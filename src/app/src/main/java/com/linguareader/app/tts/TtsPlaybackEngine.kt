@@ -26,8 +26,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *   engine only sees the [TtsSynthesizer] contract.
  * - [chapterLoader] produces a [TtsChapter] for a book + chapter index (the
  *   service wraps the IO-backed extractor, a test returns a fixed chapter).
- * - [isSystemEngine] / [engineLabelForSettings] / [engineLabelForSynthesizer]
- *   isolate the two remaining engine-identity decisions from the queue logic.
+ * - [isSystemEngine] isolates the remaining engine-identity decision from the
+ *   queue logic.
  * - [onChapterRequest] replaces the reader chapter handshake shared flow.
  * - [onBookSwitched] lets the service clear its chapter cache on a book swap.
  * - [onProgressSave] is called with the final (book, chapter, sentence) the
@@ -41,8 +41,6 @@ class TtsPlaybackEngine(
     private val synthesizerFactory: (TtsSynthesizerListener) -> TtsSynthesizer,
     private val chapterLoader: suspend (Book, Int) -> TtsChapter,
     private val isSystemEngine: (TtsSynthesizer) -> Boolean,
-    private val engineLabelForSettings: () -> String,
-    private val engineLabelForSynthesizer: (TtsSynthesizer?) -> String,
     private val onChapterRequest: (Int) -> Unit,
     private val onBookSwitched: () -> Unit,
     private val onProgressSave: (Book, Int, Int) -> Unit,
@@ -51,7 +49,6 @@ class TtsPlaybackEngine(
     private val readerLoadedChapterFor: (String) -> Int? = { null },
     private val chapterReadyTimeoutMs: Long = 2_000L,
     private val progressSaveDelayMs: Long = 5_000L,
-    private val fallbackEngineLabel: String = "系统语音（云 TTS 失败）",
     /** Creates the system engine used when the configured engine fails
      *  mid-playback (BUG-001). Null = no fallback engine available (tests). */
     private val fallbackSynthesizerFactory: ((TtsSynthesizerListener) -> TtsSynthesizer)? = null,
@@ -77,10 +74,9 @@ class TtsPlaybackEngine(
     private var progressSaveJob: Job? = null
     private var preparedChapterKey: String? = null
     private var speakAttempt = 0
-    private var engineLabel = "系统语音"
     private var state = TtsPlaybackState()
-    /** True while playback runs on the BUG-001 fallback engine; guards both
-     *  re-entering [fallbackToSystemTts] and the ready-label being overwritten. */
+    /** True while playback runs on the BUG-001 fallback engine; guards
+     *  re-entering [fallbackToSystemTts]. */
     private var fallbackActive = false
     /** Bumped by every control entry; async work captures the value at start
      *  and aborts when it went stale (BUG-006/009: rapid skips / stop races
@@ -125,18 +121,15 @@ class TtsPlaybackEngine(
         lastLoadedChapter = readerLoadedChapterFor(newBook.id)
         playing = true
         consecutiveErrors = 0
-        engineLabel = engineLabelForSettings()
         setState(
             TtsPlaybackState(
                 bookId = newBook.id,
-                bookTitle = newBook.title,
                 chapterIndex = chapterIndex,
                 sentenceIndex = sentenceIndex,
                 sentenceCount = 0,
                 currentSentence = "",
                 isPlaying = true,
-                speechRate = speechRate,
-                engineLabel = engineLabel
+                speechRate = speechRate
             )
         )
         ensureSynthesizer { loadAndSpeakCurrent() }
@@ -163,18 +156,15 @@ class TtsPlaybackEngine(
         preparedChapterKey = null
         lastLoadedChapter = readerLoadedChapterFor(newBook.id)
         playing = false
-        engineLabel = engineLabelForSettings()
         setState(
             TtsPlaybackState(
                 bookId = newBook.id,
-                bookTitle = newBook.title,
                 chapterIndex = chapterIndex,
                 sentenceIndex = sentenceIndex,
                 sentenceCount = 0,
                 currentSentence = "",
                 isPlaying = false,
-                speechRate = speechRate,
-                engineLabel = engineLabel
+                speechRate = speechRate
             )
         )
     }
@@ -328,13 +318,8 @@ class TtsPlaybackEngine(
         synthesizer = null
         pendingReady.clear()
         preparedChapterKey = null
-        engineLabel = engineLabelForSettings()
         updateState {
             it.copy(
-                engineLabel = engineLabel,
-                isPreparing = false,
-                preparedCount = 0,
-                preparedTotal = 0,
                 isCachingBook = false,
                 cachedSentences = 0,
                 cachedTotal = 0,
@@ -523,42 +508,16 @@ class TtsPlaybackEngine(
             val chapterKey = currentBook.id + ":" + chapterIndex
             if (preparer != null && preparedChapterKey != chapterKey) {
                 preparedChapterKey = chapterKey
-                updateState {
-                    it.copy(
-                        isPreparing = true,
-                        preparedCount = 0,
-                        preparedTotal = loadedChapter.sentenceCount
-                    )
-                }
                 preparer.prepareChapter(
                     currentBook,
                     loadedChapter,
-                    onProgress = { done, total ->
-                        scope.launch {
-                            updateState {
-                                it.copy(
-                                    isPreparing = true,
-                                    preparedCount = done,
-                                    preparedTotal = total
-                                )
-                            }
-                        }
-                    },
+                    onProgress = { _, _ -> },
                     onComplete = { success ->
                         scope.launch {
-                            updateState {
-                                it.copy(
-                                    isPreparing = false,
-                                    preparedCount = loadedChapter.sentenceCount,
-                                    preparedTotal = loadedChapter.sentenceCount
-                                )
-                            }
                             if (!success) fallbackToSystemTts()
                         }
                     }
                 )
-            } else if (preparer == null) {
-                updateState { it.copy(isPreparing = false) }
             }
             updateState {
                 it.copy(
@@ -631,7 +590,6 @@ class TtsPlaybackEngine(
         updateState {
             it.copy(
                 bookId = currentBook.id,
-                bookTitle = currentBook.title,
                 chapterIndex = chapterIndex,
                 sentenceIndex = sentenceIndex,
                 sentenceCount = chapter?.sentenceCount ?: it.sentenceCount,
@@ -660,15 +618,10 @@ class TtsPlaybackEngine(
         pendingReady.clear()
         preparedChapterKey = null
         fallbackActive = true
-        engineLabel = fallbackEngineLabel
         val created = factory(synthesizerListener)
         synthesizer = created
         updateState {
             it.copy(
-                engineLabel = fallbackEngineLabel,
-                isPreparing = false,
-                preparedCount = 0,
-                preparedTotal = 0,
                 canCacheBook = canCacheWholeBook(created)
             )
         }
@@ -697,16 +650,8 @@ class TtsPlaybackEngine(
     }
 
     private fun handleSynthesizerReady() {
-        // While on the fallback engine the label must stay the fallback one —
-        // engineLabelForSynthesizer would flip it back to the cloud engine.
-        if (!fallbackActive) {
-            engineLabel = engineLabelForSynthesizer(synthesizer)
-        }
         updateState {
-            it.copy(
-                engineLabel = engineLabel,
-                canCacheBook = canCacheWholeBook(synthesizer)
-            )
+            it.copy(canCacheBook = canCacheWholeBook(synthesizer))
         }
         pendingReady.toList().forEach { it() }
         pendingReady.clear()

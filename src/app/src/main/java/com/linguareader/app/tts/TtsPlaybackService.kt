@@ -127,18 +127,6 @@ class TtsPlaybackService : Service() {
             fallbackSynthesizerFactory = { listener ->
                 SystemTtsSynthesizer(applicationContext, listener)
             },
-            engineLabelForSettings = {
-                engineLabelFor(CloudTtsSettings.load(applicationContext))
-            },
-            engineLabelForSynthesizer = { s ->
-                when (s) {
-                    is CloudTtsSynthesizer -> s.engineLabel
-                    // BUG-004: Piper is an offline engine, not the system one —
-                    // the cast-and-fallback used to relabel it "系统语音".
-                    is SherpaTtsSynthesizer -> "本地 Piper 语音"
-                    else -> "系统语音"
-                }
-            },
             onChapterRequest = { chapter -> _chapterRequests.tryEmit(chapter) },
             onBookSwitched = {
                 extractor.clear()
@@ -539,14 +527,6 @@ class TtsPlaybackService : Service() {
                 )
                 .build()
         )
-    }
-
-    private fun engineLabelFor(settings: CloudTtsSettings): String = when (settings.mode) {
-        TtsEngineMode.AZURE -> "Azure 云 TTS"
-        TtsEngineMode.OPENAI_COMPAT -> "自建服务器（OpenAI 兼容）"
-        TtsEngineMode.VOLC -> "火山引擎（豆包语音）"
-        TtsEngineMode.PIPER -> "本地 Piper 语音"
-        TtsEngineMode.SYSTEM -> "系统语音"
     }
 
     companion object {

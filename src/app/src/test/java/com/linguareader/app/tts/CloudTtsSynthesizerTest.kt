@@ -28,7 +28,6 @@ class CloudTtsSynthesizerTest {
 
     private class RecordingBackend : CloudTtsBackend {
         var synthesizeCalls = 0
-        override val label: String = "fake"
         override fun isConfigured(): Boolean = true
         override suspend fun synthesize(text: String, voice: String, outputFile: File): Result<Unit> {
             synthesizeCalls++
