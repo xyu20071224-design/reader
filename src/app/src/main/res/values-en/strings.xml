@@ -512,4 +512,23 @@
         <item quantity="one">Nothing is due right now. Review all %1$d word?</item>
         <item quantity="other">Nothing is due right now. Review all %1$d words?</item>
     </plurals>
+
+    <!-- AI center drawer -->
+    <string name="aidrawer_title">AI center</string>
+    <string name="aidrawer_power_hint">Master online-AI switch: off keeps translation and cloud narration fully offline.</string>
+    <string name="aidrawer_tab_translation">Translation</string>
+    <string name="aidrawer_tab_tts">Narration</string>
+    <string name="aidrawer_deepseek_title">DeepSeek contextual translation</string>
+    <string name="aidrawer_base_url_label">Endpoint URL</string>
+    <string name="aidrawer_model_label">Model</string>
+    <string name="aidrawer_deepseek_on_hint">When enabled, chapter text and the words or sentences you tap are sent to DeepSeek to build or update this book\'s context profile; with no API key it automatically falls back to the lightweight on-device context.</string>
+    <string name="aidrawer_deepseek_off_hint">While off, lookups stay on the local dictionary and nothing is sent anywhere.</string>
+    <string name="aidrawer_azure_title">Azure sentence translation</string>
+    <string name="aidrawer_azure_region_label">Region (e.g. eastasia; optional)</string>
+    <string name="aidrawer_azure_on_hint">Sentence translation sends the current sentence to Azure AI Translator; this book\'s glossary entries ride along as a dynamic dictionary (&lt;mstrans:dictionary&gt;) so proper nouns stay consistent.</string>
+    <string name="aidrawer_azure_off_hint">While off, the lookup panel hides sentence translation.</string>
+    <string name="aidrawer_saved_power_off">Saved (the online-AI master switch is off, so it is not active yet)</string>
+    <string name="aidrawer_saved_ready">Saved: DeepSeek is ready — open a book to build its context profile</string>
+    <string name="aidrawer_saved_local">Saved: no API key, the lightweight local context will be used</string>
+    <string name="aidrawer_saved_off">Saved: AI context off — lookups stay fully local</string>
 </resources>
