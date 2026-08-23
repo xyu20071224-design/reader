@@ -188,6 +188,19 @@ data class AiLookupResult(
     val source: String
 )
 
+/**
+ * 点词 AI 查询的完整结果（2026-08-24 #3 缺陷修复）。
+ *
+ * [result] 为 null 表示「没有语境可显示」；[remoteFailed] 单独标记
+ * 「远程 AI 尝试过但失败、已降级本地」——此前这个失败被静默吞掉，Key/端点
+ * 配错的用户点词「毫无动静」。两者正交：远程失败后本地兜底可能仍有结果，
+ * 也可能没有，但失败信号都必须让界面知道。
+ */
+data class AiLookupOutcome(
+    val result: AiLookupResult?,
+    val remoteFailed: Boolean = false
+)
+
 /** Provider-agnostic AI settings; stored locally, never in source control. */
 data class AiSettings(
     val enabled: Boolean = false,

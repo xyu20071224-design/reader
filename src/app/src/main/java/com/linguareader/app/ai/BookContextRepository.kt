@@ -29,6 +29,27 @@ internal suspend fun buildContextProfile(
 }
 
 /**
+ * Word-lookup counterpart of [buildContextProfile]: a remote failure degrades
+ * to the offline glossary, but — unlike profile generation — the degradation is
+ * reported via [AiLookupOutcome.remoteFailed] so the UI can tell the user
+ * (silently swallowing it was defect #3: a wrong key/endpoint made every tap
+ * look like "nothing happened").
+ */
+internal suspend fun lookupWithContextFallback(
+    translator: AiTranslator,
+    profile: BookContextProfile,
+    request: AiLookupRequest
+): AiLookupOutcome = try {
+    AiLookupOutcome(translator.translate(profile, request))
+} catch (failure: Throwable) {
+    if (failure is CancellationException || translator.offline) throw failure
+    AiLookupOutcome(
+        result = LocalGlossaryTranslator().translate(profile, request),
+        remoteFailed = true
+    )
+}
+
+/**
  * Owns per-book context profiles.
  *
  * Profile generation chooses the configured backend: DeepSeek when the user
@@ -75,24 +96,23 @@ class BookContextRepository(
         return profile
     }
 
-    /** Returns null when no profile is ready or the backend has nothing to add. */
+    /**
+     * Returns an outcome whose result is null when no profile is ready or the
+     * backend has nothing to add. A remote failure is reported through
+     * [AiLookupOutcome.remoteFailed] instead of being swallowed silently.
+     */
     suspend fun translate(
         book: Book,
         request: AiLookupRequest
-    ): AiLookupResult? {
-        val profile = profileFor(book) ?: return null
+    ): AiLookupOutcome {
+        val profile = profileFor(book) ?: return AiLookupOutcome(result = null)
         val settings = settingsStore.load()
         val translator = if (settings.powerEnabled && profile.source == "deepseek" && settings.remoteReady) {
             DeepSeekTranslator(settings)
         } else {
             LocalGlossaryTranslator()
         }
-        return try {
-            translator.translate(profile, request)
-        } catch (failure: Throwable) {
-            if (failure is CancellationException || translator.offline) throw failure
-            LocalGlossaryTranslator().translate(profile, request)
-        }
+        return lookupWithContextFallback(translator, profile, request)
     }
 
     fun delete(bookId: String) {

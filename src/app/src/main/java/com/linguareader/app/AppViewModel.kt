@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.linguareader.app.ai.AiBookStatus
+import com.linguareader.app.ai.AiLookupOutcome
 import com.linguareader.app.ai.AiLookupRequest
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
@@ -314,14 +315,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Contextual AI enhancement on top of the local lookup result.
-     * Returns null quickly when AI is disabled or no profile exists yet.
+     * Returns an outcome with a null result quickly when AI is disabled or no
+     * profile exists yet; a remote failure is flagged so the UI can say so.
      */
     suspend fun aiLookup(
         book: Book,
         lookup: WordLookup,
         entry: ContextualDictionaryEntry?
-    ): AiLookupResult? {
-        if (!mutableState.value.aiSettings.enabled) return null
+    ): AiLookupOutcome {
+        if (!mutableState.value.aiSettings.enabled) return AiLookupOutcome(result = null)
         val request = AiLookupRequest(
             bookId = book.id,
             bookTitle = book.title,

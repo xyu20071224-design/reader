@@ -208,6 +208,8 @@ internal fun ReaderScreen(
     var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
     var aiLoading by remember { mutableStateOf(false) }
     var aiFailed by remember { mutableStateOf(false) }
+    // 远程 AI 尝试失败但已降级本地（F5）：失败信号必须可见，不再静默吞掉。
+    var aiRemoteFailed by remember { mutableStateOf(false) }
     var sentenceTranslation by remember { mutableStateOf<SentenceTranslationResult?>(null) }
     var translation by remember { mutableStateOf<TranslationLookupResult?>(null) }
     var translationLoading by remember { mutableStateOf(false) }
@@ -421,6 +423,7 @@ internal fun ReaderScreen(
         aiResult = null
         aiLoading = false
         aiFailed = false
+        aiRemoteFailed = false
         lookupStatus = null
         sentenceTranslation = sentenceTranslationCache[request.sentence.trim()]
         sentenceTranslationError = null
@@ -437,9 +440,13 @@ internal fun ReaderScreen(
         }
         if (aiSettings.enabled) {
             aiLoading = true
-            aiResult = runCatching {
+            val outcome = runCatching {
                 viewModel.aiLookup(book, request, dictionaryResult?.entry)
             }.onFailure { aiFailed = true }.getOrNull()
+            // outcome 非 null 时 result 仍可能为 null（本地兜底也没东西可给），
+            // remoteFailed 与 result 正交，两条失败路径都要能反馈。
+            aiResult = outcome?.result
+            aiRemoteFailed = outcome?.remoteFailed == true
             aiLoading = false
         }
     }
@@ -775,6 +782,7 @@ internal fun ReaderScreen(
             aiContext = aiResult,
             aiLoading = aiLoading,
             aiFailed = aiFailed,
+            aiRemoteFailed = aiRemoteFailed,
             sentenceTranslationReady = SentenceTranslatorFactory.isConfigured(aiSettings),
             hasTranslation = book.hasTranslation,
             translation = translation,
@@ -1126,6 +1134,7 @@ private fun LookupSheet(
     aiContext: AiLookupResult?,
     aiLoading: Boolean,
     aiFailed: Boolean,
+    aiRemoteFailed: Boolean,
     sentenceTranslationReady: Boolean,
     hasTranslation: Boolean,
     translation: TranslationLookupResult?,
@@ -1253,7 +1262,20 @@ private fun LookupSheet(
                     )
                 }
             }
-            if (!aiLoading && aiFailed && aiContext == null) {
+            // 远程 AI 尝试失败：无论本地兜底有没有给出结果，都要留下可见痕迹
+            // （#3：Key/端点配错后点词「毫无动静」的根因就是失败被静默吞掉）。
+            if (!aiLoading && aiRemoteFailed) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    stringResource(
+                        if (aiContext != null) R.string.reader_ai_lookup_degraded
+                        else R.string.reader_ai_lookup_failed
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Danger
+                )
+            }
+            if (!aiLoading && aiFailed && aiContext == null && !aiRemoteFailed) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     stringResource(R.string.reader_ai_lookup_failed),
