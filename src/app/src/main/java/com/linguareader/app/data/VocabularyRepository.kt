@@ -169,7 +169,7 @@ class VocabularyRepository(private val context: Context) {
 
     companion object {
         fun csv(words: List<SavedWord>): String = buildString {
-            appendLine("word,phonetic,meaning,ai_meaning,ai_source,sentence,book,chapter,review_count,next_review_at")
+            appendLine("word,phonetic,meaning,ai_meaning,ai_source,ai_explanation,sentence,book,chapter,review_count,next_review_at")
             words.forEach { word ->
                 appendLine(
                     listOf(
@@ -178,6 +178,7 @@ class VocabularyRepository(private val context: Context) {
                         word.meaning,
                         word.aiMeaning,
                         word.aiSource,
+                        word.aiExplanation,
                         word.sentence,
                         word.bookTitle,
                         word.chapterTitle,

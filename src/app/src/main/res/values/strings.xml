@@ -15,6 +15,7 @@
     <string name="reader_ai_lookup_failed">AI 语境获取失败，已显示本地词典结果</string>
     <string name="reader_ai_lookup_degraded">AI 语境获取失败，已降级为本地轻量语境（请检查联网 AI 的 Key 与端点）</string>
     <string name="tts_settings_saved">已保存，即将关闭…</string>
+    <string name="review_context_explanation">收藏时的语境解释：%1$s</string>
 
     <!-- 书架 -->
     <plurals name="shelf_book_count">

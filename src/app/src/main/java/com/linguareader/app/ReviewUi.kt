@@ -56,12 +56,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.linguareader.app.R
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
@@ -177,6 +179,15 @@ internal fun ReviewSheet(
                             else "本书语境（${word.aiSource}）：${word.aiMeaning}",
                             style = MaterialTheme.typography.bodyLarge,
                             color = Accent,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (word.aiExplanation.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.review_context_explanation, word.aiExplanation),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = InkSoft,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

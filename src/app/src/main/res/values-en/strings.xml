@@ -15,6 +15,7 @@
     <string name="reader_ai_lookup_failed">AI context lookup failed, showing local dictionary result</string>
     <string name="reader_ai_lookup_degraded">AI context lookup failed, degraded to offline lightweight context (check the AI key and endpoint)</string>
     <string name="tts_settings_saved">Saved, closing…</string>
+    <string name="review_context_explanation">Context note from when you saved it: %1$s</string>
 
     <!-- Bookshelf -->
     <plurals name="shelf_book_count">

@@ -39,6 +39,8 @@ class VocabularyTest {
         val csv = VocabularyRepository.csv(listOf(withAi))
         assertContains(csv, "\"期待\"")
         assertContains(csv, "DeepSeek")
+        assertContains(csv, "ai_explanation")
+        assertContains(csv, "本句表示期待")
     }
 
     @Test
