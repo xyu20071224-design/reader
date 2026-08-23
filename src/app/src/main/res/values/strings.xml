@@ -14,6 +14,17 @@
     <string name="notice_word_removed">已移出生词「%1$s」</string>
     <string name="reader_ai_lookup_failed">AI 语境获取失败，已显示本地词典结果</string>
 
+    <!-- 全局模态消息（AppViewModel message/messageTitle） -->
+    <string name="message_import_failed">导入失败</string>
+    <string name="message_import_failed_title">无法导入</string>
+    <string name="message_ai_context_failed">语境档案生成失败</string>
+    <string name="message_review_save_failed">保存复习结果失败，已恢复本地记录。</string>
+    <string name="message_review_save_failed_title">保存失败</string>
+    <string name="message_export_done">生词表已导出为 CSV。</string>
+    <string name="message_export_done_title">导出完成</string>
+    <string name="message_export_failed">导出失败</string>
+    <string name="message_export_failed_title">无法导出</string>
+
     <!-- 书架 -->
     <plurals name="shelf_book_count">
         <item quantity="other">%d 本书</item>

@@ -14,6 +14,17 @@
     <string name="notice_word_removed">Removed \"%1$s\"</string>
     <string name="reader_ai_lookup_failed">AI context lookup failed, showing local dictionary result</string>
 
+    <!-- Global modal messages (AppViewModel message/messageTitle) -->
+    <string name="message_import_failed">Import failed</string>
+    <string name="message_import_failed_title">Cannot import</string>
+    <string name="message_ai_context_failed">Could not build the context profile</string>
+    <string name="message_review_save_failed">Could not save the review result; the local record was restored.</string>
+    <string name="message_review_save_failed_title">Save failed</string>
+    <string name="message_export_done">Vocabulary exported as CSV.</string>
+    <string name="message_export_done_title">Export complete</string>
+    <string name="message_export_failed">Export failed</string>
+    <string name="message_export_failed_title">Cannot export</string>
+
     <!-- Bookshelf -->
     <plurals name="shelf_book_count">
         <item quantity="one">%d book</item>

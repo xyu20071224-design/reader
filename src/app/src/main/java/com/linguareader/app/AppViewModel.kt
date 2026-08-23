@@ -57,7 +57,7 @@ data class AppUiState(
     val reminders: ReviewReminders = ReviewReminders.DEFAULT,
     val launchPrompt: LaunchPromptUi? = null,
     val message: String? = null,
-    val messageTitle: String = "提示",
+    val messageTitle: String = "",
     /** 一次性轻提示（Snackbar）：显示后由界面调用 [AppViewModel.clearNotice] 清空。 */
     val notice: String? = null,
     val aiSettings: AiSettings = AiSettings(),
@@ -160,8 +160,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure {
                     mutableState.value = mutableState.value.copy(
                         loading = false,
-                        message = it.message ?: "导入失败",
-                        messageTitle = "无法导入"
+                        message = it.message ?: string(R.string.message_import_failed),
+                        messageTitle = string(R.string.message_import_failed_title)
                     )
                 }
         }
@@ -232,7 +232,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure {
                     setAiStatus(
                         book.id,
-                        AiBookStatus(error = it.message ?: "语境档案生成失败")
+                        AiBookStatus(error = it.message ?: string(R.string.message_ai_context_failed))
                     )
                 }
         }
@@ -254,7 +254,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure {
                     setAiStatus(
                         book.id,
-                        AiBookStatus(error = it.message ?: "语境档案生成失败")
+                        AiBookStatus(error = it.message ?: string(R.string.message_ai_context_failed))
                     )
                 }
         }
@@ -476,8 +476,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     val actual = vocabulary.load()
                     mutableState.value = mutableState.value.copy(
                         savedWords = actual,
-                        message = "保存复习结果失败，已恢复本地记录。",
-                        messageTitle = "保存失败"
+                        message = string(R.string.message_review_save_failed),
+                        messageTitle = string(R.string.message_review_save_failed_title)
                     )
                     onDone(false)
                 }
@@ -489,14 +489,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { vocabulary.export(uri, mutableState.value.savedWords) }
                 .onSuccess {
                     mutableState.value = mutableState.value.copy(
-                        message = "生词表已导出为 CSV。",
-                        messageTitle = "导出完成"
+                        message = string(R.string.message_export_done),
+                        messageTitle = string(R.string.message_export_done_title)
                     )
                 }
                 .onFailure {
                     mutableState.value = mutableState.value.copy(
-                        message = it.message ?: "导出失败",
-                        messageTitle = "无法导出"
+                        message = it.message ?: string(R.string.message_export_failed),
+                        messageTitle = string(R.string.message_export_failed_title)
                     )
                 }
         }

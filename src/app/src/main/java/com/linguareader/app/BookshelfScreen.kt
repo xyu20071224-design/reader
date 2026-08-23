@@ -272,7 +272,7 @@ internal fun BookshelfScreen(
             confirmButton = {
                 TextButton(onClick = onDismissMessage) { Text(stringResource(R.string.common_got_it)) }
             },
-            title = { Text(state.messageTitle) },
+            title = { Text(state.messageTitle.ifBlank { stringResource(R.string.common_notice_title) }) },
             text = { Text(it) },
             containerColor = CardSurface,
             shape = CardShape
