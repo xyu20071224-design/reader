@@ -58,6 +58,52 @@ class ThemeColorsTest {
         assertEquals(LightLinguaPalette.cardSurface, light.surface)
     }
 
+    @Test
+    fun `snackbar neutral tone keeps the inverse ink container`() {
+        // 中性提示沿用历史观感：日间墨色容器纸色字、夜间纸色容器墨色字。
+        assertEquals(
+            LightLinguaPalette.ink to LightLinguaPalette.paper,
+            snackbarColorsFor(StatusTone.NEUTRAL, LightLinguaPalette)
+        )
+        assertEquals(
+            DarkLinguaPalette.ink to DarkLinguaPalette.paper,
+            snackbarColorsFor(StatusTone.NEUTRAL, DarkLinguaPalette)
+        )
+    }
+
+    @Test
+    fun `snackbar semantic tones use palette success danger with onAccent text`() {
+        assertEquals(
+            LightLinguaPalette.success to LightLinguaPalette.onAccent,
+            snackbarColorsFor(StatusTone.SUCCESS, LightLinguaPalette)
+        )
+        assertEquals(
+            DarkLinguaPalette.danger to DarkLinguaPalette.onAccent,
+            snackbarColorsFor(StatusTone.DANGER, DarkLinguaPalette)
+        )
+    }
+
+    @Test
+    fun `every snackbar pairing keeps at least four point five to one contrast`() {
+        // 米色纸底上「米色条」缺陷的防回归：所有语义×昼夜组合的容器/文字
+        // 对比度必须 ≥4.5:1（WCAG AA 正文级）。
+        fun contrast(container: androidx.compose.ui.graphics.Color, content: androidx.compose.ui.graphics.Color): Float {
+            val lc = relativeLuminance(container)
+            val lt = relativeLuminance(content)
+            return (maxOf(lc, lt) + 0.05f) / (minOf(lc, lt) + 0.05f)
+        }
+        listOf(LightLinguaPalette, DarkLinguaPalette).forEach { palette ->
+            StatusTone.entries.forEach { tone ->
+                val (container, content) = snackbarColorsFor(tone, palette)
+                val ratio = contrast(container, content)
+                assertTrue(
+                    "snackbar ${tone}/${if (palette.isDark) "dark" else "light"} contrast $ratio < 4.5",
+                    ratio >= 4.5f
+                )
+            }
+        }
+    }
+
     private fun relativeLuminance(color: androidx.compose.ui.graphics.Color): Float {
         fun channel(value: Float): Float =
             if (value <= 0.03928f) value / 12.92f else Math.pow(((value + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()

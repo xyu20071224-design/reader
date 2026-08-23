@@ -101,9 +101,10 @@ private fun LinguaReaderApp(
     val snackbar = LocalAppSnackbar.current
 
     // 一次性提示（导入/删除等）统一走全局 Snackbar，弹过即清空。
+    // 提示带语义（成功/失败），渲染端据此换容器配色（见 snackbarColorsFor）。
     LaunchedEffect(state.notice) {
         state.notice?.let {
-            snackbar.show(it)
+            snackbar.show(it, state.noticeTone)
             viewModel.clearNotice()
         }
     }
@@ -160,10 +161,14 @@ private fun LinguaReaderApp(
             hostState = snackbar.hostState,
             modifier = Modifier.padding(bottom = 72.dp)
         ) { data ->
+            // 中性提示沿用墨色容器（日深夜浅互逆）；成功/失败换语义色容器，
+            // 米色纸底上不再是「米色条」，且一眼可辨结果好坏。
+            val tone = (data.visuals as? AppSnackbarVisuals)?.tone ?: StatusTone.NEUTRAL
+            val (container, content) = snackbarColorsFor(tone, LocalLinguaPalette.current)
             Snackbar(
                 snackbarData = data,
-                containerColor = Ink,
-                contentColor = Paper,
+                containerColor = container,
+                contentColor = content,
                 shape = SmallShape
             )
         }

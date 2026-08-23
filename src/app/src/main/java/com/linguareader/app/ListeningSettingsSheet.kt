@@ -79,8 +79,11 @@ internal fun ListeningSettingsSheet(onDismiss: () -> Unit, book: Book? = null) {
     }
 }
 
-/** 行内反馈的语义（决定颜色），与文案解耦——禁止再用文案前缀判断样式。 */
-internal enum class StatusTone { SUCCESS, DANGER, NEUTRAL }
+/**
+ * 行内反馈的语义（决定颜色），与文案解耦——禁止再用文案前缀判断样式。
+ * public：AppUiState.noticeTone 需要跨类型引用（单模块内无暴露面问题）。
+ */
+enum class StatusTone { SUCCESS, DANGER, NEUTRAL }
 
 /** 听书设置的行内状态：文本 + 显式语义。 */
 internal data class SettingsStatus(

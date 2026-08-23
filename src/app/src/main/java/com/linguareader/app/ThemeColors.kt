@@ -175,6 +175,20 @@ internal fun chromeIsDark(readerTheme: ReaderTheme?, systemDark: Boolean): Boole
 internal fun paletteFor(readerTheme: ReaderTheme?, systemDark: Boolean): LinguaPalette =
     if (chromeIsDark(readerTheme, systemDark)) DarkLinguaPalette else LightLinguaPalette
 
+/**
+ * 全局 Snackbar 的容器/文字配色（返回 containerColor to contentColor）。
+ *
+ * NEUTRAL 沿用墨色容器：日间深容器浅字、夜间浅容器深字（Ink/Paper 互逆，
+ * 对各自背景 ≥13:1）。成功/失败用调色板语义色 + onAccent 文字：
+ * 日间白字（≥4.9:1）、夜间墨字（≥5.5:1），米色纸底上不再出现「米色条」。
+ */
+internal fun snackbarColorsFor(tone: StatusTone, palette: LinguaPalette): Pair<Color, Color> =
+    when (tone) {
+        StatusTone.NEUTRAL -> palette.ink to palette.paper
+        StatusTone.SUCCESS -> palette.success to palette.onAccent
+        StatusTone.DANGER -> palette.danger to palette.onAccent
+    }
+
 /** 已保存的阅读主题（与 ReaderScreen 共用 `reader_preferences`），未设置时为 null。 */
 internal fun storedReaderTheme(context: Context): ReaderTheme? {
     val stored = context

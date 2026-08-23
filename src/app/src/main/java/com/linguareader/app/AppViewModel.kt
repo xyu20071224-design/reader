@@ -60,6 +60,8 @@ data class AppUiState(
     val messageTitle: String = "提示",
     /** 一次性轻提示（Snackbar）：显示后由界面调用 [AppViewModel.clearNotice] 清空。 */
     val notice: String? = null,
+    /** 提示的语义（成功/失败/中性），决定 Snackbar 容器配色；与文案解耦。 */
+    val noticeTone: StatusTone = StatusTone.NEUTRAL,
     val aiSettings: AiSettings = AiSettings(),
     val aiStatuses: Map<String, AiBookStatus> = emptyMap(),
     /** 正在对齐中文译本的书 id（对齐是数十秒级操作，界面据此显示进度并防重复触发）。 */
@@ -153,7 +155,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         currentBook = book,
                         savedWords = vocabulary.load(),
                         loading = false,
-                        notice = string(R.string.notice_book_imported, book.title)
+                        notice = string(R.string.notice_book_imported, book.title),
+                        noticeTone = StatusTone.SUCCESS
                     )
                     rescheduleReviewReminders()
                 }
@@ -202,7 +205,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             // Multi-voice M3: the per-book character → voice mapping goes too.
             File(getApplication<Application>().filesDir, "voice_maps/${book.id}.json").delete()
             mutableState.value = mutableState.value.copy(
-                notice = string(R.string.notice_book_deleted, book.title)
+                notice = string(R.string.notice_book_deleted, book.title),
+                noticeTone = StatusTone.DANGER
             )
             refresh()
         }
@@ -298,7 +302,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 清掉已经弹过的一次性提示，避免重组时重复弹。 */
     fun clearNotice() {
         if (mutableState.value.notice != null) {
-            mutableState.value = mutableState.value.copy(notice = null)
+            mutableState.value = mutableState.value.copy(notice = null, noticeTone = StatusTone.NEUTRAL)
         }
     }
 
@@ -376,14 +380,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             R.string.notice_translation_ready,
                             result.memory.pairs.size,
                             seconds
-                        )
+                        ),
+                        noticeTone = StatusTone.SUCCESS
                     )
                     refresh()
                 }
                 .onFailure {
                     mutableState.value = mutableState.value.copy(
                         attachingTranslation = mutableState.value.attachingTranslation - book.id,
-                        notice = string(R.string.notice_translation_failed)
+                        notice = string(R.string.notice_translation_failed),
+                        noticeTone = StatusTone.DANGER
                     )
                 }
         }
@@ -444,7 +450,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             mutableState.value = mutableState.value.copy(
                 savedWords = words,
-                notice = string(R.string.notice_word_saved, lookup.word)
+                notice = string(R.string.notice_word_saved, lookup.word),
+                noticeTone = StatusTone.SUCCESS
             )
             rescheduleReviewReminders()
         }
