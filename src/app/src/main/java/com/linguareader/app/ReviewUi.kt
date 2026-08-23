@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -120,13 +121,13 @@ internal fun ReviewSheet(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "复习完成",
+                    stringResource(R.string.review_done_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "已完成 ${completedCount} / ${deck.size} 个单词，均已安排下次复习。",
+                    stringResource(R.string.review_done_body, completedCount, deck.size),
                     color = InkSoft,
                     textAlign = TextAlign.Center
                 )
@@ -135,12 +136,15 @@ internal fun ReviewSheet(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
                     shape = PillShape
-                ) { Text("完成") }
+                ) { Text(stringResource(R.string.common_done)) }
                 Spacer(Modifier.height(16.dp))
             } else {
                 Text(
-                    if (completedCount == 0) "第 ${index + 1} / ${deck.size} 张"
-                    else "已完成 ${completedCount} / ${deck.size}",
+                    if (completedCount == 0) {
+                        stringResource(R.string.review_card_position, index + 1, deck.size)
+                    } else {
+                        stringResource(R.string.review_card_progress, completedCount, deck.size)
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     color = InkSoft
                 )
@@ -156,7 +160,7 @@ internal fun ReviewSheet(
                 TextButton(onClick = { onSpeak(word.headword) }) {
                     Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("朗读")
+                    Text(stringResource(R.string.common_speak))
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -174,8 +178,15 @@ internal fun ReviewSheet(
                     if (word.aiMeaning.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            if (word.aiSource.isBlank()) "本书语境：${word.aiMeaning}"
-                            else "本书语境（${word.aiSource}）：${word.aiMeaning}",
+                            if (word.aiSource.isBlank()) {
+                                stringResource(R.string.common_book_context, word.aiMeaning)
+                            } else {
+                                stringResource(
+                                    R.string.common_book_context_source,
+                                    word.aiSource,
+                                    word.aiMeaning
+                                )
+                            },
                             style = MaterialTheme.typography.bodyLarge,
                             color = Accent,
                             modifier = Modifier.fillMaxWidth()
@@ -186,7 +197,7 @@ internal fun ReviewSheet(
                         TextButton(onClick = { finish(false) }, enabled = !busy) {
                             Icon(Icons.Filled.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("再学一次")
+                            Text(stringResource(R.string.review_learn_again))
                         }
                         Button(
                             onClick = { finish(true) },
@@ -199,7 +210,7 @@ internal fun ReviewSheet(
                         ) {
                             Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("认识")
+                            Text(stringResource(R.string.review_known))
                         }
                     }
                 } else {
@@ -207,7 +218,7 @@ internal fun ReviewSheet(
                         onClick = { revealed = true },
                         colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
                         shape = PillShape
-                    ) { Text("显示释义") }
+                    ) { Text(stringResource(R.string.review_reveal)) }
                 }
             }
         }
@@ -294,50 +305,50 @@ internal fun ReviewSettingsSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 30.dp)
         ) {
-            Text("复习设置", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.review_settings_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(4.dp))
             Text(
-                "提醒方式与复习节奏彼此独立：先组合提醒载体，再选择复习频率。",
+                stringResource(R.string.review_settings_hint),
                 color = InkSoft,
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(16.dp))
-            Text("提醒方式", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.review_reminder_section), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             ReminderToggleRow(
-                title = "语境浮现",
-                description = "已收藏词再次出现时加细点线；点击该词可在释义面板复习。",
+                title = stringResource(R.string.review_reminder_context_title),
+                description = stringResource(R.string.review_reminder_context_desc),
                 checked = reminders.contextHighlight,
                 onCheckedChange = { onChangeReminders(reminders.copy(contextHighlight = it)) }
             )
             ReminderToggleRow(
-                title = "停顿点提示",
-                description = "翻章或返回书架时，显示一行“有 N 个词可快速复习”。",
+                title = stringResource(R.string.review_reminder_pause_title),
+                description = stringResource(R.string.review_reminder_pause_desc),
                 checked = reminders.pausePrompt,
                 onCheckedChange = { onChangeReminders(reminders.copy(pausePrompt = it)) }
             )
             ReminderToggleRow(
-                title = "工具栏角标",
-                description = "阅读页顶部显示待复习数量，不主动打扰。",
+                title = stringResource(R.string.review_reminder_badge_title),
+                description = stringResource(R.string.review_reminder_badge_desc),
                 checked = reminders.toolbarBadge,
                 onCheckedChange = { onChangeReminders(reminders.copy(toolbarBadge = it)) }
             )
             ReminderToggleRow(
-                title = "定时轻提醒",
-                description = "到期时发送本地通知（需系统通知权限）。",
+                title = stringResource(R.string.review_reminder_notification_title),
+                description = stringResource(R.string.review_reminder_notification_desc),
                 checked = reminders.notifications,
                 onCheckedChange = ::toggleNotification
             )
             if (notificationDenied) {
                 Text(
-                    "未授予通知权限，定时轻提醒保持关闭。",
+                    stringResource(R.string.review_notification_denied),
                     color = Danger,
                     style = MaterialTheme.typography.labelSmall
                 )
             }
             ReminderToggleRow(
-                title = "仅手动",
-                description = "关闭以上所有主动提醒，只从生词本进入复习。",
+                title = stringResource(R.string.review_reminder_manual_title),
+                description = stringResource(R.string.review_reminder_manual_desc),
                 checked = reminders.manualOnly,
                 onCheckedChange = { enabled ->
                     if (enabled) {
@@ -355,10 +366,10 @@ internal fun ReviewSettingsSheet(
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Ink.copy(alpha = .08f))
             Spacer(Modifier.height(8.dp))
-            Text("复习节奏", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.review_pace_section), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
-                "选择预设会恢复其经典提醒组合，之后仍可单独调整。",
+                stringResource(R.string.review_preset_hint),
                 color = InkSoft,
                 style = MaterialTheme.typography.bodySmall
             )
@@ -389,7 +400,7 @@ internal fun ReviewSettingsSheet(
                                 if (presetMode == ReviewMode.DEFAULT) {
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        "默认",
+                                        stringResource(R.string.review_default_badge),
                                         color = Accent,
                                         style = MaterialTheme.typography.labelSmall
                                     )
@@ -403,8 +414,13 @@ internal fun ReviewSettingsSheet(
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                "首次 ${presetMode.firstDelayMillis / 60_000} 分钟 · 间隔 ×${presetMode.intervalMultiplier} · " +
-                                    "每日 ${presetMode.dailyPromptLimit} 次 · 单次 ${presetMode.sessionMaxWords} 词",
+                                stringResource(
+                                    R.string.review_pace_summary,
+                                    presetMode.firstDelayMillis / 60_000,
+                                    presetMode.intervalMultiplier,
+                                    presetMode.dailyPromptLimit,
+                                    presetMode.sessionMaxWords
+                                ),
                                 color = Ink.copy(alpha = .55f),
                                 style = MaterialTheme.typography.labelSmall
                             )
@@ -430,19 +446,20 @@ internal fun ReviewSettingsSheet(
                     RadioButton(selected = customSelected, onClick = { editingCustom = true })
                     Column(Modifier.padding(start = 6.dp)) {
                         Text(
-                            "自定义",
+                            stringResource(R.string.review_pace_custom),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "在记忆曲线上选择复习时还想记住多少，并调整首次复习与提醒方式。",
+                            stringResource(R.string.review_custom_desc),
                             color = InkSoft,
                             style = MaterialTheme.typography.bodySmall
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            if (customSelected) "正在使用 · 点击编辑" else "点击开始调整",
+                            if (customSelected) stringResource(R.string.review_custom_in_use)
+                            else stringResource(R.string.review_custom_start),
                             color = Accent,
                             style = MaterialTheme.typography.labelSmall
                         )
@@ -459,7 +476,7 @@ internal fun ReviewSettingsSheet(
             HorizontalDivider(color = Ink.copy(alpha = .08f))
             Spacer(Modifier.height(8.dp))
             Text(
-                "阅读中不会弹出全屏复习；所有提示都可一键忽略。",
+                stringResource(R.string.review_no_fullscreen_note),
                 color = InkSoft,
                 style = MaterialTheme.typography.bodySmall
             )
@@ -483,16 +500,19 @@ private fun CustomReviewEditor(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-            Text("自定义节奏", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.review_custom_editor_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
-                "点越靠左复习越勤快（忘得少），越靠右越宽松。曲线是示意，不是对个人记忆的测量。",
+                stringResource(R.string.review_custom_editor_hint),
                 color = InkSoft,
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                "复习时约剩 ${ReviewPace.retentionPercent(retention)}% 记忆",
+                stringResource(
+                    R.string.review_retention_label,
+                    ReviewPace.retentionPercent(retention)
+                ),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = Accent
@@ -506,17 +526,22 @@ private fun CustomReviewEditor(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "参考刻度：沉浸 ${retentionPercentOf(ReviewMode.IMMERSIVE)}% · 温和 ${retentionPercentOf(ReviewMode.GENTLE)}% · 勤学 ${retentionPercentOf(ReviewMode.DILIGENT)}%",
+                stringResource(
+                    R.string.review_retention_scale,
+                    retentionPercentOf(ReviewMode.IMMERSIVE),
+                    retentionPercentOf(ReviewMode.GENTLE),
+                    retentionPercentOf(ReviewMode.DILIGENT)
+                ),
                 color = InkFaint,
                 style = MaterialTheme.typography.labelSmall
             )
             Spacer(Modifier.height(12.dp))
             PacePreview(pace = draft)
             Spacer(Modifier.height(14.dp))
-            Text("首次复习", color = InkSoft, style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.review_first_delay_label), color = InkSoft, style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                firstDelayOptions.forEach { (millis, label) ->
+                firstDelayOptions().forEach { (millis, label) ->
                     OptionChip(
                         label = label,
                         selected = draft.firstDelayMillis == millis,
@@ -526,27 +551,31 @@ private fun CustomReviewEditor(
             }
             Spacer(Modifier.height(14.dp))
             TextButton(onClick = { showMore = !showMore }) {
-                Text(if (showMore) "收起更多选项" else "更多选项", color = Accent)
+                Text(
+                    if (showMore) stringResource(R.string.review_fewer_options)
+                    else stringResource(R.string.review_more_options),
+                    color = Accent
+                )
             }
             if (showMore) {
-                Text("每日主动提示上限", color = InkSoft, style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.review_daily_limit_label), color = InkSoft, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(1, 2, 4).forEach { limit ->
                         OptionChip(
-                            label = "$limit 次",
+                            label = pluralStringResource(R.plurals.review_count_times, limit, limit),
                             selected = draft.dailyPromptLimit == limit,
                             onClick = { draft = draft.copy(dailyPromptLimit = limit) }
                         )
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                Text("单次最多复习", color = InkSoft, style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.review_session_max_label), color = InkSoft, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(3, 5, 10).forEach { maxWords ->
                         OptionChip(
-                            label = "$maxWords 词",
+                            label = pluralStringResource(R.plurals.review_count_words, maxWords, maxWords),
                             selected = draft.sessionMaxWords == maxWords,
                             onClick = { draft = draft.copy(sessionMaxWords = maxWords) }
                         )
@@ -556,17 +585,17 @@ private fun CustomReviewEditor(
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 TextButton(onClick = { draft = ReviewPace.defaultCustom() }) {
-                    Text("恢复默认", color = Accent)
+                    Text(stringResource(R.string.review_reset_default), color = Accent)
                 }
                 Button(
                     onClick = { onSave(draft) },
                     colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
                     shape = PillShape
-                ) { Text("保存并启用") }
+                ) { Text(stringResource(R.string.review_save_enable)) }
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                "节奏修改后需点“保存并启用”才会应用。",
+                stringResource(R.string.review_save_enable_hint),
                 color = InkFaint,
                 style = MaterialTheme.typography.labelSmall
             )
@@ -611,11 +640,12 @@ private fun ReviewCurvePicker(
     val curveColor = Accent
     val markerColor = Ink.copy(alpha = .45f)
     val handleFill = Paper
+    val curveDescription = stringResource(R.string.review_curve_desc)
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(180.dp)
-            .semantics { contentDescription = "记忆曲线" }
+            .semantics { contentDescription = curveDescription }
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     val x = (offset.x / size.width).coerceIn(0f, 1f)
@@ -679,12 +709,12 @@ private fun ReviewCurvePicker(
 @Composable
 private fun PacePreview(pace: ReviewPace) {
     Column {
-        Text("按此节奏", color = InkSoft, style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.review_pace_preview_title), color = InkSoft, style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.height(4.dp))
-        Text("首次：${firstDelayLabel(pace.firstDelayMillis)}")
-        Text("第 2 次：${formatApproxDuration(ReviewScheduler.intervalFor(1, pace))}")
-        Text("第 3 次：${formatApproxDuration(ReviewScheduler.intervalFor(2, pace))}")
-        Text("第 4 次：${formatApproxDuration(ReviewScheduler.intervalFor(3, pace))}")
+        Text(stringResource(R.string.review_pace_preview_first, firstDelayLabel(pace.firstDelayMillis)))
+        Text(stringResource(R.string.review_pace_preview_nth, 2, formatApproxDuration(ReviewScheduler.intervalFor(1, pace))))
+        Text(stringResource(R.string.review_pace_preview_nth, 3, formatApproxDuration(ReviewScheduler.intervalFor(2, pace))))
+        Text(stringResource(R.string.review_pace_preview_nth, 4, formatApproxDuration(ReviewScheduler.intervalFor(3, pace))))
     }
 }
 
@@ -729,23 +759,26 @@ private object ReviewCurve {
 private fun retentionPercentOf(mode: ReviewMode): Int =
     ReviewPace.retentionPercent(ReviewPace.retentionForMultiplier(mode.intervalMultiplier))
 
-private val firstDelayOptions = listOf(
-    5 * 60_000L to "5 分钟",
-    30 * 60_000L to "30 分钟",
-    2 * 3_600_000L to "2 小时",
-    24 * 3_600_000L to "次日"
+@Composable
+private fun firstDelayOptions(): List<Pair<Long, String>> = listOf(
+    5 * 60_000L to stringResource(R.string.review_delay_5m),
+    30 * 60_000L to stringResource(R.string.review_delay_30m),
+    2 * 3_600_000L to stringResource(R.string.review_delay_2h),
+    24 * 3_600_000L to stringResource(R.string.review_delay_next_day)
 )
 
+@Composable
 private fun firstDelayLabel(millis: Long): String =
-    firstDelayOptions.firstOrNull { it.first == millis }?.second
+    firstDelayOptions().firstOrNull { it.first == millis }?.second
         ?: formatApproxDuration(millis)
 
+@Composable
 private fun formatApproxDuration(millis: Long): String {
     val minutes = millis / 60_000L
     return when {
-        minutes < 60 -> "约 $minutes 分钟后"
-        minutes < 24 * 60 -> "约 ${minutes / 60} 小时后"
-        else -> "约 ${minutes / (24 * 60)} 天后"
+        minutes < 60 -> stringResource(R.string.review_in_minutes_approx, minutes)
+        minutes < 24 * 60 -> stringResource(R.string.review_in_hours_approx, minutes / 60)
+        else -> stringResource(R.string.review_in_days_approx, minutes / (24 * 60))
     }
 }
 
@@ -773,13 +806,13 @@ internal fun ReviewPromptBanner(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "有 $count 个词可快速复习",
+                pluralStringResource(R.plurals.review_banner_due, count, count),
                 modifier = Modifier.weight(1f),
                 color = Ink,
                 style = MaterialTheme.typography.bodyMedium
             )
-            TextButton(onClick = onStart) { Text("开始", color = Accent) }
-            TextButton(onClick = onDismiss) { Text("忽略") }
+            TextButton(onClick = onStart) { Text(stringResource(R.string.review_banner_start), color = Accent) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.review_banner_dismiss)) }
         }
     }
 }

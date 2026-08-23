@@ -368,4 +368,74 @@
         <item quantity="one">Fetched %1$d available voice</item>
         <item quantity="other">Fetched %1$d available voices</item>
     </plurals>
+
+    <!-- Review (cards / settings / pause banner) -->
+    <string name="common_book_context">In this book: %1$s</string>
+    <string name="common_book_context_source">In this book (%1$s): %2$s</string>
+    <string name="review_done_title">Review complete</string>
+    <string name="review_done_body">Finished %1$d of %2$d words — the next review is scheduled for each.</string>
+    <string name="review_card_position">Card %1$d of %2$d</string>
+    <string name="review_card_progress">Completed %1$d of %2$d</string>
+    <string name="review_learn_again">Learn again</string>
+    <string name="review_known">I know it</string>
+    <string name="review_reveal">Show meaning</string>
+    <string name="review_settings_title">Review settings</string>
+    <string name="review_settings_hint">Reminders and review pacing are independent: combine the reminder channels first, then pick a frequency.</string>
+    <string name="review_reminder_section">Reminders</string>
+    <string name="review_reminder_context_title">Context highlighting</string>
+    <string name="review_reminder_context_desc">Saved words get a dotted underline when they reappear; tap one to review it in the meaning panel.</string>
+    <string name="review_reminder_pause_title">Pause-point prompts</string>
+    <string name="review_reminder_pause_desc">When you turn a chapter or leave the book, show a line saying “N words are ready for a quick review”.</string>
+    <string name="review_reminder_badge_title">Toolbar badge</string>
+    <string name="review_reminder_badge_desc">Shows the due count at the top of the reading page without interrupting you.</string>
+    <string name="review_reminder_notification_title">Scheduled gentle reminders</string>
+    <string name="review_reminder_notification_desc">Sends a local notification when words are due (needs the notification permission).</string>
+    <string name="review_notification_denied">Notification permission not granted; scheduled reminders stay off.</string>
+    <string name="review_reminder_manual_title">Manual only</string>
+    <string name="review_reminder_manual_desc">Turns off every proactive reminder above; review only from the vocabulary list.</string>
+    <string name="review_pace_section">Review pace</string>
+    <string name="review_preset_hint">Picking a preset restores its classic reminder combination; you can still adjust each one afterwards.</string>
+    <string name="review_default_badge">Default</string>
+    <string name="review_pace_summary">First review in %1$d min · interval ×%2$s · %3$d prompts a day · %4$d words a session</string>
+    <string name="review_custom_desc">Pick how much you still want to remember at review time on the memory curve, then tune the first delay and reminders.</string>
+    <string name="review_custom_in_use">In use · tap to edit</string>
+    <string name="review_custom_start">Tap to adjust</string>
+    <string name="review_no_fullscreen_note">Reading never pops a fullscreen review; every prompt can be dismissed in one tap.</string>
+    <string name="review_custom_editor_title">Custom pace</string>
+    <string name="review_custom_editor_hint">Further left reviews more often (less forgetting); further right is more relaxed. The curve is illustrative, not a measurement of your memory.</string>
+    <string name="review_retention_label">About %1$d%% memory left at review</string>
+    <string name="review_retention_scale">Reference: immersive %1$d%% · gentle %2$d%% · diligent %3$d%%</string>
+    <string name="review_first_delay_label">First review</string>
+    <string name="review_delay_5m">5 min</string>
+    <string name="review_delay_30m">30 min</string>
+    <string name="review_delay_2h">2 hours</string>
+    <string name="review_delay_next_day">Next day</string>
+    <string name="review_in_minutes_approx">in ~%1$d min</string>
+    <string name="review_in_hours_approx">in ~%1$d h</string>
+    <string name="review_in_days_approx">in ~%1$d days</string>
+    <string name="review_pace_preview_title">With this pace</string>
+    <string name="review_pace_preview_first">First: %1$s</string>
+    <string name="review_pace_preview_nth">Review %1$d: %2$s</string>
+    <string name="review_more_options">More options</string>
+    <string name="review_fewer_options">Hide options</string>
+    <string name="review_daily_limit_label">Daily prompt limit</string>
+    <string name="review_session_max_label">Max words per session</string>
+    <string name="review_reset_default">Reset to default</string>
+    <string name="review_save_enable">Save &amp; enable</string>
+    <string name="review_save_enable_hint">Pace changes apply only after you tap “Save &amp; enable”.</string>
+    <string name="review_curve_desc">Memory curve</string>
+    <string name="review_banner_start">Start</string>
+    <string name="review_banner_dismiss">Ignore</string>
+    <plurals name="review_count_times">
+        <item quantity="one">%1$d time</item>
+        <item quantity="other">%1$d times</item>
+    </plurals>
+    <plurals name="review_count_words">
+        <item quantity="one">%1$d word</item>
+        <item quantity="other">%1$d words</item>
+    </plurals>
+    <plurals name="review_banner_due">
+        <item quantity="one">%1$d word ready for a quick review</item>
+        <item quantity="other">%1$d words ready for a quick review</item>
+    </plurals>
 </resources>

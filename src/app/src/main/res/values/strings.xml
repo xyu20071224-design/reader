@@ -362,4 +362,71 @@
     <plurals name="tts_voices_fetched">
         <item quantity="other">已获取 %1$d 个可用音色</item>
     </plurals>
+
+    <!-- 复习（卡片/设置/停顿点横幅） -->
+    <string name="common_book_context">本书语境：%1$s</string>
+    <string name="common_book_context_source">本书语境（%1$s）：%2$s</string>
+    <string name="review_done_title">复习完成</string>
+    <string name="review_done_body">已完成 %1$d / %2$d 个单词，均已安排下次复习。</string>
+    <string name="review_card_position">第 %1$d / %2$d 张</string>
+    <string name="review_card_progress">已完成 %1$d / %2$d</string>
+    <string name="review_learn_again">再学一次</string>
+    <string name="review_known">认识</string>
+    <string name="review_reveal">显示释义</string>
+    <string name="review_settings_title">复习设置</string>
+    <string name="review_settings_hint">提醒方式与复习节奏彼此独立：先组合提醒载体，再选择复习频率。</string>
+    <string name="review_reminder_section">提醒方式</string>
+    <string name="review_reminder_context_title">语境浮现</string>
+    <string name="review_reminder_context_desc">已收藏词再次出现时加细点线；点击该词可在释义面板复习。</string>
+    <string name="review_reminder_pause_title">停顿点提示</string>
+    <string name="review_reminder_pause_desc">翻章或返回书架时，显示一行“有 N 个词可快速复习”。</string>
+    <string name="review_reminder_badge_title">工具栏角标</string>
+    <string name="review_reminder_badge_desc">阅读页顶部显示待复习数量，不主动打扰。</string>
+    <string name="review_reminder_notification_title">定时轻提醒</string>
+    <string name="review_reminder_notification_desc">到期时发送本地通知（需系统通知权限）。</string>
+    <string name="review_notification_denied">未授予通知权限，定时轻提醒保持关闭。</string>
+    <string name="review_reminder_manual_title">仅手动</string>
+    <string name="review_reminder_manual_desc">关闭以上所有主动提醒，只从生词本进入复习。</string>
+    <string name="review_pace_section">复习节奏</string>
+    <string name="review_preset_hint">选择预设会恢复其经典提醒组合，之后仍可单独调整。</string>
+    <string name="review_default_badge">默认</string>
+    <string name="review_pace_summary">首次 %1$d 分钟 · 间隔 ×%2$s · 每日 %3$d 次 · 单次 %4$d 词</string>
+    <string name="review_custom_desc">在记忆曲线上选择复习时还想记住多少，并调整首次复习与提醒方式。</string>
+    <string name="review_custom_in_use">正在使用 · 点击编辑</string>
+    <string name="review_custom_start">点击开始调整</string>
+    <string name="review_no_fullscreen_note">阅读中不会弹出全屏复习；所有提示都可一键忽略。</string>
+    <string name="review_custom_editor_title">自定义节奏</string>
+    <string name="review_custom_editor_hint">点越靠左复习越勤快（忘得少），越靠右越宽松。曲线是示意，不是对个人记忆的测量。</string>
+    <string name="review_retention_label">复习时约剩 %1$d%% 记忆</string>
+    <string name="review_retention_scale">参考刻度：沉浸 %1$d%% · 温和 %2$d%% · 勤学 %3$d%%</string>
+    <string name="review_first_delay_label">首次复习</string>
+    <string name="review_delay_5m">5 分钟</string>
+    <string name="review_delay_30m">30 分钟</string>
+    <string name="review_delay_2h">2 小时</string>
+    <string name="review_delay_next_day">次日</string>
+    <string name="review_in_minutes_approx">约 %1$d 分钟后</string>
+    <string name="review_in_hours_approx">约 %1$d 小时后</string>
+    <string name="review_in_days_approx">约 %1$d 天后</string>
+    <string name="review_pace_preview_title">按此节奏</string>
+    <string name="review_pace_preview_first">首次：%1$s</string>
+    <string name="review_pace_preview_nth">第 %1$d 次：%2$s</string>
+    <string name="review_more_options">更多选项</string>
+    <string name="review_fewer_options">收起更多选项</string>
+    <string name="review_daily_limit_label">每日主动提示上限</string>
+    <string name="review_session_max_label">单次最多复习</string>
+    <string name="review_reset_default">恢复默认</string>
+    <string name="review_save_enable">保存并启用</string>
+    <string name="review_save_enable_hint">节奏修改后需点“保存并启用”才会应用。</string>
+    <string name="review_curve_desc">记忆曲线</string>
+    <string name="review_banner_start">开始</string>
+    <string name="review_banner_dismiss">忽略</string>
+    <plurals name="review_count_times">
+        <item quantity="other">%1$d 次</item>
+    </plurals>
+    <plurals name="review_count_words">
+        <item quantity="other">%1$d 词</item>
+    </plurals>
+    <plurals name="review_banner_due">
+        <item quantity="other">有 %1$d 个词可快速复习</item>
+    </plurals>
 </resources>
