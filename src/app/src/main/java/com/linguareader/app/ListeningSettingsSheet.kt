@@ -66,6 +66,7 @@ import com.linguareader.app.tts.SystemVoiceInfo
 import com.linguareader.app.tts.TtsEngineMode
 import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.VolcanoTtsBackend
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -91,6 +92,26 @@ internal data class SettingsStatus(
         fun danger(text: String) = SettingsStatus(text, StatusTone.DANGER)
         fun info(text: String) = SettingsStatus(text, StatusTone.NEUTRAL)
     }
+}
+
+/**
+ * 行内状态文本（弹层内反馈的统一渲染）：ModalBottomSheet 会盖住全局 Snackbar，
+ * 所以弹层打开期间发生的保存/删除类反馈必须画在弹层内部，沿 [SettingsStatus]
+ * 的显式语义着色。null 时什么都不画。
+ */
+@Composable
+internal fun SettingsStatusText(status: SettingsStatus?, modifier: Modifier = Modifier) {
+    if (status == null) return
+    Text(
+        status.text,
+        color = when (status.tone) {
+            StatusTone.SUCCESS -> Success
+            StatusTone.DANGER -> Danger
+            StatusTone.NEUTRAL -> InkFaint
+        },
+        style = MaterialTheme.typography.labelMedium,
+        modifier = modifier
+    )
 }
 
 /**
@@ -276,8 +297,14 @@ internal fun ListeningSettingsBody(
         }
         CloudTtsSettings.save(context, settings)
         TtsPlaybackController.onCloudSettingsChanged(context)
-        status = SettingsStatus.success("已保存")
-        onSaved()
+        // 保存成功先在弹层内联展示「已保存」，稍等片刻再回调关闭：
+        // 直接关闭会让行内反馈一闪而过（ModalBottomSheet 又会盖住全局
+        // Snackbar），用户得到「毫无动静」的观感。失败路径不关闭，反馈常驻。
+        status = SettingsStatus.success(context.getString(R.string.tts_settings_saved))
+        scope.launch {
+            delay(800)
+            onSaved()
+        }
     }
 
     LaunchedEffect(settings.mode) {
@@ -362,17 +389,7 @@ internal fun ListeningSettingsBody(
                 ) {
                     Text(if (piperImporting) "正在导入…" else "导入模型（选择 .onnx 文件）")
                 }
-                piperStatus?.let {
-                    Text(
-                        it.text,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = when (it.tone) {
-                            StatusTone.SUCCESS -> Success
-                            StatusTone.DANGER -> Danger
-                            StatusTone.NEUTRAL -> InkFaint
-                        }
-                    )
-                }
+                piperStatus?.let { SettingsStatusText(it) }
                 Spacer(Modifier.height(4.dp))
                 if (!settings.networkAiEnabled) {
                     Text(
@@ -404,17 +421,7 @@ internal fun ListeningSettingsBody(
                 TextButton(onClick = { loadSystemVoices(refresh = true) }) {
                     Text(if (systemVoices.isEmpty()) "加载音色" else "刷新音色")
                 }
-                status?.let {
-                    Text(
-                        it.text,
-                        color = when (it.tone) {
-                            StatusTone.SUCCESS -> Success
-                            StatusTone.DANGER -> Danger
-                            StatusTone.NEUTRAL -> InkFaint
-                        },
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
+                status?.let { SettingsStatusText(it) }
                 if (systemVoices.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     // Fall back to the full list when the engine's locale codes
@@ -474,17 +481,7 @@ internal fun ListeningSettingsBody(
                         Text("测试连接")
                     }
                 }
-                status?.let {
-                    Text(
-                        it.text,
-                        color = when (it.tone) {
-                            StatusTone.SUCCESS -> Success
-                            StatusTone.DANGER -> Danger
-                            StatusTone.NEUTRAL -> InkFaint
-                        },
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
+                status?.let { SettingsStatusText(it) }
 
                 if (voices.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
@@ -612,17 +609,7 @@ internal fun ListeningSettingsBody(
                 TextButton(onClick = ::testServer, enabled = !busy) {
                     Text("测试连接")
                 }
-                status?.let {
-                    Text(
-                        it.text,
-                        color = when (it.tone) {
-                            StatusTone.SUCCESS -> Success
-                            StatusTone.DANGER -> Danger
-                            StatusTone.NEUTRAL -> InkFaint
-                        },
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
+                status?.let { SettingsStatusText(it) }
             }
 
             if (settings.mode == TtsEngineMode.VOLC) {
@@ -678,17 +665,7 @@ internal fun ListeningSettingsBody(
                 TextButton(onClick = ::testVolcano, enabled = !busy) {
                     Text("测试连接")
                 }
-                status?.let {
-                    Text(
-                        it.text,
-                        color = when (it.tone) {
-                            StatusTone.SUCCESS -> Success
-                            StatusTone.DANGER -> Danger
-                            StatusTone.NEUTRAL -> InkFaint
-                        },
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
+                status?.let { SettingsStatusText(it) }
             }
 
             // Multi-voice M4: switch + narrator/character voices (§8).

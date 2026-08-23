@@ -78,6 +78,7 @@ import com.linguareader.app.tts.VoiceAudition
 import com.linguareader.app.tts.VoiceCharacter
 import com.linguareader.app.tts.VoiceLibrary
 import com.linguareader.app.tts.VoicePicker
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -95,7 +96,18 @@ internal fun MultiVoiceSection(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val snackbar = LocalAppSnackbar.current
+    // 本区块住在 ModalBottomSheet / AI 抽屉里，全局 Snackbar 会被弹层整个盖住，
+    // 所以反馈走弹层内联状态（SettingsStatus 模式），不再出 Snackbar。
+    var inlineNotice by remember { mutableStateOf<SettingsStatus?>(null) }
+    LaunchedEffect(inlineNotice) {
+        if (inlineNotice != null) {
+            delay(2500)
+            inlineNotice = null
+        }
+    }
+    fun notify(value: SettingsStatus?) {
+        inlineNotice = value
+    }
     val engineSupported = MultiVoiceSupport.engineSupportsMultiVoice(
         settings,
         MultiVoiceSupport.systemUsableVoiceCount(context)
@@ -164,7 +176,7 @@ internal fun MultiVoiceSection(
                 repository.lock(bookId, target.speaker, voiceId)
             }
             TtsPlaybackController.onCloudSettingsChanged(context)
-            snackbar.show(context.getString(R.string.multivoice_locked_notice, target.title))
+            notify(SettingsStatus.success(context.getString(R.string.multivoice_locked_notice, target.title)))
             reloadToken++
         }
     }
@@ -176,7 +188,7 @@ internal fun MultiVoiceSection(
             val speaker = target.narratorLanguage?.let { BookVoiceMap.narratorKey(it) } ?: target.speaker
             repository.unlock(bookId, speaker)
             TtsPlaybackController.onCloudSettingsChanged(context)
-            snackbar.show(context.getString(R.string.multivoice_released_notice, target.title))
+            notify(SettingsStatus.success(context.getString(R.string.multivoice_released_notice, target.title)))
             reloadToken++
         }
     }
@@ -199,7 +211,7 @@ internal fun MultiVoiceSection(
                 text = text,
                 onFinished = { if (playingVoice == voiceId) playingVoice = null }
             ).onFailure {
-                snackbar.show(it.message ?: auditionFailed)
+                notify(SettingsStatus.danger(it.message ?: auditionFailed))
                 playingVoice = null
             }
         }
@@ -223,7 +235,7 @@ internal fun MultiVoiceSection(
                 text = text,
                 onFinished = { if (playingVoice == voice.name) playingVoice = null }
             ).onFailure {
-                snackbar.show(it.message ?: auditionFailed)
+                notify(SettingsStatus.danger(it.message ?: auditionFailed))
                 playingVoice = null
             }
         }
@@ -233,11 +245,11 @@ internal fun MultiVoiceSection(
     fun addCharacter(name: String, gender: String): Boolean {
         val clean = name.trim()
         if (clean.isEmpty()) {
-            snackbar.show(context.getString(R.string.multivoice_name_required))
+            notify(SettingsStatus.danger(context.getString(R.string.multivoice_name_required)))
             return false
         }
         if (characters.any { it.name.equals(clean, ignoreCase = true) }) {
-            snackbar.show(context.getString(R.string.multivoice_character_exists, clean))
+            notify(SettingsStatus.danger(context.getString(R.string.multivoice_character_exists, clean)))
             return false
         }
         scope.launch {
@@ -246,11 +258,11 @@ internal fun MultiVoiceSection(
                     .addManualCharacter(bookId, clean, gender)
             }.getOrNull()
             if (created == null) {
-                snackbar.show(context.getString(R.string.multivoice_add_failed))
+                notify(SettingsStatus.danger(context.getString(R.string.multivoice_add_failed)))
                 return@launch
             }
             TtsPlaybackController.onCloudSettingsChanged(context)
-            snackbar.show(context.getString(R.string.multivoice_character_added, clean))
+            notify(SettingsStatus.success(context.getString(R.string.multivoice_character_added, clean)))
             reloadToken++
         }
         return true
@@ -260,13 +272,13 @@ internal fun MultiVoiceSection(
     fun addAlias(character: VoiceCharacter, alias: String): Boolean {
         val clean = alias.trim()
         if (clean.isEmpty()) {
-            snackbar.show(context.getString(R.string.multivoice_alias_required))
+            notify(SettingsStatus.danger(context.getString(R.string.multivoice_alias_required)))
             return false
         }
         if (clean.equals(character.name, ignoreCase = true) ||
             character.aliases.any { it.equals(clean, ignoreCase = true) }
         ) {
-            snackbar.show(context.getString(R.string.multivoice_alias_exists))
+            notify(SettingsStatus.danger(context.getString(R.string.multivoice_alias_exists)))
             return false
         }
         scope.launch {
@@ -275,10 +287,10 @@ internal fun MultiVoiceSection(
                     .addAlias(bookId, character.name, clean)
             }.getOrNull()
             if (updated == null) {
-                snackbar.show(context.getString(R.string.multivoice_add_failed))
+                notify(SettingsStatus.danger(context.getString(R.string.multivoice_add_failed)))
                 return@launch
             }
-            snackbar.show(context.getString(R.string.multivoice_alias_added, clean))
+            notify(SettingsStatus.success(context.getString(R.string.multivoice_alias_added, clean)))
             reloadToken++
         }
         return true
@@ -292,10 +304,10 @@ internal fun MultiVoiceSection(
                     .removeAlias(bookId, character.name, alias)
             }.getOrNull()
             if (updated == null) {
-                snackbar.show(context.getString(R.string.multivoice_add_failed))
+                notify(SettingsStatus.danger(context.getString(R.string.multivoice_add_failed)))
                 return@launch
             }
-            snackbar.show(context.getString(R.string.multivoice_alias_removed, alias.trim()))
+            notify(SettingsStatus.success(context.getString(R.string.multivoice_alias_removed, alias.trim())))
             reloadToken++
         }
     }
@@ -327,11 +339,18 @@ internal fun MultiVoiceSection(
         )
     }
 
+    // 放在「不支持即提前 return」之前：标注保存成功、引擎不支持时的操作反馈
+    // 也必须能展示出来（历史上对话框渲染点就吃过提前 return 的亏）。
+    inlineNotice?.let {
+        Spacer(Modifier.height(6.dp))
+        SettingsStatusText(it)
+    }
+
     // M5c（§13.5）：SYSTEM 模式三态引导（推荐 / 可切换 / 未安装），纯提示不自动切换。
     if (systemMode) {
         val openSettingsFailed = stringResource(R.string.multi_voice_system_settings_open_failed)
         SystemEngineGuidance(
-            onOpenSettingsFailed = { scope.launch { snackbar.show(openSettingsFailed) } }
+            onOpenSettingsFailed = { notify(SettingsStatus.danger(openSettingsFailed)) }
         )
     }
 
@@ -355,7 +374,7 @@ internal fun MultiVoiceSection(
                         SystemVoiceStore.saveAnnotations(context, enginePackage, annotations)
                         SystemVoiceStore.setCurrentEngine(context, enginePackage)
                     }
-                    snackbar.show(context.getString(R.string.multi_voice_saved))
+                    notify(SettingsStatus.success(context.getString(R.string.multi_voice_saved)))
                     annotating = false
                     reloadToken++
                 }

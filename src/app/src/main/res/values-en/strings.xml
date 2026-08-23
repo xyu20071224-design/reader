@@ -13,6 +13,7 @@
     <string name="notice_word_saved">Saved \"%1$s\"</string>
     <string name="notice_word_removed">Removed \"%1$s\"</string>
     <string name="reader_ai_lookup_failed">AI context lookup failed, showing local dictionary result</string>
+    <string name="tts_settings_saved">Saved, closing…</string>
 
     <!-- Bookshelf -->
     <plurals name="shelf_book_count">

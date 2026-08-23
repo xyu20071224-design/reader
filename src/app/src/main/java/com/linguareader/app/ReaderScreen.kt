@@ -200,6 +200,9 @@ internal fun ReaderScreen(
     var showListeningSettings by remember { mutableStateOf(false) }
     var showPageJump by remember { mutableStateOf(false) }
     var lookup by rememberSaveable(stateSaver = WordLookupSaver) { mutableStateOf<WordLookup?>(null) }
+    // 查词弹层（ModalBottomSheet）会盖住全局 Snackbar：收藏/移出生词的反馈
+    // 必须画在弹层内部（SettingsStatus 行内模式），否则用户得到「毫无动静」。
+    var lookupStatus by remember { mutableStateOf<SettingsStatus?>(null) }
     var dictionaryResult by remember { mutableStateOf<DictionaryLookupResult?>(null) }
     var dictionaryLoading by remember { mutableStateOf(false) }
     var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
@@ -418,6 +421,7 @@ internal fun ReaderScreen(
         aiResult = null
         aiLoading = false
         aiFailed = false
+        lookupStatus = null
         sentenceTranslation = sentenceTranslationCache[request.sentence.trim()]
         sentenceTranslationError = null
         sentenceTranslationLoading = false
@@ -767,6 +771,7 @@ internal fun ReaderScreen(
             entry = displayedEntry,
             relatedPhrase = dictionaryResult?.relatedPhrase,
             loading = dictionaryLoading,
+            saveStatus = lookupStatus,
             aiContext = aiResult,
             aiLoading = aiLoading,
             aiFailed = aiFailed,
@@ -795,7 +800,16 @@ internal fun ReaderScreen(
             onToggleSave = {
                 val entry = displayedEntry ?: return@LookupSheet
                 if (savedId != null && savedWords.any { word -> word.id == savedId }) {
+                    val removedHeadword = savedWords
+                        .firstOrNull { word -> word.id == savedId }?.headword
                     viewModel.removeSavedWord(savedId)
+                    // 弹层开着时全局 Snackbar 不可见，反馈改在弹层内联展示。
+                    lookupStatus = SettingsStatus.success(
+                        context.getString(
+                            R.string.notice_word_removed,
+                            removedHeadword ?: currentLookup.word
+                        )
+                    )
                 } else {
                     viewModel.saveWord(
                         book,
@@ -803,6 +817,9 @@ internal fun ReaderScreen(
                         currentLookup,
                         entry,
                         aiResult
+                    )
+                    lookupStatus = SettingsStatus.success(
+                        context.getString(R.string.notice_word_saved, currentLookup.word)
                     )
                 }
             },
@@ -839,6 +856,7 @@ internal fun ReaderScreen(
             onDismiss = {
                 lookup = null
                 showingRelatedPhrase = false
+                lookupStatus = null
             }
         )
     }
@@ -1104,6 +1122,7 @@ private fun LookupSheet(
     entry: ContextualDictionaryEntry?,
     relatedPhrase: ContextualDictionaryEntry?,
     loading: Boolean,
+    saveStatus: SettingsStatus?,
     aiContext: AiLookupResult?,
     aiLoading: Boolean,
     aiFailed: Boolean,
@@ -1210,6 +1229,11 @@ private fun LookupSheet(
                         Text(if (isSaved) "移出生词本" else "加入生词本")
                     }
                 }
+            }
+            // 收藏/移出生词的行内反馈：弹层开着时全局 Snackbar 被盖住，只能画在面板里。
+            if (saveStatus != null) {
+                Spacer(Modifier.height(4.dp))
+                SettingsStatusText(saveStatus)
             }
             if (aiLoading) {
                 Spacer(Modifier.height(12.dp))
