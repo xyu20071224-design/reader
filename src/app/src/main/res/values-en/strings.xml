@@ -484,4 +484,32 @@
         <item quantity="one">Review %1$d</item>
         <item quantity="other">Review %1$d</item>
     </plurals>
+
+    <!-- Vocabulary -->
+    <string name="common_settings">Settings</string>
+    <string name="vocab_title">My words</string>
+    <string name="vocab_due_done">Today\'s review is done</string>
+    <string name="vocab_export">Export</string>
+    <string name="vocab_stat_total">Total words</string>
+    <string name="vocab_stat_due">Due</string>
+    <string name="vocab_stat_mastered">Mastered</string>
+    <string name="vocab_search_hint">Search words, meanings, or sentences</string>
+    <string name="vocab_empty_title">No saved words yet</string>
+    <string name="vocab_empty_body">Tap a word while reading, then choose “Add to vocabulary”.</string>
+    <string name="vocab_no_match_title">No matches</string>
+    <string name="vocab_no_match_body">Try a shorter search.</string>
+    <string name="vocab_source_line">%1$s · %2$s · %3$s</string>
+    <string name="vocab_status_due">Due</string>
+    <string name="vocab_status_in_minutes">Review in %1$d min</string>
+    <string name="vocab_status_in_hours">Review in %1$d hours</string>
+    <string name="vocab_status_in_days">Review in %1$d days</string>
+    <string name="vocab_review_all">Review all</string>
+    <plurals name="vocab_due_count">
+        <item quantity="one">%1$d due</item>
+        <item quantity="other">%1$d due</item>
+    </plurals>
+    <plurals name="vocab_review_all_body">
+        <item quantity="one">Nothing is due right now. Review all %1$d word?</item>
+        <item quantity="other">Nothing is due right now. Review all %1$d words?</item>
+    </plurals>
 </resources>

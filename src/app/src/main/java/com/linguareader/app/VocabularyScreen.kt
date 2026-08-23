@@ -44,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,9 +97,10 @@ internal fun VocabularyScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text("我的生词", style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.vocab_title), style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    if (dueWords.isEmpty()) "今日复习已完成" else "${dueWords.size} 个待复习",
+                    if (dueWords.isEmpty()) stringResource(R.string.vocab_due_done)
+                    else pluralStringResource(R.plurals.vocab_due_count, dueWords.size, dueWords.size),
                     color = if (dueWords.isEmpty()) InkSoft else Accent,
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -117,7 +120,7 @@ internal fun VocabularyScreen(
             ) {
                 Icon(Icons.Filled.School, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("复习")
+                Text(stringResource(R.string.common_review))
             }
             TextButton(
                 onClick = { exportLauncher.launch("LinguaReader-vocabulary.csv") },
@@ -125,12 +128,12 @@ internal fun VocabularyScreen(
             ) {
                 Icon(Icons.Filled.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("导出")
+                Text(stringResource(R.string.vocab_export))
             }
             TextButton(onClick = { showReviewSettings = true }) {
                 Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("设置")
+                Text(stringResource(R.string.common_settings))
             }
         }
 
@@ -138,9 +141,9 @@ internal fun VocabularyScreen(
             Modifier.fillMaxWidth().padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            StatChip("${words.size}", "生词总数", Accent, Modifier.weight(1f))
-            StatChip("${dueWords.size}", "待复习", Gold, Modifier.weight(1f))
-            StatChip("${masteredWords.size}", "已掌握", Success, Modifier.weight(1f))
+            StatChip("${words.size}", stringResource(R.string.vocab_stat_total), Accent, Modifier.weight(1f))
+            StatChip("${dueWords.size}", stringResource(R.string.vocab_stat_due), Gold, Modifier.weight(1f))
+            StatChip("${masteredWords.size}", stringResource(R.string.vocab_stat_mastered), Success, Modifier.weight(1f))
         }
 
         OutlinedTextField(
@@ -148,7 +151,7 @@ internal fun VocabularyScreen(
             onValueChange = { query = it },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            label = { Text("搜索单词、释义或例句") },
+            label = { Text(stringResource(R.string.vocab_search_hint)) },
             leadingIcon = {
                 Icon(Icons.Filled.Search, contentDescription = null, tint = InkFaint)
             },
@@ -166,10 +169,14 @@ internal fun VocabularyScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(if (words.isEmpty()) "还没有收藏生词" else "没有匹配结果")
+                Text(
+                    if (words.isEmpty()) stringResource(R.string.vocab_empty_title)
+                    else stringResource(R.string.vocab_no_match_title)
+                )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    if (words.isEmpty()) "阅读时点击单词，再选择“加入生词本”。" else "尝试缩短搜索内容。",
+                    if (words.isEmpty()) stringResource(R.string.vocab_empty_body)
+                    else stringResource(R.string.vocab_no_match_body),
                     color = InkSoft
                 )
             }
@@ -193,7 +200,7 @@ internal fun VocabularyScreen(
                                 IconButton(onClick = { onSpeak(word.headword) }) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.VolumeUp,
-                                        contentDescription = "朗读",
+                                        contentDescription = stringResource(R.string.common_speak),
                                         tint = Accent,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -201,7 +208,7 @@ internal fun VocabularyScreen(
                                 IconButton(onClick = { onRemove(word.id) }) {
                                     Icon(
                                         Icons.Filled.Delete,
-                                        contentDescription = "删除",
+                                        contentDescription = stringResource(R.string.common_delete),
                                         tint = InkFaint,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -218,8 +225,15 @@ internal fun VocabularyScreen(
                             if (word.aiMeaning.isNotBlank()) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    if (word.aiSource.isBlank()) "本书语境：${word.aiMeaning}"
-                                    else "本书语境（${word.aiSource}）：${word.aiMeaning}",
+                                    if (word.aiSource.isBlank()) {
+                                        stringResource(R.string.common_book_context, word.aiMeaning)
+                                    } else {
+                                        stringResource(
+                                            R.string.common_book_context_source,
+                                            word.aiSource,
+                                            word.aiMeaning
+                                        )
+                                    },
                                     color = Accent,
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis
@@ -234,7 +248,12 @@ internal fun VocabularyScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                "${word.bookTitle} · ${word.chapterTitle} · ${reviewStatus(word, now)}",
+                                stringResource(
+                                    R.string.vocab_source_line,
+                                    word.bookTitle,
+                                    word.chapterTitle,
+                                    reviewStatus(word, now)
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Accent.copy(alpha = .78f)
                             )
@@ -274,13 +293,19 @@ internal fun VocabularyScreen(
                 TextButton(onClick = {
                     reviewDeck = words
                     confirmReviewAll = false
-                }) { Text("复习全部", color = Accent) }
+                }) { Text(stringResource(R.string.vocab_review_all), color = Accent) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmReviewAll = false }) { Text("取消") }
+                TextButton(onClick = { confirmReviewAll = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             },
-            title = { Text("今日复习已完成") },
-            text = { Text("当前没有到期待复习的单词。是否复习全部 ${words.size} 个生词？") },
+            title = { Text(stringResource(R.string.vocab_due_done)) },
+            text = {
+                Text(
+                    pluralStringResource(R.plurals.vocab_review_all_body, words.size, words.size)
+                )
+            },
             containerColor = CardSurface,
             shape = CardShape
         )
@@ -305,13 +330,20 @@ private fun StatChip(value: String, label: String, color: Color, modifier: Modif
     }
 }
 
+@Composable
 private fun reviewStatus(word: SavedWord, now: Long): String {
     val remaining = word.nextReviewAt - now
-    if (remaining <= 0) return "待复习"
+    if (remaining <= 0) return stringResource(R.string.vocab_status_due)
     return when {
-        remaining < 60_000L -> "1 分钟后复习"
-        remaining < 3_600_000L -> "${remaining / 60_000L} 分钟后复习"
-        remaining < 86_400_000L -> "${remaining / 3_600_000L} 小时后复习"
-        else -> "${(remaining + 86_399_999L) / 86_400_000L} 天后复习"
+        remaining < 60_000L -> stringResource(R.string.vocab_status_in_minutes, 1)
+        remaining < 3_600_000L ->
+            stringResource(R.string.vocab_status_in_minutes, remaining / 60_000L)
+        remaining < 86_400_000L ->
+            stringResource(R.string.vocab_status_in_hours, remaining / 3_600_000L)
+        else ->
+            stringResource(
+                R.string.vocab_status_in_days,
+                (remaining + 86_399_999L) / 86_400_000L
+            )
     }
 }

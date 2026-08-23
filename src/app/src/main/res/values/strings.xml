@@ -474,4 +474,30 @@
     <plurals name="reader_review_badge">
         <item quantity="other">复习 %1$d</item>
     </plurals>
+
+    <!-- 生词本 -->
+    <string name="common_settings">设置</string>
+    <string name="vocab_title">我的生词</string>
+    <string name="vocab_due_done">今日复习已完成</string>
+    <string name="vocab_export">导出</string>
+    <string name="vocab_stat_total">生词总数</string>
+    <string name="vocab_stat_due">待复习</string>
+    <string name="vocab_stat_mastered">已掌握</string>
+    <string name="vocab_search_hint">搜索单词、释义或例句</string>
+    <string name="vocab_empty_title">还没有收藏生词</string>
+    <string name="vocab_empty_body">阅读时点击单词，再选择“加入生词本”。</string>
+    <string name="vocab_no_match_title">没有匹配结果</string>
+    <string name="vocab_no_match_body">尝试缩短搜索内容。</string>
+    <string name="vocab_source_line">%1$s · %2$s · %3$s</string>
+    <string name="vocab_status_due">待复习</string>
+    <string name="vocab_status_in_minutes">%1$d 分钟后复习</string>
+    <string name="vocab_status_in_hours">%1$d 小时后复习</string>
+    <string name="vocab_status_in_days">%1$d 天后复习</string>
+    <string name="vocab_review_all">复习全部</string>
+    <plurals name="vocab_due_count">
+        <item quantity="other">%1$d 个待复习</item>
+    </plurals>
+    <plurals name="vocab_review_all_body">
+        <item quantity="other">当前没有到期待复习的单词。是否复习全部 %1$d 个生词？</item>
+    </plurals>
 </resources>
