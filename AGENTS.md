@@ -61,7 +61,7 @@
 | `src/app/src/test/` | JVM 单测（51 个文件：tts 23 / ai 10 / data 9 / translation 5 / reader 1 / 外壳 3） |
 | `src/app/src/androidTest/` | 仪器测试（14 个文件） |
 | `src/app/src/main/assets/` | `dictionary/ecdict.sqlite`（离线词典）、`sherpa/<voice>/`（离线音色，`.onnx` 被 gitignore） |
-| `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，各 151 个 string + 4 个 plurals |
+| `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，各 154 个 string + 4 个 plurals |
 | `tts-server/` | 自建 OpenAI 兼容 TTS 服务端（Python）+ IndexTTS 克隆音色 + frp 内网穿透配置 |
 | `tts-voice-studio/` | 本地音色调试工作台（Python + 单页 HTML） |
 | `bug收集/` | 缺陷文档库（BUG-001~026 分析/分级/验证方案，2026-08 自 legacy 线收录）；修 TTS/AI/服务端相关 bug 前先来这里查有没有前人分析 |

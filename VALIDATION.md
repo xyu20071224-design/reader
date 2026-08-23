@@ -555,3 +555,12 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **回归修复**：`followRangeIntoView` 只保留滚动模式分支，分页模式维持移植前行为（高亮可画在屏外，等下一轮用桥接标记方案再做分页跟随）；修复后真机 122s 干净跨 ch1→ch2→ch3，快速连按下一句×3 精确推进 3 句无重复（BUG-006），章内连按上一句逐句回退正常，「停止听书」后会话释放 10s+ 无复活（BUG-009），全程无崩溃；`testDebugUnitTest` 344 项通过。
 - 验证截图：`验证截图/legacy移植-启动冒烟.png`、`legacy移植-播放中1/2.png`（本地工件不入库）。
 - 设备通知栏被 OEM 应用级 importance=NONE 压制（与 ReviewReminder 同源），不影响媒体会话与播放；后续人工验收通知栏时可复核。
+
+## 2026-08-23 UI 全面分析：10 项问题定位，5 项修复 + 真机验证 2 项定性
+
+- 背景：子代理对全部 Compose UI（17 文件约 8,870 行）只读分析，报告存 `artifacts/ui-analysis-2026-08-23.md`（本地工件不入库）。10 项问题中 5 项代码证据明确当日修复，2 项真机验证定性，1 项验证后不成立，其余为欠账（文案迁移、死状态、冷启动待验）。
+- 修复（`feat/port-legacy-fixes` → main，`testDebugUnitTest` 全绿）：① 收藏/移出生词补全局 Snackbar 反馈（`notice_word_saved/removed`，zh+en）；② AI 查词失败不再静默，查词面板内联降级提示（`reader_ai_lookup_failed`）；③ 复习卡组/查词结果等旋转屏关键状态改 `rememberSaveable`（自定义 `WordLookupSaver`）；④ 听书设置反馈改显式 `StatusTone` 枚举，删除 `startsWith("已获取")` 文案嗅探，「已保存」误红改绿（新增 `SettingsStatusTest` 3 用例）；⑤ 书架两导入入口统一 `IMPORT_MIME_TYPES` 常量（空态入口补 `application/zip`）。
+- 真机验证（PKB110 / Android 16，时为覆盖安装前的 v1.4.0 旧包；证据 `artifacts/device-verify-20260823/`）：
+  - 弹层下反馈不可见**坐实**：听书设置弹层内保存设置、查词弹层内收藏生词，0.5/1.2/2.2s 连拍均无任何 Snackbar 可见（无论被遮还是未弹，用户实际得不到反馈）；后者同时复现「收藏无反馈」缺陷。
+  - 夜间写死颜色**不成立**（默认主题下）：系统夜间模式 WebView 阅读页维持自带浅米色主题，`#8D5535` 生词下划线与链接色对比清晰；深色阅读主题组合未测。
+- 未验：夜间冷启动闪白（录屏流程未执行）；含上述修复的新包真机回归（进行中）。
