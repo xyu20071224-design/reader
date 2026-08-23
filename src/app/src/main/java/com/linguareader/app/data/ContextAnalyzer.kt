@@ -1,11 +1,14 @@
 package com.linguareader.app.data
 
-enum class PartOfSpeech(val label: String) {
-    NOUN("名词"),
-    VERB("动词"),
-    ADJECTIVE("形容词"),
-    ADVERB("副词"),
-    UNKNOWN("未判定")
+import androidx.annotation.StringRes
+import com.linguareader.app.R
+
+enum class PartOfSpeech(@StringRes val labelRes: Int) {
+    NOUN(R.string.pos_noun),
+    VERB(R.string.pos_verb),
+    ADJECTIVE(R.string.pos_adjective),
+    ADVERB(R.string.pos_adverb),
+    UNKNOWN(R.string.pos_unknown)
 }
 
 data class ContextToken(

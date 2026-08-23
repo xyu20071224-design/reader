@@ -1,5 +1,6 @@
 package com.linguareader.app.data
 
+import com.linguareader.app.R
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,37 +16,38 @@ class LaunchPromptTest {
 
     @Test
     fun greetingFollowsFourPeriodBoundaries() {
-        assertEquals("清晨", LaunchPromptPolicy.greetingForHour(5).title)
-        assertEquals("清晨", LaunchPromptPolicy.greetingForHour(11).title)
-        assertEquals("正午", LaunchPromptPolicy.greetingForHour(12).title)
-        assertEquals("正午", LaunchPromptPolicy.greetingForHour(17).title)
-        assertEquals("黄昏", LaunchPromptPolicy.greetingForHour(18).title)
-        assertEquals("黄昏", LaunchPromptPolicy.greetingForHour(21).title)
-        assertEquals("深夜", LaunchPromptPolicy.greetingForHour(22).title)
-        assertEquals("深夜", LaunchPromptPolicy.greetingForHour(23).title)
-        assertEquals("深夜", LaunchPromptPolicy.greetingForHour(0).title)
-        assertEquals("深夜", LaunchPromptPolicy.greetingForHour(4).title)
+        // 文案已资源化（titleRes/messageRes），这里校验资源 id 与时段的映射。
+        assertEquals(R.string.launch_greeting_dawn_title, LaunchPromptPolicy.greetingForHour(5).titleRes)
+        assertEquals(R.string.launch_greeting_dawn_title, LaunchPromptPolicy.greetingForHour(11).titleRes)
+        assertEquals(R.string.launch_greeting_noon_title, LaunchPromptPolicy.greetingForHour(12).titleRes)
+        assertEquals(R.string.launch_greeting_noon_title, LaunchPromptPolicy.greetingForHour(17).titleRes)
+        assertEquals(R.string.launch_greeting_dusk_title, LaunchPromptPolicy.greetingForHour(18).titleRes)
+        assertEquals(R.string.launch_greeting_dusk_title, LaunchPromptPolicy.greetingForHour(21).titleRes)
+        assertEquals(R.string.launch_greeting_night_title, LaunchPromptPolicy.greetingForHour(22).titleRes)
+        assertEquals(R.string.launch_greeting_night_title, LaunchPromptPolicy.greetingForHour(23).titleRes)
+        assertEquals(R.string.launch_greeting_night_title, LaunchPromptPolicy.greetingForHour(0).titleRes)
+        assertEquals(R.string.launch_greeting_night_title, LaunchPromptPolicy.greetingForHour(4).titleRes)
     }
 
     @Test
     fun greetingCopyAndPeriodMatchConfirmedDesign() {
         val dawn = LaunchPromptPolicy.greetingForHour(6)
         assertEquals(GreetingPeriod.DAWN, dawn.period)
-        assertEquals("5–11 点", dawn.period.hoursLabel)
-        assertEquals("被崭新的一天唤醒，迎接美好的朝阳", dawn.message)
+        assertEquals(R.string.launch_greeting_hours_dawn, dawn.period.hoursLabelRes)
+        assertEquals(R.string.launch_greeting_dawn_message, dawn.messageRes)
 
         val noon = LaunchPromptPolicy.greetingForHour(13)
         assertEquals(GreetingPeriod.NOON, noon.period)
-        assertEquals("在重叠的光影中游戏，世间万物欣欣向荣", noon.message)
+        assertEquals(R.string.launch_greeting_noon_message, noon.messageRes)
 
         val dusk = LaunchPromptPolicy.greetingForHour(19)
         assertEquals(GreetingPeriod.DUSK, dusk.period)
-        assertEquals("同疲倦的归鸟还家，消失于天空尽头的晚霞", dusk.message)
+        assertEquals(R.string.launch_greeting_dusk_message, dusk.messageRes)
 
         val night = LaunchPromptPolicy.greetingForHour(23)
         assertEquals(GreetingPeriod.NIGHT, night.period)
-        assertEquals("22–4 点", night.period.hoursLabel)
-        assertEquals("忙碌的人们陷入好梦，窗外是闪烁的星河", night.message)
+        assertEquals(R.string.launch_greeting_hours_night, night.period.hoursLabelRes)
+        assertEquals(R.string.launch_greeting_night_message, night.messageRes)
     }
 
     @Test
@@ -54,8 +56,8 @@ class LaunchPromptTest {
 
         assertEquals("1.2.0", note.versionName)
         assertEquals(2, note.items.size)
-        assertTrue(note.items.any { it.contains("深夜") })
-        assertTrue(note.items.any { it.contains("情景卡") })
+        assertTrue(note.items.contains(R.string.launch_note_v5_2))
+        assertTrue(note.items.contains(R.string.launch_note_v5_1))
     }
 
     @Test
@@ -63,6 +65,6 @@ class LaunchPromptTest {
         val note = updateNoteFor(99, "9.9.9")
 
         assertEquals("9.9.9", note.versionName)
-        assertEquals(1, note.items.size)
+        assertEquals(listOf(R.string.launch_note_generic), note.items)
     }
 }

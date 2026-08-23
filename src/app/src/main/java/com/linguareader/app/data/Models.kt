@@ -1,5 +1,7 @@
 package com.linguareader.app.data
 
+import androidx.annotation.StringRes
+import com.linguareader.app.R
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -162,17 +164,18 @@ data class ReaderPreferences(
     val fontFamily: ReaderFont = ReaderFont.SERIF
 )
 
-enum class ReaderTheme(val label: String, val background: String, val foreground: String) {
-    PAPER("纸张", "#F7F3EA", "#27231F"),
-    WHITE("明亮", "#FFFFFF", "#181818"),
-    SEPIA("护眼", "#E9DFC7", "#352F26"),
-    DARK("夜间", "#171717", "#E8E3DA")
+/** 显示名走资源（labelRes），颜色仍以 hex 存储并注入 WebView CSS 变量。 */
+enum class ReaderTheme(@StringRes val labelRes: Int, val background: String, val foreground: String) {
+    PAPER(R.string.reader_theme_paper, "#F7F3EA", "#27231F"),
+    WHITE(R.string.reader_theme_white, "#FFFFFF", "#181818"),
+    SEPIA(R.string.reader_theme_sepia, "#E9DFC7", "#352F26"),
+    DARK(R.string.reader_theme_dark, "#171717", "#E8E3DA")
 }
 
-enum class ReaderFont(val label: String, val css: String) {
-    SERIF("衬线", "Georgia, 'Times New Roman', serif"),
-    SANS("无衬线", "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
-    MONO("等宽", "'Droid Sans Mono', 'Courier New', monospace"),
-    CONDENSED("窄体", "'Roboto Condensed', 'sans-serif-condensed', 'Arial Narrow', sans-serif"),
-    CURSIVE("手写", "'Dancing Script', 'Segoe Script', cursive")
+enum class ReaderFont(@StringRes val labelRes: Int, val css: String) {
+    SERIF(R.string.reader_font_serif, "Georgia, 'Times New Roman', serif"),
+    SANS(R.string.reader_font_sans, "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
+    MONO(R.string.reader_font_mono, "'Droid Sans Mono', 'Courier New', monospace"),
+    CONDENSED(R.string.reader_font_condensed, "'Roboto Condensed', 'sans-serif-condensed', 'Arial Narrow', sans-serif"),
+    CURSIVE(R.string.reader_font_cursive, "'Dancing Script', 'Segoe Script', cursive")
 }

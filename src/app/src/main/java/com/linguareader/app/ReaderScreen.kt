@@ -952,7 +952,7 @@ private fun SettingsSheet(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            theme.label,
+                            stringResource(theme.labelRes),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (selected) Accent else InkSoft,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
@@ -967,8 +967,9 @@ private fun SettingsSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ReaderFont.entries.forEach { font ->
+                    val fontLabel = stringResource(font.labelRes)
                     TextButton(onClick = { onChange(preferences.copy(fontFamily = font)) }) {
-                        Text(if (font == preferences.fontFamily) "● ${font.label}" else font.label)
+                        Text(if (font == preferences.fontFamily) "● $fontLabel" else fontLabel)
                     }
                 }
             }
@@ -985,7 +986,7 @@ private fun SettingsSheet(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 TextButton(onClick = onOpenReviewSettings) {
-                    Text("${reviewPace.label} ›", color = Accent)
+                    Text("${stringResource(reviewPace.labelRes)} ›", color = Accent)
                 }
             }
             Row(
@@ -1180,7 +1181,7 @@ private fun LookupSheet(
             }
             if (entry != null && entry.inferredPartOfSpeech != PartOfSpeech.UNKNOWN) {
                 Text(
-                    "本句推断：${entry.inferredPartOfSpeech.label}",
+                    "本句推断：${stringResource(entry.inferredPartOfSpeech.labelRes)}",
                     style = MaterialTheme.typography.labelMedium,
                     color = Ink.copy(alpha = .56f)
                 )

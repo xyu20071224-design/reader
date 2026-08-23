@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -86,7 +87,7 @@ private fun GreetingSceneDialog(greeting: Greeting, onDismiss: () -> Unit) {
                         }
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            text = greeting.title,
+                            text = stringResource(greeting.titleRes),
                             fontFamily = FontFamily.Serif,
                             fontSize = 26.sp,
                             fontWeight = FontWeight.Medium,
@@ -94,14 +95,14 @@ private fun GreetingSceneDialog(greeting: Greeting, onDismiss: () -> Unit) {
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = greeting.period.hoursLabel,
+                            text = stringResource(greeting.period.hoursLabelRes),
                             style = MaterialTheme.typography.labelSmall,
                             color = InkSoft
                         )
                     }
                 }
                 Text(
-                    text = greeting.message,
+                    text = stringResource(greeting.messageRes),
                     fontFamily = FontFamily.Serif,
                     fontSize = 15.sp,
                     lineHeight = 26.sp,
@@ -115,7 +116,7 @@ private fun GreetingSceneDialog(greeting: Greeting, onDismiss: () -> Unit) {
                     colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("开始阅读", modifier = Modifier.padding(vertical = 2.dp))
+                    Text(stringResource(R.string.launch_greeting_start), modifier = Modifier.padding(vertical = 2.dp))
                 }
                 Spacer(Modifier.height(10.dp))
             }
@@ -125,15 +126,22 @@ private fun GreetingSceneDialog(greeting: Greeting, onDismiss: () -> Unit) {
 
 @Composable
 private fun UpdateNoteDialog(note: UpdateNote, onDismiss: () -> Unit) {
+    // joinToString 的 lambda 不是组合作用域，用 context 取文案而不是 stringResource。
+    val context = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("知道了", color = Accent) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_got_it), color = Accent) }
         },
-        title = { Text(note.title, style = MaterialTheme.typography.headlineSmall) },
+        title = {
+            Text(
+                stringResource(R.string.launch_update_note_title, note.versionName),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        },
         text = {
             Text(
-                note.items.joinToString("\n") { "· $it" },
+                note.items.joinToString("\n") { "· ${context.getString(it)}" },
                 style = MaterialTheme.typography.bodyMedium,
                 lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
                 modifier = Modifier.padding(top = 4.dp)

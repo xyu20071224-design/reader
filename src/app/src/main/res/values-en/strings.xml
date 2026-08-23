@@ -107,6 +107,75 @@
     <string name="player_stop">Stop listening</string>
 
     <!-- Multi-voice -->
+    <!-- Common (shared across modules) -->
+    <string name="common_save">Save</string>
+    <string name="common_notice_title">Notice</string>
+    <string name="common_speak">Speak</string>
+    <string name="common_review">Review</string>
+
+    <!-- Reader themes / fonts / parts of speech (model-layer labels) -->
+    <string name="reader_theme_paper">Paper</string>
+    <string name="reader_theme_white">Bright</string>
+    <string name="reader_theme_sepia">Sepia</string>
+    <string name="reader_theme_dark">Night</string>
+    <string name="reader_font_serif">Serif</string>
+    <string name="reader_font_sans">Sans</string>
+    <string name="reader_font_mono">Mono</string>
+    <string name="reader_font_condensed">Condensed</string>
+    <string name="reader_font_cursive">Cursive</string>
+    <string name="pos_noun">noun</string>
+    <string name="pos_verb">verb</string>
+    <string name="pos_adjective">adjective</string>
+    <string name="pos_adverb">adverb</string>
+    <string name="pos_unknown">undetermined</string>
+
+    <!-- Review paces (model-layer labels and descriptions) -->
+    <string name="review_mode_immersive">Immersive reading</string>
+    <string name="review_mode_immersive_desc">Relaxed pace: first review no sooner than 2 hours, intervals ×1.5 — for low-interruption reading.</string>
+    <string name="review_mode_gentle">Gentle pace</string>
+    <string name="review_mode_gentle_desc">Default pace: first review no sooner than 30 minutes, intervals matching the base Ebbinghaus curve.</string>
+    <string name="review_mode_diligent">Diligent mode</string>
+    <string name="review_mode_diligent_desc">Tight pace: first review no sooner than 5 minutes, intervals ×0.75; pairs well with scheduled reminders.</string>
+    <string name="review_pace_custom">Custom</string>
+
+    <!-- Launch greeting and update notes -->
+    <string name="launch_greeting_dawn_title">Morning</string>
+    <string name="launch_greeting_dawn_message">Awake to a brand-new day and the morning sun</string>
+    <string name="launch_greeting_noon_title">Midday</string>
+    <string name="launch_greeting_noon_message">Play among the layered light and shade — everything under the sun is thriving</string>
+    <string name="launch_greeting_dusk_title">Dusk</string>
+    <string name="launch_greeting_dusk_message">Head home with the tired birds, fading into the sunset at the sky’s edge</string>
+    <string name="launch_greeting_night_title">Night</string>
+    <string name="launch_greeting_night_message">The busy world drifts into dreams beneath a sky of twinkling stars</string>
+    <string name="launch_greeting_hours_dawn">5–11</string>
+    <string name="launch_greeting_hours_noon">12–17</string>
+    <string name="launch_greeting_hours_dusk">18–21</string>
+    <string name="launch_greeting_hours_night">22–4</string>
+    <string name="launch_greeting_start">Start reading</string>
+    <string name="launch_update_note_title">What’s new in %1$s</string>
+    <string name="launch_note_v4_1">Import EPUB, TXT, FB2 and text-based PDF books</string>
+    <string name="launch_note_v4_2">Jump to a page within the current chapter</string>
+    <string name="launch_note_v4_3">Fixed reading position lost on rotation and mis-matched phrase senses</string>
+    <string name="launch_note_v4_4">Review reminders: three pace presets, context highlighting, toolbar badge, pause prompts</string>
+    <string name="launch_note_v4_5">Diligent mode supports local due-word notifications (permission can be declined)</string>
+    <string name="launch_note_v5_1">The launch greeting is now a four-period scene card</string>
+    <string name="launch_note_v5_2">Added the late-night greeting</string>
+    <string name="launch_note_v6_1">Listening: continuous narration of a chapter or whole book, in Chinese and English</string>
+    <string name="launch_note_v6_2">The sentence being read is highlighted and pages turn automatically; tap a sentence to start there</string>
+    <string name="launch_note_v6_3">Pause/resume, playback speed, background playback and notification controls</string>
+    <string name="launch_note_v6_4">Listening progress is remembered per book — pick up where you left off</string>
+    <string name="launch_note_v7_1">Fixed listening standby being stopped by the system in the background</string>
+    <string name="launch_note_v7_2">Fixed intermittent loss of cloud TTS credentials and hardened decryption</string>
+    <string name="launch_note_v7_3">Fixed narration highlight drifting in chapters with inline styles</string>
+    <string name="launch_note_v7_4">Fixed playback stability: fast sentence switching, chapter skips, progress regressions</string>
+    <string name="launch_note_v8_1">Fixed a crash while loading the system voice list on some engines</string>
+    <string name="launch_note_v8_2">Hardened handling of getVoices() returning null or throwing</string>
+    <string name="launch_note_v9_1">Brand-new offline narration engine: Chinese female and English male voices, no network needed</string>
+    <string name="launch_note_v9_2">Fixed Piper spelling out rare words letter by letter</string>
+    <string name="launch_note_v9_3">Switch freely between offline and system voices in the app</string>
+    <string name="launch_note_v9_4">Rebuilt the playback state machine for steadier playback</string>
+    <string name="launch_note_generic">Welcome to the new version — features and experience improved.</string>
+
     <string name="multivoice_title">Character voices (experimental)</string>
     <string name="multivoice_subtitle">Gives narration and every character its own voice; needs the AI context profile for the character list.</string>
     <string name="multivoice_unsupported">System TTS voices cannot be controlled, so they do not support character voices; local Piper and the cloud engines all do.</string>

@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -381,7 +382,7 @@ internal fun ReviewSettingsSheet(
                         Column(Modifier.padding(start = 6.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    presetMode.label,
+                                    stringResource(presetMode.labelRes),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -395,7 +396,11 @@ internal fun ReviewSettingsSheet(
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
-                            Text(presetMode.description, color = InkSoft, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                stringResource(presetMode.descriptionRes),
+                                color = InkSoft,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 "首次 ${presetMode.firstDelayMillis / 60_000} 分钟 · 间隔 ×${presetMode.intervalMultiplier} · " +
