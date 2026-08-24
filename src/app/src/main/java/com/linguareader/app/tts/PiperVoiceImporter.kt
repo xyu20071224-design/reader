@@ -81,7 +81,7 @@ object PiperVoiceImporter {
                     id = id,
                     displayName = id,
                     gender = "?",
-                    language = "英语",
+                    language = "en",
                     sizeMb = (modelFile.length() / (1024 * 1024)).toInt().coerceAtLeast(1),
                     sampleUrl = "",
                     modelUrl = "",

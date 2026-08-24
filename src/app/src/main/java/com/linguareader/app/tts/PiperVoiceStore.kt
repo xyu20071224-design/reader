@@ -48,7 +48,7 @@ object PiperVoiceStore {
                     id = o.getString("id"),
                     displayName = o.getString("name"),
                     gender = o.optString("gender", "?"),
-                    language = o.optString("language", "英语"),
+                    language = o.optString("language", "en"),
                     sizeMb = o.optInt("sizeMb", 0),
                     sampleUrl = "",
                     modelUrl = "",
