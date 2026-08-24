@@ -826,6 +826,7 @@ private fun EngineChoice(
 ) {
     Row(
         Modifier
+            .fillMaxWidth()
             .clickable(onClick = onSelect)
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -955,7 +956,7 @@ private fun PiperVoiceDropdown(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    selected?.displayName ?: PiperVoiceCatalog.builtin.displayName,
+                    piperVoiceLabel(selected ?: PiperVoiceCatalog.builtin),
                     modifier = Modifier.weight(1f),
                     color = Ink
                 )
@@ -972,7 +973,7 @@ private fun PiperVoiceDropdown(
                                 stringResource(
                                     if (voice.builtin) R.string.tts_voice_builtin
                                     else R.string.tts_voice_imported,
-                                    voice.displayName
+                                    piperVoiceLabel(voice)
                                 )
                             )
                         },
@@ -985,6 +986,33 @@ private fun PiperVoiceDropdown(
             }
         }
     }
+}
+
+/** 目录音色走资源（displayNameRes），用户导入的音色原样显示 displayName。 */
+@Composable
+private fun piperVoiceLabel(voice: PiperVoice): String =
+    voice.displayNameRes?.let { stringResource(it) } ?: voice.displayName
+
+/** 模型体积文案：多说话人模型（sizeMb=0）与常规模型的两种说法。 */
+@Composable
+private fun piperSizeLabel(sizeMb: Int): String =
+    if (sizeMb <= 0) stringResource(R.string.tts_piper_size_multi)
+    else stringResource(R.string.tts_piper_size_mb, sizeMb)
+
+/** 语言代码 → 文案；旧版本导入记录里存的中文「英语」也兼容映射。 */
+@Composable
+private fun piperLanguageLabel(language: String): String = when (language) {
+    "en", "英语" -> stringResource(R.string.tts_piper_language_en)
+    else -> language
+}
+
+/** 性别代码 → 文案；导入音色未知性别（?）原样显示。 */
+@Composable
+private fun piperGenderLabel(gender: String): String = when (gender) {
+    "male", "男" -> stringResource(R.string.multivoice_gender_male)
+    "female", "女" -> stringResource(R.string.multivoice_gender_female)
+    "multi", "多" -> stringResource(R.string.tts_piper_gender_multi)
+    else -> gender
 }
 
 @Composable
@@ -1001,17 +1029,13 @@ private fun PiperCatalogRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(voice.displayName, style = MaterialTheme.typography.bodyMedium)
+                Text(piperVoiceLabel(voice), style = MaterialTheme.typography.bodyMedium)
                 Text(
                     stringResource(
                         R.string.tts_piper_voice_meta,
-                        voice.language,
-                        when (voice.gender) {
-                            "男" -> stringResource(R.string.multivoice_gender_male)
-                            "女" -> stringResource(R.string.multivoice_gender_female)
-                            else -> voice.gender
-                        },
-                        voice.sizeLabel
+                        piperLanguageLabel(voice.language),
+                        piperGenderLabel(voice.gender),
+                        piperSizeLabel(voice.sizeMb)
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkFaint

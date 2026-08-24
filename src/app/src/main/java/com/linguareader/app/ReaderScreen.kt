@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -984,7 +985,12 @@ private fun SettingsSheet(
             ) {
                 ReaderTheme.entries.forEach { theme ->
                     val selected = theme == preferences.theme
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    // 命中区盖住「色块 + 文字标签」整列：真机曾实测只有色块可点、
+                    // 点文字落空还容易误触相邻选项，clickable 必须放在外层容器。
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable { onChange(preferences.copy(theme = theme)) }
+                    ) {
                         Box(
                             Modifier
                                 .size(48.dp)
@@ -994,8 +1000,7 @@ private fun SettingsSheet(
                                     width = if (selected) 3.dp else 1.dp,
                                     color = if (selected) Accent else Ink.copy(alpha = .18f),
                                     shape = CircleShape
-                                )
-                                .clickable { onChange(preferences.copy(theme = theme)) },
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             if (selected) {
@@ -1038,8 +1043,14 @@ private fun SettingsSheet(
             }
             Spacer(Modifier.height(16.dp))
             HorizontalDivider(color = Ink.copy(alpha = .1f))
+            // 整行（文字 + 右侧 › 箭头）都是命中区：此前只有箭头按钮可点，
+            // 真机两次点文字均无反应。heightIn 保持原 TextButton 的 48dp 触控高度。
             Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .heightIn(min = 48.dp)
+                    .clickable(onClick = onOpenReviewSettings),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -1048,12 +1059,18 @@ private fun SettingsSheet(
                     color = Ink,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                TextButton(onClick = onOpenReviewSettings) {
-                    Text("${stringResource(reviewPace.labelRes)} ›", color = Accent)
-                }
+                Text(
+                    "${stringResource(reviewPace.labelRes)} ›",
+                    color = Accent,
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
             Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .heightIn(min = 48.dp)
+                    .clickable(onClick = onOpenListeningSettings),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -1062,9 +1079,7 @@ private fun SettingsSheet(
                     color = Ink,
                     style = MaterialTheme.typography.bodyMedium
                 )
-                TextButton(onClick = onOpenListeningSettings) {
-                    Text("›", color = Accent)
-                }
+                Text("›", color = Accent, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
