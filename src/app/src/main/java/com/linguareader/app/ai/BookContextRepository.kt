@@ -69,6 +69,14 @@ class BookContextRepository(
         runCatching { BookContextProfile.fromJson(JSONObject(file.readText())) }.getOrNull()
     }
 
+    /**
+     * Whether a profile file exists on disk. Feeds the shelf's ready label
+     * after process death without parsing JSON (refresh checks every book).
+     */
+    suspend fun hasProfile(bookId: String): Boolean = withContext(Dispatchers.IO) {
+        profileFile(bookId).isFile
+    }
+
     suspend fun generate(book: Book, force: Boolean = false): BookContextProfile {
         val existing = if (force) null else profileFor(book)
         if (existing != null) return existing

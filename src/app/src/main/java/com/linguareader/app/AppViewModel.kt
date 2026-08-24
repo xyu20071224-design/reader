@@ -127,10 +127,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.value = mutableState.value.copy(loading = true)
             val books = library.loadBooks()
             val savedWords = vocabulary.load()
+            // 书架「AI 语境」标签此前只看内存 aiStatuses：进程被系统回收后重建，
+            // 状态清零，磁盘上明明有档案的书也显示「待生成」；打开书时
+            // generate() 命中磁盘档案又秒变「就绪」——造成同一天内
+            // 待生成↔就绪 的往返漂移。以磁盘档案存在性播种就绪态，
+            // 已有的 generating/error 状态不被覆盖。
+            val seeded = books
+                .filter { it.id !in mutableState.value.aiStatuses && aiRepository.hasProfile(it.id) }
+                .associate { it.id to AiBookStatus(ready = true) }
             mutableState.value = mutableState.value.copy(
                 books = books,
                 savedWords = savedWords,
-                loading = false
+                loading = false,
+                aiStatuses = mutableState.value.aiStatuses + seeded
             )
             rescheduleReviewReminders()
         }
@@ -265,7 +274,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun setAiStatus(bookId: String, status: AiBookStatus) {
+    /** internal：单测需要预置某本书的状态来验证播种不覆盖既有状态。 */
+    internal fun setAiStatus(bookId: String, status: AiBookStatus) {
         mutableState.value = mutableState.value.copy(
             aiStatuses = mutableState.value.aiStatuses + (bookId to status)
         )
