@@ -83,6 +83,17 @@ data class BookVoiceMap(
         return copy(userLocked = userLocked.filterNot { it.equals(key, ignoreCase = true) }.toSet())
     }
 
+    /** Removes a character's pin and mapping (roster entry was deleted). */
+    fun removeCharacter(speaker: String): BookVoiceMap {
+        val name = speaker.trim()
+        if (name.isEmpty()) return this
+        val cleaned = characterVoice.filterKeys { !it.equals(name, ignoreCase = true) }
+        return copy(
+            characterVoice = cleaned,
+            userLocked = userLocked.filterNot { it.equals(keyOf(name), ignoreCase = true) }.toSet()
+        )
+    }
+
     fun toJson(): JSONObject = JSONObject()
         .put("bookId", bookId)
         .put("narrator", JSONObject().apply { narrator.forEach { (k, v) -> put(k, v) } })

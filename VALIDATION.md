@@ -597,3 +597,13 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - UI：听书设置新增 MIMO 引擎行 + 配置区（API Key/中英音色/风格指令/「合成测试」）；多角色面板新增「MiMo 专属音色」区块（设计对话框：名称/语言/性别/描述；复刻对话框：名称/语言/性别/系统文档选样本）；列表行可试听、可删除，全部走弹层内联 `SettingsStatus` 反馈。
 - 文案：zh + en 两册同步新增 45 个 key（模块前缀 `tts_mimo_` / `multivoice_mimo_`）。
 - 单测：`testDebugUnitTest` 全绿（369 个）。新增 `MiMoTtsBackendTest`（buildRequestBody 预置/设计/克隆三态、无描述拒绝、decodeAudioData、voiceFor 中英路由、modelForVoice）；`CloudTtsSettingsTest` 增 MIMO 字段 roundtrip（API key 属 Keystore 加密，按项目惯例不回读）与 isConfigured；`MultiVoiceSupportTest` 增 MIMO 多角色支持断言。
+
+## 2026-08-26 MiMo 多角色服务（接入 + 真机修复批次）
+
+- 接入：新增 MiMo 引擎（`TtsEngineMode.MIMO` / `MiMoTtsBackend` / `MiMoVoice`），`chat/completions`+`api-key` 鉴权、目标文本走 assistant 消息、非流式 wav 经 base64 返回；三态音色 id（预置裸 id / `mimo-design:<key>` / `mimo-clone:<key>`）对多角色管线透明。
+- 真机修复（PKB110/Android 16）：① 引擎区「朗读引擎」由每行两个 `fillMaxWidth` 项挤成竖排 → 改单列全宽；② 中/英音色下拉 `PresetField` 的 `(id, 显示名)` 顺序写反 → 修正；③ 中文预置音色 Voice ID 应为中文名（冰糖/茉莉/苏打/白桦），拼音/Bingtang 报 Unknown voice → 改官方中文 id，`mimo_default` 保留；④ 预置音色补官方风格/年龄元数据（分配器风格、年龄评分由中性分变为真实分）。
+- 角色管理（方向 B/C）：角色行可编辑（性别/年龄组/重要程度/风格词）+ 删除（清 glossary 条目、音色映射与锁定）+ 别名管理；无书明确提示；底层新增 `BookVoiceMap.removeCharacter`/`VoiceMapRepository.removeCharacter`/`BookGlossaryRepository.updateCharacter`。
+- 角色管理入口（方向 A）：书架书卡片新增「角色」入口（术语表右侧），「移除(删书)」挪到「译本」左侧；点「角色」经 `ModalBottomSheet` 复用 `MultiVoiceSection` 打开该书角色管理。
+- 单测：`testDebugUnitTest` 全绿（369）。新增 `MiMoTtsBackendTest`；扩展 `CloudTtsSettingsTest`（MIMO roundtrip/isConfigured）与 `MultiVoiceSupportTest`（MIMO 多角色支持）。
+- 文案：zh+en 两册同步新增 MiMo 引擎、MiMo 专属音色、角色管理、书卡片「角色」等 key。
+- 待办：MiMo 合成/音色试听的真机音频链路（规则层 vs LLM 归属、design/clone 合成）已由用户真机人工验证通过；分配的进一步校准与 `MiMoVoiceStoreTest`（Robolectric）留作后续。

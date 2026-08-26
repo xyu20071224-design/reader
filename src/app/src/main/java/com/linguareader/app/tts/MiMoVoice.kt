@@ -15,24 +15,65 @@ import java.io.File
  */
 object MiMoVoiceCatalog {
 
-    /** 预置音色：id、显示名（资源 key）、语言、性别。 */
+    /** 预置音色：id、显示名（资源 key）、语言、性别、风格、年龄组。 */
     data class Preset(
         val id: String,
         val nameKey: String,
         val language: String,
-        val gender: String
+        val gender: String,
+        /** 风格标签：喂给分配器做风格匹配（参考官方风格；避开旁白中性词，
+         *  以免旁白被角色音色抢走）。中英双语都放，兼容 AI 档案的中/英风格词。 */
+        val style: List<String> = emptyList(),
+        /** 年龄组：young/adult 等（避开 child，避免旁白评分被扣）。 */
+        val ageGroup: String = ""
     )
 
     val presets: List<Preset> = listOf(
+        // 官方 Voice ID：中文音色就是中文名本身（冰糖/茉莉/苏打/白桦），请求
+        // audio.voice 必须发中文，发拼音/英文会返回 Unknown voice（真机实测
+        // 2026-08-26）。mimo_default 是有效默认 id（大陆集群=冰糖），最中性、
+        // 留给旁白，故不填风格/年龄。
         Preset("mimo_default", "tts_mimo_voice_default", "zh", "female"),
-        Preset("Bingtang", "tts_mimo_voice_bingtang", "zh", "female"),
-        Preset("Jasmine", "tts_mimo_voice_jasmine", "zh", "female"),
-        Preset("Soda", "tts_mimo_voice_soda", "zh", "male"),
-        Preset("Birch", "tts_mimo_voice_birch", "zh", "male"),
-        Preset("Mia", "tts_mimo_voice_mia", "en", "female"),
-        Preset("Chloe", "tts_mimo_voice_chloe", "en", "female"),
-        Preset("Milo", "tts_mimo_voice_milo", "en", "male"),
-        Preset("Dean", "tts_mimo_voice_dean", "en", "male")
+        Preset(
+            "冰糖", "tts_mimo_voice_bingtang", "zh", "female",
+            style = listOf("lively", "bright", "cute", "活泼", "甜美"),
+            ageGroup = "young"
+        ),
+        Preset(
+            "茉莉", "tts_mimo_voice_jasmine", "zh", "female",
+            style = listOf("warm", "soft", "refined", "知性", "温柔"),
+            ageGroup = "adult"
+        ),
+        Preset(
+            "苏打", "tts_mimo_voice_soda", "zh", "male",
+            style = listOf("sunny", "upbeat", "cheerful", "阳光", "开朗"),
+            ageGroup = "young"
+        ),
+        Preset(
+            "白桦", "tts_mimo_voice_birch", "zh", "male",
+            style = listOf("deep", "low", "mature", "沉稳", "成熟"),
+            ageGroup = "adult"
+        ),
+        Preset(
+            "Mia", "tts_mimo_voice_mia", "en", "female",
+            style = listOf("lively", "bright", "cheerful"),
+            ageGroup = "young"
+        ),
+        Preset(
+            "Chloe", "tts_mimo_voice_chloe", "en", "female",
+            style = listOf("sweet", "dreamy", "soft"),
+            ageGroup = "young"
+        ),
+        Preset(
+            "Milo", "tts_mimo_voice_milo", "en", "male",
+            style = listOf("sunny", "upbeat", "cheerful"),
+            ageGroup = "young"
+        ),
+        Preset(
+            "Dean", "tts_mimo_voice_dean", "en", "male",
+            style = listOf("warm", "deep", "mature"),
+            ageGroup = "adult"
+        )
     )
 
     val zhVoices: List<Preset> get() = presets.filter { it.language == "zh" }
@@ -46,6 +87,8 @@ object MiMoVoiceCatalog {
         id = preset.id,
         language = preset.language,
         gender = preset.gender,
+        style = preset.style,
+        ageGroup = preset.ageGroup,
         quality = 0.5f,
         source = "mimo"
     )

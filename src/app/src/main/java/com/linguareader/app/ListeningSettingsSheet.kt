@@ -391,39 +391,36 @@ internal fun ListeningSettingsBody(
         Text(stringResource(R.string.tts_settings_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(14.dp))
             Text(stringResource(R.string.tts_engine_section), style = MaterialTheme.typography.labelLarge, color = InkSoft)
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // 每个引擎独占一行（全宽 radio + 横排 label）。之前把它们塞进
+            // `Row` 里左右并排，但 EngineChoice 内部用 `fillMaxWidth()`，在
+            // Row 内会两两争抢宽度被压成竖排（真机截图 2026-08-26）。改为
+            // Column 单列布局，每个选项都能正常横排，含 MiMo 引擎。
+            Column(Modifier.fillMaxWidth()) {
                 EngineChoice(
                     label = stringResource(R.string.tts_engine_system),
                     selected = settings.mode == TtsEngineMode.SYSTEM,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.SYSTEM) }
                 )
-                Spacer(Modifier.weight(1f))
                 EngineChoice(
                     label = stringResource(R.string.tts_engine_piper),
                     selected = settings.mode == TtsEngineMode.PIPER,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.PIPER) }
                 )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
                 EngineChoice(
                     label = stringResource(R.string.tts_engine_azure),
                     selected = settings.mode == TtsEngineMode.AZURE,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.AZURE) }
                 )
-                Spacer(Modifier.weight(1f))
                 EngineChoice(
                     label = stringResource(R.string.tts_engine_volc),
                     selected = settings.mode == TtsEngineMode.VOLC,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.VOLC) }
                 )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
                 EngineChoice(
                     label = stringResource(R.string.tts_engine_openai_compat),
                     selected = settings.mode == TtsEngineMode.OPENAI_COMPAT,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.OPENAI_COMPAT) }
                 )
-                Spacer(Modifier.weight(1f))
                 EngineChoice(
                     label = stringResource(R.string.tts_engine_mimo),
                     selected = settings.mode == TtsEngineMode.MIMO,
@@ -842,14 +839,15 @@ private fun mimoPresetName(context: Context, nameKey: String): String {
 @Composable
 private fun mimoZhVoicePresets(): List<Pair<String, String>> {
     val context = LocalContext.current
-    return MiMoVoiceCatalog.zhVoices.map { mimoPresetName(context, it.nameKey) to it.id }
+    // PresetField 约定：[（音色 id，显示名）]——第一项写入 value，第二项展示。
+    return MiMoVoiceCatalog.zhVoices.map { it.id to mimoPresetName(context, it.nameKey) }
 }
 
-/** MiMo 英文预置音色下拉数据：[（显示名，音色 id）]。 */
+/** MiMo 英文预置音色下拉数据：[（音色 id，显示名）]。 */
 @Composable
 private fun mimoEnVoicePresets(): List<Pair<String, String>> {
     val context = LocalContext.current
-    return MiMoVoiceCatalog.enVoices.map { mimoPresetName(context, it.nameKey) to it.id }
+    return MiMoVoiceCatalog.enVoices.map { it.id to mimoPresetName(context, it.nameKey) }
 }
 
 @Composable

@@ -89,6 +89,14 @@ class VoiceMapRepository(
         return updated
     }
 
+    /** Removes a character's pin/mapping (roster entry was deleted). */
+    suspend fun removeCharacter(bookId: String, speaker: String): BookVoiceMap {
+        val current = load(bookId) ?: BookVoiceMap(bookId)
+        val updated = current.copy(bookId = bookId).removeCharacter(speaker)
+        if (updated != current) store(updated)
+        return updated
+    }
+
     fun delete(bookId: String) {
         if (bookId.isBlank()) return
         mapFile(bookId).delete()

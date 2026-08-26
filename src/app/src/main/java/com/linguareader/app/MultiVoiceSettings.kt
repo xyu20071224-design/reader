@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -135,9 +136,10 @@ internal fun MultiVoiceSection(
     var picker by remember { mutableStateOf<VoicePickerTarget?>(null) }
     var annotating by remember { mutableStateOf(false) }
     var addingCharacter by remember { mutableStateOf(false) }
-    // 只记名字：增删别名后 characters 会整体刷新，弹层从最新列表取数据。
-    var aliasTargetName by remember { mutableStateOf<String?>(null) }
-    val aliasTarget = characters.firstOrNull { it.name == aliasTargetName }
+    // 只记名字：增删别名/改属性后 characters 会整体刷新，弹层从最新列表取数据。
+    var editTargetName by remember { mutableStateOf<String?>(null) }
+    var deleteTarget by remember { mutableStateOf<VoiceCharacter?>(null) }
+    val editTarget = characters.firstOrNull { it.name == editTargetName }
 
     val bookTitle = (preselectedBook ?: books.firstOrNull { it.id == bookId })?.title
 
@@ -249,6 +251,10 @@ internal fun MultiVoiceSection(
 
     /** 手动添加角色：写进术语表（origin=manual），成功后刷新角色列表。 */
     fun addCharacter(name: String, gender: String): Boolean {
+        if (bookId.isBlank()) {
+            notify(SettingsStatus.danger(context.getString(R.string.multivoice_book_required)))
+            return false
+        }
         val clean = name.trim()
         if (clean.isEmpty()) {
             notify(SettingsStatus.danger(context.getString(R.string.multivoice_name_required)))
@@ -314,6 +320,55 @@ internal fun MultiVoiceSection(
                 return@launch
             }
             notify(SettingsStatus.success(context.getString(R.string.multivoice_alias_removed, alias.trim())))
+            reloadToken++
+        }
+    }
+
+    /** 编辑角色：更新 性别/年龄组/风格/重要性，成功后刷新角色表。 */
+    fun updateCharacterProperties(
+        character: VoiceCharacter,
+        gender: String,
+        ageGroup: String,
+        style: List<String>,
+        importance: String
+    ): Boolean {
+        if (characters.none { it.name.equals(character.name, ignoreCase = true) }) {
+            notify(SettingsStatus.danger(context.getString(R.string.multivoice_edit_failed)))
+            return false
+        }
+        scope.launch {
+            val updated = runCatching {
+                MultiVoiceSupport.glossaryRepository(context)
+                    .updateCharacter(bookId, character.name, gender, ageGroup, style, importance)
+            }.getOrNull()
+            if (updated == null) {
+                notify(SettingsStatus.danger(context.getString(R.string.multivoice_edit_failed)))
+                return@launch
+            }
+            notify(SettingsStatus.success(context.getString(R.string.multivoice_character_updated, character.name)))
+            editTargetName = null
+            reloadToken++
+        }
+        return true
+    }
+
+    /** 删除角色：清 glossary 条目 + 音色映射（含锁定），自动分配随之释放。 */
+    fun deleteCharacter(character: VoiceCharacter) {
+        scope.launch {
+            val removedGlossary = runCatching {
+                MultiVoiceSupport.glossaryRepository(context).remove(bookId, character.name)
+            }.getOrNull()
+            val clearedMap = runCatching {
+                MultiVoiceSupport.voiceMapRepository(context)
+                    .removeCharacter(bookId, character.name)
+            }.getOrNull()
+            if (removedGlossary == null) {
+                notify(SettingsStatus.danger(context.getString(R.string.multivoice_delete_failed)))
+                return@launch
+            }
+            TtsPlaybackController.onCloudSettingsChanged(context)
+            notify(SettingsStatus.success(context.getString(R.string.multivoice_character_deleted, character.name)))
+            deleteTarget = null
             reloadToken++
         }
     }
@@ -514,6 +569,14 @@ internal fun MultiVoiceSection(
             Text(stringResource(R.string.multivoice_add_character))
         }
     }
+    if (bookId.isBlank()) {
+        Text(
+            stringResource(R.string.multivoice_book_required),
+            style = MaterialTheme.typography.labelSmall,
+            color = InkSoft
+        )
+        return
+    }
     if (characters.isEmpty()) {
         Text(
             stringResource(R.string.multivoice_no_characters),
@@ -542,7 +605,8 @@ internal fun MultiVoiceSection(
                 onOpenPicker = { picker = target },
                 onAudition = { audition(character.name, current) },
                 onRelease = { releaseVoice(target) },
-                onEditAliases = { aliasTargetName = character.name }
+                onEdit = { editTargetName = character.name },
+                onDelete = { deleteTarget = character }
             )
         }
     Spacer(Modifier.height(6.dp))
@@ -596,12 +660,39 @@ internal fun MultiVoiceSection(
         )
     }
 
-    aliasTarget?.let { character ->
-        AliasDialog(
+    editTarget?.let { character ->
+        EditCharacterDialog(
             character = character,
-            onAdd = { alias -> addAlias(character, alias) },
-            onRemove = { alias -> removeAlias(character, alias) },
-            onDismiss = { aliasTargetName = null }
+            onSave = { gender, ageGroup, style, importance ->
+                if (updateCharacterProperties(character, gender, ageGroup, style, importance)) {
+                    editTargetName = null
+                }
+            },
+            onAddAlias = { alias -> addAlias(character, alias) },
+            onRemoveAlias = { alias -> removeAlias(character, alias) },
+            onDismiss = { editTargetName = null }
+        )
+    }
+
+    deleteTarget?.let { character ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            containerColor = CardSurface,
+            title = { Text(stringResource(R.string.multivoice_confirm_delete_title)) },
+            text = { Text(stringResource(R.string.multivoice_confirm_delete_body, character.name)) },
+            confirmButton = {
+                TextButton(onClick = { deleteCharacter(character) }) {
+                    Text(
+                        stringResource(R.string.multivoice_delete_confirm),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
         )
     }
 }
@@ -690,20 +781,119 @@ private fun GenderChip(label: String, selected: Boolean, onClick: () -> Unit) {
  * 增删立即写库并 Snackbar 反馈；重名/空名不关弹层。
  */
 @Composable
-private fun AliasDialog(
+private fun EditCharacterDialog(
     character: VoiceCharacter,
-    onAdd: (alias: String) -> Boolean,
-    onRemove: (alias: String) -> Unit,
+    onSave: (gender: String, ageGroup: String, style: List<String>, importance: String) -> Unit,
+    onAddAlias: (alias: String) -> Boolean,
+    onRemoveAlias: (alias: String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var draft by remember { mutableStateOf("") }
+    // 属性状态：随目标角色切换重置。GenderChip 是通用三态胶囊（选中/未选中）。
+    var gender by remember(character.name) { mutableStateOf(character.gender) }
+    var ageGroup by remember(character.name) { mutableStateOf(character.ageGroup) }
+    var importance by remember(character.name) { mutableStateOf(character.importance) }
+    var styleText by remember(character.name) { mutableStateOf(character.style.joinToString(", ")) }
     val deleteTemplate = stringResource(R.string.multivoice_alias_delete, "%s")
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = CardSurface,
-        title = { Text(stringResource(R.string.multivoice_alias_title, character.name)) },
+        title = { Text(stringResource(R.string.multivoice_edit_character_title, character.name)) },
         text = {
             Column(Modifier.fillMaxWidth()) {
+                Text(
+                    stringResource(R.string.multivoice_gender_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSoft
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_gender_male),
+                        selected = gender == "male",
+                        onClick = { gender = if (gender == "male") "" else "male" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_gender_female),
+                        selected = gender == "female",
+                        onClick = { gender = if (gender == "female") "" else "female" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_gender_unknown),
+                        selected = gender.isBlank(),
+                        onClick = { gender = "" }
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.multivoice_age_group_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSoft
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_age_child),
+                        selected = ageGroup == "child",
+                        onClick = { ageGroup = if (ageGroup == "child") "" else "child" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_age_young),
+                        selected = ageGroup == "young",
+                        onClick = { ageGroup = if (ageGroup == "young") "" else "young" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_age_adult),
+                        selected = ageGroup == "adult",
+                        onClick = { ageGroup = if (ageGroup == "adult") "" else "adult" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_age_elderly),
+                        selected = ageGroup == "elderly",
+                        onClick = { ageGroup = if (ageGroup == "elderly") "" else "elderly" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_age_unknown),
+                        selected = ageGroup.isBlank(),
+                        onClick = { ageGroup = "" }
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.multivoice_importance_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSoft
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_role_major),
+                        selected = importance == "major",
+                        onClick = { importance = if (importance == "major") "" else "major" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_role_medium),
+                        selected = importance == "medium",
+                        onClick = { importance = if (importance == "medium") "" else "medium" }
+                    )
+                    GenderChip(
+                        label = stringResource(R.string.multivoice_role_minor),
+                        selected = importance == "minor" || importance.isBlank(),
+                        onClick = { importance = "minor" }
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = styleText,
+                    onValueChange = { styleText = it },
+                    label = { Text(stringResource(R.string.multivoice_style_label)) },
+                    supportingText = { Text(stringResource(R.string.multivoice_style_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = Ink.copy(alpha = .1f))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     stringResource(R.string.multivoice_alias_subtitle),
                     style = MaterialTheme.typography.labelSmall,
@@ -720,7 +910,7 @@ private fun AliasDialog(
                     )
                     TextButton(
                         onClick = {
-                            if (onAdd(draft)) draft = ""
+                            if (onAddAlias(draft)) draft = ""
                         }
                     ) {
                         Text(stringResource(R.string.multivoice_alias_add))
@@ -748,7 +938,7 @@ private fun AliasDialog(
                                 modifier = Modifier.weight(1f)
                             )
                             IconButton(
-                                onClick = { onRemove(alias) },
+                                onClick = { onRemoveAlias(alias) },
                                 modifier = Modifier.semantics {
                                     contentDescription = deleteTemplate.replace("%s", alias)
                                 }
@@ -766,7 +956,15 @@ private fun AliasDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) }
+            TextButton(onClick = {
+                val style = styleText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                onSave(gender, ageGroup, style, importance)
+            }) {
+                Text(stringResource(R.string.multivoice_edit_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         }
     )
 }
@@ -819,13 +1017,15 @@ private fun VoiceRow(
     onAudition: () -> Unit,
     onRelease: () -> Unit,
     subtitle: String? = null,
-    onEditAliases: (() -> Unit)? = null
+    onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
 ) {
     // semantics{} 不是 composable 作用域，标签先取出来。
     val auditionLabel = stringResource(R.string.multivoice_audition, title)
     val stopAuditionLabel = stringResource(R.string.multivoice_audition_stop)
     val releaseLabel = stringResource(R.string.multivoice_release, title)
-    val editAliasesLabel = stringResource(R.string.multivoice_alias_edit, title)
+    val editLabel = stringResource(R.string.multivoice_edit_character, title)
+    val deleteLabel = stringResource(R.string.multivoice_delete_character, title)
     Row(
         Modifier.fillMaxWidth().padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -888,13 +1088,26 @@ private fun VoiceRow(
                 )
             }
         }
-        if (onEditAliases != null) {
+        if (onEdit != null) {
             IconButton(
-                onClick = onEditAliases,
-                modifier = Modifier.semantics { contentDescription = editAliasesLabel }
+                onClick = onEdit,
+                modifier = Modifier.semantics { contentDescription = editLabel }
             ) {
                 Icon(
                     Icons.Default.Edit,
+                    contentDescription = null,
+                    tint = InkFaint,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+        if (onDelete != null) {
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.semantics { contentDescription = deleteLabel }
+            ) {
+                Icon(
+                    Icons.Default.Delete,
                     contentDescription = null,
                     tint = InkFaint,
                     modifier = Modifier.size(16.dp)

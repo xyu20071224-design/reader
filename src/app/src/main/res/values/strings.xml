@@ -588,4 +588,29 @@
     <string name="multivoice_mimo_deleted">已删除音色：%1$s</string>
 
 
+
+    <!-- 多角色 · 角色管理（编辑/删除/无书提示） -->
+    <string name="multivoice_edit_character">编辑角色 %1$s</string>
+    <string name="multivoice_edit_character_title">「%1$s」· 编辑角色</string>
+    <string name="multivoice_edit_save">保存并回到列表</string>
+    <string name="multivoice_age_group_label">年龄组</string>
+    <string name="multivoice_age_child">少年</string>
+    <string name="multivoice_age_young">青年</string>
+    <string name="multivoice_age_adult">成年</string>
+    <string name="multivoice_age_elderly">老年</string>
+    <string name="multivoice_age_unknown">未知</string>
+    <string name="multivoice_importance_label">在书中的重要程度（影响音色质量选择）</string>
+    <string name="multivoice_style_label">风格词（逗号分隔）</string>
+    <string name="multivoice_style_hint">如 calm, lively；角色档案有风格标签时，自动分配会更贴合。</string>
+    <string name="multivoice_confirm_delete_title">删除角色</string>
+    <string name="multivoice_confirm_delete_body">确定删除「%1$s」？其专属音色与别名将一并移除。</string>
+    <string name="multivoice_delete_confirm">删除</string>
+    <string name="multivoice_delete_character">删除角色 %1$s</string>
+    <string name="multivoice_character_updated">已更新角色「%1$s」</string>
+    <string name="multivoice_character_deleted">已删除角色「%1$s」</string>
+    <string name="multivoice_edit_failed">更新角色失败，请重试</string>
+    <string name="multivoice_delete_failed">删除角色失败，请重试</string>
+    <string name="multivoice_book_required">请先打开一本书，再管理角色</string>
+
+    <string name="shelf_roster">角色</string>
 </resources>

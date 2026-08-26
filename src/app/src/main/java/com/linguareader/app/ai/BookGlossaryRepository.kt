@@ -153,6 +153,27 @@ class BookGlossaryRepository(private val context: Context) {
         }
     }
 
+    /**
+     * 多角色面板「编辑角色」：更新一个角色的 性别/年龄组/风格/重要性。
+     * 不存在的条目返回 null；[name] 仅定位用，不改名。
+     */
+    suspend fun updateCharacter(
+        bookId: String,
+        name: String,
+        gender: String,
+        ageGroup: String,
+        style: List<String>,
+        importance: String
+    ): BookGlossary? = mutateCharacter(bookId, name) { entry ->
+        entry.copy(
+            kind = GlossaryEntry.KIND_CHARACTER,
+            gender = gender,
+            ageGroup = ageGroup,
+            style = style.map(String::trim).filter(String::isNotBlank),
+            importance = importance
+        )
+    }
+
     suspend fun remove(bookId: String, term: String): BookGlossary =
         withContext(Dispatchers.IO) {
             mutex.withLock {

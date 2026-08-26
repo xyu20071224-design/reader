@@ -28,9 +28,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -67,6 +70,8 @@ import com.linguareader.app.ai.AiBookStatus
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.data.Book
+import com.linguareader.app.tts.CloudTtsSettings
+import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
@@ -125,6 +130,7 @@ internal fun BookshelfScreen(
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
+    var rosterBook by remember { mutableStateOf<Book?>(null) }
 
     Scaffold(
         containerColor = Paper,
@@ -246,7 +252,8 @@ internal fun BookshelfScreen(
                                     )
                                 }
                             },
-                            onLongPressDelete = { deleteCandidate = book }
+                            onLongPressDelete = { deleteCandidate = book },
+                            onManageRoster = { rosterBook = book }
                         )
                     }
                 }
@@ -344,6 +351,51 @@ internal fun BookshelfScreen(
             onDismiss = { glossaryBook = null }
         )
     }
+
+    rosterBook?.let { book ->
+        RosterSheet(
+            book = book,
+            books = state.books,
+            onDismiss = { rosterBook = null }
+        )
+    }
+}
+
+/**
+ * 该书的多角色/角色管理（方向 A）：从书卡片「角色」入口打开，复用 [MultiVoiceSection]，
+ * 让角色管理入口更浅。设置独立加载与保存（不与听书设置弹层抢占状态）。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RosterSheet(
+    book: Book,
+    books: List<Book>,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 30.dp)
+        ) {
+            var settings by remember(book.id) {
+                mutableStateOf(CloudTtsSettings.load(context))
+            }
+            MultiVoiceSection(
+                settings = settings,
+                onSettingsChange = { next ->
+                    settings = next
+                    CloudTtsSettings.save(context, next)
+                    TtsPlaybackController.onCloudSettingsChanged(context)
+                },
+                books = books,
+                preselectedBook = book
+            )
+        }
+    }
 }
 
 @Composable
@@ -391,6 +443,7 @@ private fun BookCard(
     attachingTranslation: Boolean,
     onOpen: () -> Unit,
     onGlossary: () -> Unit,
+    onManageRoster: () -> Unit,
     onTranslation: () -> Unit,
     onLongPressDelete: () -> Unit
 ) {
@@ -513,6 +566,22 @@ private fun BookCard(
                     color = Accent
                 )
             }
+            TextButton(onClick = onManageRoster, modifier = Modifier.height(30.dp)) {
+                Icon(
+                    Icons.Default.Groups,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = Accent
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    stringResource(R.string.shelf_roster),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Accent
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onLongPressDelete, modifier = Modifier.height(30.dp)) {
                 Icon(
                     Icons.Default.Delete,
@@ -527,25 +596,25 @@ private fun BookCard(
                     color = InkFaint
                 )
             }
-        }
-        TextButton(
-            onClick = onTranslation,
-            enabled = !attachingTranslation,
-            modifier = Modifier.height(30.dp)
-        ) {
-            Icon(
-                Icons.Filled.Translate,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = if (book.hasTranslation) Success else Accent
-            )
-            Spacer(Modifier.width(3.dp))
-            Text(
-                if (book.hasTranslation) stringResource(R.string.shelf_translation_ready)
-                else stringResource(R.string.shelf_translation_add),
-                style = MaterialTheme.typography.labelSmall,
-                color = if (book.hasTranslation) Success else Accent
-            )
+            TextButton(
+                onClick = onTranslation,
+                enabled = !attachingTranslation,
+                modifier = Modifier.height(30.dp)
+            ) {
+                Icon(
+                    Icons.Filled.Translate,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = if (book.hasTranslation) Success else Accent
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    if (book.hasTranslation) stringResource(R.string.shelf_translation_ready)
+                    else stringResource(R.string.shelf_translation_add),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (book.hasTranslation) Success else Accent
+                )
+            }
         }
     }
 }

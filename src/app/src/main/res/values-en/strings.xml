@@ -598,4 +598,29 @@
     <string name="multivoice_mimo_clone_hint">Use a clear 10–30 second recording with only the target voice; all narration is AI-synthesized.</string>
     <string name="multivoice_mimo_delete">Delete voice: %1$s</string>
     <string name="multivoice_mimo_deleted">Voice deleted: %1$s</string>
+
+    <!-- Multi-voice · roster management (edit / delete / no-book hint) -->
+    <string name="multivoice_edit_character">Edit character %1$s</string>
+    <string name="multivoice_edit_character_title">“%1$s” · Edit character</string>
+    <string name="multivoice_edit_save">Save and return</string>
+    <string name="multivoice_age_group_label">Age group</string>
+    <string name="multivoice_age_child">Child</string>
+    <string name="multivoice_age_young">Young</string>
+    <string name="multivoice_age_adult">Adult</string>
+    <string name="multivoice_age_elderly">Elderly</string>
+    <string name="multivoice_age_unknown">Unknown</string>
+    <string name="multivoice_importance_label">Importance in the book (affects voice quality)</string>
+    <string name="multivoice_style_label">Style tags (comma-separated)</string>
+    <string name="multivoice_style_hint">e.g. calm, lively; auto assignment matches better when the profile has style tags.</string>
+    <string name="multivoice_confirm_delete_title">Delete character</string>
+    <string name="multivoice_confirm_delete_body">Delete “%1$s”? Its assigned voice and aliases will be removed too.</string>
+    <string name="multivoice_delete_confirm">Delete</string>
+    <string name="multivoice_delete_character">Delete character %1$s</string>
+    <string name="multivoice_character_updated">Character updated: %1$s</string>
+    <string name="multivoice_character_deleted">Character deleted: %1$s</string>
+    <string name="multivoice_edit_failed">Failed to update the character</string>
+    <string name="multivoice_delete_failed">Failed to delete the character</string>
+    <string name="multivoice_book_required">Open a book first to manage its characters</string>
+
+    <string name="shelf_roster">Characters</string>
 </resources>
