@@ -548,4 +548,54 @@
     <string name="aidrawer_saved_ready">Saved: DeepSeek is ready — open a book to build its context profile</string>
     <string name="aidrawer_saved_local">Saved: no API key, the lightweight local context will be used</string>
     <string name="aidrawer_saved_off">Saved: AI context off — lookups stay fully local</string>
+
+    <!-- MiMo cloud TTS (Xiaomi mimo-v2.5-tts / voicedesign / voiceclone) -->
+    <string name="tts_engine_mimo">MiMo Cloud TTS (Xiaomi)</string>
+    <string name="tts_mimo_section">MiMo engine</string>
+    <string name="tts_mimo_section_hint">Xiaomi MiMo-V2.5-TTS: OpenAI-compatible chat/completions with an api-key header and base64 audio; preset voices work out of the box, and the multi-voice panel can design or clone custom voices. Billing: free for now.</string>
+    <string name="tts_mimo_api_key_label">MiMo API key</string>
+    <string name="tts_mimo_zh_voice_label">Chinese voice</string>
+    <string name="tts_mimo_en_voice_label">English voice</string>
+    <string name="tts_mimo_style_label">Style instruction (optional)</string>
+    <string name="tts_mimo_style_hint">Describe pace, mood and style in plain language, e.g. “bright and bouncy, fast pace, rising pitch”; applies to preset and cloned voices.</string>
+    <string name="tts_mimo_test_ok">MiMo synthesis test passed</string>
+    <string name="tts_mimo_key_required">Enter your MiMo API key first</string>
+    <string name="tts_mimo_voice_default">MiMo Default</string>
+    <string name="tts_mimo_voice_bingtang">Bingtang</string>
+    <string name="tts_mimo_voice_jasmine">Jasmine</string>
+    <string name="tts_mimo_voice_soda">Soda</string>
+    <string name="tts_mimo_voice_birch">Birch</string>
+    <string name="tts_mimo_voice_mia">Mia</string>
+    <string name="tts_mimo_voice_chloe">Chloe</string>
+    <string name="tts_mimo_voice_milo">Milo</string>
+    <string name="tts_mimo_voice_dean">Dean</string>
+
+    <!-- Multi-voice · MiMo custom voices (design / clone) -->
+    <string name="multivoice_mimo_panel_title">MiMo custom voices</string>
+    <string name="multivoice_mimo_panel_hint">Beyond the presets: “design” a new voice from a text description, or “clone” a real voice from an mp3/wav sample; created voices can be assigned to any character below.</string>
+    <string name="multivoice_mimo_design_button">Design voice</string>
+    <string name="multivoice_mimo_clone_button">Clone voice</string>
+    <string name="multivoice_mimo_empty">No custom voices yet</string>
+    <string name="multivoice_mimo_kind_design">Design</string>
+    <string name="multivoice_mimo_kind_clone">Clone</string>
+    <string name="multivoice_mimo_lang_zh">Chinese</string>
+    <string name="multivoice_mimo_lang_en">English</string>
+    <string name="multivoice_mimo_design_title">Design a MiMo voice</string>
+    <string name="multivoice_mimo_design_name_label">Voice name (e.g. a character)</string>
+    <string name="multivoice_mimo_design_language_label">Language</string>
+    <string name="multivoice_mimo_design_prompt_label">Voice description</string>
+    <string name="multivoice_mimo_design_prompt_hint">1–4 sentences: gender/age, timbre, mood and tone, pace; avoid post-processing words like reverb or EQ; be as specific as possible.</string>
+    <string name="multivoice_mimo_design_create">Create designed voice</string>
+    <string name="multivoice_mimo_design_created">Designed voice created: %1$s</string>
+    <string name="multivoice_mimo_design_failed">Failed to design the voice</string>
+    <string name="multivoice_mimo_clone_title">Clone a MiMo voice</string>
+    <string name="multivoice_mimo_clone_name_label">Voice name (e.g. a character)</string>
+    <string name="multivoice_mimo_clone_sample_button">Choose a sample (mp3/wav, ≤10 MB)</string>
+    <string name="multivoice_mimo_clone_importing">Importing sample…</string>
+    <string name="multivoice_mimo_clone_imported">Clone voice imported: %1$s</string>
+    <string name="multivoice_mimo_clone_failed">Failed to import the clone voice</string>
+    <string name="multivoice_mimo_clone_read_failed">Cannot read the sample file</string>
+    <string name="multivoice_mimo_clone_hint">Use a clear 10–30 second recording with only the target voice; all narration is AI-synthesized.</string>
+    <string name="multivoice_mimo_delete">Delete voice: %1$s</string>
+    <string name="multivoice_mimo_deleted">Voice deleted: %1$s</string>
 </resources>

@@ -109,7 +109,7 @@
 
 项目记忆与规则在 `.agents/`：
 
-- `.agents/memory/MEMORY.md` — **索引，先看这里**，再按主题深入 17 个记忆文件（含跨模块的 `architecture-map.md`）。
+- `.agents/memory/MEMORY.md` — **索引，先看这里**，再按主题深入 18 个记忆文件（含跨模块的 `architecture-map.md`）。
 - `.agents/rules/` — 工作规则：`memory-maintenance.md`（何时、怎么把新知识写回记忆库）、`code-and-verification.md`（实现范围、平台约束、文案、测试与验证矩阵、联网硬约束、提交规范）。
 
 动手前先读 `MEMORY.md`；发现记忆与代码不符，以代码为准并顺手修正记忆文件。

@@ -53,6 +53,7 @@ object MultiVoiceSupport {
         settings.mode == TtsEngineMode.AZURE ||
             settings.mode == TtsEngineMode.VOLC ||
             settings.mode == TtsEngineMode.OPENAI_COMPAT ||
+            settings.mode == TtsEngineMode.MIMO ||
             settings.mode == TtsEngineMode.PIPER ||
             (settings.mode == TtsEngineMode.SYSTEM && systemUsableVoices >= 2)
 
@@ -132,6 +133,14 @@ object MultiVoiceSupport {
             // narrator, so the assigner must not hand it to a character.
             if (settings.mode == TtsEngineMode.PIPER) {
                 settings.piperEnVoiceId.ifBlank { PiperVoiceCatalog.DEFAULT_ID }
+            } else {
+                ""
+            },
+            // MiMo: the preset zh/en voices are the per-language narration
+            // defaults (same rule as serverEn/zhVoice); designed/cloned voices
+            // stay assignable because they exist exactly for characters.
+            if (settings.mode == TtsEngineMode.MIMO) {
+                settings.mimoZhVoice.ifBlank { CloudTtsSettings.DEFAULT_MIMO_ZH_VOICE }
             } else {
                 ""
             }

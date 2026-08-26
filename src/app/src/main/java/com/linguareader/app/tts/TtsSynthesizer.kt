@@ -194,6 +194,11 @@ object TtsSynthesizerFactory {
             settings.networkAiEnabled && settings.mode == TtsEngineMode.VOLC && settings.isConfigured ->
                 CloudTtsSynthesizer(context, VolcanoTtsBackend(settings), listener, voiceForSpeaker)
 
+            // MiMo-V2.5-TTS（小米云）：预置音色 / 设计音色 / 克隆音色三种 id 由
+            // MiMoTtsBackend 按前缀分派模型，多角色管线的其余部分无感知。
+            settings.networkAiEnabled && settings.mode == TtsEngineMode.MIMO && settings.isConfigured ->
+                CloudTtsSynthesizer(context, MiMoTtsBackend(settings, context), listener, voiceForSpeaker)
+
             else -> SystemTtsSynthesizer(
                 context,
                 listener,

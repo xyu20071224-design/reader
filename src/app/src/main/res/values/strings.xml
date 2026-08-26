@@ -536,4 +536,56 @@
     <string name="aidrawer_saved_ready">已保存：DeepSeek 已就绪，打开书即可生成语境档案</string>
     <string name="aidrawer_saved_local">已保存：未填 API Key，将使用本地轻量语境</string>
     <string name="aidrawer_saved_off">已保存：AI 语境已关闭，查词保持纯本地</string>
+
+    <!-- MiMo 云 TTS（小米 mimo-v2.5-tts / voicedesign / voiceclone） -->
+    <string name="tts_engine_mimo">MiMo 云 TTS（小米）</string>
+    <string name="tts_mimo_section">MiMo 引擎配置</string>
+    <string name="tts_mimo_section_hint">小米 MiMo-V2.5-TTS：OpenAI 兼容 chat/completions，鉴权头 api-key，音频以 base64 返回；预置音色开箱即用，「多角色」面板里还能用文字设计或样本复刻专属音色。计费：限时免费。</string>
+    <string name="tts_mimo_api_key_label">MiMo API Key</string>
+    <string name="tts_mimo_zh_voice_label">中文音色</string>
+    <string name="tts_mimo_en_voice_label">英文音色</string>
+    <string name="tts_mimo_style_label">风格指令（可选）</string>
+    <string name="tts_mimo_style_hint">自然语言描述语速/情绪/风格，如「轻快上扬、语速稍快，带点雀跃」；对预置与复刻音色生效。</string>
+    <string name="tts_mimo_test_ok">MiMo 合成测试通过</string>
+    <string name="tts_mimo_key_required">请先填写 MiMo API Key</string>
+    <string name="tts_mimo_voice_default">MiMo 默认</string>
+    <string name="tts_mimo_voice_bingtang">冰糖</string>
+    <string name="tts_mimo_voice_jasmine">茉莉</string>
+    <string name="tts_mimo_voice_soda">苏打</string>
+    <string name="tts_mimo_voice_birch">白桦</string>
+    <string name="tts_mimo_voice_mia">Mia</string>
+    <string name="tts_mimo_voice_chloe">Chloe</string>
+    <string name="tts_mimo_voice_milo">Milo</string>
+    <string name="tts_mimo_voice_dean">Dean</string>
+
+    <!-- 多角色 · MiMo 专属音色（设计/复刻） -->
+    <string name="multivoice_mimo_panel_title">MiMo 专属音色</string>
+    <string name="multivoice_mimo_panel_hint">预置之外，用一段描述「设计」新音色，或导入 mp3/wav 样本「复刻」真实声音；建好后可直接分给下方任意角色。</string>
+    <string name="multivoice_mimo_design_button">设计音色</string>
+    <string name="multivoice_mimo_clone_button">复刻音色</string>
+    <string name="multivoice_mimo_empty">还没有专属音色</string>
+    <string name="multivoice_mimo_kind_design">设计</string>
+    <string name="multivoice_mimo_kind_clone">复刻</string>
+    <string name="multivoice_mimo_lang_zh">中文</string>
+    <string name="multivoice_mimo_lang_en">英文</string>
+    <string name="multivoice_mimo_design_title">设计 MiMo 音色</string>
+    <string name="multivoice_mimo_design_name_label">音色名称（如角色名）</string>
+    <string name="multivoice_mimo_design_language_label">语言</string>
+    <string name="multivoice_mimo_design_prompt_label">音色描述</string>
+    <string name="multivoice_mimo_design_prompt_hint">1–4 句：性别年龄、音色质感、情绪语气、语速节奏；避免混响/EQ 等后期词，描述越具体越贴近预期。</string>
+    <string name="multivoice_mimo_design_create">创建设计音色</string>
+    <string name="multivoice_mimo_design_created">已创建设计音色：%1$s</string>
+    <string name="multivoice_mimo_design_failed">设计音色失败</string>
+    <string name="multivoice_mimo_clone_title">复刻 MiMo 音色</string>
+    <string name="multivoice_mimo_clone_name_label">音色名称（如角色名）</string>
+    <string name="multivoice_mimo_clone_sample_button">选择样本文件（mp3/wav，≤10 MB）</string>
+    <string name="multivoice_mimo_clone_importing">正在导入样本…</string>
+    <string name="multivoice_mimo_clone_imported">已导入复刻音色：%1$s</string>
+    <string name="multivoice_mimo_clone_failed">复刻音色导入失败</string>
+    <string name="multivoice_mimo_clone_read_failed">无法读取样本文件</string>
+    <string name="multivoice_mimo_clone_hint">建议 10–30 秒、只含目标人声的清晰录音；复刻的朗读均为 AI 合成。</string>
+    <string name="multivoice_mimo_delete">删除音色：%1$s</string>
+    <string name="multivoice_mimo_deleted">已删除音色：%1$s</string>
+
+
 </resources>

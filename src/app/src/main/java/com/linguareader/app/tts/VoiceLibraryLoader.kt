@@ -85,6 +85,9 @@ object VoiceLibraryLoader {
             TtsEngineMode.AZURE -> VoiceLibrary(azureVoices(context), engine)
             TtsEngineMode.VOLC -> VoiceLibrary(configuredVoices(settings, "volc"), engine)
             TtsEngineMode.OPENAI_COMPAT -> VoiceLibrary(serverVoices(context, settings), engine)
+            // MIMO: 预置目录 + 用户自建的设计/克隆音色一起进音色库，分配器才能
+            // 把「专属音色」分给角色（多角色服务）。engine key 走 else 分支 = "mimo"。
+            TtsEngineMode.MIMO -> VoiceLibrary(MiMoVoiceCatalog.library(context), engine)
             // M5 (PLAN-MULTI-VOICE §13): the system library is whatever the
             // user annotated for the last probed engine; empty until then.
             TtsEngineMode.SYSTEM -> systemVoices(context)

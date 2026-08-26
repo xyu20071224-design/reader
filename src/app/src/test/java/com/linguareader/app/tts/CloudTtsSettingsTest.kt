@@ -52,6 +52,28 @@ class CloudTtsSettingsTest {
     }
 
     @Test
+    fun `mimo settings survive a save and load round trip`() {
+        val saved = CloudTtsSettings(
+            mode = TtsEngineMode.MIMO,
+            mimoApiKey = "mimo-secret-key",
+            mimoModel = "mimo-v2.5-tts",
+            mimoZhVoice = "mimo_default",
+            mimoEnVoice = "Mia",
+            mimoStyleInstruction = "轻快上扬、语速稍快"
+        )
+        CloudTtsSettings.save(context, saved)
+        val loaded = CloudTtsSettings.load(context)
+        assertEquals(TtsEngineMode.MIMO, loaded.mode)
+        // mimoApiKey 走 CloudKeyStore 加密（与 azure/volc 密钥同一模式），
+        // Robolectric 的 Keystore 影子不能保证回读原文，按项目惯例不回读密文。
+        assertEquals("mimo_default", loaded.mimoZhVoice)
+        assertEquals("Mia", loaded.mimoEnVoice)
+        assertEquals("轻快上扬、语速稍快", loaded.mimoStyleInstruction)
+        assertTrue(CloudTtsSettings(mode = TtsEngineMode.MIMO, mimoApiKey = "k").isConfigured)
+        assertFalse(CloudTtsSettings(mode = TtsEngineMode.MIMO).isConfigured)
+    }
+
+    @Test
     fun `turning the switch off is persisted too`() {
         CloudTtsSettings.save(context, CloudTtsSettings(multiVoiceEnabled = true))
         assertTrue(CloudTtsSettings.load(context).multiVoiceEnabled)

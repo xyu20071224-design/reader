@@ -23,7 +23,10 @@ enum class TtsEngineMode {
     PIPER,
     AZURE,
     OPENAI_COMPAT,
-    VOLC
+    VOLC,
+    /** 小米 MiMo-V2.5-TTS 系列（API 文档 2026-07）：OpenAI 兼容
+     *  `chat/completions` 形态，鉴权头 `api-key`，音频以 base64 返回。 */
+    MIMO
 }
 
 data class CloudTtsSettings(
@@ -69,7 +72,17 @@ data class CloudTtsSettings(
     val volcToken: String = "",
     val volcResourceId: String = DEFAULT_VOLC_RESOURCE,
     val volcZhVoice: String = DEFAULT_VOLC_ZH_VOICE,
-    val volcEnVoice: String = DEFAULT_VOLC_EN_VOICE
+    val volcEnVoice: String = DEFAULT_VOLC_EN_VOICE,
+    /** MiMo 云 TTS：API Key（Keystore 加密）。 */
+    val mimoApiKey: String = "",
+    /** MiMo 预置模型；voice id 为预置音色时使用它（design/clone 各自固定模型）。 */
+    val mimoModel: String = DEFAULT_MIMO_MODEL,
+    /** MiMo 中文预置音色（默认 mimo_default，中国大陆集群=冰糖）。 */
+    val mimoZhVoice: String = DEFAULT_MIMO_ZH_VOICE,
+    /** MiMo 英文预置音色。 */
+    val mimoEnVoice: String = DEFAULT_MIMO_EN_VOICE,
+    /** MiMo 自然语言风格指令（可选，放 user 消息；预置/复刻模型生效）。 */
+    val mimoStyleInstruction: String = ""
 ) {
     val enabled: Boolean get() = mode != TtsEngineMode.SYSTEM
 
@@ -82,6 +95,7 @@ data class CloudTtsSettings(
             TtsEngineMode.VOLC ->
                 volcApiKey.isNotBlank() ||
                     (volcAppId.isNotBlank() && volcToken.isNotBlank())
+            TtsEngineMode.MIMO -> mimoApiKey.isNotBlank()
         }
 
     companion object {
@@ -89,6 +103,10 @@ data class CloudTtsSettings(
         const val DEFAULT_VOLC_RESOURCE = "seed-tts-2.0"
         const val DEFAULT_VOLC_ZH_VOICE = "zh_female_shuangkuaisisi_uranus_bigtts"
         const val DEFAULT_VOLC_EN_VOICE = "en_female_dacey_uranus_bigtts"
+        const val MIMO_BASE_URL = "https://api.xiaomimimo.com/v1"
+        const val DEFAULT_MIMO_MODEL = "mimo-v2.5-tts"
+        const val DEFAULT_MIMO_ZH_VOICE = "mimo_default"
+        const val DEFAULT_MIMO_EN_VOICE = "Mia"
         private const val PREFS = "cloud_tts_settings"
         private const val KEY_MODE = "mode"
         private const val KEY_NETWORK_AI_ENABLED = "network_ai_enabled"
@@ -116,6 +134,11 @@ data class CloudTtsSettings(
         private const val KEY_VOLC_RESOURCE = "volc_resource_id"
         private const val KEY_VOLC_ZH_VOICE = "volc_zh_voice"
         private const val KEY_VOLC_EN_VOICE = "volc_en_voice"
+        private const val KEY_MIMO_API_KEY = "mimo_api_key"
+        private const val KEY_MIMO_MODEL = "mimo_model"
+        private const val KEY_MIMO_ZH_VOICE = "mimo_zh_voice"
+        private const val KEY_MIMO_EN_VOICE = "mimo_en_voice"
+        private const val KEY_MIMO_STYLE = "mimo_style_instruction"
 
         fun load(context: Context): CloudTtsSettings {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -150,7 +173,15 @@ data class CloudTtsSettings(
                 volcZhVoice = prefs.getString(KEY_VOLC_ZH_VOICE, DEFAULT_VOLC_ZH_VOICE)
                     .orEmpty().ifBlank { DEFAULT_VOLC_ZH_VOICE },
                 volcEnVoice = prefs.getString(KEY_VOLC_EN_VOICE, DEFAULT_VOLC_EN_VOICE)
-                    .orEmpty().ifBlank { DEFAULT_VOLC_EN_VOICE }
+                    .orEmpty().ifBlank { DEFAULT_VOLC_EN_VOICE },
+                mimoApiKey = CloudKeyStore.decrypt(context, prefs.getString(KEY_MIMO_API_KEY, null)).orEmpty(),
+                mimoModel = prefs.getString(KEY_MIMO_MODEL, DEFAULT_MIMO_MODEL)
+                    .orEmpty().ifBlank { DEFAULT_MIMO_MODEL },
+                mimoZhVoice = prefs.getString(KEY_MIMO_ZH_VOICE, DEFAULT_MIMO_ZH_VOICE)
+                    .orEmpty().ifBlank { DEFAULT_MIMO_ZH_VOICE },
+                mimoEnVoice = prefs.getString(KEY_MIMO_EN_VOICE, DEFAULT_MIMO_EN_VOICE)
+                    .orEmpty().ifBlank { DEFAULT_MIMO_EN_VOICE },
+                mimoStyleInstruction = prefs.getString(KEY_MIMO_STYLE, "").orEmpty()
             )
         }
 
@@ -160,6 +191,7 @@ data class CloudTtsSettings(
             val encryptedToken = CloudKeyStore.encrypt(context, settings.serverToken)
             val encryptedVolcApiKey = CloudKeyStore.encrypt(context, settings.volcApiKey)
             val encryptedVolcToken = CloudKeyStore.encrypt(context, settings.volcToken)
+            val encryptedMimoApiKey = CloudKeyStore.encrypt(context, settings.mimoApiKey)
             prefs.edit()
                 .putString(KEY_MODE, settings.mode.name)
                 .putBoolean(KEY_NETWORK_AI_ENABLED, settings.networkAiEnabled)
@@ -187,6 +219,11 @@ data class CloudTtsSettings(
                 .putString(KEY_VOLC_RESOURCE, settings.volcResourceId.ifBlank { DEFAULT_VOLC_RESOURCE })
                 .putString(KEY_VOLC_ZH_VOICE, settings.volcZhVoice.ifBlank { DEFAULT_VOLC_ZH_VOICE })
                 .putString(KEY_VOLC_EN_VOICE, settings.volcEnVoice.ifBlank { DEFAULT_VOLC_EN_VOICE })
+                .putString(KEY_MIMO_API_KEY, encryptedMimoApiKey)
+                .putString(KEY_MIMO_MODEL, settings.mimoModel.ifBlank { DEFAULT_MIMO_MODEL })
+                .putString(KEY_MIMO_ZH_VOICE, settings.mimoZhVoice.ifBlank { DEFAULT_MIMO_ZH_VOICE })
+                .putString(KEY_MIMO_EN_VOICE, settings.mimoEnVoice.ifBlank { DEFAULT_MIMO_EN_VOICE })
+                .putString(KEY_MIMO_STYLE, settings.mimoStyleInstruction.trim())
                 .apply()
         }
     }

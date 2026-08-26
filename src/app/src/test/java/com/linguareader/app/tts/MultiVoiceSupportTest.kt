@@ -23,6 +23,9 @@ class MultiVoiceSupportTest {
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.AZURE)))
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.VOLC)))
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.OPENAI_COMPAT)))
+        // MiMo joins the cloud engines: preset voices + user-designed/cloned
+        // voices are all assignable per character.
+        assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.MIMO)))
         // D3: Piper joined via the LRU instance pool; system engine stays out.
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.PIPER)))
         assertFalse(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.SYSTEM)))

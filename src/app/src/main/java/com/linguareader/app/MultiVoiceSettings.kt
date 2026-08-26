@@ -1,7 +1,12 @@
 package com.linguareader.app
 
+import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import com.linguareader.app.data.Book
 import com.linguareader.app.tts.BookVoiceMap
 import com.linguareader.app.tts.CloudTtsSettings
+import com.linguareader.app.tts.MiMoVoiceStore
 import com.linguareader.app.tts.MultiVoiceStatus
 import com.linguareader.app.tts.MultiVoiceStatusKind
 import com.linguareader.app.tts.MultiVoiceSupport
@@ -446,6 +452,19 @@ internal fun MultiVoiceSection(
 
     val map = voiceMap
     if (map == null || library.isEmpty) return
+
+    // MiMo 专属音色（多角色服务）：预置音色之外的「设计/复刻」音色；
+    // 建好后会进音色库，可直接分给下方任意角色（M3 分配器无感知差异）。
+    if (settings.mode == TtsEngineMode.MIMO) {
+        MiMoCustomVoicesPanel(
+            context = context,
+            scope = scope,
+            onChanged = { reloadToken++ },
+            notify = { notify(it) },
+            playingVoice = playingVoice,
+            onAudition = { voice -> audition(voice.name, voice.id) }
+        )
+    }
 
     Spacer(Modifier.height(12.dp))
     Text(
@@ -1216,4 +1235,410 @@ private fun GenderPill(label: String, selected: Boolean, onSelect: () -> Unit) {
             .clickable(onClick = onSelect)
             .padding(horizontal = 12.dp, vertical = 4.dp)
     )
+}
+
+/**
+ * MiMo 专属音色面板（多角色服务）：预置音色之外的音色都从这里造——
+ * 用一段自然语言描述「设计」专属音色（mimo-v2.5-tts-voicedesign），或导入
+ * mp3/wav 样本「复刻」真实声音（mimo-v2.5-tts-voiceclone）。建好后作为普通
+ * 音色库条目出现在下方角色分配列表里，可试听、可删除、可随时换绑。
+ */
+@Composable
+private fun MiMoCustomVoicesPanel(
+    context: Context,
+    scope: CoroutineScope,
+    onChanged: () -> Unit,
+    notify: (SettingsStatus) -> Unit,
+    playingVoice: String?,
+    onAudition: (MiMoVoiceStore.CustomVoice) -> Unit
+) {
+    var customVoices by remember { mutableStateOf(MiMoVoiceStore.installed(context)) }
+    var designing by remember { mutableStateOf(false) }
+    var cloning by remember { mutableStateOf(false) }
+    var cloningImporting by remember { mutableStateOf(false) }
+    var designName by remember { mutableStateOf("") }
+    var designPrompt by remember { mutableStateOf("") }
+    var designLanguage by remember { mutableStateOf(TtsLanguage.CHINESE) }
+    var designGender by remember { mutableStateOf("female") }
+    var cloneName by remember { mutableStateOf("") }
+    var cloneLanguage by remember { mutableStateOf(TtsLanguage.CHINESE) }
+    var cloneGender by remember { mutableStateOf("female") }
+
+    fun refresh() {
+        customVoices = MiMoVoiceStore.installed(context)
+    }
+
+    val clonePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null || !cloning) return@rememberLauncherForActivityResult
+        var temp: File? = null
+        cloningImporting = true
+        scope.launch {
+            val result = runCatching {
+                val mime = context.contentResolver.getType(uri)
+                val ext = when {
+                    mime.equals("audio/mpeg", true) || mime.equals("audio/mp3", true) -> "mp3"
+                    mime.equals("audio/wav", true) || mime.equals("audio/x-wav", true) -> "wav"
+                    else -> uri.lastPathSegment
+                        ?.substringAfterLast('.')
+                        ?.lowercase()
+                        ?.takeIf { it == "mp3" || it == "wav" }
+                        ?: "mp3"
+                }
+                temp = File(context.cacheDir, "mimo_clone_sample.$ext")
+                temp!!.delete()
+                val input = context.contentResolver.openInputStream(uri)
+                    ?: error(context.getString(R.string.multivoice_mimo_clone_read_failed))
+                input.use { reader ->
+                    temp!!.outputStream().use { writer -> reader.copyTo(writer) }
+                }
+                MiMoVoiceStore.addClone(
+                    context = context,
+                    name = cloneName,
+                    source = temp!!,
+                    language = cloneLanguage,
+                    gender = cloneGender
+                ).getOrThrow()
+            }
+            temp?.delete()
+            result.onSuccess { voice ->
+                refresh()
+                cloningImporting = false
+                cloning = false
+                notify(
+                    SettingsStatus.success(
+                        context.getString(R.string.multivoice_mimo_clone_imported, voice.name)
+                    )
+                )
+                onChanged()
+            }.onFailure {
+                cloningImporting = false
+                notify(
+                    SettingsStatus.danger(
+                        it.message ?: context.getString(R.string.multivoice_mimo_clone_failed)
+                    )
+                )
+            }
+        }
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.multivoice_mimo_panel_title),
+                style = MaterialTheme.typography.labelLarge,
+                color = InkSoft,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = { designing = true }) {
+                Text(stringResource(R.string.multivoice_mimo_design_button))
+            }
+            TextButton(onClick = { cloning = true }) {
+                Text(stringResource(R.string.multivoice_mimo_clone_button))
+            }
+        }
+        Text(
+            stringResource(R.string.multivoice_mimo_panel_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = InkFaint
+        )
+        if (customVoices.isEmpty()) {
+            Text(
+                stringResource(R.string.multivoice_mimo_empty),
+                style = MaterialTheme.typography.labelSmall,
+                color = InkFaint
+            )
+        } else {
+            customVoices.forEach { voice ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            voice.name,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            (if (voice.isDesign) {
+                                stringResource(R.string.multivoice_mimo_kind_design)
+                            } else {
+                                stringResource(R.string.multivoice_mimo_kind_clone)
+                            }) +
+                                " · " +
+                                (if (voice.language == TtsLanguage.CHINESE) {
+                                    stringResource(R.string.multivoice_mimo_lang_zh)
+                                } else {
+                                    stringResource(R.string.multivoice_mimo_lang_en)
+                                }) +
+                                (if (voice.gender.isNotBlank()) {
+                                    " · " + if (voice.gender == "male") {
+                                        stringResource(R.string.multivoice_gender_male)
+                                    } else {
+                                        stringResource(R.string.multivoice_gender_female)
+                                    }
+                                } else {
+                                    ""
+                                }),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = InkFaint
+                        )
+                    }
+                    val auditionLabel = if (playingVoice == voice.id) {
+                        stringResource(R.string.multivoice_audition_stop)
+                    } else {
+                        stringResource(R.string.multivoice_audition, voice.name)
+                    }
+                    IconButton(
+                        onClick = { onAudition(voice) },
+                        modifier = Modifier.semantics {
+                            contentDescription = auditionLabel
+                        }
+                    ) {
+                        Icon(
+                            if (playingVoice == voice.id) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = if (playingVoice == voice.id) Accent else InkSoft,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    val deleteLabel = stringResource(R.string.multivoice_mimo_delete, voice.name)
+                    IconButton(
+                        onClick = {
+                            MiMoVoiceStore.remove(context, voice.id)
+                            refresh()
+                            notify(
+                                SettingsStatus.success(
+                                    context.getString(R.string.multivoice_mimo_deleted, voice.name)
+                                )
+                            )
+                            onChanged()
+                        },
+                        modifier = Modifier.semantics {
+                            contentDescription = deleteLabel
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = null,
+                            tint = InkFaint,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (designing) {
+        AlertDialog(
+            onDismissRequest = { designing = false; designName = ""; designPrompt = "" },
+            containerColor = CardSurface,
+            title = { Text(stringResource(R.string.multivoice_mimo_design_title)) },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = designName,
+                        onValueChange = { designName = it },
+                        label = { Text(stringResource(R.string.multivoice_mimo_design_name_label)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(R.string.multivoice_mimo_design_language_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkSoft
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_mimo_lang_zh),
+                            selected = designLanguage == TtsLanguage.CHINESE,
+                            onSelect = { designLanguage = TtsLanguage.CHINESE }
+                        )
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_mimo_lang_en),
+                            selected = designLanguage != TtsLanguage.CHINESE,
+                            onSelect = { designLanguage = TtsLanguage.ENGLISH }
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(R.string.multivoice_gender_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkSoft
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_gender_female),
+                            selected = designGender == "female",
+                            onSelect = { designGender = "female" }
+                        )
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_gender_male),
+                            selected = designGender == "male",
+                            onSelect = { designGender = "male" }
+                        )
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_gender_unknown),
+                            selected = designGender.isBlank(),
+                            onSelect = { designGender = "" }
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = designPrompt,
+                        onValueChange = { designPrompt = it },
+                        label = { Text(stringResource(R.string.multivoice_mimo_design_prompt_label)) },
+                        supportingText = { Text(stringResource(R.string.multivoice_mimo_design_prompt_hint)) },
+                        minLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        MiMoVoiceStore.addDesign(
+                            context = context,
+                            name = designName,
+                            prompt = designPrompt,
+                            language = designLanguage,
+                            gender = designGender
+                        ).onSuccess { voice ->
+                            refresh()
+                            designing = false
+                            designName = ""
+                            designPrompt = ""
+                            notify(
+                                SettingsStatus.success(
+                                    context.getString(R.string.multivoice_mimo_design_created, voice.name)
+                                )
+                            )
+                            onChanged()
+                        }.onFailure {
+                            notify(
+                                SettingsStatus.danger(
+                                    it.message ?: context.getString(R.string.multivoice_mimo_design_failed)
+                                )
+                            )
+                        }
+                    }
+                ) { Text(stringResource(R.string.multivoice_mimo_design_create)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { designing = false; designName = ""; designPrompt = "" }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    if (cloning) {
+        AlertDialog(
+            onDismissRequest = { if (!cloningImporting) cloning = false },
+            containerColor = CardSurface,
+            title = { Text(stringResource(R.string.multivoice_mimo_clone_title)) },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = cloneName,
+                        onValueChange = { cloneName = it },
+                        label = { Text(stringResource(R.string.multivoice_mimo_clone_name_label)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(R.string.multivoice_mimo_design_language_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkSoft
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_mimo_lang_zh),
+                            selected = cloneLanguage == TtsLanguage.CHINESE,
+                            onSelect = { cloneLanguage = TtsLanguage.CHINESE }
+                        )
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_mimo_lang_en),
+                            selected = cloneLanguage != TtsLanguage.CHINESE,
+                            onSelect = { cloneLanguage = TtsLanguage.ENGLISH }
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(R.string.multivoice_gender_label),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkSoft
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_gender_female),
+                            selected = cloneGender == "female",
+                            onSelect = { cloneGender = "female" }
+                        )
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_gender_male),
+                            selected = cloneGender == "male",
+                            onSelect = { cloneGender = "male" }
+                        )
+                        GenderPill(
+                            label = stringResource(R.string.multivoice_gender_unknown),
+                            selected = cloneGender.isBlank(),
+                            onSelect = { cloneGender = "" }
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    TextButton(
+                        enabled = !cloningImporting,
+                        onClick = {
+                            clonePicker.launch(
+                                arrayOf(
+                                    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/*"
+                                )
+                            )
+                        }
+                    ) {
+                        Text(
+                            stringResource(
+                                if (cloningImporting) {
+                                    R.string.multivoice_mimo_clone_importing
+                                } else {
+                                    R.string.multivoice_mimo_clone_sample_button
+                                }
+                            )
+                        )
+                    }
+                    Text(
+                        stringResource(R.string.multivoice_mimo_clone_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkFaint
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !cloningImporting,
+                    onClick = { cloning = false }
+                ) { Text(stringResource(R.string.common_done)) }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !cloningImporting,
+                    onClick = { cloning = false }
+                ) { Text(stringResource(R.string.common_cancel)) }
+            }
+        )
+    }
 }

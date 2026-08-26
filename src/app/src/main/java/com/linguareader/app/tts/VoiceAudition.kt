@@ -203,6 +203,7 @@ object VoiceAudition {
             TtsEngineMode.AZURE -> AzureTtsBackend(settings, context)
             TtsEngineMode.VOLC -> VolcanoTtsBackend(settings)
             TtsEngineMode.OPENAI_COMPAT -> OpenAiCompatTtsBackend(settings)
+            TtsEngineMode.MIMO -> MiMoTtsBackend(settings, context)
             else -> null
         }
 

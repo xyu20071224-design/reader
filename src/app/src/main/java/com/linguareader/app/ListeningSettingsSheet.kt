@@ -1,5 +1,6 @@
 package com.linguareader.app
 
+import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
@@ -57,6 +58,8 @@ import com.linguareader.app.tts.AzureVoice
 import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.CloudVoicePicker
 import com.linguareader.app.tts.CloudVoiceStore
+import com.linguareader.app.tts.MiMoTtsBackend
+import com.linguareader.app.tts.MiMoVoiceCatalog
 import com.linguareader.app.tts.OpenAiCompatTtsBackend
 import com.linguareader.app.tts.PiperVoice
 import com.linguareader.app.tts.PiperVoiceCatalog
@@ -319,6 +322,43 @@ internal fun ListeningSettingsBody(
         }
     }
 
+    /** MiMo 连通性测试：分别合成一句中文与一句英文探针（BUG-012 教训：只验
+     *  键不验合成会漏掉「能连上但不发声」这类故障）。 */
+    fun testMimo() {
+        if (settings.mode != TtsEngineMode.MIMO || settings.mimoApiKey.isBlank()) {
+            status = SettingsStatus.danger(context.getString(R.string.tts_mimo_key_required))
+            return
+        }
+        busy = true
+        status = null
+        scope.launch {
+            val backend = MiMoTtsBackend(settings, context)
+            val zhProbe = File(context.cacheDir, "tts_probe_mimo_zh.wav")
+            val enProbe = File(context.cacheDir, "tts_probe_mimo_en.wav")
+            val zh = backend.synthesize(
+                "你好，世界。",
+                backend.voiceFor("你好，世界。"),
+                zhProbe
+            )
+            val en = backend.synthesize(
+                "Hello world.",
+                backend.voiceFor("Hello world."),
+                enProbe
+            )
+            zhProbe.delete()
+            enProbe.delete()
+            if (zh.isSuccess && en.isSuccess) {
+                status = SettingsStatus.success(context.getString(R.string.tts_mimo_test_ok))
+            } else {
+                status = SettingsStatus.danger(
+                    (zh.exceptionOrNull() ?: en.exceptionOrNull())?.message
+                        ?: context.getString(R.string.tts_test_failed)
+                )
+            }
+            busy = false
+        }
+    }
+
     fun save() {
         if (settings.mode != TtsEngineMode.SYSTEM && !settings.isConfigured) {
             status = SettingsStatus.danger(context.getString(R.string.tts_cloud_incomplete))
@@ -382,6 +422,12 @@ internal fun ListeningSettingsBody(
                     label = stringResource(R.string.tts_engine_openai_compat),
                     selected = settings.mode == TtsEngineMode.OPENAI_COMPAT,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.OPENAI_COMPAT) }
+                )
+                Spacer(Modifier.weight(1f))
+                EngineChoice(
+                    label = stringResource(R.string.tts_engine_mimo),
+                    selected = settings.mode == TtsEngineMode.MIMO,
+                    onSelect = { settings = settings.copy(mode = TtsEngineMode.MIMO) }
                 )
             }
 
@@ -698,6 +744,58 @@ internal fun ListeningSettingsBody(
                 status?.let { SettingsStatusText(it) }
             }
 
+            if (settings.mode == TtsEngineMode.MIMO) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    stringResource(R.string.tts_mimo_section),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = InkSoft
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.tts_mimo_section_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkFaint
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = settings.mimoApiKey,
+                    onValueChange = { settings = settings.copy(mimoApiKey = it.trim()) },
+                    label = { Text(stringResource(R.string.tts_mimo_api_key_label)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(10.dp))
+                PresetField(
+                    label = stringResource(R.string.tts_mimo_zh_voice_label),
+                    value = settings.mimoZhVoice,
+                    onValueChange = { settings = settings.copy(mimoZhVoice = it.trim()) },
+                    presets = mimoZhVoicePresets()
+                )
+                Spacer(Modifier.height(10.dp))
+                PresetField(
+                    label = stringResource(R.string.tts_mimo_en_voice_label),
+                    value = settings.mimoEnVoice,
+                    onValueChange = { settings = settings.copy(mimoEnVoice = it.trim()) },
+                    presets = mimoEnVoicePresets()
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = settings.mimoStyleInstruction,
+                    onValueChange = { settings = settings.copy(mimoStyleInstruction = it) },
+                    label = { Text(stringResource(R.string.tts_mimo_style_label)) },
+                    supportingText = { Text(stringResource(R.string.tts_mimo_style_hint)) },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = ::testMimo, enabled = !busy) {
+                    Text(stringResource(R.string.tts_test_connection))
+                }
+                status?.let { SettingsStatusText(it) }
+            }
+
             // Multi-voice M4: switch + narrator/character voices (§8).
             MultiVoiceSection(
                 settings = settings,
@@ -733,6 +831,26 @@ internal fun ListeningSettingsBody(
             }
         }
     }
+
+/** 按资源名（如 `tts_mimo_voice_default`）解析预置音色显示名；找不到时回退 key。 */
+private fun mimoPresetName(context: Context, nameKey: String): String {
+    val id = context.resources.getIdentifier(nameKey, "string", context.packageName)
+    return if (id != 0) context.getString(id) else nameKey
+}
+
+/** MiMo 中文预置音色下拉数据：[（显示名，音色 id）]。 */
+@Composable
+private fun mimoZhVoicePresets(): List<Pair<String, String>> {
+    val context = LocalContext.current
+    return MiMoVoiceCatalog.zhVoices.map { mimoPresetName(context, it.nameKey) to it.id }
+}
+
+/** MiMo 英文预置音色下拉数据：[（显示名，音色 id）]。 */
+@Composable
+private fun mimoEnVoicePresets(): List<Pair<String, String>> {
+    val context = LocalContext.current
+    return MiMoVoiceCatalog.enVoices.map { mimoPresetName(context, it.nameKey) to it.id }
+}
 
 @Composable
 private fun PresetField(

@@ -587,3 +587,13 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **aiExplanation 复习卡区块**：条件渲染正确（无 AI 数据的词不渲染）；当前生词库无含 AI 解释的记录，带数据的视觉演示待有 AI 数据后复核。
 - 过程坑（已写入记忆库）：主题选项**色块预览可点、文字标签不可点**；ColorOS 对 shell 的 `screenrecord` 全目录 Permission denied（含 /data/local/tmp），冷启动验证改用连拍+分带亮度法。
 - 设备还原：阅读主题回「纸张」、系统夜间回 auto、自动旋转恢复、测试用生词 clear 已移除。
+
+## 2026-08-26 MiMo 云 TTS 接入（mimo-v2.5-tts / voicedesign / voiceclone，多角色服务）
+
+- 新增引擎 `MiMo`（`CloudTtsSettings`：mimoApiKey 加密持久化、mimoModel/zh/en 音色、风格指令；`TtsEngineMode.MIMO`）。
+- 三态音色 id：裸预置 id（9 个官方预置，zh/en × 男女）/ `mimo-design:<key>` / `mimo-clone:<key>`，对多角色管线透明——音色库、角色分配、试听、缓存播放全部复用既有链路，只有 `MiMoTtsBackend.synthesize` 按前缀分派模型。
+- `MiMoTtsBackend`：OpenAI 兼容 `POST /v1/chat/completions`，鉴权头 `api-key`，目标文本放 `role:assistant`，风格指令/设计描述放 `role:user`（voicedesign 必填、克隆样本 `data:audio/mpeg;base64,…` 放 `audio.voice`，≤10 MB），非流式 wav 经 `choices[0].message.audio.data` base64 返回（文档规定）。
+- `MiMoVoiceStore`：SharedPreferences JSON 登记 + 样本落 `filesDir/mimo-voices/`；`MiMoVoiceCatalog.library(context)` 把预置+自定义并成音色库喂 `VoiceLibraryLoader`。
+- UI：听书设置新增 MIMO 引擎行 + 配置区（API Key/中英音色/风格指令/「合成测试」）；多角色面板新增「MiMo 专属音色」区块（设计对话框：名称/语言/性别/描述；复刻对话框：名称/语言/性别/系统文档选样本）；列表行可试听、可删除，全部走弹层内联 `SettingsStatus` 反馈。
+- 文案：zh + en 两册同步新增 45 个 key（模块前缀 `tts_mimo_` / `multivoice_mimo_`）。
+- 单测：`testDebugUnitTest` 全绿（369 个）。新增 `MiMoTtsBackendTest`（buildRequestBody 预置/设计/克隆三态、无描述拒绝、decodeAudioData、voiceFor 中英路由、modelForVoice）；`CloudTtsSettingsTest` 增 MIMO 字段 roundtrip（API key 属 Keystore 加密，按项目惯例不回读）与 isConfigured；`MultiVoiceSupportTest` 增 MIMO 多角色支持断言。
