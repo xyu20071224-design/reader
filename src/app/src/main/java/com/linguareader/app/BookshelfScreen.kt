@@ -41,6 +41,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -109,7 +111,7 @@ internal fun BookshelfScreen(
     onAttachTranslation: (Book, android.net.Uri) -> Unit,
     onDetachTranslation: (Book) -> Unit,
     onPrepareAiTranslation: (Book) -> Unit,
-    onStartAiTranslation: (Book) -> Unit,
+    onStartAiTranslation: (Book, String, String) -> Unit,
     onCancelAiTranslation: (Book) -> Unit,
     onDismissAiTranslationPrepare: () -> Unit,
     onAiSettingsChange: (AiSettings) -> Unit,
@@ -360,10 +362,13 @@ internal fun BookshelfScreen(
     }
 
     state.aiTranslationPrepare?.let { prepare ->
+        // 确认框内的可编辑项：翻译模式（记住上次）与风格说明（书级，随开随改）。
+        var mode by remember(prepare.book.id) { mutableStateOf(prepare.mode) }
+        var styleNotes by remember(prepare.book.id) { mutableStateOf(prepare.styleNotes) }
         AlertDialog(
             onDismissRequest = onDismissAiTranslationPrepare,
             confirmButton = {
-                TextButton(onClick = { onStartAiTranslation(prepare.book) }) {
+                TextButton(onClick = { onStartAiTranslation(prepare.book, mode, styleNotes) }) {
                     Text(stringResource(R.string.shelf_translation_ai_start))
                 }
             },
@@ -374,15 +379,60 @@ internal fun BookshelfScreen(
             },
             title = { Text(stringResource(R.string.shelf_translation_ai_title)) },
             text = {
-                Text(
-                    stringResource(
-                        R.string.shelf_translation_ai_confirm_body,
-                        prepare.book.title,
-                        prepare.chapters,
-                        prepare.batches,
-                        prepare.glossaryTerms
+                Column {
+                    Text(
+                        stringResource(
+                            R.string.shelf_translation_ai_confirm_body,
+                            prepare.book.title,
+                            prepare.chapters,
+                            prepare.batches,
+                            prepare.glossaryTerms
+                        )
                     )
-                )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        stringResource(R.string.shelf_translation_ai_mode_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = InkSoft
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = mode == "standard",
+                            onClick = { mode = "standard" }
+                        )
+                        Text(
+                            stringResource(R.string.shelf_translation_ai_mode_standard),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        RadioButton(
+                            selected = mode == "polish",
+                            onClick = { mode = "polish" }
+                        )
+                        Text(
+                            stringResource(R.string.shelf_translation_ai_mode_polish),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.shelf_translation_ai_style_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = InkSoft
+                    )
+                    OutlinedTextField(
+                        value = styleNotes,
+                        onValueChange = { styleNotes = it },
+                        placeholder = {
+                            Text(
+                                stringResource(R.string.shelf_translation_ai_style_placeholder),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             containerColor = CardSurface,
             shape = CardShape
@@ -617,6 +667,8 @@ private fun BookCard(
                         stringResource(R.string.shelf_translation_ai_preparing)
                     aiProgress?.aligning == true ->
                         stringResource(R.string.shelf_translation_ai_aligning)
+                    aiProgress?.polish == true ->
+                        stringResource(R.string.shelf_translation_ai_polish_progress, aiProgress.percent)
                     aiProgress != null ->
                         stringResource(R.string.shelf_translation_ai_progress, aiProgress.percent)
                     else -> book.translationTitle.ifBlank { stringResource(R.string.shelf_translation_ready) }

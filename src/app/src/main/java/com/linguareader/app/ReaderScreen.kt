@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
@@ -215,6 +216,9 @@ internal fun ReaderScreen(
     var sentenceTranslation by remember { mutableStateOf<SentenceTranslationResult?>(null) }
     var translation by remember { mutableStateOf<TranslationLookupResult?>(null) }
     var translationLoading by remember { mutableStateOf(false) }
+    // 句级定点重翻：进行态与完成信号（编辑态在 LookupSheet 内部）。
+    var retranslateLoading by remember { mutableStateOf(false) }
+    var retranslateDoneTick by remember { mutableStateOf(0) }
     var sentenceTranslationError by remember { mutableStateOf<String?>(null) }
     var sentenceTranslationLoading by remember { mutableStateOf(false) }
     // 同一句重复点词不再重复出网（也不重复计费）；换书即失效，超过 64 句整体丢弃。
@@ -432,6 +436,7 @@ internal fun ReaderScreen(
         sentenceTranslationLoading = false
         translation = null
         translationLoading = book.hasTranslation
+        retranslateLoading = false
         dictionaryResult = viewModel.lookup(request)
         showingRelatedPhrase = false
         dictionaryLoading = false
@@ -825,6 +830,34 @@ internal fun ReaderScreen(
             isSaved = savedId != null && savedWords.any { word -> word.id == savedId },
             isPhraseView = showingRelatedPhrase,
             showReviewEntry = reminders.contextHighlight,
+            retranslateAvailable = aiSettings.powerEnabled && aiSettings.remoteReady,
+            retranslateLoading = retranslateLoading,
+            retranslateDoneTick = retranslateDoneTick,
+            onRetranslate = { feedback ->
+                val hit = translation ?: return@LookupSheet
+                if (retranslateLoading) return@LookupSheet
+                retranslateLoading = true
+                viewModel.retranslateTranslation(book, hit, feedback.ifBlank { null }) { ok ->
+                    retranslateLoading = false
+                    retranslateDoneTick++
+                    // 弹层开着时全局 Snackbar 不可见，结果走行内 lookupStatus。
+                    lookupStatus = if (ok) {
+                        SettingsStatus.success(
+                            context.getString(R.string.reader_translation_retranslated)
+                        )
+                    } else {
+                        SettingsStatus.danger(
+                            context.getString(R.string.reader_translation_retranslate_failed)
+                        )
+                    }
+                    if (ok) {
+                        // 重查拿新译文与新词级对齐（WordAligner 查询时现算）。
+                        scope.launch {
+                            translation = viewModel.translationLookup(book, chapterIndex, currentLookup)
+                        }
+                    }
+                }
+            },
             onReviewSaved = {
                 val word = savedId?.let { id -> savedWords.firstOrNull { w -> w.id == id } }
                 if (word != null) {
@@ -1198,6 +1231,12 @@ private fun LookupSheet(
     isSaved: Boolean,
     isPhraseView: Boolean,
     showReviewEntry: Boolean,
+    /** 句级重翻入口：AI 可用 + 当前命中是句级时才出现。 */
+    retranslateAvailable: Boolean,
+    retranslateLoading: Boolean,
+    /** 每次重翻结束（无论成败）自增；编辑态据此折叠并清空反馈。 */
+    retranslateDoneTick: Int,
+    onRetranslate: (String) -> Unit,
     onReviewSaved: () -> Unit,
     onShowPhrase: () -> Unit,
     onShowWord: () -> Unit,
@@ -1388,6 +1427,14 @@ private fun LookupSheet(
                 )
             }
             var pairingExpanded by remember(lookup.word, lookup.sentence) { mutableStateOf(false) }
+            // 句级重翻的编辑态：反馈文本与展开折叠都是纯 UI 状态，放这里；
+            // doneTick 参与 key，重翻结束（成败皆然）自动折叠清空。
+            var retranslateEditing by remember(lookup.word, lookup.sentence, retranslateDoneTick) {
+                mutableStateOf(false)
+            }
+            var retranslateFeedback by remember(lookup.word, lookup.sentence, retranslateDoneTick) {
+                mutableStateOf("")
+            }
             translation?.let { result ->
                 Spacer(Modifier.height(14.dp))
                 Text(
@@ -1493,6 +1540,76 @@ private fun LookupSheet(
                                 ),
                                 color = Accent
                             )
+                        }
+                    }
+                    // 句级定点重翻：AI 可用且命中是句级时才出现（段落级兜底没有
+                    // 确定的句对条目，不开放）。
+                    val retranslateHit = translation
+                    if (retranslateHit != null &&
+                        retranslateHit.matchLevel == TranslationMatchLevel.SENTENCE &&
+                        retranslateAvailable
+                    ) {
+                        TextButton(
+                            onClick = { retranslateEditing = !retranslateEditing },
+                            enabled = !retranslateLoading
+                        ) {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Accent
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                stringResource(R.string.reader_translation_retranslate),
+                                color = Accent
+                            )
+                        }
+                    }
+                }
+                // 重翻编辑态：反馈可留空（= 原样重试换一次结果）；进行态保留旧译文。
+                if (retranslateEditing &&
+                    translation?.matchLevel == TranslationMatchLevel.SENTENCE &&
+                    retranslateAvailable
+                ) {
+                    Spacer(Modifier.height(6.dp))
+                    if (retranslateLoading) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            LinearProgressIndicator(
+                                modifier = Modifier.width(72.dp).height(4.dp),
+                                color = Accent,
+                                trackColor = Accent.copy(alpha = .12f)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                stringResource(R.string.reader_translation_retranslating),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = InkSoft
+                            )
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = retranslateFeedback,
+                            onValueChange = { retranslateFeedback = it },
+                            placeholder = {
+                                Text(
+                                    stringResource(R.string.reader_translation_retranslate_hint),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            },
+                            minLines = 2,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { retranslateEditing = false }) {
+                                Text(stringResource(R.string.common_cancel), color = InkSoft)
+                            }
+                            TextButton(onClick = { onRetranslate(retranslateFeedback) }) {
+                                Text(
+                                    stringResource(R.string.reader_translation_retranslate_go),
+                                    color = Accent
+                                )
+                            }
                         }
                     }
                 }

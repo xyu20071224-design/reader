@@ -177,7 +177,14 @@ data class TranslationLookupResult(
     val matchLevel: TranslationMatchLevel,
     val confidence: Float,
     /** 中文句内的词级对照；null 表示未对齐到词（降级句/段级）。 */
-    val wordAlignment: WordAlignment? = null
+    val wordAlignment: WordAlignment? = null,
+    /**
+     * 该命中对应的句对在 memory.pairs 里的全局下标；句级定点重翻靠它精确定位
+     * 档案条目。段落级兜底命中同样带（重译入口只对 SENTENCE 开放）。
+     */
+    val pairIndex: Int = -1,
+    /** 命中句对所在的英文段落（重翻时给模型上下文用）。 */
+    val englishParagraph: String = ""
 )
 
 data class AttachTranslationResult(

@@ -38,6 +38,21 @@ class TranslationMemoryIndexTest {
     }
 
     @Test
+    fun `pair index and english paragraph survive into the lookup result`() {
+        // 句级定点重翻靠 pairIndex 精确定位档案条目：必须是 memory.pairs 的
+        // 全局下标（跨章不重排），englishParagraph 带上下文。
+        val hit = index.lookup(0, "Then he ran.", paragraph)
+        assertNotNull(hit)
+        assertEquals(1, hit!!.pairIndex)
+        assertEquals(paragraph, hit.englishParagraph)
+
+        val other = index.lookup(3, "Only a paragraph here.", "Only a paragraph here.")
+        assertNotNull(other)
+        assertEquals(2, other!!.pairIndex)
+        assertEquals("只有一个段落。", other.chinese)
+    }
+
+    @Test
     fun `whitespace and punctuation drift still matches`() {
         // WebView 端给出的句子可能多空白、少标点、带弯引号。
         val result = index.lookup(0, "  He   was late ", paragraph)

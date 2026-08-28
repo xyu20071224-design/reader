@@ -24,6 +24,8 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
     /** 一条句对的归一化视图，避免每次点词重复跑正则。 */
     private class Entry(
         val pair: AlignedSentencePair,
+        /** 该句对在 memory.pairs 里的全局下标，句级重翻靠它精确定位档案条目。 */
+        val pairIndex: Int,
         val sentence: String,
         val paragraph: String
     )
@@ -95,11 +97,13 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
         // 同一段落的多条句对共享同一份归一化文本。
         val paragraphCache = HashMap<String, String>()
         return memory.pairs
-            .groupBy { it.enChapter }
-            .mapValues { (_, pairs) ->
-                pairs.map { pair ->
+            .withIndex()
+            .groupBy { it.value.enChapter }
+            .mapValues { (_, indexed) ->
+                indexed.map { (index, pair) ->
                     Entry(
                         pair = pair,
+                        pairIndex = index,
                         sentence = TranslationMemorySearch.normalize(pair.enSentence),
                         paragraph = paragraphCache.getOrPut(pair.enParagraph) {
                             TranslationMemorySearch.normalize(pair.enParagraph)
@@ -117,7 +121,9 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
             chinese = pair.zhSentence.ifBlank { pair.zhParagraph },
             chineseParagraph = pair.zhParagraph,
             matchLevel = level,
-            confidence = pair.confidence
+            confidence = pair.confidence,
+            pairIndex = entry.pairIndex,
+            englishParagraph = pair.enParagraph
         )
     }
 }

@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.Chapter
 import com.linguareader.app.data.WordLookup
+import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.translation.TranslationMemoryRepository
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -13,6 +14,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,14 +35,21 @@ class AiTranslationRepositoryTest {
     private class FakeChat : AiTranslationChatClient {
         var calls = 0
         val prompts = mutableListOf<String>()
+        val systems = mutableListOf<String>()
         var failNextCall = false
+        /** 句级重翻（system 命中 RETRANSLATE_SYSTEM_PROMPT）时返回的译文。 */
+        var retranslateReply: String? = null
 
         override suspend fun translateSegments(system: String, user: String): JSONObject {
             calls++
             prompts += user
+            systems += system
             if (failNextCall) {
                 failNextCall = false
                 throw AiRequestException("网络断了")
+            }
+            if (system == AiBookTranslator.RETRANSLATE_SYSTEM_PROMPT) {
+                return JSONObject().put("translation", retranslateReply.orEmpty())
             }
             val array = JSONArray()
             Regex("\\[(\\d+)] (.+)").findAll(user).forEach { match ->
@@ -180,6 +189,115 @@ class AiTranslationRepositoryTest {
         // 第 1 批坏响应 1 次 + 带原因重试 1 次 + 第二章 1 次。
         assertEquals(3, chat.calls)
         assertTrue("缺少编号" in chat.prompts[1])
+    }
+
+    @Test
+    fun `polish mode runs a second pass per batch and records mode in checkpoint`() = runBlocking {
+        val book = makeSourceBook()
+        val chat = FakeChat()
+        val repo = repository(chat)
+        repo.translateBook(book, mode = AiTranslationRepository.MODE_POLISH) { _ -> }
+
+        // 每批两遍：初翻 → 精修，且系统提示词按遍切换。
+        assertEquals(4, chat.calls)
+        assertEquals(AiBookTranslator.TRANSLATION_SYSTEM_PROMPT, chat.systems[0])
+        assertEquals(AiBookTranslator.POLISH_SYSTEM_PROMPT, chat.systems[1])
+        assertEquals(AiBookTranslator.TRANSLATION_SYSTEM_PROMPT, chat.systems[2])
+        assertEquals(AiBookTranslator.POLISH_SYSTEM_PROMPT, chat.systems[3])
+        // 精修请求能拿到初稿。
+        assertTrue("初稿：" in chat.prompts[1])
+
+        // 检查点带 mode；精译检查点在精译模式下重跑零出网。
+        val checkpoint = File(context.filesDir, "ai/ai-translations/$sourceBookId/0-0.json")
+        assertEquals("polish", JSONObject(checkpoint.readText()).optString("mode"))
+        val second = FakeChat()
+        repository(second).translateBook(book, mode = AiTranslationRepository.MODE_POLISH) { _ -> }
+        assertEquals(0, second.calls)
+    }
+
+    @Test
+    fun `style notes persist and round trip`() = runBlocking {
+        val repo = repository(FakeChat())
+        assertEquals(null, repo.loadStyle(sourceBookId))
+        repo.saveStyle(sourceBookId, "对话用『』")
+        assertEquals("对话用『』", repo.loadStyle(sourceBookId))
+        // 空白说明读回为 null（= 不注入）。
+        repo.saveStyle(sourceBookId, "   ")
+        assertEquals(null, repo.loadStyle(sourceBookId))
+    }
+
+    @Test
+    fun `retranslate replaces the sentence pair and lookups return the new text`() = runBlocking {
+        val book = makeSourceBook()
+        val chat = FakeChat()
+        val repo = repository(chat)
+        val translation = repo.translateBook(book) { _ -> }
+        val memoryRepo = TranslationMemoryRepository(ApplicationProvider.getApplicationContext())
+        memoryRepo.attachGenerated(book, translation)
+        val hit = memoryRepo.lookup(
+            book, 0,
+            WordLookup("left", "In 1926 he left the town.", "In 1926 he left the town.", 12, 0f, 0f)
+        )!!
+        assertEquals(TranslationMatchLevel.SENTENCE, hit.matchLevel)
+        assertTrue(hit.pairIndex >= 0)
+
+        chat.retranslateReply = "1926年，他离开了那座小镇。"
+        val newZh = repo.retranslateText(
+            book, hit.english, hit.englishParagraph, hit.chinese, feedback = "用「那座小镇」"
+        )
+        assertEquals("1926年，他离开了那座小镇。", newZh)
+        // 重翻请求带反馈与段落上下文。
+        assertTrue("用「那座小镇」" in chat.prompts.last())
+        assertTrue(hit.englishParagraph in chat.prompts.last())
+
+        assertTrue(memoryRepo.replaceSentenceTranslation(book.id, hit.pairIndex, newZh) != null)
+        val after = memoryRepo.lookup(
+            book, 0,
+            WordLookup("left", "In 1926 he left the town.", "In 1926 he left the town.", 12, 0f, 0f)
+        )!!
+        assertEquals("1926年，他离开了那座小镇。", after.chinese)
+        assertEquals(hit.pairIndex, after.pairIndex)
+        // 同段其它句对不受影响（仍是初翻产物）。
+        val neighbour = memoryRepo.lookup(
+            book, 0,
+            WordLookup("Hello", "Hello world.", "Hello world.", 0, 0f, 0f)
+        )
+        assertEquals("译0：Hello world.", neighbour?.chinese)
+    }
+
+    @Test
+    fun `retranslate validation failure throws and keeps archive untouched`() = runBlocking {
+        val book = makeSourceBook()
+        val chat = FakeChat()
+        val repo = repository(chat)
+        val translation = repo.translateBook(book) { _ -> }
+        val memoryRepo = TranslationMemoryRepository(ApplicationProvider.getApplicationContext())
+        memoryRepo.attachGenerated(book, translation)
+        val hit = memoryRepo.lookup(
+            book, 0,
+            WordLookup("left", "In 1926 he left the town.", "In 1926 he left the town.", 12, 0f, 0f)
+        )!!
+
+        // 空回复 → 自检失败抛异常。
+        chat.retranslateReply = ""
+        assertThrows(AiRequestException::class.java) {
+            runBlocking {
+                repo.retranslateText(book, hit.english, hit.englishParagraph, hit.chinese, feedback = null)
+            }
+        }
+        // 数字锚点丢失同样拒绝。
+        chat.retranslateReply = "他离开了小镇。"
+        assertThrows(AiRequestException::class.java) {
+            runBlocking {
+                repo.retranslateText(book, hit.english, hit.englishParagraph, hit.chinese, feedback = null)
+            }
+        }
+        // 档案未被破坏：重查还是旧译文。
+        val after = memoryRepo.lookup(
+            book, 0,
+            WordLookup("left", "In 1926 he left the town.", "In 1926 he left the town.", 12, 0f, 0f)
+        )!!
+        assertEquals(hit.chinese, after.chinese)
     }
 
     @Test

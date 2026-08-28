@@ -93,6 +93,86 @@ class AiBookTranslatorTest {
         assertTrue("上一段译文。" in prompt)
     }
 
+    @Test
+    fun `style notes are injected as a mandatory line`() {
+        val batch = TranslationBatch(0, 0, listOf(0), listOf("Hello."))
+        val with = AiBookTranslator.buildUserPrompt("T", "C", emptyList(), null, batch, styleNotes = "对话用『』")
+        val blank = AiBookTranslator.buildUserPrompt("T", "C", emptyList(), null, batch, styleNotes = "   ")
+        assertTrue("风格说明" in with && "对话用『』" in with)
+        assertTrue("风格说明" !in blank)
+    }
+
+    // --- 两阶段润色 -----------------------------------------------------------
+
+    @Test
+    fun `polish prompt pairs source with draft and keeps segments contract`() {
+        val batch = TranslationBatch(2, 0, listOf(0, 1), listOf("In 1926 he left.", "It rained."))
+        val prompt = AiBookTranslator.buildPolishUserPrompt(
+            "T", "Chapter", emptyList(), batch,
+            draftTranslations = listOf("1926年他离开了。", "下雨了。")
+        )
+        assertTrue("[0] 原文：In 1926 he left." in prompt)
+        assertTrue("[0] 初稿：1926年他离开了。" in prompt)
+        assertTrue("{\"segments\":[{\"i\":编号,\"t\":\"修订后的中文段落\"}]}" in prompt.replace("\\\"", "\""))
+        // 风格说明注入同样生效。
+        val styled = AiBookTranslator.buildPolishUserPrompt(
+            "T", "Chapter", emptyList(), batch,
+            draftTranslations = listOf("a", "b"), styleNotes = "文风口语化"
+        )
+        assertTrue("文风口语化" in styled)
+    }
+
+    // --- 句级重翻 -------------------------------------------------------------
+
+    @Test
+    fun `retranslate prompt carries paragraph context feedback and glossary`() {
+        val glossary = listOf(GlossaryEntry(term = "Hogwarts", translation = "", note = "学校"))
+        val withFeedback = AiBookTranslator.buildRetranslateUserPrompt(
+            "Harry walked to Hogwarts.", "Harry walked to Hogwarts. It rained.",
+            "哈利走到了魔法学校。", glossary, styleNotes = "口语化", feedback = "语气太书面"
+        )
+        assertTrue("所在段落" in withFeedback)
+        assertTrue("Harry walked to Hogwarts. It rained." in withFeedback)
+        assertTrue("哈利走到了魔法学校。" in withFeedback)
+        assertTrue("用户对现有译文的反馈" in withFeedback && "语气太书面" in withFeedback)
+        assertTrue("Hogwarts | 保留原文" in withFeedback)
+        assertTrue("口语化" in withFeedback)
+
+        val withoutFeedback = AiBookTranslator.buildRetranslateUserPrompt(
+            "Hello.", "Hello.", "你好。", emptyList(), null, feedback = "  "
+        )
+        assertTrue("换一种更通顺自然的译法" in withoutFeedback)
+    }
+
+    @Test
+    fun `retranslate validation rejects blank lost anchors and translated keep-original terms`() {
+        val keep = listOf("Hogwarts")
+        assertThrows(AiRequestException::class.java) {
+            AiBookTranslator.validateRetranslation("Hello.", "   ", emptyList())
+        }
+        assertThrows(AiRequestException::class.java) {
+            AiBookTranslator.validateRetranslation("The year 1926 passed.", "那一年过去了。", emptyList())
+        }
+        assertThrows(AiRequestException::class.java) {
+            AiBookTranslator.validateRetranslation(
+                "Harry walked to Hogwarts.", "哈利走到了魔法学校。", keep
+            )
+        }
+        // 通过路径：锚点与术语都在。
+        AiBookTranslator.validateRetranslation(
+            "In 1926 Harry walked to Hogwarts.", "1926年，哈利走到了 Hogwarts。", keep
+        )
+    }
+
+    @Test
+    fun `retranslate validation rejects absurd length`() {
+        assertThrows(AiRequestException::class.java) {
+            AiBookTranslator.validateRetranslation(
+                ("word ".repeat(100)).trim(), "短。", emptyList()
+            )
+        }
+    }
+
     // --- 解析与自检 -----------------------------------------------------------
 
     private fun segmentsJson(vararg pairs: Pair<Int, String>): JSONObject {

@@ -59,10 +59,14 @@ class AiTranslationRepository(
      * 逐章逐批翻译整本书。译文章节文件写好后返回合成译本 [Book]（id 带
      * `ai-` 前缀，不进 `files/books/`、不上书架）；对齐由调用方接续完成。
      *
-     * [onProgress] 在每批完成后回调已完成批次的百分比（0-100）。
+     * [mode] 见 [MODE_POLISH]；[styleNotes] 为本书风格说明（可空），随每批
+     * 初翻/精修 prompt 注入。[onProgress] 在每批完成后回调已完成批次的百分比
+     * （0-100）。
      */
     suspend fun translateBook(
         book: Book,
+        mode: String = MODE_STANDARD,
+        styleNotes: String? = null,
         onProgress: suspend (percent: Int) -> Unit
     ): Book = withContext(Dispatchers.IO) {
         val settings = settingsStore.load()
@@ -85,7 +89,8 @@ class AiTranslationRepository(
             val chapter = book.chapters[chapterIndex]
             val paragraphs = batches.flatMap { batch ->
                 val translations = restoreOrTranslate(
-                    client, checkpoints, book, chapter, glossary, keepOriginalTerms, tail, batch
+                    client, checkpoints, book, chapter, glossary, keepOriginalTerms,
+                    tail, batch, mode, styleNotes
                 )
                 tail = translations.last()
                 finishedBatches++
@@ -97,10 +102,72 @@ class AiTranslationRepository(
         writeTranslationBook(book, translatedChapters)
     }
 
-    /** 删除一本书的全部翻译检查点（删书时随书清理）。 */
+    /** 删除一本书的全部翻译检查点与风格说明（删书时随书清理）。 */
     fun delete(bookId: String) {
         if (bookId.isBlank()) return
         File(checkpointDir, bookId).deleteRecursively()
+    }
+
+    // --- 书级风格说明 ---------------------------------------------------------
+
+    /** 本书风格说明（确认框里用户输入的可选文本），随每次请求注入 prompt。 */
+    suspend fun loadStyle(bookId: String): String? = withContext(Dispatchers.IO) {
+        val file = styleFile(bookId)
+        if (!file.isFile) return@withContext null
+        runCatching {
+            JSONObject(file.readText()).optString("notes").trim().ifBlank { null }
+        }.getOrNull()
+    }
+
+    suspend fun saveStyle(bookId: String, notes: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val file = styleFile(bookId)
+            file.parentFile?.mkdirs()
+            val json = JSONObject()
+                .put("notes", notes.trim())
+                .put("updatedAt", System.currentTimeMillis())
+            val temp = File(file.parentFile, file.name + ".tmp")
+            temp.writeText(json.toString())
+            if (!temp.renameTo(file)) {
+                file.writeText(temp.readText())
+                temp.delete()
+            }
+        }
+    }
+
+    private fun styleFile(bookId: String): File = File(checkpointDir, "$bookId/style.json")
+
+    // --- 句级定点重翻 ---------------------------------------------------------
+
+    /**
+     * 重译一个句子并返回通过自检的新译文。落盘由调用方接
+     * `TranslationMemoryRepository.replaceSentenceTranslation`（本类不持有档案）；
+     * 反馈可空 = 原样重试换一次结果。失败抛 [AiRequestException]，调用方保持
+     * 旧译文不动。
+     */
+    suspend fun retranslateText(
+        book: Book,
+        enSentence: String,
+        enParagraph: String,
+        currentZh: String,
+        feedback: String?
+    ): String = withContext(Dispatchers.IO) {
+        val settings = settingsStore.load()
+        val client = chatClientFactory(settings)
+        val glossary = glossaryRepository.load(book.id).entries.filter { it.enabled }
+        val keepOriginalTerms = glossary.filter { it.translation.isBlank() }.map { it.term }
+        val user = AiBookTranslator.buildRetranslateUserPrompt(
+            enSentence = enSentence,
+            enParagraph = enParagraph,
+            currentZh = currentZh,
+            glossary = glossary,
+            styleNotes = loadStyle(book.id),
+            feedback = feedback?.trim()?.ifBlank { null }
+        )
+        val json = client.translateSegments(AiBookTranslator.RETRANSLATE_SYSTEM_PROMPT, user)
+        val newZh = json.optString("translation")
+        AiBookTranslator.validateRetranslation(enSentence, newZh, keepOriginalTerms)
+        newZh.trim()
     }
 
     /** 命中有效检查点直接复用；否则调 DeepSeek 翻译（自检失败带原因重试一次）。 */
@@ -112,57 +179,114 @@ class AiTranslationRepository(
         glossary: List<GlossaryEntry>,
         keepOriginalTerms: List<String>,
         tail: String?,
-        batch: TranslationBatch
+        batch: TranslationBatch,
+        mode: String,
+        styleNotes: String?
     ): List<String> {
         val hash = AiBookTranslator.sourceHash(batch.paragraphs)
         readCheckpoint(checkpoints, batch, hash)?.let { return it }
-        return translateWithRetry(
-            client, book, chapter, glossary, keepOriginalTerms, tail, batch, checkpoints, hash,
-            retryError = null
+        return translateBatch(
+            client, checkpoints, hash, book, chapter, glossary, keepOriginalTerms,
+            tail, batch, mode, styleNotes, retryError = null
         )
     }
 
-    private suspend fun translateWithRetry(
+    /** 一批的完整产出：初翻（失败带原因重试一次）→ polish 模式再精修一遍。 */
+    private suspend fun translateBatch(
         client: AiTranslationChatClient,
+        checkpoints: File,
+        hash: String,
         book: Book,
         chapter: Chapter,
         glossary: List<GlossaryEntry>,
         keepOriginalTerms: List<String>,
         tail: String?,
         batch: TranslationBatch,
-        checkpoints: File,
-        hash: String,
+        mode: String,
+        styleNotes: String?,
         retryError: String?
     ): List<String> {
-        val user = AiBookTranslator.buildUserPrompt(
-            bookTitle = book.title,
-            chapterTitle = chapter.title,
-            glossary = glossary,
-            previousTail = tail,
-            batch = batch,
-            retryError = retryError
+        val draft = requestSegments(
+            client, checkpoints, hash, book, chapter, glossary, keepOriginalTerms,
+            tail, batch, mode, styleNotes, retryError,
+            isPolish = false, draft = null
         )
+        if (mode != MODE_POLISH) return draft
+        return requestSegments(
+            client, checkpoints, hash, book, chapter, glossary, keepOriginalTerms,
+            tail, batch, mode, styleNotes, retryError,
+            isPolish = true, draft = draft
+        )
+    }
+
+    /**
+     * 一遍请求（初翻或精修）+ 自检 + 带原因重试一次 + 检查点落盘。
+     * [isPolish] 切换 system prompt 与 user prompt 构造；[draft] 仅精修用。
+     */
+    private suspend fun requestSegments(
+        client: AiTranslationChatClient,
+        checkpoints: File,
+        hash: String,
+        book: Book,
+        chapter: Chapter,
+        glossary: List<GlossaryEntry>,
+        keepOriginalTerms: List<String>,
+        tail: String?,
+        batch: TranslationBatch,
+        mode: String,
+        styleNotes: String?,
+        retryError: String?,
+        isPolish: Boolean,
+        draft: List<String>?
+    ): List<String> {
+        val systemPrompt: String
+        val user: String
+        if (isPolish) {
+            systemPrompt = AiBookTranslator.POLISH_SYSTEM_PROMPT
+            user = AiBookTranslator.buildPolishUserPrompt(
+                bookTitle = book.title,
+                chapterTitle = chapter.title,
+                glossary = glossary,
+                batch = batch,
+                draftTranslations = requireNotNull(draft),
+                styleNotes = styleNotes,
+                retryError = retryError
+            )
+        } else {
+            systemPrompt = AiBookTranslator.TRANSLATION_SYSTEM_PROMPT
+            user = AiBookTranslator.buildUserPrompt(
+                bookTitle = book.title,
+                chapterTitle = chapter.title,
+                glossary = glossary,
+                previousTail = tail,
+                batch = batch,
+                retryError = retryError,
+                styleNotes = styleNotes
+            )
+        }
         val json = try {
-            client.translateSegments(AiBookTranslator.TRANSLATION_SYSTEM_PROMPT, user)
+            client.translateSegments(systemPrompt, user)
         } catch (error: Throwable) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             if (retryError == null) {
-                return translateWithRetry(
-                    client, book, chapter, glossary, keepOriginalTerms, tail, batch,
-                    checkpoints, hash, retryError = "请求失败：${error.message}"
+                return requestSegments(
+                    client, checkpoints, hash, book, chapter, glossary, keepOriginalTerms,
+                    tail, batch, mode, styleNotes, retryError = "请求失败：${error.message}",
+                    isPolish, draft
                 )
             }
             throw error
         }
         return try {
             val translations = AiBookTranslator.extractValidated(json, batch, keepOriginalTerms)
-            storeCheckpoint(checkpoints, batch, hash, translations)
+            storeCheckpoint(checkpoints, batch, hash, translations, mode)
             translations
         } catch (error: AiRequestException) {
             if (retryError == null) {
-                translateWithRetry(
-                    client, book, chapter, glossary, keepOriginalTerms, tail, batch,
-                    checkpoints, hash, retryError = error.message
+                requestSegments(
+                    client, checkpoints, hash, book, chapter, glossary, keepOriginalTerms,
+                    tail, batch, mode, styleNotes, retryError = error.message,
+                    isPolish, draft
                 )
             } else {
                 throw error
@@ -192,7 +316,8 @@ class AiTranslationRepository(
         dir: File,
         batch: TranslationBatch,
         hash: String,
-        translations: List<String>
+        translations: List<String>,
+        mode: String
     ) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val file = checkpointFile(dir, batch)
@@ -200,6 +325,7 @@ class AiTranslationRepository(
             val json = JSONObject()
                 .put("sourceHash", hash)
                 .put("paragraphs", JSONArray(translations))
+                .put("mode", mode)
             val temp = File(file.parentFile, file.name + ".tmp")
             temp.writeText(json.toString())
             if (!temp.renameTo(file)) {
@@ -256,5 +382,12 @@ ${body.ifBlank { "<p></p>" }}
     companion object {
         /** 合成译本的 book id / 目录名前缀。`remove()` 靠它整目录删除。 */
         fun translationId(sourceBookId: String): String = "ai-$sourceBookId"
+
+        /**
+         * 整本翻译模式：standard = 单遍直译；polish = 每批初翻后再让模型对照
+         * 原文精修一遍（耗时与费用 ×2）。值随检查点落盘，便于事后区分产出方式。
+         */
+        const val MODE_STANDARD = "standard"
+        const val MODE_POLISH = "polish"
     }
 }

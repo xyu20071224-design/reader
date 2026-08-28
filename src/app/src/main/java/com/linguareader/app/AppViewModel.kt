@@ -20,6 +20,7 @@ import com.linguareader.app.ai.SpeakerTagRepository
 import com.linguareader.app.ai.SentenceTranslationResult
 import com.linguareader.app.ai.SentenceTranslatorFactory
 import com.linguareader.app.translation.TranslationLookupResult
+import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.translation.TranslationMemoryRepository
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
@@ -56,17 +57,23 @@ data class AiTranslationProgress(
     val percent: Int,
     val aligning: Boolean = false,
     /** 术语表/规模估算准备中（确认框弹出前）。 */
-    val preparing: Boolean = false
+    val preparing: Boolean = false,
+    /** 精译模式（每批初翻+精修两遍）：书卡文案显示「AI 精译中」。 */
+    val polish: Boolean = false
 )
 
 /**
  * AI 生成译本的确认框数据：术语表已备齐、规模已估算，等用户确认才开翻。
+ * [mode] 取上次使用的翻译模式；[styleNotes] 是已保存的风格说明（可空），
+ * 确认框里可再编辑。
  */
 data class AiTranslationPrepare(
     val book: Book,
     val chapters: Int,
     val batches: Int,
-    val glossaryTerms: Int
+    val glossaryTerms: Int,
+    val mode: String,
+    val styleNotes: String
 )
 
 data class AppUiState(
@@ -118,6 +125,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
     /** AI 整本翻译的在跑任务，按书 id 取消用。 */
     private val aiTranslationJobs = mutableMapOf<String, Job>()
+    /** 整本翻译的「记住上次选择」：翻译模式（标准/精译）。 */
+    private val aiTranslationPrefs = getApplication<Application>().getSharedPreferences(
+        "ai_translation", android.content.Context.MODE_PRIVATE
+    )
+
+    companion object {
+        private const val KEY_TRANSLATION_MODE = "mode"
+    }
 
     init {
         val storedName = reviewPrefs.getString(ReviewMode.PREFERENCE_KEY, null)
@@ -508,7 +523,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     glossary = glossaryRepository.load(book.id)
                 }
                 val estimate = aiTranslationRepository.estimate(book)
-                AiTranslationPrepare(book, estimate.chapters, estimate.batches, glossary.entries.count { it.enabled })
+                AiTranslationPrepare(
+                    book,
+                    estimate.chapters,
+                    estimate.batches,
+                    glossary.entries.count { it.enabled },
+                    mode = aiTranslationPrefs.getString(
+                        KEY_TRANSLATION_MODE, AiTranslationRepository.MODE_STANDARD
+                    ) ?: AiTranslationRepository.MODE_STANDARD,
+                    styleNotes = aiTranslationRepository.loadStyle(book.id).orEmpty()
+                )
             }.onSuccess { prepare ->
                 mutableState.value = mutableState.value.copy(
                     aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id,
@@ -534,7 +558,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** 确认框点「开始生成」：逐章逐批翻译（检查点续跑）→ 对齐 → 落盘。 */
-    fun startAiTranslation(book: Book) {
+    fun startAiTranslation(book: Book, mode: String, styleNotes: String) {
         dismissAiTranslationPrepare()
         if (book.id in mutableState.value.aiTranslationProgress) return
         val settings = mutableState.value.aiSettings
@@ -544,17 +568,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             return
         }
+        val safeMode = if (mode == AiTranslationRepository.MODE_POLISH) {
+            AiTranslationRepository.MODE_POLISH
+        } else {
+            AiTranslationRepository.MODE_STANDARD
+        }
+        val polish = safeMode == AiTranslationRepository.MODE_POLISH
+        aiTranslationPrefs.edit().putString(KEY_TRANSLATION_MODE, safeMode).apply()
         aiTranslationJobs[book.id] = viewModelScope.launch {
             val startedAt = System.currentTimeMillis()
-            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0))
+            runCatching { aiTranslationRepository.saveStyle(book.id, styleNotes) }
+            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, polish = polish))
             mutableState.value = mutableState.value.copy(
                 notice = string(R.string.notice_translation_ai_started, book.title)
             )
             try {
-                val translationBook = aiTranslationRepository.translateBook(book) { percent ->
-                    setAiTranslationProgress(book.id, AiTranslationProgress(percent = percent))
+                val translationBook = aiTranslationRepository.translateBook(
+                    book,
+                    mode = safeMode,
+                    styleNotes = styleNotes.trim().ifBlank { null }
+                ) { percent ->
+                    setAiTranslationProgress(book.id, AiTranslationProgress(percent = percent, polish = polish))
                 }
-                setAiTranslationProgress(book.id, AiTranslationProgress(percent = 100, aligning = true))
+                setAiTranslationProgress(
+                    book.id,
+                    AiTranslationProgress(percent = 100, aligning = true, polish = polish)
+                )
                 val result = translationRepository.attachGenerated(book, translationBook)
                 library.saveTranslation(
                     book,
@@ -592,6 +631,45 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 取消在跑的整本翻译；已完成批次的检查点保留，下次直接续跑。 */
     fun cancelAiTranslation(book: Book) {
         aiTranslationJobs.remove(book.id)?.cancel()
+    }
+
+    /** 句级定点重翻的在跑书（每本同时最多一次，防双击双扣费）。 */
+    private val retranslateInFlight = mutableSetOf<String>()
+
+    /**
+     * 句级定点重翻：一次小请求替换档案里 [result.pairIndex] 那条句对的译文。
+     * 只对句级命中开放（段落级兜底命中没有确定的句对条目）；成功/失败经
+     * [onDone] 回调，旧译文由界面保持不动。
+     */
+    fun retranslateTranslation(
+        book: Book,
+        result: TranslationLookupResult,
+        feedback: String?,
+        onDone: (Boolean) -> Unit
+    ) {
+        val settings = mutableState.value.aiSettings
+        if (!settings.powerEnabled || !settings.remoteReady ||
+            result.matchLevel != TranslationMatchLevel.SENTENCE || result.pairIndex < 0 ||
+            book.id in retranslateInFlight || book.id in mutableState.value.aiTranslationProgress
+        ) {
+            onDone(false)
+            return
+        }
+        retranslateInFlight.add(book.id)
+        viewModelScope.launch {
+            val ok = runCatching {
+                val newZh = aiTranslationRepository.retranslateText(
+                    book,
+                    enSentence = result.english,
+                    enParagraph = result.englishParagraph,
+                    currentZh = result.chinese,
+                    feedback = feedback
+                )
+                translationRepository.replaceSentenceTranslation(book.id, result.pairIndex, newZh) != null
+            }.isSuccess
+            retranslateInFlight.remove(book.id)
+            onDone(ok)
+        }
     }
 
     private fun setAiTranslationProgress(bookId: String, progress: AiTranslationProgress) {

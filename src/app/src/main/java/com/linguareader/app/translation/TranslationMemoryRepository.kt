@@ -61,6 +61,39 @@ class TranslationMemoryRepository(private val application: Application) {
         return AttachTranslationResult(translationBook = translationBook, memory = memory)
     }
 
+    /** 读取整份档案（句级重翻需要原文、所在段落与上下文）。 */
+    suspend fun memoryFor(bookId: String): TranslationMemory? = withContext(Dispatchers.IO) {
+        load(bookId)
+    }
+
+    /**
+     * 句级定点重翻落盘：只替换 [pairIndex] 那条句对的 zhSentence——`copy` 不会
+     * 产生新段落实例，段落表去重与「同段句对共享 String 实例」契约都不受影响。
+     * 原子写档案后在锁内整体重建查询索引（Index 内部全不可变，必须换对象；
+     * 即使 cachedBookId 已相等也要覆写，否则查询继续拿旧索引返回旧译文）。
+     */
+    suspend fun replaceSentenceTranslation(
+        bookId: String,
+        pairIndex: Int,
+        newZh: String
+    ): TranslationMemory? = withContext(Dispatchers.IO) {
+        val memory = load(bookId) ?: return@withContext null
+        val pair = memory.pairs.getOrNull(pairIndex) ?: return@withContext null
+        val trimmed = newZh.trim()
+        if (trimmed.isEmpty()) return@withContext null
+        val updated = memory.copy(
+            pairs = memory.pairs.toMutableList().also {
+                it[pairIndex] = pair.copy(zhSentence = trimmed)
+            }
+        )
+        save(updated)
+        cacheLock.withLock {
+            cachedBookId = updated.sourceBookId
+            cachedIndex = TranslationMemoryIndex(updated)
+        }
+        updated
+    }
+
     suspend fun lookup(
         book: Book,
         chapterIndex: Int,

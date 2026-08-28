@@ -124,6 +124,7 @@
     <string name="reader_translation_retranslate">Retranslate</string>
     <string name="reader_translation_retranslate_hint">Feedback (optional): e.g. \"he has not entered yet — avoid past perfect\"</string>
     <string name="reader_translation_retranslating">Retranslating…</string>
+    <string name="reader_translation_retranslate_go">Retranslate</string>
     <string name="reader_translation_retranslated">Translation updated</string>
     <string name="reader_translation_retranslate_failed">Retranslation failed; the old translation is kept</string>
     <string name="reader_translation_collapse">Hide pairing</string>
@@ -300,8 +301,6 @@
     <string name="tts_settings_title">Listening settings</string>
     <string name="tts_engine_section">Speech engine</string>
     <string name="tts_engine_system">System speech</string>
-    <string name="tts_engine_azure">Azure cloud TTS</string>
-    <string name="tts_engine_volc">Volcano Engine (Doubao)</string>
     <string name="tts_engine_openai_compat">Self-hosted server (OpenAI-compatible)</string>
     <string name="tts_audition">Sample</string>
     <string name="tts_system_section">System voices</string>
@@ -313,20 +312,8 @@
     <string name="tts_voice_chinese">Chinese voice</string>
     <string name="tts_voice_english">English voice</string>
     <string name="tts_follow_system_default">Follow system default</string>
-    <string name="tts_voice_multilingual">Multilingual voice</string>
-    <string name="tts_multilingual_toggle">One voice for Chinese &amp; English</string>
-    <string name="tts_multilingual_toggle_hint">The same voice reads both languages, so mixed passages stay consistent</string>
-    <string name="tts_voice_unselected">Not selected</string>
-    <string name="tts_voice_with_locale">%1$s (%2$s)</string>
-    <string name="tts_fetch_voices">Fetch available voices</string>
-    <string name="tts_fetch_voices_failed">Failed to fetch voices; check the Region and Key</string>
-    <string name="tts_fill_region_key">Fill in Region and API Key first</string>
-    <string name="tts_select_voice_first">Fetch the voice list and pick a voice first</string>
-    <string name="tts_azure_region_hint">China North 3: chinanorth3</string>
     <string name="tts_test_connection">Test connection</string>
-    <string name="tts_azure_test_ok">Connected — Azure synthesis works</string>
     <string name="tts_server_test_ok">Connected — the server can synthesize</string>
-    <string name="tts_volc_test_ok">Connected — both Chinese and English voices work</string>
     <string name="tts_test_failed">Connection failed</string>
     <string name="tts_server_url_label">Server address</string>
     <string name="tts_server_url_hint">e.g. https://your-server.example.com</string>
@@ -344,29 +331,6 @@
     <string name="tts_server_dialogue_label">Dialogue voice (optional)</string>
     <string name="tts_server_dialogue_hint">Quoted dialogue uses this voice; leaving both blank keeps single-voice mode</string>
     <string name="tts_fill_server_url">Fill in the server address first</string>
-    <string name="tts_volc_api_key_label">API Key (new console, recommended)</string>
-    <string name="tts_volc_app_id_label">App ID (legacy console)</string>
-    <string name="tts_volc_token_label">Access Token (legacy console)</string>
-    <string name="tts_volc_resource_label">Resource ID / model</string>
-    <string name="tts_volc_resource_hint">2.0 voices pair with seed-tts-2.0; 1.0 voices pair with seed-tts-1.0</string>
-    <string name="tts_fill_volc_credentials">Fill in the API Key, or App ID + Access Token</string>
-    <string name="tts_volc_model_2">Doubao TTS model 2.0 (recommended)</string>
-    <string name="tts_volc_model_1">Doubao TTS model 1.0</string>
-    <string name="tts_volc_model_1_concurr">Doubao TTS model 1.0 (concurrent)</string>
-    <string name="tts_volc_voice_shuangkuaisisi">Shuangkuaisisi 2.0</string>
-    <string name="tts_volc_voice_cancan_2">Cancan 2.0</string>
-    <string name="tts_volc_voice_vv">VV 2.0</string>
-    <string name="tts_volc_voice_xiaohe">Xiaohe 2.0</string>
-    <string name="tts_volc_voice_yunzhou">Yunzhou 2.0</string>
-    <string name="tts_volc_voice_xiaotian">Xiaotian 2.0</string>
-    <string name="tts_volc_voice_nuanyang">Nuanyang (warm female) 2.0</string>
-    <string name="tts_volc_voice_standard_female">Standard female</string>
-    <string name="tts_volc_voice_standard_male">Standard male</string>
-    <string name="tts_volc_voice_cancan">Cancan</string>
-    <string name="tts_volc_voice_qingcang">Qingcang (audiobooks)</string>
-    <string name="tts_volc_voice_dacey">Dacey (English female)</string>
-    <string name="tts_volc_voice_tim">Tim (English male)</string>
-    <string name="tts_volc_voice_ariana">Ariana (English female)</string>
     <string name="tts_preset">Presets</string>
     <string name="tts_preset_item">%1$s (%2$s)</string>
     <string name="tts_cloud_incomplete">Finish the engine configuration before enabling cloud TTS</string>
@@ -375,10 +339,6 @@
     <plurals name="tts_system_voices_loaded">
         <item quantity="one">Fetched %1$d system voice</item>
         <item quantity="other">Fetched %1$d system voices</item>
-    </plurals>
-    <plurals name="tts_voices_fetched">
-        <item quantity="one">Fetched %1$d available voice</item>
-        <item quantity="other">Fetched %1$d available voices</item>
     </plurals>
 
     <!-- Review (cards / settings / pause banner) -->

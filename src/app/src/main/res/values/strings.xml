@@ -122,6 +122,7 @@
     <string name="reader_translation_retranslate">重译此句</string>
     <string name="reader_translation_retranslate_hint">反馈（可留空）：如「这里他还没进门，不要用过去完成时」</string>
     <string name="reader_translation_retranslating">重译中…</string>
+    <string name="reader_translation_retranslate_go">重译</string>
     <string name="reader_translation_retranslated">已更新译文</string>
     <string name="reader_translation_retranslate_failed">重译失败，原译文保持不变</string>
     <string name="reader_translation_collapse">收起对照</string>
@@ -296,8 +297,6 @@
     <string name="tts_settings_title">听书设置</string>
     <string name="tts_engine_section">朗读引擎</string>
     <string name="tts_engine_system">系统语音</string>
-    <string name="tts_engine_azure">Azure 云 TTS</string>
-    <string name="tts_engine_volc">火山引擎（豆包语音）</string>
     <string name="tts_engine_openai_compat">自建服务器（OpenAI 兼容）</string>
     <string name="tts_audition">试听</string>
     <string name="tts_system_section">系统音色</string>
@@ -309,20 +308,8 @@
     <string name="tts_voice_chinese">中文音色</string>
     <string name="tts_voice_english">英文音色</string>
     <string name="tts_follow_system_default">跟随系统默认</string>
-    <string name="tts_voice_multilingual">多语言音色</string>
-    <string name="tts_multilingual_toggle">中英混读音色</string>
-    <string name="tts_multilingual_toggle_hint">同一个声音朗读中英文，混排更连贯</string>
-    <string name="tts_voice_unselected">未选择</string>
-    <string name="tts_voice_with_locale">%1$s（%2$s）</string>
-    <string name="tts_fetch_voices">获取可用音色</string>
-    <string name="tts_fetch_voices_failed">获取音色失败，请检查 Region 与 Key</string>
-    <string name="tts_fill_region_key">请先填写 Region 和 API Key</string>
-    <string name="tts_select_voice_first">请先获取可用音色并选择音色</string>
-    <string name="tts_azure_region_hint">中国北部 3：chinanorth3</string>
     <string name="tts_test_connection">测试连接</string>
-    <string name="tts_azure_test_ok">连接成功，Azure 可正常合成</string>
     <string name="tts_server_test_ok">连接成功，服务器可正常合成</string>
-    <string name="tts_volc_test_ok">连接成功，中英文音色均可合成</string>
     <string name="tts_test_failed">连接失败</string>
     <string name="tts_server_url_label">服务器地址</string>
     <string name="tts_server_url_hint">如 https://your-server.example.com</string>
@@ -340,29 +327,6 @@
     <string name="tts_server_dialogue_label">对白音色 Dialogue（可选）</string>
     <string name="tts_server_dialogue_hint">引号内对白用此音色；两个都留空 = 单音色模式（原有行为）</string>
     <string name="tts_fill_server_url">请先填写服务器地址</string>
-    <string name="tts_volc_api_key_label">API Key（新版控制台，推荐）</string>
-    <string name="tts_volc_app_id_label">App ID（旧版控制台）</string>
-    <string name="tts_volc_token_label">Access Token（旧版控制台）</string>
-    <string name="tts_volc_resource_label">Resource ID / 模型</string>
-    <string name="tts_volc_resource_hint">2.0 音色配 seed-tts-2.0；1.0 音色配 seed-tts-1.0</string>
-    <string name="tts_fill_volc_credentials">请填写 API Key，或 App ID + Access Token</string>
-    <string name="tts_volc_model_2">豆包语音合成模型 2.0（推荐）</string>
-    <string name="tts_volc_model_1">豆包语音合成模型 1.0</string>
-    <string name="tts_volc_model_1_concurr">豆包语音合成模型 1.0（并发版）</string>
-    <string name="tts_volc_voice_shuangkuaisisi">爽快思思 2.0</string>
-    <string name="tts_volc_voice_cancan_2">灿灿 2.0</string>
-    <string name="tts_volc_voice_vv">VV 2.0</string>
-    <string name="tts_volc_voice_xiaohe">晓荷 2.0</string>
-    <string name="tts_volc_voice_yunzhou">云舟 2.0</string>
-    <string name="tts_volc_voice_xiaotian">小田 2.0</string>
-    <string name="tts_volc_voice_nuanyang">暖阳女声 2.0</string>
-    <string name="tts_volc_voice_standard_female">通用女声</string>
-    <string name="tts_volc_voice_standard_male">通用男声</string>
-    <string name="tts_volc_voice_cancan">灿灿</string>
-    <string name="tts_volc_voice_qingcang">青苍（有声书）</string>
-    <string name="tts_volc_voice_dacey">Dacey（英文女声）</string>
-    <string name="tts_volc_voice_tim">Tim（英文男声）</string>
-    <string name="tts_volc_voice_ariana">Ariana（英文女声）</string>
     <string name="tts_preset">预设</string>
     <string name="tts_preset_item">%1$s（%2$s）</string>
     <string name="tts_cloud_incomplete">启用云 TTS 前请先完成对应配置</string>
@@ -370,9 +334,6 @@
     <string name="tts_saved">已保存</string>
     <plurals name="tts_system_voices_loaded">
         <item quantity="other">已获取 %1$d 个系统音色</item>
-    </plurals>
-    <plurals name="tts_voices_fetched">
-        <item quantity="other">已获取 %1$d 个可用音色</item>
     </plurals>
 
     <!-- 复习（卡片/设置/停顿点横幅） -->
