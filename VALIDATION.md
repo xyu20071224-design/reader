@@ -607,3 +607,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 单测：`testDebugUnitTest` 全绿（369）。新增 `MiMoTtsBackendTest`；扩展 `CloudTtsSettingsTest`（MIMO roundtrip/isConfigured）与 `MultiVoiceSupportTest`（MIMO 多角色支持）。
 - 文案：zh+en 两册同步新增 MiMo 引擎、MiMo 专属音色、角色管理、书卡片「角色」等 key。
 - 待办：MiMo 合成/音色试听的真机音频链路（规则层 vs LLM 归属、design/clone 合成）已由用户真机人工验证通过；分配的进一步校准与 `MiMoVoiceStoreTest`（Robolectric）留作后续。
+
+## 2026-08-28 页顶大空白 + 底栏遮字根因修复（用户真机确认）
+
+- 现象：部分书籍分页模式下页顶出现大空白（正文整体下移），且末行被不透明底栏「遮挡」；时有时无（与书相关）。
+- 根因：书内 EPUB CSS 的裸 `div` 规则（如 `margin-top: 2em`）泄漏到注入的 `#lr-scroller`/`#lingua-reader-content`/`#lr-spacer` 上。绝对定位 `top` 定位 margin box，多出的 margin 让 scroller 比设置值下移（known-pitfalls #8 实测「每层 +32px」= 2em×16px 的谜底）。TTS overlay 早有同款 reset，三个布局骨架漏了；F-110/F-111 的 overshoot 自校准只补 scroller 自身 margin，补不到 content 的，故顶部空白残留、末行被裁在底栏上沿。
+- 修复：`ReaderScripts.installStyle` 给三骨架加 `margin/padding/border: 0 !important` reset；`#lr-scroller` 的 `padding-left: 28px` 同改 `!important`（`!important` 不看顺序与特异性，否则被 reset 清零 → 正文贴左，中途真机暴露此回归当日修复）。overshoot 自校准保留作保险。
+- 验证：`testDebugUnitTest` 全绿；覆盖安装真机（PKB110 / Android 16）用户确认页顶空白、底栏遮字、左侧边距三项均正常。

@@ -80,12 +80,22 @@ object ReaderScripts {
                 --lr-chrome-top: ${chromeTopPx}px;
                 --lr-chrome-bottom: ${chromeBottomPx}px;
               }
+              /* 这三个是注入的布局骨架，也是裸 div：书内 CSS 的 div 规则
+                 （如 margin-top: 2em）会打在它们身上。绝对定位的 top 定位
+                 margin box，多出的 margin 让 scroller 比设置值整体下移
+                 （known-pitfalls #8 实测的「每层 +32px」正是 2em×16px），
+                 表现为页顶大空白、末行被裁在底栏上沿。 */
+              #lr-scroller, #lingua-reader-content, #lr-spacer {
+                margin: 0 !important; padding: 0 !important; border: 0 !important;
+              }
               #lr-scroller {
                 position: absolute; left: 0;
                 top: var(--lr-chrome-top);
                 width: 100vw;
                 height: calc(100vh - var(--lr-chrome-top) - var(--lr-chrome-bottom));
-                padding-left: 28px;
+                /* 同为 !important 才能压过上面的 reset（!important 不看
+                   顺序与特异性），28px 左边距是每页左缘留白的来源。 */
+                padding-left: 28px !important;
                 overflow-x: auto; overflow-y: hidden;
                 touch-action: none;
                 scrollbar-width: none; -ms-overflow-style: none;
