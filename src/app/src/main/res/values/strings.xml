@@ -39,6 +39,22 @@
     <string name="shelf_tab_words">生词本 %1$d</string>
     <string name="shelf_ai_center">AI 中心</string>
     <string name="shelf_import">导入</string>
+
+    <!-- 书架外观（背景预设 / 自定义图片 / 蒙版） -->
+    <string name="shelf_appearance_title">书架外观</string>
+    <string name="shelf_appearance_background">背景</string>
+    <string name="shelf_appearance_follow_theme">跟随主题</string>
+    <string name="shelf_preset_green">青竹</string>
+    <string name="shelf_preset_sand">暖沙</string>
+    <string name="shelf_preset_blush">豆沙</string>
+    <string name="shelf_preset_mist">海盐</string>
+    <string name="shelf_background_pick_image">选择图片</string>
+    <string name="shelf_background_change_image">更换图片</string>
+    <string name="shelf_background_image_done">背景图已更新</string>
+    <string name="shelf_background_image_failed">图片导入失败，换一张试试</string>
+    <string name="shelf_background_dim">蒙版浓度</string>
+    <string name="shelf_background_reset">恢复默认</string>
+    <string name="shelf_background_reset_done">书架外观已恢复默认</string>
     <string name="shelf_loading">正在整理图书…</string>
     <string name="shelf_delete_title">删除《%1$s》？</string>
     <string name="shelf_delete_body">本地书籍副本与阅读进度会一并删除。</string>
@@ -157,7 +173,10 @@
     <string name="reader_theme_paper">纸张</string>
     <string name="reader_theme_white">明亮</string>
     <string name="reader_theme_sepia">护眼</string>
+    <string name="reader_theme_green">护眼绿</string>
+    <string name="reader_theme_morandi">莫兰迪</string>
     <string name="reader_theme_dark">夜间</string>
+    <string name="reader_theme_amoled">纯黑</string>
     <string name="reader_font_serif">衬线</string>
     <string name="reader_font_sans">无衬线</string>
     <string name="reader_font_mono">等宽</string>

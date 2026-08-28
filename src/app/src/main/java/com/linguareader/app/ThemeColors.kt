@@ -164,11 +164,11 @@ internal fun colorSchemeFor(palette: LinguaPalette): ColorScheme {
 
 /**
  * 外壳（书架/设置/听书条/弹层）是否走夜间：**跟随正文阅读主题**——用户把阅读主题
- * 设成「夜间」，整个外壳也随之变暗；还没设过阅读主题时跟随系统深色。
+ * 设成「夜间」或「纯黑」，整个外壳也随之变暗；还没设过阅读主题时跟随系统深色。
  */
 internal fun chromeIsDark(readerTheme: ReaderTheme?, systemDark: Boolean): Boolean = when (readerTheme) {
     null -> systemDark
-    ReaderTheme.DARK -> true
+    ReaderTheme.DARK, ReaderTheme.AMOLED -> true
     else -> false
 }
 

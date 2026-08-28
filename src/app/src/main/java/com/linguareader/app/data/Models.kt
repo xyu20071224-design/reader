@@ -197,7 +197,10 @@ enum class ReaderTheme(
     PAPER(R.string.reader_theme_paper, "#F7F3EA", "#27231F", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
     WHITE(R.string.reader_theme_white, "#FFFFFF", "#181818", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
     SEPIA(R.string.reader_theme_sepia, "#E9DFC7", "#352F26", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    DARK(R.string.reader_theme_dark, "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)")
+    GREEN(R.string.reader_theme_green, "#CCE8CF", "#243329", "#8D5535", "#9b6b43", "rgba(184,132,83,.26)", "rgba(184,132,83,.30)"),
+    MORANDI(R.string.reader_theme_morandi, "#E2D8D2", "#3A3330", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    DARK(R.string.reader_theme_dark, "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)"),
+    AMOLED(R.string.reader_theme_amoled, "#000000", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)")
 }
 
 enum class ReaderFont(@StringRes val labelRes: Int, val css: String) {

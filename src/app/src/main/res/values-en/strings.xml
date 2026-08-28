@@ -41,6 +41,22 @@
     <string name="shelf_tab_words">Vocabulary %1$d</string>
     <string name="shelf_ai_center">AI center</string>
     <string name="shelf_import">Import</string>
+
+    <!-- Shelf appearance (background presets / custom image / dim overlay) -->
+    <string name="shelf_appearance_title">Shelf appearance</string>
+    <string name="shelf_appearance_background">Background</string>
+    <string name="shelf_appearance_follow_theme">Follow theme</string>
+    <string name="shelf_preset_green">Bamboo</string>
+    <string name="shelf_preset_sand">Sand</string>
+    <string name="shelf_preset_blush">Blush</string>
+    <string name="shelf_preset_mist">Mist</string>
+    <string name="shelf_background_pick_image">Choose image</string>
+    <string name="shelf_background_change_image">Change image</string>
+    <string name="shelf_background_image_done">Background image updated</string>
+    <string name="shelf_background_image_failed">Could not import the image, try another one</string>
+    <string name="shelf_background_dim">Dim overlay</string>
+    <string name="shelf_background_reset">Reset to default</string>
+    <string name="shelf_background_reset_done">Shelf appearance reset</string>
     <string name="shelf_loading">Organising books…</string>
     <string name="shelf_delete_title">Delete \"%1$s\"?</string>
     <string name="shelf_delete_body">The local copy of the book and its reading progress are removed as well.</string>
@@ -159,7 +175,10 @@
     <string name="reader_theme_paper">Paper</string>
     <string name="reader_theme_white">Bright</string>
     <string name="reader_theme_sepia">Sepia</string>
+    <string name="reader_theme_green">Green</string>
+    <string name="reader_theme_morandi">Morandi</string>
     <string name="reader_theme_dark">Night</string>
+    <string name="reader_theme_amoled">Pure black</string>
     <string name="reader_font_serif">Serif</string>
     <string name="reader_font_sans">Sans</string>
     <string name="reader_font_mono">Mono</string>

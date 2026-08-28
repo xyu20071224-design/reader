@@ -692,3 +692,12 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 待真机：系统 / 自建 / MiMo 三引擎各过一遍播放、语速、多角色、试听；确认包体缩减（预期 -100MB 级，native .so + 模型）。
 
 - **2026-08-29 05:46 部署**：第二期构建已覆盖安装到真机两个包（主包 + verify 包，安装前 aapt 验包名，数据/Key/译本均保留，用户确认无异常）。重译入口的 AI 译本限定（`isAiTranslation` 门禁）已含在本次构建内（96f892b）。精译/重翻/风格说明的功能性真机验证待用户日常使用反馈。
+
+## 2026-08-29 开屏恒米白纸色 + 书架自定义背景 + 护眼绿/莫兰迪/纯黑阅读主题（JVM 验证完毕，真机被锁屏阻塞）
+
+- 开屏根因与修复：`values-night/themes.xml` 把启动窗口背景钉在 #171717 且跟随系统深色，而外壳配色跟随阅读主题——「系统深色 + 浅色阅读主题」冷启动即黑屏。修复：**删除 values-night 覆盖**，系统开屏（Android 12+ 默认 splash 背景取 windowBackground）恒为纸色 #F7F3EA；`values/themes.xml` 新增 `Theme.LinguaReader.Dark` 变体，`MainActivity.onCreate` 在 super 之前按 `storedReaderTheme` + 系统夜间模式程序化选用，深色阅读主题用户开屏后窗口仍与外壳一致不闪白。代价（用户知情选择）：深色阅读主题用户会看到纸色开屏→深色界面的一瞬过渡。
+- 书架自定义背景：新增 `ShelfAppearance.kt`（预设 青竹/暖沙/豆沙/海盐 + prefs `"shelf_settings"` 持久化 + 背景图导入 `filesDir/shelf_background/background.jpg`，导入时降采样最长边 2048 存 JPEG）与 `ShelfAppearanceSheet.kt`（ModalBottomSheet，受控编辑，导入成败行内提示）；`BookshelfScreen` 顶栏新增调色板图标入口，背景层图片(Crop)/预设渐变 + 纸色蒙版（浓度滑杆 0–0.8，默认 0.35），有自定义背景时 Scaffold/TopAppBar 透明、书卡 0.9 透明度。只做浅色预设：外壳文字颜色由日/夜调色板驱动，深色底无法保证日间外壳可读性。
+- 阅读主题：`ReaderTheme` 新增 GREEN(#CCE8CF)/MORANDI(#E2D8D2)/AMOLED(#000000)；`chromeIsDark` 把 AMOLED 与 DARK 一并映射为夜间外壳；选择器按 `entries` 枚举自动纳入（ReaderScreen.kt:1017）；prefs 按枚举 name 存，老数据 `runCatching` 兜底不受影响。strings zh/en 同步 +20 键（reader_theme_* 3 + shelf_appearance/shelf_preset/shelf_background 17）。
+- 验证：`testDebugUnitTest` 全绿（新增 `ShelfAppearanceTest` 6 项：默认值/往返/未知预设兜底/图片导入落盘/坏 Uri 失败/重置清文件+清 prefs；`ThemeColorsTest` 扩 AMOLED/GREEN/MORANDI 断言）；`assembleDebug` 通过；已覆盖安装真机。
+- **真机待验（设备锁屏，adb 截图全黑，mDreamingLockscreen=true 无法越过）**：①系统深色开/关下冷启动开屏均纸色、深色阅读主题不闪白；②顶栏调色板入口→预设/选图/蒙版/重置全流程（OpenDocument 选图需真机交互）；③三个新主题正文渲染与外壳联动。已备份真机 `reader_preferences.xml`（artifacts 外，会话内 /tmp），未注入修改任何应用数据。
+- 设备状态变更说明：验证时执行了 `adb shell cmd uimode night yes`（系统深色），结束时保持该状态——用户「开屏黑」的反馈场景即系统深色，如需改回请手动切浅色。
