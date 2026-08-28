@@ -202,23 +202,100 @@ data class AiLookupOutcome(
 )
 
 /** Provider-agnostic AI settings; stored locally, never in source control. */
+/**
+ * 用户配置的模型服务商（复刻 dsh 自定义服务商：URL + API Key + 协议）。
+ * [apiKey] 在内存里是明文，落盘由 [com.linguareader.app.ai.AiSettingsStore]
+ * 经 CloudKeyStore 加密。
+ */
+data class AiProviderProfile(
+    /** 稳定标识；新增时由 UI 生成 UUID，"default" 留给旧配置迁移。 */
+    val id: String,
+    val name: String = "",
+    val baseUrl: String = "",
+    val apiKey: String = "",
+    val protocol: String = AiProtocol.OPENAI_COMPAT,
+    val model: String = ""
+) {
+    /** 列表行的主文案：显示名缺省回退模型名。 */
+    val displayLabel: String get() = name.trim().ifBlank { model.trim() }
+
+    fun toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("name", name)
+        .put("baseUrl", baseUrl)
+        .put("apiKey", apiKey)
+        .put("protocol", protocol)
+        .put("model", model)
+
+    companion object {
+        /** 旧版单插槽配置迁移出来的首个服务商保留此 id。 */
+        const val DEFAULT_ID = "default"
+
+        fun fromJson(json: JSONObject): AiProviderProfile? {
+            val id = json.optString("id").trim()
+            if (id.isBlank()) return null
+            return AiProviderProfile(
+                id = id,
+                name = json.optString("name"),
+                baseUrl = json.optString("baseUrl"),
+                apiKey = json.optString("apiKey"),
+                protocol = json.optString("protocol", AiProtocol.OPENAI_COMPAT)
+                    .ifBlank { AiProtocol.OPENAI_COMPAT },
+                model = json.optString("model")
+            )
+        }
+    }
+}
+
+/** 三种线路协议；取值沿用 dsh/pi-ai 的命名，便于对齐文档。 */
+object AiProtocol {
+    /** OpenAI 兼容 chat/completions：DeepSeek/Kimi/Qwen/GLM/OpenRouter/Ollama 等绝大多数端点。 */
+    const val OPENAI_COMPAT = "openai-completions"
+    /** Anthropic 官方 /v1/messages。 */
+    const val ANTHROPIC = "anthropic"
+    /** Google Gemini 官方 :generateContent。 */
+    const val GEMINI = "google-gemini"
+
+    val ALL = listOf(OPENAI_COMPAT, ANTHROPIC, GEMINI)
+}
+
 data class AiSettings(
     val enabled: Boolean = false,
     val apiKey: String = "",
     val baseUrl: String = "https://api.deepseek.com",
     val model: String = "deepseek-chat",
-    val azureTranslationEnabled: Boolean = false,
-    val azureKey: String = "",
-    val azureRegion: String = "",
-    val azureEndpoint: String = "https://api.cognitive.microsofttranslator.com",
     /** Master switch for all networked AI; when false the app stays fully offline. */
-    val powerEnabled: Boolean = true
+    val powerEnabled: Boolean = true,
+    /** 已配置的服务商列表；旧字段 apiKey/baseUrl/model 始终是生效服务商的镜像值。 */
+    val providers: List<AiProviderProfile> = emptyList(),
+    val activeProviderId: String = ""
 ) {
     /** Remote AI is only used when the user enabled it and supplied a key. */
     val remoteReady: Boolean get() = enabled && apiKey.isNotBlank()
 
-    /** Azure sentence translation is independent from the DeepSeek profile. */
-    val azureReady: Boolean get() = azureTranslationEnabled && azureKey.isNotBlank()
+    /** 生效服务商：activeProviderId 未命中（被删/未设）时回退首个。 */
+    val activeProvider: AiProviderProfile?
+        get() = providers.firstOrNull { it.id == activeProviderId } ?: providers.firstOrNull()
+
+    /**
+     * 生效协议：直接构造 [AiSettings]（未带 providers 的旧路径与测试）时
+     * 默认 OpenAI 兼容，与历史行为一致。
+     */
+    val effectiveProtocol: String
+        get() = activeProvider?.protocol?.takeIf { it.isNotBlank() } ?: AiProtocol.OPENAI_COMPAT
+
+    /** 生效服务商显示名：名称 → 模型名 → 「DeepSeek」逐级回退。 */
+    val providerDisplayName: String
+        get() = activeProvider?.let { it.displayLabel.ifBlank { null } } ?: "DeepSeek"
+
+    /**
+     * 把生效服务商镜像回旧字段。UI 保存与 [AiSettingsStore.save] 都走这一步，
+     * 让所有只认旧字段的读者（仓库 gate、MultiVoiceSupport、降级安装）继续工作。
+     */
+    fun withActiveMirrored(): AiSettings {
+        val active = activeProvider ?: return this
+        return copy(apiKey = active.apiKey, baseUrl = active.baseUrl, model = active.model)
+    }
 }
 
 /**

@@ -1,22 +1,24 @@
 package com.linguareader.app.ai
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
- * DeepSeek chat API implementation of [AiTranslator].
+ * 三种线路协议（OpenAI 兼容 / Anthropic / Gemini）共享的业务层基类。
  *
- * The endpoint is OpenAI-compatible, so [AiSettings.baseUrl] and [AiSettings.model]
- * are configurable; the default points at https://api.deepseek.com.
+ * prompt 构造、语境档案分块与合并、点词/整句/整本翻译的编排、JSON 容错
+ * 解析全部在这里；子类只实现一条「system + user → JSONObject」的线路
+ * （[chat]），以及各自的 JSON 模式重试策略。构造参数是显式连接四元组，
+ * 由 [AiTranslators] 从生效服务商或设置表单草稿解析而来——线路层因此
+ * 不认识 [AiSettings]，测试连接才能作用于还没保存的草稿。
  */
-class DeepSeekTranslator(private val settings: AiSettings) :
-    AiTranslator, SentenceTranslator, AiChatClient, AiTranslationChatClient {
-    override val id = "deepseek"
-    override val displayName = "DeepSeek"
+abstract class JsonChatTranslator(
+    internal val endpointBaseUrl: String,
+    internal val endpointApiKey: String,
+    internal val endpointModel: String,
+    override val displayName: String
+) : AiTranslator, SentenceTranslator, AiChatClient, AiTranslationChatClient {
+
     override val offline = false
 
     private val maxCharsPerRequest = 24_000
@@ -26,14 +28,16 @@ class DeepSeekTranslator(private val settings: AiSettings) :
         chapters: List<ChapterText>
     ): BookContextProfile {
         if (chapters.isEmpty()) {
-            return BookContextProfile(bookId = "", bookTitle = bookTitle, source = "deepseek")
+            return BookContextProfile(bookId = "", bookTitle = bookTitle, source = SOURCE_TAG)
         }
         val segments = chapterSegments(chapters)
         val partials = segments.map { segment ->
             val answer = chat(
                 system = CONTEXT_SYSTEM_PROMPT,
                 user = contextUserPrompt(bookTitle, segment),
-                jsonMode = true
+                jsonMode = true,
+                readTimeoutMs = DEFAULT_READ_TIMEOUT_MS,
+                maxTokens = null
             )
             parsePartialProfile(answer)
         }
@@ -47,7 +51,9 @@ class DeepSeekTranslator(private val settings: AiSettings) :
         val answer = chat(
             system = TRANSLATE_SYSTEM_PROMPT,
             user = translateUserPrompt(profile, request),
-            jsonMode = true
+            jsonMode = true,
+            readTimeoutMs = DEFAULT_READ_TIMEOUT_MS,
+            maxTokens = null
         )
         val meaning = answer.optString("meaning").trim()
         if (meaning.isBlank()) return null
@@ -81,10 +87,12 @@ class DeepSeekTranslator(private val settings: AiSettings) :
         val answer = chat(
             system = SENTENCE_SYSTEM_PROMPT,
             user = user,
-            jsonMode = true
+            jsonMode = true,
+            readTimeoutMs = DEFAULT_READ_TIMEOUT_MS,
+            maxTokens = null
         )
         return answer.optString("translation").trim().ifBlank {
-            throw AiRequestException("DeepSeek 未返回整句翻译")
+            throw AiRequestException("AI 未返回整句翻译")
         }
     }
 
@@ -94,7 +102,7 @@ class DeepSeekTranslator(private val settings: AiSettings) :
      * reporting stay identical to the context-profile path.
      */
     override suspend fun chatJson(system: String, user: String): JSONObject =
-        chat(system = system, user = user, jsonMode = true)
+        chat(system, user, jsonMode = true, DEFAULT_READ_TIMEOUT_MS, null)
 
     /**
      * 整本书翻译的批量出口（[AiTranslationChatClient]）。与语境请求不同，
@@ -103,22 +111,15 @@ class DeepSeekTranslator(private val settings: AiSettings) :
      * 读超时放宽到 5 分钟（生成 8k token 是分钟级的事）。
      */
     override suspend fun translateSegments(system: String, user: String): JSONObject =
-        chat(
-            system = system,
-            user = user,
-            jsonMode = true,
-            readTimeoutMs = 300_000,
-            maxTokens = 8_192
-        )
+        chat(system, user, jsonMode = true, readTimeoutMs = 300_000, maxTokens = 8_192)
 
     /**
      * Connectivity probe for the settings screen: sends one tiny chat request
-     * with the current key/baseUrl/model so the user can confirm the credential
-     * actually reaches the endpoint before believing "就绪". Throws on any real
-     * failure — a 401 (bad key), a 400 (bad model name), or an IO error
-     * (unreachable endpoint) — so the caller can surface the true reason.
-     * `jsonMode = false` avoids depending on the endpoint accepting
-     * `response_format`. A `200` that simply comes back as non-JSON still proves
+     * with the draft connection so the user can confirm the credential actually
+     * reaches the endpoint before believing "就绪". Throws on any real failure
+     * (bad key, bad model name, unreachable endpoint) so the caller can surface
+     * the true reason. `jsonMode = false` avoids depending on any wire-level
+     * JSON constraint; a reply that merely fails to parse as JSON still proves
      * the auth/endpoint/model round-trip works, so parse-only failures are
      * swallowed as success.
      */
@@ -127,13 +128,24 @@ class DeepSeekTranslator(private val settings: AiSettings) :
             chat(
                 system = "你是连通性测试助手。",
                 user = "请只输出一个 JSON 对象：{\"status\":\"ok\"}",
-                jsonMode = false
+                jsonMode = false,
+                readTimeoutMs = DEFAULT_READ_TIMEOUT_MS,
+                maxTokens = null
             )
         } catch (e: Throwable) {
             if (e is AiRequestException && e.message?.contains("无法解析的 JSON") == true) return
             throw e
         }
     }
+
+    /** One wire round trip; each protocol owns its JSON-mode retry policy. */
+    protected abstract suspend fun chat(
+        system: String,
+        user: String,
+        jsonMode: Boolean,
+        readTimeoutMs: Int,
+        maxTokens: Int?
+    ): JSONObject
 
     // --- book context -------------------------------------------------------
 
@@ -260,7 +272,7 @@ class DeepSeekTranslator(private val settings: AiSettings) :
             glossary = mergeTerms(partials.map { it.glossary }),
             characterProfiles = characterProfiles.values.take(60),
             styleNotes = styleNotes.take(16),
-            source = "deepseek"
+            source = SOURCE_TAG
         )
     }
 
@@ -313,88 +325,9 @@ class DeepSeekTranslator(private val settings: AiSettings) :
         )
     }
 
-    // --- HTTP ---------------------------------------------------------------
+    // --- shared parsing -----------------------------------------------------
 
-    private suspend fun chat(
-        system: String,
-        user: String,
-        jsonMode: Boolean,
-        readTimeoutMs: Int = 60_000,
-        maxTokens: Int? = null
-    ): JSONObject = withContext(Dispatchers.IO) {
-        val first = runCatching { request(system, user, jsonMode, readTimeoutMs, maxTokens) }
-        first.getOrElse { error ->
-            if (!jsonMode) throw error
-            when {
-                shouldRetryWithoutJsonMode(error) ->
-                    request(system, user, jsonMode = false, readTimeoutMs, maxTokens)
-                // BUG-013: a parse failure means the model ignored the JSON
-                // constraint — dropping the constraint on retry guarantees
-                // another non-JSON reply. Keep it and ask again.
-                shouldRetryKeepingJsonMode(error) ->
-                    request(system, user, jsonMode = true, readTimeoutMs, maxTokens)
-                else -> throw error
-            }
-        }
-    }
-
-    private fun request(
-        system: String,
-        user: String,
-        jsonMode: Boolean,
-        readTimeoutMs: Int = 60_000,
-        maxTokens: Int? = null
-    ): JSONObject {
-        val url = URL(settings.baseUrl.trimEnd('/') + "/chat/completions")
-        val connection = url.openConnection() as HttpURLConnection
-        try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = 20_000
-            connection.readTimeout = readTimeoutMs
-            connection.setRequestProperty("Authorization", "Bearer ${settings.apiKey}")
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.doOutput = true
-
-            val body = JSONObject()
-                .put("model", settings.model)
-                .put("temperature", 0.2)
-                .put("messages", JSONArray().apply {
-                    put(JSONObject().put("role", "system").put("content", system))
-                    put(JSONObject().put("role", "user").put("content", user))
-                })
-            if (maxTokens != null) {
-                body.put("max_tokens", maxTokens)
-            }
-            if (jsonMode) {
-                body.put("response_format", JSONObject().put("type", "json_object"))
-            }
-
-            connection.outputStream.use { stream ->
-                stream.write(body.toString().toByteArray(Charsets.UTF_8))
-            }
-
-            val code = connection.responseCode
-            val payload = if (code in 200..299) connection.inputStream else connection.errorStream
-            val text = payload?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                throw AiRequestException("DeepSeek API 返回 HTTP $code：${text.take(300)}")
-            }
-            val content = try {
-                JSONObject(text)
-                    .getJSONArray("choices")
-                    .getJSONObject(0)
-                    .getJSONObject("message")
-                    .getString("content")
-            } catch (error: Exception) {
-                throw AiRequestException("AI 返回了无法解析的 JSON：${text.take(200)}")
-            }
-            return parseJsonObject(content)
-        } finally {
-            connection.disconnect()
-        }
-    }
-
-    private fun parseJsonObject(content: String): JSONObject {
+    protected fun parseJsonObject(content: String): JSONObject {
         val trimmed = content.trim()
         runCatching { return JSONObject(trimmed) }.getOrNull()
         val start = trimmed.indexOf('{')
@@ -408,14 +341,11 @@ class DeepSeekTranslator(private val settings: AiSettings) :
 
     companion object {
         /**
-         * Some OpenAI-compatible endpoints (and some DeepSeek models) reject
-         * `response_format={"type":"json_object"}` with a 400/422. Retrying
-         * without it keeps the feature working; the prompt and parser still
-         * recover a JSON object from the reply.
+         * 会话档案来源标签沿用 "deepseek"：磁盘上的旧档案、状态播种与
+         * 远程/本地判定都按这个值区分，协议分化不改它。
          */
-        internal fun shouldRetryWithoutJsonMode(error: Throwable): Boolean =
-            error is AiRequestException &&
-                error.message?.contains("response_format", ignoreCase = true) == true
+        const val SOURCE_TAG = "deepseek"
+        const val DEFAULT_READ_TIMEOUT_MS = 60_000
 
         /** BUG-013: response-parse failures retry *with* the JSON constraint. */
         internal fun shouldRetryKeepingJsonMode(error: Throwable): Boolean =

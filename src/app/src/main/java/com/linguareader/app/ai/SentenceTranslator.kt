@@ -4,10 +4,8 @@ package com.linguareader.app.ai
  * Sentence-level translation with book-glossary overrides.
  *
  * Implementations:
- *  - [AzureSentenceTranslator]: Azure AI Translator with dynamic dictionary
- *    markup, the primary sentence translator.
- *  - [DeepSeekTranslator]: falls back to the DeepSeek chat API when Azure is
- *    not configured; glossary entries are supplied in the prompt.
+ *  - [AiTranslators] 选出的 [JsonChatTranslator]: the configured model
+ *    provider's chat API; glossary entries are supplied in the prompt.
  */
 interface SentenceTranslator {
     val id: String
@@ -20,7 +18,7 @@ interface SentenceTranslator {
 
 /**
  * One finished sentence translation plus the backend that produced it, so the
- * UI can name the real provider instead of assuming Azure.
+ * UI can name the real provider.
  */
 data class SentenceTranslationResult(val text: String, val provider: String)
 
@@ -29,8 +27,7 @@ object SentenceTranslatorFactory {
     fun from(settings: AiSettings): SentenceTranslator? = when {
         // Master power switch: networked AI disabled keeps the app fully offline.
         !settings.powerEnabled -> null
-        settings.azureReady -> AzureSentenceTranslator(settings)
-        settings.remoteReady -> DeepSeekTranslator(settings)
+        settings.remoteReady -> AiTranslators.forSettings(settings)
         else -> null
     }
 

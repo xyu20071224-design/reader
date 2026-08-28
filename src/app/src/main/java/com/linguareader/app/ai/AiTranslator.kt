@@ -17,7 +17,7 @@ interface AiChatClient {
 /**
  * AI 整本书翻译的批量出网出口。与 [AiChatClient] 分开定义，因为整本翻译
  * 每批的输出量级远大于语境请求：需要更长的读超时与显式 max_tokens，
- * 且单测需要能注入假客户端（[DeepSeekTranslator] 是具体类，不好继承）。
+ * 且单测需要能注入假客户端（[JsonChatTranslator] 子类是具体类，不好继承）。
  */
 interface AiTranslationChatClient {
     /** One long-form JSON-mode chat round trip for a translation batch. */
@@ -28,7 +28,8 @@ interface AiTranslationChatClient {
  * Abstraction over context-aware translation backends.
  *
  * Implementations:
- *  - [DeepSeekTranslator]: remote, uses the DeepSeek chat API.
+ *  - [AiTranslators]: remote, protocol-aware dispatch to the configured
+ *    model provider (OpenAI-compatible / Anthropic / Gemini).
  *  - [LocalGlossaryTranslator]: fully offline, frequency-based lightweight
  *    profile; works without any API key.
  */

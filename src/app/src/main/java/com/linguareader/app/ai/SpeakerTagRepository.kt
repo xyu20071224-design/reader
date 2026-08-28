@@ -30,8 +30,8 @@ class SpeakerTagRepository(
     context: Context,
     private val settingsStore: AiSettingsStore,
     private val glossaryRepository: BookGlossaryRepository,
-    /** Chat backend factory (D1: the same DeepSeek client as the profile). */
-    private val chatClientFactory: (AiSettings) -> AiChatClient = { DeepSeekTranslator(it) }
+    /** Chat backend factory (D1: the same client as the profile, protocol-aware). */
+    private val chatClientFactory: (AiSettings) -> AiChatClient = { AiTranslators.forSettings(it) }
 ) {
     private val appContext = context.applicationContext
     private val tagsDir = File(appContext.filesDir, "ai/speaker-tags")

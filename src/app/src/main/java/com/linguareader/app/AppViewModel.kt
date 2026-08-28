@@ -613,15 +613,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // --- sentence translation -------------------------------------------------
 
     /**
-     * Translates a sentence with the configured backend (Azure first, DeepSeek
-     * as fallback), applying the book's enabled glossary terms. The returned
-     * [SentenceTranslationResult] carries the provider name so the UI can label
-     * the real source.
+     * Translates a sentence with the configured model provider, applying the
+     * book's enabled glossary terms. The returned [SentenceTranslationResult]
+     * carries the provider name so the UI can label the real source.
      */
     suspend fun translateSentence(book: Book, sentence: String): SentenceTranslationResult {
         val settings = mutableState.value.aiSettings
         val translator = SentenceTranslatorFactory.from(settings)
-            ?: error("未启用整句翻译（需要 Azure Translator Key 或 DeepSeek API Key）")
+            ?: error("未启用整句翻译（先在 AI 中心配置并保存一个服务商）")
         val glossary = glossaryRepository.load(book.id)
         return SentenceTranslationResult(
             text = translator.translateSentence(sentence, glossary),

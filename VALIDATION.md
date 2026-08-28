@@ -641,3 +641,20 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 对齐质量：档案 35 个句对 **100% 句级命中**（0 段落兜底）；样例「Tom Parker stepped off the train at London Station in 1926.」→「汤姆·帕克于1926年在伦敦车站下了火车。」——数字锚点保留、专名译名一致。档案副本存 `artifacts/ai-translation-memory-device.json`。
 - 截图：`验证截图/AI生成译本-验收-阅读页.png`。
 - 本日安装过程踩坑记录：① `-PverifyBuild` 构建产物曾被**并行会话的普通 `assembleDebug` 覆盖同一输出文件**（app-debug.apk 装成主包），构建后必须 `aapt dump badging` 验包名再装；② ColorOS 对 adb 重装静默拦截（报 Success 但包未安装），需开发者选项开启「USB 安装」类放行；③ `pm clear` 对应用目录报 SecurityException（ColorOS），重置 verify 包用卸载重装。
+
+## 2026-08-29 多服务商接入：URL + API Key + 协议（复刻 dsh 自定义服务商，JVM 层验证完毕、真机待验）
+
+- 功能：AI 中心「翻译」Tab 的 DeepSeek 专属区块升级为通用「联网语境翻译」——可添加多个模型服务商（名称 + 接口地址 + API Key + 协议 + 模型），单选切换生效者，可编辑可删除（确认弹窗）。协议三选：OpenAI 兼容（原实现）/ Anthropic（x-api-key + /v1/messages + system 顶层 + max_tokens 必填）/ Gemini（x-goog-api-key + :generateContent + system_instruction + 剥 models/ 前缀）。旧 DeepSeek 配置首次加载自动迁移为首个服务商。
+- 交互：编辑卡内「获取可用模型」（仅 OpenAI 兼容协议——Anthropic/Gemini 官方无通用列表接口，与 dsh 同款限制，提示手填）与「测试连接」都作用于**未保存的草稿**；点行切换生效者；全部草稿态由底部「保存」一次落盘。
+- 架构：业务与线路分离——`JsonChatTranslator` 基类承载全部 prompt/解析/合并/重试编排，`OpenAiCompatTranslator`（原 `DeepSeekTranslator` 改名，id 保留 "deepseek"）、`AnthropicCompatTranslator`、`GeminiCompatTranslator` 只实现各自线路与 JSON 模式重试（openai 的 response_format 降级、gemini 的 responseMimeType 降级、anthropic 仅解析失败重问）；`AiTranslators.forSettings/forProvider` 按协议分派，接替 5 处硬编码构造；翻译器构造参数改为显式连接四元组（baseUrl/apiKey/model/displayName），线路层不再依赖 AiSettings，草稿探测因此可行。
+- 兼容桥：`AiSettings.providers/activeProviderId` 为新字段，旧 apiKey/baseUrl/model 语义变为「生效服务商镜像值」（UI 保存与 store.save 都走 `withActiveMirrored()`）——所有只认旧字段的读者（AppViewModel 各 gate、BookContextRepository、SpeakerTagRepository、MultiVoiceSupport.taggingReady、降级安装）零改动；`remoteReady` 判定不变；`BookContextProfile.source` 沿用 "deepseek" 标签（状态播种依赖）。
+- 存储：`providers_v1`（JSON 数组，Key 逐个 CloudKeyStore 加密）+ `active_provider_id`；load 时旧单插槽合成 default 服务商（内存态，下次 save 落盘）；activeProviderId 失效回退首个。
+- 文案：zh+en 同步 +21/−3（`aidrawer_remote_*`、`aidrawer_provider_*`、`aidrawer_protocol_*`；删除 DeepSeek 专属 title/on_hint/off_hint）。
+- 单测：`testDebugUnitTest` 全绿（422，+19：OpenAi 5 / Anthropic 4 / Gemini 5 / AiTranslators 分派 4 / Store 迁移镜像 4——Robolectric 下 Keystore 不可用，按项目惯例不回读 Key 值）；`assembleDebug` 通过；CI push 兜底。
+- 待真机（需真实 Key 或本地网关）：三协议测试连接与真实请求（OpenAI 兼容 / Anthropic / Gemini 各一）、服务商增删切换与生效服务商标签（点词来源名）、旧配置迁移显示、模型拉取长列表滚动搜索；隐私边界未变——出网仍由「总开关 + enabled + Key」三重门控。
+
+## 2026-08-29 删除 Azure 整句翻译（用户真机验收多服务商后指示）
+
+- 范围：仅 Azure **Translator** 整句翻译——删除 `AzureSentenceTranslator` 及其测试、`AiSettings` 的 azureTranslationEnabled/azureKey/azureRegion/azureEndpoint 四字段与 `azureReady`、store 的 azure_* 持久化、`SentenceTranslatorFactory` 的 azureReady 分支、AI 中心翻译 Tab 的 Azure 区块 UI 与 `aidrawer_azure_*` 四个文案 key（zh/en 同步）。**Azure TTS（听书语音引擎）不受影响**，tts 包全部原样。
+- 行为变化：整句翻译现一律走当前生效的模型服务商（OpenAI 兼容/Anthropic/Gemini，术语表 prompt 注入与来源标签机制不变）；未配置服务商时报错文案改为「未启用整句翻译（先在 AI 中心配置并保存一个服务商）」。旧版本存的 azure_* prefs 键成为无害残留（不再读写）。
+- 验证：`testDebugUnitTest` 全绿（418，−4：AzureSentenceTranslatorTest 3 + 工厂 Azure 分支用例重写）；`assembleDebug` 通过；覆盖安装 PKB110 真机（同 versionCode 1.4.0 覆盖安装成功）并启动，用户人工验收。

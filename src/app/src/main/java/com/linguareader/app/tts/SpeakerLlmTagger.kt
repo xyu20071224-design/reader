@@ -98,7 +98,7 @@ data class SpeakerTagResult(
  * LLM speaker tagger (PLAN-MULTI-VOICE §4.2, M2).
  *
  * Per D1 the chapter request rides the shared AI chat infrastructure: the
- * caller passes [chat] (in the app: `DeepSeekTranslator::chatJson`), so key
+ * caller passes [chat] (in the app: `JsonChatTranslator::chatJson`), so key
  * handling, JSON-mode retry and error reporting are the context-profile ones.
  *
  * The class itself is pure Kotlin - prompt, validation, alignment and

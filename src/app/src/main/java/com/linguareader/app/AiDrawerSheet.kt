@@ -22,7 +22,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,7 +30,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,22 +38,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.linguareader.app.ai.AiProviderProfile
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.BookGlossary
-import com.linguareader.app.ai.DeepSeekTranslator
 import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.data.Book
 import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.TtsPlaybackController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * "AI 中心"底部抽屉：一个入口集中管理所有 AI 能力。
  *
- *  - 头部是联网 AI 总开关：关闭后翻译（DeepSeek/Azure）与云端朗读
+ *  - 头部是联网 AI 总开关：关闭后翻译（模型服务）与云端朗读
  *    （Azure/火山/自建）全部回到离线模式，本地词典、本地 Piper 不受影响。
  *  - 三个 Tab：翻译设置 / 听书语音（复用 [ListeningSettingsBody]）/ 术语表。
  */
@@ -144,9 +142,9 @@ private fun DrawerTab(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * Translation settings (DeepSeek contextual AI + Azure sentence translator).
- * Mirrors the former Bookshelf AI dialog; [enabled] is false while the master
- * power switch is off, disabling every networked field.
+ * 翻译设置（模型服务商）。服务商列表/编辑卡都是草稿态，
+ * 统一走底部「保存」落盘并镜像生效服务商回旧字段；[enabled] 为 false 时
+ * （总开关关闭）禁用所有联网字段。
  */
 @Composable
 private fun AiTranslationSettingsBody(
@@ -154,183 +152,51 @@ private fun AiTranslationSettingsBody(
     onSave: (AiSettings) -> Unit,
     enabled: Boolean
 ) {
-    val context = LocalContext.current
-    var deepSeekEnabled by remember(settings) { mutableStateOf(settings.enabled) }
-    var apiKey by remember(settings) { mutableStateOf(settings.apiKey) }
-    var baseUrl by remember(settings) { mutableStateOf(settings.baseUrl) }
-    var model by remember(settings) { mutableStateOf(settings.model) }
-    var azureEnabled by remember(settings) { mutableStateOf(settings.azureTranslationEnabled) }
-    var azureKey by remember(settings) { mutableStateOf(settings.azureKey) }
-    var azureRegion by remember(settings) { mutableStateOf(settings.azureRegion) }
-    var azureEndpoint by remember(settings) { mutableStateOf(settings.azureEndpoint) }
-    // 「测试连接」的瞬态：用当前表单里的 Key/baseUrl/model 真的发一次请求，
-    // 让用户能在保存前就发现坏 Key/坏端点，而不是被「已就绪」误导。
-    val scope = rememberCoroutineScope()
-    var testingConnection by remember { mutableStateOf(false) }
-    var testStatus by remember { mutableStateOf<String?>(null) }
-    var testOk by remember { mutableStateOf(false) }
+    var remoteEnabled by remember(settings) { mutableStateOf(settings.enabled) }
+    var providers by remember(settings) { mutableStateOf(settings.providers) }
+    var activeId by remember(settings) { mutableStateOf(settings.activeProviderId) }
+    var editorDraft by remember { mutableStateOf<AiProviderProfile?>(null) }
+    var editorIsNew by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                stringResource(R.string.aidrawer_deepseek_title),
+                stringResource(R.string.aidrawer_remote_title),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f)
             )
             Switch(
-                checked = deepSeekEnabled,
-                onCheckedChange = { deepSeekEnabled = it },
+                checked = remoteEnabled,
+                onCheckedChange = { remoteEnabled = it },
                 enabled = enabled
             )
         }
-        if (deepSeekEnabled) {
+        if (remoteEnabled) {
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                label = { Text("DeepSeek API Key") },
-                singleLine = true,
-                enabled = enabled,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = baseUrl,
-                onValueChange = { baseUrl = it },
-                label = { Text(stringResource(R.string.aidrawer_base_url_label)) },
-                singleLine = true,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = model,
-                onValueChange = { model = it },
-                label = { Text(stringResource(R.string.aidrawer_model_label)) },
-                singleLine = true,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth()
+            ProviderSettingsBody(
+                providers = providers,
+                activeId = activeId,
+                masterEnabled = enabled,
+                onSelectActive = { activeId = it },
+                onEdit = {
+                    editorDraft = it
+                    editorIsNew = false
+                },
+                onAdd = {
+                    editorDraft = AiProviderProfile(id = "")
+                    editorIsNew = true
+                }
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                stringResource(R.string.aidrawer_deepseek_on_hint),
-                style = MaterialTheme.typography.labelSmall,
-                color = InkSoft
-            )
-            Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    onClick = {
-                        if (apiKey.trim().isEmpty()) {
-                            testOk = false
-                            testStatus = context.getString(R.string.aidrawer_deepseek_test_need_key)
-                            return@TextButton
-                        }
-                        val draft = settings.copy(
-                            enabled = deepSeekEnabled,
-                            apiKey = apiKey.trim(),
-                            baseUrl = baseUrl.trim(),
-                            model = model.trim()
-                        )
-                        testingConnection = true
-                        testStatus = null
-                        scope.launch {
-                            val outcome = runCatching { DeepSeekTranslator(draft).verifyConnection() }
-                            val ok = context.getString(R.string.aidrawer_deepseek_test_ok)
-                            testingConnection = false
-                            outcome.fold(
-                                onSuccess = { testOk = true; testStatus = ok },
-                                onFailure = {
-                                    testOk = false
-                                    testStatus = context.getString(
-                                        R.string.aidrawer_deepseek_test_fail,
-                                        it.message ?: ""
-                                    )
-                                }
-                            )
-                        }
-                    },
-                    enabled = enabled && !testingConnection
-                ) { Text(stringResource(R.string.aidrawer_deepseek_test)) }
-                val statusText = when {
-                    testingConnection -> stringResource(R.string.aidrawer_deepseek_testing)
-                    testStatus != null -> testStatus.orEmpty()
-                    else -> null
-                }
-                statusText?.let {
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = when {
-                            testingConnection -> InkSoft
-                            testOk -> Success
-                            else -> Danger
-                        }
-                    )
-                }
-            }
-        } else {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.aidrawer_deepseek_off_hint),
-                style = MaterialTheme.typography.labelSmall,
-                color = InkSoft
-            )
-        }
-        HorizontalDivider(Modifier.padding(vertical = 12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(R.string.aidrawer_azure_title),
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f)
-            )
-            Switch(
-                checked = azureEnabled,
-                onCheckedChange = { azureEnabled = it },
-                enabled = enabled
-            )
-        }
-        if (azureEnabled) {
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = azureKey,
-                onValueChange = { azureKey = it },
-                label = { Text("Azure Translator Key") },
-                singleLine = true,
-                enabled = enabled,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = azureRegion,
-                onValueChange = { azureRegion = it },
-                label = { Text(stringResource(R.string.aidrawer_azure_region_label)) },
-                singleLine = true,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = azureEndpoint,
-                onValueChange = { azureEndpoint = it },
-                label = { Text(stringResource(R.string.aidrawer_base_url_label)) },
-                singleLine = true,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                stringResource(R.string.aidrawer_azure_on_hint),
+                stringResource(R.string.aidrawer_remote_on_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
             )
         } else {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
-                stringResource(R.string.aidrawer_azure_off_hint),
+                stringResource(R.string.aidrawer_remote_off_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
             )
@@ -373,21 +239,16 @@ private fun AiTranslationSettingsBody(
             Button(
                 onClick = {
                     val updated = settings.copy(
-                        enabled = deepSeekEnabled,
-                        apiKey = apiKey.trim(),
-                        baseUrl = baseUrl.trim(),
-                        model = model.trim(),
-                        azureTranslationEnabled = azureEnabled,
-                        azureKey = azureKey.trim(),
-                        azureRegion = azureRegion.trim(),
-                        azureEndpoint = azureEndpoint.trim()
-                    )
+                        enabled = remoteEnabled,
+                        providers = providers,
+                        activeProviderId = activeId
+                    ).withActiveMirrored()
                     onSave(updated)
                     // 说清「保存后会发生什么」，而不是只说“已保存”。
                     savedNotice = when {
                         !enabled -> savedPowerOffText
                         updated.remoteReady -> savedReadyText
-                        deepSeekEnabled -> savedLocalText
+                        remoteEnabled -> savedLocalText
                         else -> savedOffText
                     }
                 },
@@ -398,6 +259,33 @@ private fun AiTranslationSettingsBody(
                 shape = PillShape
             ) { Text(stringResource(R.string.common_save)) }
         }
+    }
+    editorDraft?.let { draft ->
+        ProviderEditorDialog(
+            initial = draft,
+            isNew = editorIsNew,
+            masterEnabled = enabled,
+            onSave = { saved ->
+                if (saved.id.isBlank()) {
+                    val withId = saved.copy(id = UUID.randomUUID().toString())
+                    providers = providers + withId
+                    if (providers.none { it.id == activeId }) activeId = withId.id
+                } else {
+                    providers = providers.map { if (it.id == saved.id) saved else it }
+                }
+                editorDraft = null
+            },
+            onDelete = if (editorIsNew) {
+                null
+            } else {
+                { target ->
+                    providers = providers.filterNot { it.id == target.id }
+                    if (activeId == target.id) activeId = providers.firstOrNull()?.id.orEmpty()
+                    editorDraft = null
+                }
+            },
+            onDismiss = { editorDraft = null }
+        )
     }
 }
 

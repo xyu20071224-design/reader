@@ -33,7 +33,7 @@ class AiTranslationRepository(
     private val glossaryRepository: BookGlossaryRepository,
     /** 翻译批量出口工厂（测试注入假客户端用）。 */
     private val chatClientFactory: (AiSettings) -> AiTranslationChatClient =
-        { DeepSeekTranslator(it) }
+        { AiTranslators.forSettings(it) }
 ) {
     private val appContext = context.applicationContext
     private val checkpointDir = File(appContext.filesDir, "ai/ai-translations")
