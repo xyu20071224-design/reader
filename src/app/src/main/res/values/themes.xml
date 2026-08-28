@@ -8,6 +8,10 @@
     <style name="Theme.LinguaReader" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">#F7F3EA</item>
+        <!-- Android 12+ 系统开屏背景的显式控制点：实测 PKB110/ColorOS 只认这个
+             属性，不沿用 windowBackground（真机冷启动 splash 仍是黑的）。
+             API 31 以下该属性被忽略，放 values/ 无需 v31 限定符。 -->
+        <item name="android:windowSplashScreenBackground">#F7F3EA</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">#F7F3EA</item>
         <item name="android:statusBarColor">#F7F3EA</item>
@@ -18,6 +22,7 @@
     <style name="Theme.LinguaReader.Dark" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">#171717</item>
+        <item name="android:windowSplashScreenBackground">#171717</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:navigationBarColor">#171717</item>
         <item name="android:statusBarColor">#171717</item>

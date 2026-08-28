@@ -166,26 +166,24 @@ internal fun BookshelfScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
-                            Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
-                            Text(
-                                if (showVocabulary) {
-                                    pluralStringResource(
-                                        R.plurals.shelf_word_count,
-                                        state.savedWords.size,
-                                        state.savedWords.size
-                                    )
-                                } else {
-                                    pluralStringResource(
-                                        R.plurals.shelf_book_count,
-                                        state.books.size,
-                                        state.books.size
-                                    )
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = InkSoft
-                            )
-                        }
+                        // 只显示书/词计数，不放应用名：顶栏动作多，放名字会把「语境阅读」挤成两行。
+                        Text(
+                            if (showVocabulary) {
+                                pluralStringResource(
+                                    R.plurals.shelf_word_count,
+                                    state.savedWords.size,
+                                    state.savedWords.size
+                                )
+                            } else {
+                                pluralStringResource(
+                                    R.plurals.shelf_book_count,
+                                    state.books.size,
+                                    state.books.size
+                                )
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = InkSoft
+                        )
                     },
                     actions = {
                         IconButton(onClick = { showAppearanceSheet = true }) {
