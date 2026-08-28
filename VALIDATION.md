@@ -701,3 +701,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 验证：`testDebugUnitTest` 全绿（新增 `ShelfAppearanceTest` 6 项：默认值/往返/未知预设兜底/图片导入落盘/坏 Uri 失败/重置清文件+清 prefs；`ThemeColorsTest` 扩 AMOLED/GREEN/MORANDI 断言）；`assembleDebug` 通过；已覆盖安装真机。
 - **真机待验（设备锁屏，adb 截图全黑，mDreamingLockscreen=true 无法越过）**：①系统深色开/关下冷启动开屏均纸色、深色阅读主题不闪白；②顶栏调色板入口→预设/选图/蒙版/重置全流程（OpenDocument 选图需真机交互）；③三个新主题正文渲染与外壳联动。已备份真机 `reader_preferences.xml`（artifacts 外，会话内 /tmp），未注入修改任何应用数据。
 - 设备状态变更说明：验证时执行了 `adb shell cmd uimode night yes`（系统深色），结束时保持该状态——用户「开屏黑」的反馈场景即系统深色，如需改回请手动切浅色。
+
+## 2026-08-29 追加：ColorOS 开屏仍黑的第二轮修复 + 顶栏标题改单行
+
+- 用户反馈冷启动仍黑。录屏/连拍复现受限（screenrecord 在该机 Permission denied；开屏窗口在 adb 冷启动下 <250ms 抓不住），但连拍第 1 帧抓到启动窗口：应用图标背后是黑底且带 ColorOS「此应用内容已隐藏」遮罩——ColorOS 不沿用 windowBackground 作 splash 背景。
+- 修复：themes.xml 显式声明 `android:windowSplashScreenBackground`（Light #F7F3EA / Dark #171717，API<31 忽略，无需 v31 限定符）——这是系统开屏背景唯一可靠的显式控制点。
+- 顶栏「语境阅读」因动作过多被挤成两行（用户指示删应用名）：TopAppBar 标题改单行计数（「N 本书」/「生词本 N」），调色板入口保留。真机截图确认单行生效。
+- 待用户点图标正常冷启动复核开屏颜色；若仍黑，需区分是 ColorOS 启动动画深色垫底（应用无法控制）还是隐私遮罩（仅 adb/快照场景出现）。
