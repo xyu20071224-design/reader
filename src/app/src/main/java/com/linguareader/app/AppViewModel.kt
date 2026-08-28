@@ -649,6 +649,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         val settings = mutableState.value.aiSettings
         if (!settings.powerEnabled || !settings.remoteReady ||
+            !book.isAiTranslation ||
             result.matchLevel != TranslationMatchLevel.SENTENCE || result.pairIndex < 0 ||
             book.id in retranslateInFlight || book.id in mutableState.value.aiTranslationProgress
         ) {

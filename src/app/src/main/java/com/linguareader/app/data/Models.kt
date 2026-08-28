@@ -47,6 +47,13 @@ data class Book(
 ) {
     val hasTranslation: Boolean get() = translationBookId.isNotBlank()
 
+    /**
+     * 译本是否为 AI 生成（[AI_TRANSLATION_ID_PREFIX] 前缀）。导入的出版译本
+     * 不得被机器改写——句级重翻等编辑入口只对 AI 译本开放。导入书的 id 是
+     * SHA-256 十六进制，不可能以 "ai-" 开头（'i' 非十六进制字符），天然无歧义。
+     */
+    val isAiTranslation: Boolean get() = translationBookId.startsWith(AI_TRANSLATION_ID_PREFIX)
+
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
         .put("title", title)
@@ -66,6 +73,9 @@ data class Book(
         .put("translationAlignedAt", translationAlignedAt)
 
     companion object {
+        /** AI 生成译本的 id / 目录名前缀（实现在 ai/AiTranslationRepository）。 */
+        const val AI_TRANSLATION_ID_PREFIX = "ai-"
+
         fun fromJson(json: JSONObject): Book {
             val chapterArray = json.getJSONArray("chapters")
             return Book(

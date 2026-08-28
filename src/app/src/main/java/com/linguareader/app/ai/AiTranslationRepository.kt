@@ -380,8 +380,12 @@ ${body.ifBlank { "<p></p>" }}
     }
 
     companion object {
-        /** 合成译本的 book id / 目录名前缀。`remove()` 靠它整目录删除。 */
-        fun translationId(sourceBookId: String): String = "ai-$sourceBookId"
+        /**
+         * 合成译本的 book id / 目录名前缀。`remove()` 靠它整目录删除。
+         * 前缀常量本体在 `Book.AI_TRANSLATION_ID_PREFIX`（data 层判 isAiTranslation 用）。
+         */
+        fun translationId(sourceBookId: String): String =
+            Book.AI_TRANSLATION_ID_PREFIX + sourceBookId
 
         /**
          * 整本翻译模式：standard = 单遍直译；polish = 每批初翻后再让模型对照

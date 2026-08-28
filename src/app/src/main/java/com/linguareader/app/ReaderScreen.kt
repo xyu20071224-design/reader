@@ -830,7 +830,7 @@ internal fun ReaderScreen(
             isSaved = savedId != null && savedWords.any { word -> word.id == savedId },
             isPhraseView = showingRelatedPhrase,
             showReviewEntry = reminders.contextHighlight,
-            retranslateAvailable = aiSettings.powerEnabled && aiSettings.remoteReady,
+            retranslateAvailable = aiSettings.powerEnabled && aiSettings.remoteReady && book.isAiTranslation,
             retranslateLoading = retranslateLoading,
             retranslateDoneTick = retranslateDoneTick,
             onRetranslate = { feedback ->
