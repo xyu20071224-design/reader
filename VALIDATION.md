@@ -658,3 +658,16 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 范围：仅 Azure **Translator** 整句翻译——删除 `AzureSentenceTranslator` 及其测试、`AiSettings` 的 azureTranslationEnabled/azureKey/azureRegion/azureEndpoint 四字段与 `azureReady`、store 的 azure_* 持久化、`SentenceTranslatorFactory` 的 azureReady 分支、AI 中心翻译 Tab 的 Azure 区块 UI 与 `aidrawer_azure_*` 四个文案 key（zh/en 同步）。**Azure TTS（听书语音引擎）不受影响**，tts 包全部原样。
 - 行为变化：整句翻译现一律走当前生效的模型服务商（OpenAI 兼容/Anthropic/Gemini，术语表 prompt 注入与来源标签机制不变）；未配置服务商时报错文案改为「未启用整句翻译（先在 AI 中心配置并保存一个服务商）」。旧版本存的 azure_* prefs 键成为无害残留（不再读写）。
 - 验证：`testDebugUnitTest` 全绿（418，−4：AzureSentenceTranslatorTest 3 + 工厂 Azure 分支用例重写）；`assembleDebug` 通过；覆盖安装 PKB110 真机（同 versionCode 1.4.0 覆盖安装成功）并启动，用户人工验收。
+
+## 2026-08-29 官方预设服务商：DeepSeek v4-flash 只需填 Key（用户真机验收通过后追加）
+
+- 功能：服务商列表新增「官方预设（只需填 API Key）」区块——点「DeepSeek 官方」打开预填好的编辑卡（baseUrl=https://api.deepseek.com、协议 OpenAI 兼容、模型 deepseek-v4-flash，目录另备 deepseek-v4-pro），用户只需补 Key 保存。复刻 dsh 的 catalog route 语义：预设是默认值不是锁定，字段仍可改。
+- 实现：`AiProviderPresets` 目录（`AiProviderSettings.kt`，UI 层持有 nameRes 便于 i18n）+ 列表区块（同端点+协议的预设已加过则自动隐藏，避免重复）+ `AiProviderPresetsTest`。
+- 验证：`testDebugUnitTest` 全绿（420，+2）；`assembleDebug` 通过；覆盖安装 PKB110 并启动，真机交互待用户确认（预设出现/预填正确/保存后成为服务商）。
+
+## 2026-08-29 修复服务商编辑卡协议行大间隔（FlowRow 替换普通 Row）
+
+- 现象：编辑卡「协议」chips 与模型字段之间出现 ~228dp 的隐形大间隔，且 Gemini chip 从界面消失，卡片被撑高需要滚动。
+- 根因：三个 `FilterChip` 放在普通 `Row` 里——前两颗（OpenAI 兼容 + Anthropic（Claude））占满对话框宽度后，第三颗被挤进 ~12dp 剩余宽度、标签纵向堆叠撑出隐形高块（uiautomator 树里 Gemini 完全缺席佐证）。
+- 修复：chips 容器换 `FlowRow`（水平 6dp/垂直 4dp spacedBy），放不下的 chip 整颗换行；去掉逐 chip 的 end padding。
+- 验证：真机（PKB110）uiautomator 边界数据 + 截图确认三 chip 两行排布、模型字段紧随其后、卡片一屏放下；`testDebugUnitTest` 全绿、`assembleDebug`/覆盖安装通过。

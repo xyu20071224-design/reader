@@ -557,6 +557,8 @@
     <string name="aidrawer_remote_on_hint">When enabled, chapter text and the words or sentences you tap are sent to the active provider to build or update this book\'s context profile; with no provider ready it automatically falls back to the lightweight on-device context.</string>
     <string name="aidrawer_remote_off_hint">While off, lookups stay on the local dictionary and nothing is sent anywhere.</string>
     <string name="aidrawer_provider_add">Add provider</string>
+    <string name="aidrawer_preset_section">Official presets (just add an API key)</string>
+    <string name="aidrawer_preset_deepseek">DeepSeek official</string>
     <string name="aidrawer_provider_new">New provider</string>
     <string name="aidrawer_provider_edit">Edit provider</string>
     <string name="aidrawer_provider_edit_action">Edit</string>

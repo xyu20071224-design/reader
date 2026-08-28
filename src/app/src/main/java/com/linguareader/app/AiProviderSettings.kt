@@ -2,7 +2,9 @@ package com.linguareader.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,6 +56,31 @@ internal fun protocolLabelRes(protocol: String): Int = when (protocol) {
 }
 
 /**
+ * 官方预设服务商（复刻 dsh 的 catalog route）：端点/协议/模型由目录给定，
+ * 用户只需填 API Key。预设仍可在编辑卡里改——目录给的是默认值，不是锁定。
+ */
+data class AiProviderPreset(
+    val id: String,
+    val nameRes: Int,
+    val baseUrl: String,
+    val protocol: String,
+    val defaultModel: String,
+    val models: List<String> = emptyList()
+)
+
+object AiProviderPresets {
+    val DEEPSEEK = AiProviderPreset(
+        id = "deepseek",
+        nameRes = R.string.aidrawer_preset_deepseek,
+        baseUrl = "https://api.deepseek.com",
+        protocol = AiProtocol.OPENAI_COMPAT,
+        defaultModel = "deepseek-v4-flash",
+        models = listOf("deepseek-v4-flash", "deepseek-v4-pro")
+    )
+    val ALL = listOf(DEEPSEEK)
+}
+
+/**
  * 「联网语境翻译」的服务商列表：每行 单选 + 名称·协议·模型 + 编辑入口，
  * 「添加服务商」拉起编辑卡。列表是草稿态——切换/编辑都只改父级的 draft
  * state，统一由底部的保存按钮落盘。
@@ -65,7 +92,8 @@ internal fun ProviderSettingsBody(
     masterEnabled: Boolean,
     onSelectActive: (String) -> Unit,
     onEdit: (AiProviderProfile) -> Unit,
-    onAdd: () -> Unit
+    onAdd: () -> Unit,
+    onAddPreset: (AiProviderPreset) -> Unit
 ) {
     val noneName = stringResource(R.string.aidrawer_provider_none_name)
     Column(Modifier.fillMaxWidth()) {
@@ -109,6 +137,24 @@ internal fun ProviderSettingsBody(
                 color = InkSoft
             )
             Spacer(Modifier.height(6.dp))
+        }
+        // 官方预设：端点/协议/模型已按官方目录预填，已加过同端点的预设不再重复出现。
+        val openPresets = AiProviderPresets.ALL.filter { preset ->
+            providers.none { it.baseUrl == preset.baseUrl && it.protocol == preset.protocol }
+        }
+        if (openPresets.isNotEmpty()) {
+            Text(
+                stringResource(R.string.aidrawer_preset_section),
+                style = MaterialTheme.typography.labelMedium,
+                color = InkSoft
+            )
+            Row {
+                openPresets.forEach { preset ->
+                    TextButton(onClick = { onAddPreset(preset) }, enabled = masterEnabled) {
+                        Text(stringResource(preset.nameRes))
+                    }
+                }
+            }
         }
         TextButton(onClick = onAdd, enabled = masterEnabled) {
             Text(stringResource(R.string.aidrawer_provider_add))
@@ -212,14 +258,18 @@ internal fun ProviderEditorDialog(
                     stringResource(R.string.aidrawer_provider_protocol_label),
                     style = MaterialTheme.typography.labelMedium
                 )
-                Row {
+                // FlowRow：放不下的 chip 整颗换行。普通 Row 会把最后一颗挤成
+                // 零宽并纵向堆叠，撑出一个隐形高块（协议与模型之间的大间隔）。
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     AiProtocol.ALL.forEach { candidate ->
                         FilterChip(
                             selected = protocol == candidate,
                             onClick = { protocol = candidate },
                             label = { Text(stringResource(protocolLabelRes(candidate))) },
-                            enabled = masterEnabled,
-                            modifier = Modifier.padding(end = 6.dp)
+                            enabled = masterEnabled
                         )
                     }
                 }

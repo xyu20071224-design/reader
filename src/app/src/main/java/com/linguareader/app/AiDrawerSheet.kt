@@ -152,6 +152,7 @@ private fun AiTranslationSettingsBody(
     onSave: (AiSettings) -> Unit,
     enabled: Boolean
 ) {
+    val context = LocalContext.current
     var remoteEnabled by remember(settings) { mutableStateOf(settings.enabled) }
     var providers by remember(settings) { mutableStateOf(settings.providers) }
     var activeId by remember(settings) { mutableStateOf(settings.activeProviderId) }
@@ -184,6 +185,17 @@ private fun AiTranslationSettingsBody(
                 },
                 onAdd = {
                     editorDraft = AiProviderProfile(id = "")
+                    editorIsNew = true
+                },
+                onAddPreset = { preset ->
+                    // 官方预设：端点/协议/模型按目录预填，用户只需补 Key。
+                    editorDraft = AiProviderProfile(
+                        id = "",
+                        name = context.getString(preset.nameRes),
+                        baseUrl = preset.baseUrl,
+                        protocol = preset.protocol,
+                        model = preset.defaultModel
+                    )
                     editorIsNew = true
                 }
             )

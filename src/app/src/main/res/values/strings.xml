@@ -545,6 +545,8 @@
     <string name="aidrawer_remote_on_hint">启用后，书籍章节文本与点击的词句会发送到当前生效的服务商以生成/更新本书语境档案；服务商未就绪时自动使用不联网的本地轻量语境。</string>
     <string name="aidrawer_remote_off_hint">关闭时查词保持纯本地词典，不发送任何文本。</string>
     <string name="aidrawer_provider_add">添加服务商</string>
+    <string name="aidrawer_preset_section">官方预设（只需填 API Key）</string>
+    <string name="aidrawer_preset_deepseek">DeepSeek 官方</string>
     <string name="aidrawer_provider_new">新增服务商</string>
     <string name="aidrawer_provider_edit">编辑服务商</string>
     <string name="aidrawer_provider_edit_action">编辑</string>
