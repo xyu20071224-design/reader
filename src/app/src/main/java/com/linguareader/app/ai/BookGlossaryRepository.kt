@@ -222,7 +222,17 @@ class BookGlossaryRepository(private val context: Context) {
                     }
                 }
 
-                profile.characters.forEach { import(it, GlossaryEntry.KIND_CHARACTER) }
+                // B 兜底：凡被 AI 同时归进 places/glossary 的 term，一律不设角色
+                // 身份——即使模型也把它列进了 characters（地名/专名误识别过滤）。
+                val characterTerms = profile.characters.map { it.term.trim().lowercase() }.toSet()
+                val nonCharacterTerms = buildSet {
+                    profile.places.forEach { add(it.term.trim().lowercase()) }
+                    profile.glossary.forEach { add(it.term.trim().lowercase()) }
+                }
+                profile.characters.forEach { term ->
+                    if (term.term.trim().lowercase() in nonCharacterTerms) return@forEach
+                    import(term, GlossaryEntry.KIND_CHARACTER)
+                }
                 profile.places.forEach { import(it, "place") }
                 profile.glossary.forEach { import(it, "glossary") }
 
@@ -237,6 +247,11 @@ class BookGlossaryRepository(private val context: Context) {
                     if (name.isBlank()) return@forEach
                     val key = name.lowercase()
                     val existing = merged[key]
+                    // B 兜底：name 命中地名/专名（places/glossary），不建角色。
+                    if (key in nonCharacterTerms) return@forEach
+                    // 陌生名字（既不在 characters 列表、也没有既有条目）视为可疑，不建角色；
+                    // 有既有条目则允许合并（别名/属性增量合并，不依赖 characters）。
+                    if (key !in characterTerms && existing == null) return@forEach
                     // Never re-kind a place/glossary entry into a character.
                     if (existing != null && existing.kind != GlossaryEntry.KIND_CHARACTER) {
                         return@forEach

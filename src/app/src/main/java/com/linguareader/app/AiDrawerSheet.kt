@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.BookGlossary
+import com.linguareader.app.ai.DeepSeekTranslator
 import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.data.Book
 import com.linguareader.app.tts.CloudTtsSettings
@@ -152,6 +154,7 @@ private fun AiTranslationSettingsBody(
     onSave: (AiSettings) -> Unit,
     enabled: Boolean
 ) {
+    val context = LocalContext.current
     var deepSeekEnabled by remember(settings) { mutableStateOf(settings.enabled) }
     var apiKey by remember(settings) { mutableStateOf(settings.apiKey) }
     var baseUrl by remember(settings) { mutableStateOf(settings.baseUrl) }
@@ -160,6 +163,12 @@ private fun AiTranslationSettingsBody(
     var azureKey by remember(settings) { mutableStateOf(settings.azureKey) }
     var azureRegion by remember(settings) { mutableStateOf(settings.azureRegion) }
     var azureEndpoint by remember(settings) { mutableStateOf(settings.azureEndpoint) }
+    // 「测试连接」的瞬态：用当前表单里的 Key/baseUrl/model 真的发一次请求，
+    // 让用户能在保存前就发现坏 Key/坏端点，而不是被「已就绪」误导。
+    val scope = rememberCoroutineScope()
+    var testingConnection by remember { mutableStateOf(false) }
+    var testStatus by remember { mutableStateOf<String?>(null) }
+    var testOk by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -209,6 +218,59 @@ private fun AiTranslationSettingsBody(
                 style = MaterialTheme.typography.labelSmall,
                 color = InkSoft
             )
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = {
+                        if (apiKey.trim().isEmpty()) {
+                            testOk = false
+                            testStatus = context.getString(R.string.aidrawer_deepseek_test_need_key)
+                            return@TextButton
+                        }
+                        val draft = settings.copy(
+                            enabled = deepSeekEnabled,
+                            apiKey = apiKey.trim(),
+                            baseUrl = baseUrl.trim(),
+                            model = model.trim()
+                        )
+                        testingConnection = true
+                        testStatus = null
+                        scope.launch {
+                            val outcome = runCatching { DeepSeekTranslator(draft).verifyConnection() }
+                            val ok = context.getString(R.string.aidrawer_deepseek_test_ok)
+                            testingConnection = false
+                            outcome.fold(
+                                onSuccess = { testOk = true; testStatus = ok },
+                                onFailure = {
+                                    testOk = false
+                                    testStatus = context.getString(
+                                        R.string.aidrawer_deepseek_test_fail,
+                                        it.message ?: ""
+                                    )
+                                }
+                            )
+                        }
+                    },
+                    enabled = enabled && !testingConnection
+                ) { Text(stringResource(R.string.aidrawer_deepseek_test)) }
+                val statusText = when {
+                    testingConnection -> stringResource(R.string.aidrawer_deepseek_testing)
+                    testStatus != null -> testStatus.orEmpty()
+                    else -> null
+                }
+                statusText?.let {
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when {
+                            testingConnection -> InkSoft
+                            testOk -> Success
+                            else -> Danger
+                        }
+                    )
+                }
+            }
         } else {
             Spacer(Modifier.height(8.dp))
             Text(

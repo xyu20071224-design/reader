@@ -923,13 +923,11 @@ private fun ContentsSheet(
                         .clickable { onSelect(index) }
                         .padding(horizontal = 24.dp, vertical = 14.dp)
                 ) {
+                    // 序号作为标题文本一部分渲染（书源标题常不带编号，
+                    // 纯序号列太淡易被当成没有序号）。
                     Text(
-                        "${index + 1}",
-                        color = if (index == currentChapter) Accent else Ink.copy(alpha = .45f),
-                        modifier = Modifier.width(36.dp)
-                    )
-                    Text(
-                        chapter.title,
+                        "${index + 1}. ${chapter.title}",
+                        color = if (index == currentChapter) Accent else Ink,
                         fontWeight = if (index == currentChapter) FontWeight.Bold else FontWeight.Normal
                     )
                 }

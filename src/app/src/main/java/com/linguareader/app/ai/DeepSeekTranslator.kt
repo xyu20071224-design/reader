@@ -96,6 +96,30 @@ class DeepSeekTranslator(private val settings: AiSettings) :
     override suspend fun chatJson(system: String, user: String): JSONObject =
         chat(system = system, user = user, jsonMode = true)
 
+    /**
+     * Connectivity probe for the settings screen: sends one tiny chat request
+     * with the current key/baseUrl/model so the user can confirm the credential
+     * actually reaches the endpoint before believing "就绪". Throws on any real
+     * failure — a 401 (bad key), a 400 (bad model name), or an IO error
+     * (unreachable endpoint) — so the caller can surface the true reason.
+     * `jsonMode = false` avoids depending on the endpoint accepting
+     * `response_format`. A `200` that simply comes back as non-JSON still proves
+     * the auth/endpoint/model round-trip works, so parse-only failures are
+     * swallowed as success.
+     */
+    suspend fun verifyConnection() {
+        try {
+            chat(
+                system = "你是连通性测试助手。",
+                user = "请只输出一个 JSON 对象：{\"status\":\"ok\"}",
+                jsonMode = false
+            )
+        } catch (e: Throwable) {
+            if (e is AiRequestException && e.message?.contains("无法解析的 JSON") == true) return
+            throw e
+        }
+    }
+
     // --- book context -------------------------------------------------------
 
     private fun chapterSegments(chapters: List<ChapterText>): List<List<ChapterText>> {
@@ -385,8 +409,13 @@ class DeepSeekTranslator(private val settings: AiSettings) :
                 "\"ageGroup\":\"child|young|adult|elderly|unknown\",\"style\":[\"声音风格词，如 calm/deep/lively\"]," +
                 "\"importance\":\"major|medium|minor\",\"language\":\"en|zh\",\"confidence\":0.9}]," +
                 "\"styleNotes\":[\"文体/语气说明（口语、正式、方言、叙述风格等）\"]}。" +
-                "术语列表控制在每项 8-15 条以内，优先保留对翻译影响大的专名与关键词；" +
-                "characterProfiles 只列本节有台词或被称呼的角色（不超过 12 个），无法判断的字段留空或写 unknown。"
+                "角色判别（关键）：characters 和 characterProfiles 只能收\"会说话、有台词/对话、会思考行动\"的人或拟人化角色——" +
+                "例如有对白的 Harry、Hermione、Gandalf。下述都\"不是角色\"，一律放进 places（地名/机构/组织/国家/城市/建筑/大学/帝国）" +
+                "或 glossary（术语/专有名词/物品/法器/武器/年份/民族/头衔职衔/仅在叙述中被提及的专名）：Hogwarts、London、Azkaban、Ministry、" +
+                "the Burrow、Diagon Alley、Quidditch、the Elder Wand、1926、Muggle（术语）。" +
+                "拿不准某实体算角色还是地方/专名时，宁可放进 places/glossary，不要放进 characters。" +
+                "characterProfiles 只列本节确实有台词或被明确称呼的角色（不超过 12 个），name 必须与 characters 的 term 完全一致；" +
+                "无法判断的字段留空或写 unknown；术语列表控制在每项 8-15 条以内。"
 
         private const val TRANSLATE_SYSTEM_PROMPT =
             "你是一个英语阅读辅助工具。用户读英文书时点击一个单词，需要你结合该书语境给出最贴合的中文释义。" +

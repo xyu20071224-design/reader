@@ -12,6 +12,7 @@ import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.AiSettingsStore
 import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.ai.BookGlossaryRepository
+import com.linguareader.app.ai.BookContextProfile
 import com.linguareader.app.ai.BookContextRepository
 import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.ai.SpeakerTagRepository
@@ -132,9 +133,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             // generate() 命中磁盘档案又秒变「就绪」——造成同一天内
             // 待生成↔就绪 的往返漂移。以磁盘档案存在性播种就绪态，
             // 已有的 generating/error 状态不被覆盖。
+            // 除了存在性，还要看档案来源：配了 Key 但档案是 local（远程失败降级），
+            // 播种为 degraded 而非「就绪」，否则坏 Key 在全链路里始终被当成可用。
+            val remoteConfigured = mutableState.value.aiSettings.remoteReady
             val seeded = books
-                .filter { it.id !in mutableState.value.aiStatuses && aiRepository.hasProfile(it.id) }
-                .associate { it.id to AiBookStatus(ready = true) }
+                .filter { it.id !in mutableState.value.aiStatuses }
+                .mapNotNull { book ->
+                    val source = aiRepository.sourceOf(book.id) ?: return@mapNotNull null
+                    book.id to (
+                        if (remoteConfigured && source != "deepseek") AiBookStatus(degraded = true)
+                        else AiBookStatus(ready = true)
+                        )
+                }.toMap()
             mutableState.value = mutableState.value.copy(
                 books = books,
                 savedWords = savedWords,
@@ -236,12 +246,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (!settings.enabled) return
         val current = mutableState.value.aiStatuses[book.id]
         if (current?.generating == true || current?.ready == true) return
+        // 已降级的书（配了 Key 但生成时连接失败、落到本地档案）：下次打开时用
+        // force 重新调 DeepSeek，让换了有效 Key 的用户自动升级到远程语境，而不是
+        // 永远卡在本地档案；仍是坏 Key 则本次再次降级，下次打开再试（每次仅一次，
+        // 不会在单次打开里死循环）。
+        val retryRemote = current?.degraded == true && settings.remoteReady
         viewModelScope.launch {
             setAiStatus(book.id, AiBookStatus(generating = true))
-            runCatching { aiRepository.generate(book) }
+            runCatching { aiRepository.generate(book, force = retryRemote) }
                 .onSuccess { profile ->
                     runCatching { glossaryRepository.importFromProfile(book.id, profile) }
-                    setAiStatus(book.id, AiBookStatus(ready = true))
+                    // 强制重生成意味着角色名单可能变化：清理说话人缓存，按需重标。
+                    if (retryRemote) speakerTagRepository.delete(book.id)
+                    setAiStatus(book.id, statusFor(profile))
                 }
                 .onFailure {
                     setAiStatus(
@@ -263,7 +280,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     // A fresh profile means a fresh character roster, so cached
                     // chapter speaker tags are re-requested on demand (M2).
                     speakerTagRepository.delete(book.id)
-                    setAiStatus(book.id, AiBookStatus(ready = true))
+                    setAiStatus(book.id, statusFor(profile))
                 }
                 .onFailure {
                     setAiStatus(
@@ -279,6 +296,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.value = mutableState.value.copy(
             aiStatuses = mutableState.value.aiStatuses + (bookId to status)
         )
+    }
+
+    /**
+     * Maps a freshly generated profile to a shelf status. A profile that came
+     * back as `local` while a DeepSeek key is configured means the remote
+     * attempt actually failed and degraded offline — that is NOT "就绪", it is
+     * a degraded run (the offline fallback still works, so reading is fine, but
+     * the user must fix the key/endpoint for real AI context).
+     */
+    private fun statusFor(profile: BookContextProfile): AiBookStatus {
+        val remoteConfigured = mutableState.value.aiSettings.remoteReady
+        return if (remoteConfigured && profile.source != "deepseek") AiBookStatus(degraded = true)
+        else AiBookStatus(ready = true)
     }
 
     fun setReviewMode(mode: ReviewMode) {

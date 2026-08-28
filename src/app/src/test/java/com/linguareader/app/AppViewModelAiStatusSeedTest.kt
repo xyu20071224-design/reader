@@ -65,6 +65,30 @@ class AppViewModelAiStatusSeedTest {
         assertFalse("refresh() 未在超时内完成", viewModel.state.value.loading)
     }
 
+    /** 配置一个“有 Key”的远程设置；用明文写 SharedPreferences 以避开 Robolectric 下
+     *  Android Keystore 不可用导致 encrypt 返回 null 的问题（loadSecret 对非密文
+     *  原样回退，正是文档记载的旧明文迁移路径）。 */
+    private fun configureRemoteKey() {
+        val prefs = context.getSharedPreferences("ai_settings", android.content.Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean("enabled", true)
+            .putString("api_key", "fake")
+            .apply()
+    }
+
+    /** 泵 Main 直至某本书的状态不再是 generating（覆盖 ensureBookContext 的 generate 异步）。 */
+    private fun awaitStatus(viewModel: AppViewModel, bookId: String): AiBookStatus? {
+        val shadow = shadowOf(Looper.getMainLooper())
+        val deadline = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadline) {
+            shadow.idle()
+            val status = viewModel.state.value.aiStatuses[bookId]
+            if (status != null && status.generating.not()) return status
+            Thread.sleep(20)
+        }
+        return viewModel.state.value.aiStatuses[bookId]
+    }
+
     @Test
     fun processRestartSeedsReadyFromExistingProfileFile() {
         val withProfile = book("seed-ready")
@@ -103,5 +127,62 @@ class AppViewModelAiStatusSeedTest {
             viewModel.state.value.aiStatuses[failing.id]
         )
         assertTrue(viewModel.state.value.books.any { it.id == failing.id })
+    }
+
+    @Test
+    fun processRestartSeedsDegradedWhenRemoteKeyConfiguredButProfileIsLocal() {
+        configureRemoteKey()
+        val degraded = book("seed-degraded")
+        writeBook(degraded)
+        // 档案是本地降级产物（source 默认 local）。
+        writeProfile(degraded)
+
+        val viewModel = AppViewModel(context)
+        awaitRefresh(viewModel)
+
+        // 配了 Key 却拿到 local 档案 = 远程实际上失败降级，绝不能显示「就绪」。
+        assertEquals(
+            AiBookStatus(degraded = true),
+            viewModel.state.value.aiStatuses[degraded.id]
+        )
+    }
+
+    @Test
+    fun generatingLocalProfileWithRemoteKeyIsDegradedNotReady() {
+        configureRemoteKey()
+        val book = book("gen-degraded")
+        writeBook(book)
+        val viewModel = AppViewModel(context)
+        awaitRefresh(viewModel)
+        // 冷启动后再出现档案（模拟此前离线生成的存量档案），此时 openBook 触发
+        // ensureBookContext -> generate() 命中磁盘档案返回 local —— 不该设为就绪。
+        writeProfile(book)
+
+        viewModel.ensureBookContext(book)
+        val status = awaitStatus(viewModel, book.id)
+
+        assertEquals(AiBookStatus(degraded = true), status)
+    }
+
+    @Test
+    fun reopeningDegradedBookWithRemoteKeyRetriesAndStaysDegraded() {
+        configureRemoteKey()
+        val book = book("retry-degraded")
+        writeBook(book)
+        // 冷启动播种成 degraded（配了 Key 但档案是 local）。
+        writeProfile(book)
+        val viewModel = AppViewModel(context)
+        awaitRefresh(viewModel)
+        assertEquals(
+            AiBookStatus(degraded = true),
+            viewModel.state.value.aiStatuses[book.id]
+        )
+
+        // 再次打开：ensureBookContext 对 degraded 的书走强制重生成路径（仍无可用 Key，
+        // DeepSeek 会失败并再次降级），绝不能因为重新打开就翻成「就绪」。
+        viewModel.ensureBookContext(book)
+        val status = awaitStatus(viewModel, book.id)
+
+        assertEquals(AiBookStatus(degraded = true), status)
     }
 }

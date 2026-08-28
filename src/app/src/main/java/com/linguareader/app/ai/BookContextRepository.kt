@@ -77,6 +77,21 @@ class BookContextRepository(
         profileFile(bookId).isFile
     }
 
+    /**
+     * Reads the profile's `source` ("deepseek" / "local"), or null when no
+     * profile file exists. Lets the shelf seeding distinguish a genuinely-remote
+     * profile from one that degraded to the offline glossary, so a misconfigured
+     * key is not reported as "AI 语境：就绪" after a process restart. The file is
+     * small and parsed only for books that already have a profile.
+     */
+    suspend fun sourceOf(bookId: String): String? = withContext(Dispatchers.IO) {
+        val file = profileFile(bookId)
+        if (!file.isFile) return@withContext null
+        runCatching {
+            JSONObject(file.readText()).optString("source").ifBlank { "local" }
+        }.getOrNull()
+    }
+
     suspend fun generate(book: Book, force: Boolean = false): BookContextProfile {
         val existing = if (force) null else profileFor(book)
         if (existing != null) return existing

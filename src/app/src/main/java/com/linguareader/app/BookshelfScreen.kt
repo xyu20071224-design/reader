@@ -530,16 +530,21 @@ private fun BookCard(
             val statusLabel = when {
                 aiStatus == null -> stringResource(R.string.shelf_ai_pending)
                 aiStatus.generating -> stringResource(R.string.shelf_ai_generating)
+                // 配了 Key 但生成时降级为本地：不显示「就绪」，留空即可（真正的
+                // 诊断交给设置里的「测试连接」）。
+                aiStatus.degraded -> ""
                 aiStatus.ready -> stringResource(R.string.shelf_ai_ready)
                 aiStatus.error != null -> stringResource(R.string.shelf_ai_error, aiStatus.error)
                 else -> stringResource(R.string.shelf_ai_failed)
             }
-            Text(
-                statusLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (aiStatus?.ready == true) Success else InkFaint,
-                maxLines = 1
-            )
+            if (statusLabel.isNotBlank()) {
+                Text(
+                    statusLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (aiStatus?.ready == true) Success else InkFaint,
+                    maxLines = 1
+                )
+            }
         }
         if (attachingTranslation || book.hasTranslation) {
             Text(

@@ -540,12 +540,17 @@
     <string name="aidrawer_model_label">Model</string>
     <string name="aidrawer_deepseek_on_hint">When enabled, chapter text and the words or sentences you tap are sent to DeepSeek to build or update this book\'s context profile; with no API key it automatically falls back to the lightweight on-device context.</string>
     <string name="aidrawer_deepseek_off_hint">While off, lookups stay on the local dictionary and nothing is sent anywhere.</string>
+    <string name="aidrawer_deepseek_test">Test connection</string>
+    <string name="aidrawer_deepseek_testing">Testing…</string>
+    <string name="aidrawer_deepseek_test_ok">Connection OK: key is valid</string>
+    <string name="aidrawer_deepseek_test_fail">Connection failed: %1$s</string>
+    <string name="aidrawer_deepseek_test_need_key">Enter an API key first</string>
     <string name="aidrawer_azure_title">Azure sentence translation</string>
     <string name="aidrawer_azure_region_label">Region (e.g. eastasia; optional)</string>
     <string name="aidrawer_azure_on_hint">Sentence translation sends the current sentence to Azure AI Translator; this book\'s glossary entries ride along as a dynamic dictionary (&lt;mstrans:dictionary&gt;) so proper nouns stay consistent.</string>
     <string name="aidrawer_azure_off_hint">While off, the lookup panel hides sentence translation.</string>
     <string name="aidrawer_saved_power_off">Saved (the online-AI master switch is off, so it is not active yet)</string>
-    <string name="aidrawer_saved_ready">Saved: DeepSeek is ready — open a book to build its context profile</string>
+    <string name="aidrawer_saved_ready">Saved: DeepSeek configured — open a book to build its context profile; tap Test connection to verify the key</string>
     <string name="aidrawer_saved_local">Saved: no API key, the lightweight local context will be used</string>
     <string name="aidrawer_saved_off">Saved: AI context off — lookups stay fully local</string>
 

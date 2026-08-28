@@ -221,11 +221,20 @@ data class AiSettings(
     val azureReady: Boolean get() = azureTranslationEnabled && azureKey.isNotBlank()
 }
 
-/** Per-book generation status shown in the UI. */
+/**
+ * Per-book generation status shown in the UI.
+ *
+ * [degraded] is set when a remote backend was configured (a DeepSeek key is
+ * present) but generation failed and silently fell back to the offline local
+ * glossary. Such a book is *not* `ready` — showing "就绪" there would claim the
+ * remote AI context works when it actually degraded to local (bad key / wrong
+ * endpoint / no connectivity).
+ */
 data class AiBookStatus(
     val generating: Boolean = false,
     val ready: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val degraded: Boolean = false
 )
 
 /** Thrown when the remote AI provider fails. */
