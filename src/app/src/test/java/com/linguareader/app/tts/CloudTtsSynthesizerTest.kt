@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
  *      （parts.size != 3 即返回 null，见 CloudTtsSynthesizer.kt:243）。
  *      于是 speak() 对每一句都立刻走 onError，全程不合成、不播放。
  *
- * 该缺陷同样影响 Azure / 火山引擎两个云后端（它们都复用 CloudTtsSynthesizer）。
+ * 该缺陷影响所有复用 CloudTtsSynthesizer 的云后端（OpenAI 兼容 / MiMo）。
  * 本测试在缺陷存在时会失败（onError 被立即触发），修复后才会通过。
  */
 @RunWith(RobolectricTestRunner::class)

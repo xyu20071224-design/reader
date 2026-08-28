@@ -4,8 +4,8 @@ import java.io.File
 
 /**
  * Pluggable cloud synthesis backend (F-151). The cached chapter player only
- * depends on this interface, so Azure, an OpenAI-compatible self-hosted
- * server (Fish Speech / GPT-SoVITS adapters), or any future provider can be
+ * depends on this interface, so an OpenAI-compatible self-hosted server
+ * (Fish Speech / GPT-SoVITS adapters), MiMo, or any future provider can be
  * swapped in from settings without touching the playback queue.
  */
 interface CloudTtsBackend {
@@ -20,8 +20,8 @@ interface CloudTtsBackend {
     /**
      * Whether whole-book pre-generation (全书缓存) is worth offering for this
      * backend. Slow engines (e.g. IndexTTS, ~1-14s per sentence) are exempt:
-     * a whole book would take tens of hours. Fast backends (Azure, Volcano,
-     * Kokoro) keep the default true.
+     * a whole book would take tens of hours. Fast backends (Kokoro, MiMo)
+     * keep the default true.
      */
     val supportsWholeBookCache: Boolean get() = true
 

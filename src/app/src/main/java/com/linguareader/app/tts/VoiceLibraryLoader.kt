@@ -63,9 +63,9 @@ object ServerVoiceStore {
  * Builds the [VoiceLibrary] of the currently configured engine
  * (PLAN-MULTI-VOICE §3.4「来源」).
  *
- * Metadata first: Azure ships gender + style tags with `voices/list`; a
- * self-hosted Kokoro/IndexTTS server ships bare ids, so those are enriched with
- * the naming priors in [VoiceNaming]. Configured voice ids (server voice, M1
+ * Metadata first: a self-hosted OpenAI-compatible server may ship per-voice
+ * metadata with its voice list; otherwise bare ids are enriched with the
+ * naming priors in [VoiceNaming]. Configured voice ids (server voice, M1
  * narrator/dialogue voices) are always part of the library, so a server without
  * any voice endpoint still supports assignment.
  */
@@ -73,8 +73,6 @@ object VoiceLibraryLoader {
 
     /** Identity of the音色库: a different engine or server means re-assignment. */
     fun engineKey(settings: CloudTtsSettings): String = when (settings.mode) {
-        TtsEngineMode.AZURE -> "azure:" + settings.region.trim().lowercase()
-        TtsEngineMode.VOLC -> "volc:" + settings.volcResourceId.trim().lowercase()
         TtsEngineMode.OPENAI_COMPAT -> "server:" + settings.serverUrl.trim().trimEnd('/').lowercase()
         else -> settings.mode.name.lowercase()
     }
@@ -82,8 +80,6 @@ object VoiceLibraryLoader {
     fun load(context: Context, settings: CloudTtsSettings): VoiceLibrary {
         val engine = engineKey(settings)
         return when (settings.mode) {
-            TtsEngineMode.AZURE -> VoiceLibrary(azureVoices(context), engine)
-            TtsEngineMode.VOLC -> VoiceLibrary(configuredVoices(settings, "volc"), engine)
             TtsEngineMode.OPENAI_COMPAT -> VoiceLibrary(serverVoices(context, settings), engine)
             // MIMO: 预置目录 + 用户自建的设计/克隆音色一起进音色库，分配器才能
             // 把「专属音色」分给角色（多角色服务）。engine key 走 else 分支 = "mimo"。
@@ -138,25 +134,6 @@ object VoiceLibraryLoader {
         return VoiceLibrary(SystemVoiceStore.usableVoices(context, enginePackage), "system:$enginePackage")
     }
 
-    private fun azureVoices(context: Context): List<VoiceInfo> =
-        CloudVoiceStore.load(context)
-            .filter { it.status.equals("GA", ignoreCase = true) && it.shortName.isNotBlank() }
-            .map { voice ->
-                val multilingual = voice.isMultilingual() &&
-                    voice.supportsEnglish() &&
-                    voice.supportsChinese()
-                VoiceInfo(
-                    id = voice.shortName,
-                    // A multilingual voice reads both languages, so it stays
-                    // language-agnostic for the hard filter.
-                    language = if (multilingual) "" else VoiceNaming.languageOfLocale(voice.locale).orEmpty(),
-                    gender = voice.gender.trim().lowercase(),
-                    style = voice.styles,
-                    quality = if (multilingual) 0.6f else 0.5f,
-                    source = "azure"
-                )
-            }
-
     private fun serverVoices(context: Context, settings: CloudTtsSettings): List<VoiceInfo> {
         val advertised = ServerVoiceStore.load(context, settings.serverUrl)
         val configured = configuredIds(settings).map { ServerVoice(it) }
@@ -176,13 +153,6 @@ object VoiceLibraryLoader {
                 )
             }
     }
-
-    private fun configuredVoices(settings: CloudTtsSettings, source: String): List<VoiceInfo> =
-        (configuredIds(settings) + listOf(settings.volcZhVoice, settings.volcEnVoice))
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
-            .map { VoiceNaming.infer(it, source) }
 
     private fun configuredIds(settings: CloudTtsSettings): List<String> = listOf(
         settings.serverVoice,

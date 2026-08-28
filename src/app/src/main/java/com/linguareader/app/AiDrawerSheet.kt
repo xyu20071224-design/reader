@@ -54,7 +54,7 @@ import java.util.UUID
  * "AI 中心"底部抽屉：一个入口集中管理所有 AI 能力。
  *
  *  - 头部是联网 AI 总开关：关闭后翻译（模型服务）与云端朗读
- *    （Azure/火山/自建）全部回到离线模式，本地词典不受影响。
+ *    （自建服务端/MiMo）全部回到离线模式，本地词典不受影响。
  *  - 三个 Tab：翻译设置 / 听书语音（复用 [ListeningSettingsBody]）/ 术语表。
  */
 @OptIn(ExperimentalMaterial3Api::class)

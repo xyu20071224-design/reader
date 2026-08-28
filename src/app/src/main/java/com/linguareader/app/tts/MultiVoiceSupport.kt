@@ -49,9 +49,7 @@ object MultiVoiceSupport {
      * stays off while there is nothing to assign.
      */
     fun engineSupportsMultiVoice(settings: CloudTtsSettings, systemUsableVoices: Int = 0): Boolean =
-        settings.mode == TtsEngineMode.AZURE ||
-            settings.mode == TtsEngineMode.VOLC ||
-            settings.mode == TtsEngineMode.OPENAI_COMPAT ||
+        settings.mode == TtsEngineMode.OPENAI_COMPAT ||
             settings.mode == TtsEngineMode.MIMO ||
             (settings.mode == TtsEngineMode.SYSTEM && systemUsableVoices >= 2)
 

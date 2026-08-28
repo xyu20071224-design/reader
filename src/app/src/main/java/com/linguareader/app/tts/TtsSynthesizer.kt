@@ -160,8 +160,8 @@ class SystemTtsSynthesizer(
 }
 
 /**
- * Backend factory. Returns the configured cloud engine (Azure, Volcano or
- * OpenAI-compatible self-hosted) when enabled (F-151), otherwise the Android
+ * Backend factory. Returns the configured cloud engine (OpenAI-compatible
+ * self-hosted or MiMo) when enabled (F-151), otherwise the Android
  * system TTS engine.
  */
 object TtsSynthesizerFactory {
@@ -182,14 +182,8 @@ object TtsSynthesizerFactory {
         return when {
             // Networked engines honour the master power switch; when it is off
             // they fall back to the local engine below (offline-first).
-            settings.networkAiEnabled && settings.mode == TtsEngineMode.AZURE && settings.isConfigured ->
-                CloudTtsSynthesizer(context, AzureTtsBackend(settings, context), listener, voiceForSpeaker)
-
             settings.networkAiEnabled && settings.mode == TtsEngineMode.OPENAI_COMPAT && settings.isConfigured ->
                 CloudTtsSynthesizer(context, OpenAiCompatTtsBackend(settings), listener, voiceForSpeaker)
-
-            settings.networkAiEnabled && settings.mode == TtsEngineMode.VOLC && settings.isConfigured ->
-                CloudTtsSynthesizer(context, VolcanoTtsBackend(settings), listener, voiceForSpeaker)
 
             // MiMo-V2.5-TTS（小米云）：预置音色 / 设计音色 / 克隆音色三种 id 由
             // MiMoTtsBackend 按前缀分派模型，多角色管线的其余部分无感知。

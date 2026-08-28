@@ -64,7 +64,7 @@ class CloudTtsSettingsTest {
         CloudTtsSettings.save(context, saved)
         val loaded = CloudTtsSettings.load(context)
         assertEquals(TtsEngineMode.MIMO, loaded.mode)
-        // mimoApiKey 走 CloudKeyStore 加密（与 azure/volc 密钥同一模式），
+        // mimoApiKey 走 CloudKeyStore 加密（与 serverToken 同一模式），
         // Robolectric 的 Keystore 影子不能保证回读原文，按项目惯例不回读密文。
         assertEquals("mimo_default", loaded.mimoZhVoice)
         assertEquals("Mia", loaded.mimoEnVoice)

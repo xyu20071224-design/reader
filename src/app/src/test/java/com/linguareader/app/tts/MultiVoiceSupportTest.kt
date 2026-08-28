@@ -20,8 +20,6 @@ class MultiVoiceSupportTest {
 
     @Test
     fun cloudEnginesSupportMultiVoice() {
-        assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.AZURE)))
-        assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.VOLC)))
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.OPENAI_COMPAT)))
         // MiMo joins the cloud engines: preset voices + user-designed/cloned
         // voices are all assignable per character.
@@ -38,7 +36,7 @@ class MultiVoiceSupportTest {
         assertFalse(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.SYSTEM), 1))
         assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.SYSTEM), 2))
         // Cloud engines ignore the count entirely.
-        assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.AZURE), 0))
+        assertTrue(MultiVoiceSupport.engineSupportsMultiVoice(settings(TtsEngineMode.OPENAI_COMPAT), 0))
 
         assertTrue(
             MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.SYSTEM), 2)
@@ -53,9 +51,9 @@ class MultiVoiceSupportTest {
 
     @Test
     fun multiVoiceNeedsSwitchNetworkAndACloudEngine() {
-        assertTrue(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.AZURE)))
-        assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.AZURE, enabled = false)))
-        assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.AZURE, network = false)))
+        assertTrue(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.OPENAI_COMPAT)))
+        assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.OPENAI_COMPAT, enabled = false)))
+        assertFalse(MultiVoiceSupport.multiVoiceActive(settings(TtsEngineMode.OPENAI_COMPAT, network = false)))
         // Default settings keep the feature off (§8.1).
         assertFalse(MultiVoiceSupport.multiVoiceActive(CloudTtsSettings()))
     }

@@ -20,13 +20,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,11 +45,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.data.Book
-import com.linguareader.app.tts.AzureSpeechClient
-import com.linguareader.app.tts.AzureVoice
 import com.linguareader.app.tts.CloudTtsSettings
-import com.linguareader.app.tts.CloudVoicePicker
-import com.linguareader.app.tts.CloudVoiceStore
 import com.linguareader.app.tts.MiMoTtsBackend
 import com.linguareader.app.tts.MiMoVoiceCatalog
 import com.linguareader.app.tts.OpenAiCompatTtsBackend
@@ -59,7 +53,6 @@ import com.linguareader.app.tts.SystemTtsVoices
 import com.linguareader.app.tts.SystemVoiceInfo
 import com.linguareader.app.tts.TtsEngineMode
 import com.linguareader.app.tts.TtsPlaybackController
-import com.linguareader.app.tts.VolcanoTtsBackend
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -130,7 +123,6 @@ internal fun ListeningSettingsBody(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var settings by remember { mutableStateOf(CloudTtsSettings.load(context)) }
-    var voices by remember { mutableStateOf(CloudVoiceStore.load(context)) }
     var systemVoices by remember { mutableStateOf<List<SystemVoiceInfo>>(emptyList()) }
     var systemVoicesLoaded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -154,78 +146,6 @@ internal fun ListeningSettingsBody(
         }
     }
 
-    fun fetchAzureVoices() {
-        if (settings.region.isBlank() || settings.apiKey.isBlank()) {
-            status = SettingsStatus.danger(context.getString(R.string.tts_fill_region_key))
-            return
-        }
-        busy = true
-        status = null
-        scope.launch {
-            AzureSpeechClient(settings.region, settings.apiKey).listVoices()
-                .onSuccess { list ->
-                    voices = list
-                    CloudVoiceStore.save(context, list)
-                    val multilingual = CloudVoicePicker.defaultMultilingual(list)
-                    settings = settings.copy(
-                        enVoice = settings.enVoice.ifBlank { CloudVoicePicker.defaultEnglish(list) },
-                        zhVoice = settings.zhVoice.ifBlank { CloudVoicePicker.defaultChinese(list) },
-                        multilingualVoice = settings.multilingualVoice
-                            .ifBlank { multilingual.orEmpty() },
-                        useMultilingual = if (multilingual != null) settings.useMultilingual else false
-                    )
-                    status = SettingsStatus.success(
-                        context.resources.getQuantityString(
-                            R.plurals.tts_voices_fetched, list.size, list.size
-                        )
-                    )
-                }
-                .onFailure {
-                    status = SettingsStatus.danger(
-                        it.message ?: context.getString(R.string.tts_fetch_voices_failed)
-                    )
-                }
-            busy = false
-        }
-    }
-
-    /** BUG-012: actually synthesize a probe clip — listing voices proves the
-     *  key but not that speech synthesis itself works. */
-    fun testAzure() {
-        if (settings.region.isBlank() || settings.apiKey.isBlank()) {
-            status = SettingsStatus.danger(context.getString(R.string.tts_fill_region_key))
-            return
-        }
-        val voice = when {
-            settings.useMultilingual && settings.multilingualVoice.isNotBlank() ->
-                settings.multilingualVoice
-            settings.zhVoice.isNotBlank() -> settings.zhVoice
-            else -> settings.enVoice
-        }
-        if (voice.isBlank()) {
-            status = SettingsStatus.danger(context.getString(R.string.tts_select_voice_first))
-            return
-        }
-        busy = true
-        status = null
-        scope.launch {
-            val probe = File(context.cacheDir, "tts_probe_azure.mp3")
-            AzureSpeechClient(settings.region, settings.apiKey)
-                .synthesize("测试。Test.", voice, probe)
-                .onSuccess {
-                    probe.delete()
-                    status = SettingsStatus.success(context.getString(R.string.tts_azure_test_ok))
-                }
-                .onFailure {
-                    probe.delete()
-                    status = SettingsStatus.danger(
-                        it.message ?: context.getString(R.string.tts_test_failed)
-                    )
-                }
-            busy = false
-        }
-    }
-
     fun testServer() {
         if (!settings.isConfigured) {
             status = SettingsStatus.danger(context.getString(R.string.tts_fill_server_url))
@@ -246,41 +166,6 @@ internal fun ListeningSettingsBody(
                         it.message ?: context.getString(R.string.tts_test_failed)
                     )
                 }
-            busy = false
-        }
-    }
-
-    fun testVolcano() {
-        if (!settings.isConfigured) {
-            status = SettingsStatus.danger(context.getString(R.string.tts_fill_volc_credentials))
-            return
-        }
-        busy = true
-        status = null
-        scope.launch {
-            val backend = VolcanoTtsBackend(settings)
-            val zhProbe = File(context.cacheDir, "tts_probe_zh.mp3")
-            val enProbe = File(context.cacheDir, "tts_probe_en.mp3")
-            val zh = backend.synthesize(
-                "你好，世界。",
-                backend.voiceFor("你好，世界。"),
-                zhProbe
-            )
-            val en = backend.synthesize(
-                "Hello world.",
-                backend.voiceFor("Hello world."),
-                enProbe
-            )
-            zhProbe.delete()
-            enProbe.delete()
-            if (zh.isSuccess && en.isSuccess) {
-                status = SettingsStatus.success(context.getString(R.string.tts_volc_test_ok))
-            } else {
-                status = SettingsStatus.danger(
-                    (zh.exceptionOrNull() ?: en.exceptionOrNull())?.message
-                        ?: context.getString(R.string.tts_test_failed)
-                )
-            }
             busy = false
         }
     }
@@ -365,16 +250,6 @@ internal fun ListeningSettingsBody(
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.SYSTEM) }
                 )
                 EngineChoice(
-                    label = stringResource(R.string.tts_engine_azure),
-                    selected = settings.mode == TtsEngineMode.AZURE,
-                    onSelect = { settings = settings.copy(mode = TtsEngineMode.AZURE) }
-                )
-                EngineChoice(
-                    label = stringResource(R.string.tts_engine_volc),
-                    selected = settings.mode == TtsEngineMode.VOLC,
-                    onSelect = { settings = settings.copy(mode = TtsEngineMode.VOLC) }
-                )
-                EngineChoice(
                     label = stringResource(R.string.tts_engine_openai_compat),
                     selected = settings.mode == TtsEngineMode.OPENAI_COMPAT,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.OPENAI_COMPAT) }
@@ -431,85 +306,6 @@ internal fun ListeningSettingsBody(
                         style = MaterialTheme.typography.labelSmall,
                         color = InkFaint
                     )
-                }
-            }
-
-            if (settings.mode == TtsEngineMode.AZURE) {
-                Spacer(Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = settings.region,
-                    onValueChange = { settings = settings.copy(region = it.trim()) },
-                    label = { Text("Region") },
-                    supportingText = { Text(stringResource(R.string.tts_azure_region_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = settings.apiKey,
-                    onValueChange = { settings = settings.copy(apiKey = it.trim()) },
-                    label = { Text("API Key") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                Row {
-                    TextButton(onClick = ::fetchAzureVoices, enabled = !busy) {
-                        Text(stringResource(R.string.tts_fetch_voices))
-                    }
-                    TextButton(onClick = ::testAzure, enabled = !busy) {
-                        Text(stringResource(R.string.tts_test_connection))
-                    }
-                }
-                status?.let { SettingsStatusText(it) }
-
-                if (voices.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    HorizontalDivider(color = Ink.copy(alpha = .1f))
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(stringResource(R.string.tts_multilingual_toggle), style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                stringResource(R.string.tts_multilingual_toggle_hint),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = InkFaint
-                            )
-                        }
-                        Switch(
-                            checked = settings.useMultilingual,
-                            onCheckedChange = {
-                                settings = settings.copy(useMultilingual = it)
-                            }
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    if (settings.useMultilingual) {
-                        VoiceDropdown(
-                            label = stringResource(R.string.tts_voice_multilingual),
-                            voices = voices,
-                            selected = settings.multilingualVoice,
-                            onSelect = { settings = settings.copy(multilingualVoice = it) }
-                        )
-                    } else {
-                        VoiceDropdown(
-                            label = stringResource(R.string.tts_voice_english),
-                            voices = voices.filter { it.supportsEnglish() },
-                            selected = settings.enVoice,
-                            onSelect = { settings = settings.copy(enVoice = it) }
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        VoiceDropdown(
-                            label = stringResource(R.string.tts_voice_chinese),
-                            voices = voices.filter { it.supportsChinese() },
-                            selected = settings.zhVoice,
-                            onSelect = { settings = settings.copy(zhVoice = it) }
-                        )
-                    }
                 }
             }
 
@@ -588,62 +384,6 @@ internal fun ListeningSettingsBody(
                 )
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = ::testServer, enabled = !busy) {
-                    Text(stringResource(R.string.tts_test_connection))
-                }
-                status?.let { SettingsStatusText(it) }
-            }
-
-            if (settings.mode == TtsEngineMode.VOLC) {
-                Spacer(Modifier.height(16.dp))
-                OutlinedTextField(
-                    value = settings.volcApiKey,
-                    onValueChange = { settings = settings.copy(volcApiKey = it.trim()) },
-                    label = { Text(stringResource(R.string.tts_volc_api_key_label)) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = settings.volcAppId,
-                    onValueChange = { settings = settings.copy(volcAppId = it.trim()) },
-                    label = { Text(stringResource(R.string.tts_volc_app_id_label)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = settings.volcToken,
-                    onValueChange = { settings = settings.copy(volcToken = it.trim()) },
-                    label = { Text(stringResource(R.string.tts_volc_token_label)) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(10.dp))
-                PresetField(
-                    label = stringResource(R.string.tts_volc_resource_label),
-                    value = settings.volcResourceId,
-                    onValueChange = { settings = settings.copy(volcResourceId = it.trim()) },
-                    presets = volcResourcePresets(),
-                    supportingText = stringResource(R.string.tts_volc_resource_hint)
-                )
-                Spacer(Modifier.height(10.dp))
-                PresetField(
-                    label = stringResource(R.string.tts_voice_chinese),
-                    value = settings.volcZhVoice,
-                    onValueChange = { settings = settings.copy(volcZhVoice = it.trim()) },
-                    presets = volcZhVoicePresets(settings.volcResourceId)
-                )
-                Spacer(Modifier.height(10.dp))
-                PresetField(
-                    label = stringResource(R.string.tts_voice_english),
-                    value = settings.volcEnVoice,
-                    onValueChange = { settings = settings.copy(volcEnVoice = it.trim()) },
-                    presets = volcEnVoicePresets(settings.volcResourceId)
-                )
-                Spacer(Modifier.height(8.dp))
-                TextButton(onClick = ::testVolcano, enabled = !busy) {
                     Text(stringResource(R.string.tts_test_connection))
                 }
                 status?.let { SettingsStatusText(it) }
@@ -804,45 +544,6 @@ private fun PresetField(
 }
 
 @Composable
-private fun volcResourcePresets(): List<Pair<String, String>> = listOf(
-    "seed-tts-2.0" to stringResource(R.string.tts_volc_model_2),
-    "seed-tts-1.0" to stringResource(R.string.tts_volc_model_1),
-    "seed-tts-1.0-concurr" to stringResource(R.string.tts_volc_model_1_concurr)
-)
-
-@Composable
-private fun volcZhVoicePresets(resourceId: String): List<Pair<String, String>> =
-    if (resourceId.startsWith("seed-tts-2.0")) {
-        listOf(
-            "zh_female_shuangkuaisisi_uranus_bigtts" to stringResource(R.string.tts_volc_voice_shuangkuaisisi),
-            "zh_female_cancan_uranus_bigtts" to stringResource(R.string.tts_volc_voice_cancan_2),
-            "zh_female_vv_uranus_bigtts" to stringResource(R.string.tts_volc_voice_vv),
-            "zh_female_xiaohe_uranus_bigtts" to stringResource(R.string.tts_volc_voice_xiaohe),
-            "zh_male_m191_uranus_bigtts" to stringResource(R.string.tts_volc_voice_yunzhou),
-            "zh_male_taocheng_uranus_bigtts" to stringResource(R.string.tts_volc_voice_xiaotian),
-            "zh_female_kefunvsheng_uranus_bigtts" to stringResource(R.string.tts_volc_voice_nuanyang)
-        )
-    } else {
-        listOf(
-            "BV001_streaming" to stringResource(R.string.tts_volc_voice_standard_female),
-            "BV002_streaming" to stringResource(R.string.tts_volc_voice_standard_male),
-            "BV700_streaming" to stringResource(R.string.tts_volc_voice_cancan),
-            "BV701_streaming" to stringResource(R.string.tts_volc_voice_qingcang)
-        )
-    }
-
-@Composable
-private fun volcEnVoicePresets(resourceId: String): List<Pair<String, String>> =
-    if (resourceId.startsWith("seed-tts-2.0")) {
-        listOf(
-            "en_female_dacey_uranus_bigtts" to stringResource(R.string.tts_volc_voice_dacey),
-            "en_male_tim_uranus_bigtts" to stringResource(R.string.tts_volc_voice_tim)
-        )
-    } else {
-        listOf("BV503_streaming" to stringResource(R.string.tts_volc_voice_ariana))
-    }
-
-@Composable
 private fun EngineChoice(
     label: String,
     selected: Boolean,
@@ -862,57 +563,6 @@ private fun EngineChoice(
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) Accent else Ink
         )
-    }
-}
-
-@Composable
-private fun VoiceDropdown(
-    label: String,
-    voices: List<AzureVoice>,
-    selected: String,
-    onSelect: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val available = voices.filter { it.status.equals("GA", ignoreCase = true) }
-    Column(Modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = InkSoft)
-        Box(Modifier.fillMaxWidth()) {
-            TextButton(
-                onClick = { expanded = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    available.firstOrNull { it.shortName == selected }
-                        ?.let { stringResource(R.string.tts_voice_with_locale, it.displayName, it.locale) }
-                        ?: selected.ifBlank { stringResource(R.string.tts_voice_unselected) },
-                    modifier = Modifier.weight(1f),
-                    color = Ink
-                )
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                available.forEach { voice ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(
-                                    R.string.tts_voice_with_locale,
-                                    voice.displayName,
-                                    voice.locale
-                                )
-                            )
-                        },
-                        onClick = {
-                            onSelect(voice.shortName)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
     }
 }
 

@@ -4,9 +4,9 @@ package com.linguareader.app.tts
  * One synthesizable voice with the profile the assigner needs
  * (PLAN-MULTI-VOICE §3.4).
  *
- * Attributes come from engine metadata where it exists (Azure voices/list) and
- * from naming conventions otherwise (Kokoro `zf_/zm_/af_/bf_`, 火山
- * `zh_female_*`), so no extra sampling pass is required to get a usable
+ * Attributes come from engine metadata where it exists (a self-hosted server's
+ * voice list) and from naming conventions otherwise (Kokoro `zf_/zm_/af_/bf_`,
+ * 豆包 `zh_female_*`), so no extra sampling pass is required to get a usable
  * library. [quality] is a placeholder for the optional f0/sample analysis of
  * the plan and only breaks ties today.
  */
@@ -19,7 +19,7 @@ data class VoiceInfo(
     val style: List<String> = emptyList(),
     val ageGroup: String = "",
     val quality: Float = 0.5f,
-    /** azure / kokoro / volc / clone. */
+    /** server / kokoro / clone …（音色 id 的来源，仅作展示与调试）。 */
     val source: String = ""
 ) {
     val available: Boolean get() = id.isNotBlank()
@@ -96,9 +96,9 @@ object TtsLanguage {
  * - Kokoro: `<locale><gender>_<name>` - `zf_001` (中文女), `zm_009` (中文男),
  *   `af_maple` / `am_onyx` (美式英语), `bf_alice` / `bm_george` (英式英语),
  *   plus `ef/em`(es) `ff`(fr) `hf/hm`(hi) `if/im`(it) `jf/jm`(ja) `pf/pm`(pt).
- * - 火山: `zh_female_xxx` / `en_male_xxx`.
- * - Azure: `zh-CN-XiaoxiaoNeural` gives the language; the gender comes from the
- *   voices/list metadata instead.
+ * - 豆包/火山系: `zh_female_xxx` / `en_male_xxx`.
+ * - Azure 风格: `zh-CN-XiaoxiaoNeural` gives the language; the gender comes
+ *   from the engine metadata instead.
  */
 object VoiceNaming {
     private val kokoroLocales = mapOf(
