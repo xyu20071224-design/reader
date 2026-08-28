@@ -72,11 +72,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jsoup:jsoup:1.18.3")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
-    implementation("com.github.k2-fsa:sherpa-onnx:1.13.5") {
-        // The AAR already contains the native .so and Kotlin bindings; the
-        // transitive sherpa-onnx-jvm jar duplicates those classes.
-        exclude(group = "com.github.k2-fsa.sherpa-onnx", module = "sherpa-onnx-jvm")
-    }
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

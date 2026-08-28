@@ -22,7 +22,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * Everything Android-specific is injected as a plain function or type:
  *
- * - [synthesizerFactory] creates the engine (system / Piper / cloud); the
+ * - [synthesizerFactory] creates the engine (system / cloud); the
  *   engine only sees the [TtsSynthesizer] contract.
  * - [chapterLoader] produces a [TtsChapter] for a book + chapter index (the
  *   service wraps the IO-backed extractor, a test returns a fixed chapter).

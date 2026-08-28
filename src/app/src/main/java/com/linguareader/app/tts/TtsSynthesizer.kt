@@ -180,11 +180,8 @@ object TtsSynthesizerFactory {
                 .takeIf { it.isNotBlank() }
         }
         return when {
-            settings.mode == TtsEngineMode.PIPER && settings.isConfigured ->
-                SherpaTtsSynthesizer(context, listener, piperEnVoiceId = settings.piperEnVoiceId)
-
             // Networked engines honour the master power switch; when it is off
-            // they fall back to the local engines below (offline-first).
+            // they fall back to the local engine below (offline-first).
             settings.networkAiEnabled && settings.mode == TtsEngineMode.AZURE && settings.isConfigured ->
                 CloudTtsSynthesizer(context, AzureTtsBackend(settings, context), listener, voiceForSpeaker)
 

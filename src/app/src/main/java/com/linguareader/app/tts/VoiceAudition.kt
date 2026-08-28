@@ -26,10 +26,6 @@ object VoiceAudition {
     @Volatile
     private var systemTts: TextToSpeech? = null
 
-    /** Piper 试听的临时 WAV，停止/播完都要删。 */
-    @Volatile
-    private var currentWav: File? = null
-
     /** 播放结束/被打断时回调，让面板把「停止」还原成「试听」。 */
     @Volatile
     private var onFinished: (() -> Unit)? = null
@@ -46,9 +42,6 @@ object VoiceAudition {
         // engine speaks directly instead of going through a cloud backend.
         if (settings.mode == TtsEngineMode.SYSTEM) {
             return playOnSystemEngine(appContext, voiceId, text, onFinished)
-        }
-        if (settings.mode == TtsEngineMode.PIPER) {
-            return playPiper(appContext, voiceId, text, onFinished)
         }
         val backend = backendFor(appContext, settings)
             ?: return Result.failure(IllegalStateException("当前引擎不支持试听"))
@@ -96,8 +89,6 @@ object VoiceAudition {
             runCatching { current.release() }
         }
         stopSystemEngine()
-        runCatching { currentWav?.delete() }
-        currentWav = null
         notifyFinished()
     }
 
@@ -206,63 +197,4 @@ object VoiceAudition {
             TtsEngineMode.MIMO -> MiMoTtsBackend(settings, context)
             else -> null
         }
-
-    /**
-     * Piper 本地试听（D3）：按文本语言路由到中文模型或指定英文音色，现场加载、
-     * 合成、播放后即释放——试听是低频操作，不值得为它常驻一个实例。
-     */
-    private suspend fun playPiper(
-        appContext: Context,
-        voiceId: String,
-        text: String,
-        onFinished: () -> Unit
-    ): Result<Unit> {
-        val prepared = withContext(Dispatchers.IO) {
-            runCatching {
-                val chinese = text.any { char -> char.code in 0x4E00..0x9FFF }
-                val tts = if (chinese) {
-                    PiperAssets.createChineseTts(appContext)
-                } else {
-                    val resolved = PiperVoiceStore.resolve(appContext, voiceId.trim())
-                    PiperAssets.createEnglishTts(appContext, resolved)
-                        ?: PiperAssets.createEnglishTts(appContext, PiperVoiceCatalog.builtin)
-                } ?: error("音色加载失败")
-                try {
-                    val audio = tts.generate(text, sid = 0, speed = 1f)
-                    check(audio.samples.isNotEmpty()) { "合成结果为空" }
-                    PiperAssets.writeWav(audio.samples, audio.sampleRate, appContext.cacheDir)
-                } finally {
-                    runCatching { tts.release() }
-                }
-            }
-        }
-        val wav = prepared.getOrElse { failure -> onFinished(); return Result.failure(failure) }
-        currentWav = wav
-        return withContext(Dispatchers.Main) {
-            runCatching {
-                stop()
-                val created = MediaPlayer()
-                created.setDataSource(wav.absolutePath)
-                created.setOnCompletionListener { finished ->
-                    finished.release()
-                    wav.delete()
-                    if (player === finished) {
-                        player = null
-                        notifyFinished()
-                    }
-                }
-                created.setOnErrorListener { _, _, _ ->
-                    stop()
-                    true
-                }
-                created.prepare()
-                created.start()
-                player = created
-                this@VoiceAudition.onFinished = onFinished
-            }.onFailure {
-                runCatching { wav.delete() }
-                onFinished()
-            }
-        }
-    }
 }

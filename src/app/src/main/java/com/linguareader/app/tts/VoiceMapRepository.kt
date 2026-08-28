@@ -40,7 +40,7 @@ class VoiceMapRepository(
     /**
      * The mapping to play [bookId] with: loaded, extended for new characters and
      * recomputed when the engine changed. Returns null when the engine offers no
-     * voice library at all (D2: Piper / 系统语音).
+     * voice library at all (D2: 系统语音).
      */
     suspend fun ensureFor(
         bookId: String,

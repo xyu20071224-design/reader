@@ -119,7 +119,7 @@ internal fun MultiVoiceSection(
         settings,
         MultiVoiceSupport.systemUsableVoiceCount(context)
     )
-    // D3 后 Piper 已支持多角色；SYSTEM（M5b §13.6）条件置灰 + 标注入口。
+    // 云引擎均支持多角色；SYSTEM（M5b §13.6）条件置灰 + 标注入口。
     val systemMode = settings.mode == TtsEngineMode.SYSTEM
     val auditionFailed = stringResource(R.string.multivoice_audition_failed)
 

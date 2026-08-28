@@ -1,11 +1,6 @@
 package com.linguareader.app
 
 import android.content.Context
-import android.content.Intent
-import android.media.AudioAttributes
-import android.media.MediaPlayer
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,7 +45,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.core.net.toUri
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.data.Book
 import com.linguareader.app.tts.AzureSpeechClient
@@ -61,10 +55,6 @@ import com.linguareader.app.tts.CloudVoiceStore
 import com.linguareader.app.tts.MiMoTtsBackend
 import com.linguareader.app.tts.MiMoVoiceCatalog
 import com.linguareader.app.tts.OpenAiCompatTtsBackend
-import com.linguareader.app.tts.PiperVoice
-import com.linguareader.app.tts.PiperVoiceCatalog
-import com.linguareader.app.tts.PiperVoiceImporter
-import com.linguareader.app.tts.PiperVoiceStore
 import com.linguareader.app.tts.SystemTtsVoices
 import com.linguareader.app.tts.SystemVoiceInfo
 import com.linguareader.app.tts.TtsEngineMode
@@ -145,33 +135,6 @@ internal fun ListeningSettingsBody(
     var systemVoicesLoaded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<SettingsStatus?>(null) }
-    var piperVoices by remember { mutableStateOf(PiperVoiceStore.installed(context)) }
-    var piperStatus by remember { mutableStateOf<SettingsStatus?>(null) }
-    var piperImporting by remember { mutableStateOf(false) }
-    val onnxPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        // 模型有 30–90 MB：复制与校验都在 IO 线程做，主线程只更新状态。
-        piperImporting = true
-        piperStatus = SettingsStatus.info(context.getString(R.string.tts_piper_import_checking))
-        scope.launch {
-            PiperVoiceImporter.import(context, uri)
-                .onSuccess { voice ->
-                    piperVoices = PiperVoiceStore.installed(context)
-                    settings = settings.copy(piperEnVoiceId = voice.id)
-                    piperStatus = SettingsStatus.success(
-                        context.getString(R.string.tts_piper_imported, voice.id)
-                    )
-                }
-                .onFailure {
-                    piperStatus = SettingsStatus.danger(
-                        it.message ?: context.getString(R.string.tts_piper_import_failed)
-                    )
-                }
-            piperImporting = false
-        }
-    }
 
     fun loadSystemVoices(refresh: Boolean = false) {
         if (systemVoicesLoaded && !refresh) return
@@ -402,11 +365,6 @@ internal fun ListeningSettingsBody(
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.SYSTEM) }
                 )
                 EngineChoice(
-                    label = stringResource(R.string.tts_engine_piper),
-                    selected = settings.mode == TtsEngineMode.PIPER,
-                    onSelect = { settings = settings.copy(mode = TtsEngineMode.PIPER) }
-                )
-                EngineChoice(
                     label = stringResource(R.string.tts_engine_azure),
                     selected = settings.mode == TtsEngineMode.AZURE,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.AZURE) }
@@ -426,56 +384,6 @@ internal fun ListeningSettingsBody(
                     selected = settings.mode == TtsEngineMode.MIMO,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.MIMO) }
                 )
-            }
-
-            if (settings.mode == TtsEngineMode.PIPER) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    stringResource(R.string.tts_piper_intro),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
-                )
-                Spacer(Modifier.height(10.dp))
-                PiperVoiceDropdown(
-                    voices = piperVoices,
-                    selectedId = settings.piperEnVoiceId,
-                    onSelect = { settings = settings.copy(piperEnVoiceId = it) }
-                )
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider(color = Ink.copy(alpha = .1f))
-                Spacer(Modifier.height(10.dp))
-                Text(stringResource(R.string.tts_piper_download_more), style = MaterialTheme.typography.labelLarge, color = InkSoft)
-                Text(
-                    stringResource(R.string.tts_piper_download_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
-                )
-                Spacer(Modifier.height(4.dp))
-                TextButton(
-                    onClick = { onnxPicker.launch(arrayOf("*/*")) },
-                    enabled = !piperImporting
-                ) {
-                    Text(
-                        if (piperImporting) stringResource(R.string.tts_piper_importing)
-                        else stringResource(R.string.tts_piper_import_model)
-                    )
-                }
-                piperStatus?.let { SettingsStatusText(it) }
-                Spacer(Modifier.height(4.dp))
-                if (!settings.networkAiEnabled) {
-                    Text(
-                        stringResource(R.string.tts_piper_network_off),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Danger
-                    )
-                }
-                PiperVoiceCatalog.downloadable.forEach { voice ->
-                    PiperCatalogRow(
-                        voice = voice,
-                        networkEnabled = settings.networkAiEnabled,
-                        onMessage = { piperStatus = SettingsStatus.danger(it) }
-                    )
-                }
             }
 
             if (settings.mode == TtsEngineMode.SYSTEM) {
@@ -801,7 +709,7 @@ internal fun ListeningSettingsBody(
                 preselectedBook = book
             )
 
-            if (settings.mode != TtsEngineMode.SYSTEM && settings.mode != TtsEngineMode.PIPER) {
+            if (settings.mode != TtsEngineMode.SYSTEM) {
                 Spacer(Modifier.height(14.dp))
                 Text(
                     stringResource(R.string.tts_cloud_notice),
@@ -1054,172 +962,4 @@ private fun SystemVoiceDropdown(
             }
         }
     }
-}
-
-@Composable
-private fun PiperVoiceDropdown(
-    voices: List<PiperVoice>,
-    selectedId: String,
-    onSelect: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val selected = voices.firstOrNull { it.id == selectedId }
-    Column(Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.tts_piper_voice_label), style = MaterialTheme.typography.labelMedium, color = InkSoft)
-        Box(Modifier.fillMaxWidth()) {
-            TextButton(
-                onClick = { expanded = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    piperVoiceLabel(selected ?: PiperVoiceCatalog.builtin),
-                    modifier = Modifier.weight(1f),
-                    color = Ink
-                )
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
-            }
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-                voices.forEach { voice ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(
-                                    if (voice.builtin) R.string.tts_voice_builtin
-                                    else R.string.tts_voice_imported,
-                                    piperVoiceLabel(voice)
-                                )
-                            )
-                        },
-                        onClick = {
-                            onSelect(voice.id)
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** 目录音色走资源（displayNameRes），用户导入的音色原样显示 displayName。 */
-@Composable
-private fun piperVoiceLabel(voice: PiperVoice): String =
-    voice.displayNameRes?.let { stringResource(it) } ?: voice.displayName
-
-/** 模型体积文案：多说话人模型（sizeMb=0）与常规模型的两种说法。 */
-@Composable
-private fun piperSizeLabel(sizeMb: Int): String =
-    if (sizeMb <= 0) stringResource(R.string.tts_piper_size_multi)
-    else stringResource(R.string.tts_piper_size_mb, sizeMb)
-
-/** 语言代码 → 文案；旧版本导入记录里存的中文「英语」也兼容映射。 */
-@Composable
-private fun piperLanguageLabel(language: String): String = when (language) {
-    "en", "英语" -> stringResource(R.string.tts_piper_language_en)
-    else -> language
-}
-
-/** 性别代码 → 文案；导入音色未知性别（?）原样显示。 */
-@Composable
-private fun piperGenderLabel(gender: String): String = when (gender) {
-    "male", "男" -> stringResource(R.string.multivoice_gender_male)
-    "female", "女" -> stringResource(R.string.multivoice_gender_female)
-    "multi", "多" -> stringResource(R.string.tts_piper_gender_multi)
-    else -> gender
-}
-
-@Composable
-private fun PiperCatalogRow(
-    voice: PiperVoice,
-    networkEnabled: Boolean,
-    onMessage: (String) -> Unit
-) {
-    val context = LocalContext.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(piperVoiceLabel(voice), style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    stringResource(
-                        R.string.tts_piper_voice_meta,
-                        piperLanguageLabel(voice.language),
-                        piperGenderLabel(voice.gender),
-                        piperSizeLabel(voice.sizeMb)
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
-                )
-            }
-            PlaySampleButton(
-                url = voice.sampleUrl,
-                enabled = networkEnabled,
-                onMessage = onMessage
-            )
-            TextButton(
-                enabled = networkEnabled && voice.packageUrl.isNotBlank(),
-                onClick = {
-                    runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, voice.packageUrl.toUri()))
-                    }.onFailure {
-                        onMessage(context.getString(R.string.tts_piper_open_failed))
-                    }
-                }
-            ) { Text(stringResource(R.string.tts_download)) }
-        }
-    }
-}
-
-@Composable
-private fun PlaySampleButton(
-    url: String,
-    enabled: Boolean,
-    onMessage: (String) -> Unit
-) {
-    val context = LocalContext.current
-    val playerState = remember { mutableStateOf<MediaPlayer?>(null) }
-    DisposableEffect(Unit) {
-        onDispose { playerState.value?.release() }
-    }
-    TextButton(
-        enabled = enabled && url.isNotBlank(),
-        onClick = {
-            playerState.value?.release()
-            val mp = MediaPlayer()
-            playerState.value = mp
-            val ok = runCatching {
-                mp.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-                mp.setDataSource(url)
-                mp.setOnPreparedListener { it.start() }
-                mp.setOnCompletionListener {
-                    it.release()
-                    if (playerState.value == it) playerState.value = null
-                }
-                mp.setOnErrorListener { it, _, _ ->
-                    it.release()
-                    if (playerState.value == it) playerState.value = null
-                    // 之前失败是完全静默的；HuggingFace 在部分网络不可达，必须给反馈。
-                    onMessage(context.getString(R.string.tts_sample_failed))
-                    true
-                }
-                mp.prepareAsync()
-            }.isSuccess
-            if (!ok) {
-                runCatching { mp.release() }
-                playerState.value = null
-                onMessage(context.getString(R.string.tts_sample_play_failed))
-            }
-        }
-    ) { Text(stringResource(R.string.tts_audition)) }
 }

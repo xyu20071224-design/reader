@@ -44,29 +44,27 @@ object MultiVoiceSupport {
 
     /**
      * D3 + M5 (PLAN-MULTI-VOICE §13.4): the cloud engines have a controllable
-     * voice library; Piper joined via the LRU instance pool ([LruInstancePool]);
-     * the system engine joins conditionally — only once the user annotated at
-     * least two usable voices ([SystemVoiceStore]), so the switch stays off
-     * while there is nothing to assign.
+     * voice library; the system engine joins conditionally — only once the user
+     * annotated at least two usable voices ([SystemVoiceStore]), so the switch
+     * stays off while there is nothing to assign.
      */
     fun engineSupportsMultiVoice(settings: CloudTtsSettings, systemUsableVoices: Int = 0): Boolean =
         settings.mode == TtsEngineMode.AZURE ||
             settings.mode == TtsEngineMode.VOLC ||
             settings.mode == TtsEngineMode.OPENAI_COMPAT ||
             settings.mode == TtsEngineMode.MIMO ||
-            settings.mode == TtsEngineMode.PIPER ||
             (settings.mode == TtsEngineMode.SYSTEM && systemUsableVoices >= 2)
 
     /**
      * Whether multi-voice should run at all right now. Cloud engines need the
-     * network master switch (their synthesis is remote); Piper is fully local,
-     * so it works offline — only the LLM speaker tagging degrades to rules. The
-     * system engine keeps the M5 gate: it also needs the network switch.
+     * network master switch (their synthesis is remote); only the LLM speaker
+     * tagging degrades to rules. The system engine keeps the M5 gate: it also
+     * needs the network switch.
      */
     fun multiVoiceActive(settings: CloudTtsSettings, systemUsableVoices: Int = 0): Boolean =
         settings.multiVoiceEnabled &&
             engineSupportsMultiVoice(settings, systemUsableVoices) &&
-            (settings.mode == TtsEngineMode.PIPER || settings.networkAiEnabled)
+            settings.networkAiEnabled
 
     /**
      * Annotated system voices usable for assignment, for callers that hold a
@@ -129,13 +127,6 @@ object MultiVoiceSupport {
             // "spent": a character must not end up sounding like the narrator.
             settings.serverEnVoice,
             settings.serverZhVoice,
-            // Piper: the user's default reading voice doubles as the fallback
-            // narrator, so the assigner must not hand it to a character.
-            if (settings.mode == TtsEngineMode.PIPER) {
-                settings.piperEnVoiceId.ifBlank { PiperVoiceCatalog.DEFAULT_ID }
-            } else {
-                ""
-            },
             // MiMo: the preset zh/en voices are the per-language narration
             // defaults (same rule as serverEn/zhVoice); designed/cloned voices
             // stay assignable because they exist exactly for characters.

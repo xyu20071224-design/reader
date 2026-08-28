@@ -20,7 +20,6 @@ import javax.crypto.spec.GCMParameterSpec
  */
 enum class TtsEngineMode {
     SYSTEM,
-    PIPER,
     AZURE,
     OPENAI_COMPAT,
     VOLC,
@@ -41,8 +40,6 @@ data class CloudTtsSettings(
     val useMultilingual: Boolean = true,
     val systemZhVoice: String = "",
     val systemEnVoice: String = "",
-    /** Selected local Piper English voice id ("" = bundled Ryan). */
-    val piperEnVoiceId: String = "",
     val serverUrl: String = "",
     val serverModel: String = "tts-1",
     val serverToken: String = "",
@@ -89,7 +86,6 @@ data class CloudTtsSettings(
     val isConfigured: Boolean
         get() = when (mode) {
             TtsEngineMode.SYSTEM -> true
-            TtsEngineMode.PIPER -> true // models are bundled in assets, no config needed
             TtsEngineMode.AZURE -> region.isNotBlank() && apiKey.isNotBlank()
             TtsEngineMode.OPENAI_COMPAT -> serverUrl.isNotBlank()
             TtsEngineMode.VOLC ->
@@ -118,7 +114,6 @@ data class CloudTtsSettings(
         private const val KEY_USE_MULTILINGUAL = "use_multilingual"
         private const val KEY_SYSTEM_ZH_VOICE = "system_zh_voice"
         private const val KEY_SYSTEM_EN_VOICE = "system_en_voice"
-        private const val KEY_PIPER_EN_VOICE = "piper_en_voice"
         private const val KEY_SERVER_URL = "server_url"
         private const val KEY_SERVER_MODEL = "server_model"
         private const val KEY_SERVER_TOKEN = "server_token"
@@ -155,7 +150,6 @@ data class CloudTtsSettings(
                 useMultilingual = prefs.getBoolean(KEY_USE_MULTILINGUAL, true),
                 systemZhVoice = prefs.getString(KEY_SYSTEM_ZH_VOICE, "").orEmpty(),
                 systemEnVoice = prefs.getString(KEY_SYSTEM_EN_VOICE, "").orEmpty(),
-                piperEnVoiceId = prefs.getString(KEY_PIPER_EN_VOICE, "").orEmpty(),
                 serverUrl = prefs.getString(KEY_SERVER_URL, "").orEmpty(),
                 serverModel = prefs.getString(KEY_SERVER_MODEL, "tts-1").orEmpty().ifBlank { "tts-1" },
                 serverToken = CloudKeyStore.decrypt(context, prefs.getString(KEY_SERVER_TOKEN, null)).orEmpty(),
@@ -203,7 +197,6 @@ data class CloudTtsSettings(
                 .putBoolean(KEY_USE_MULTILINGUAL, settings.useMultilingual)
                 .putString(KEY_SYSTEM_ZH_VOICE, settings.systemZhVoice)
                 .putString(KEY_SYSTEM_EN_VOICE, settings.systemEnVoice)
-                .putString(KEY_PIPER_EN_VOICE, settings.piperEnVoiceId)
                 .putString(KEY_SERVER_URL, settings.serverUrl.trim())
                 .putString(KEY_SERVER_MODEL, settings.serverModel.ifBlank { "tts-1" })
                 .putString(KEY_SERVER_TOKEN, encryptedToken)
