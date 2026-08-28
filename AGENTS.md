@@ -21,11 +21,6 @@
 .\gradlew.bat assembleDebug -PverifyBuild
 ```
 
-```powershell
-# 工作目录：C:\work\reader
-.\scripts\download_tts_models.ps1      # 取回被 gitignore 的 sherpa-onnx .onnx 模型
-```
-
 自建 TTS 服务端见 `.agents/memory/tts-server-stack.md`。
 
 ## 构建事实（`src/app/build.gradle.kts`、`src/build.gradle.kts`）
@@ -39,7 +34,7 @@
 | AGP / Kotlin / Gradle | 8.9.1 / 2.1.10 / 8.11.1 |
 | Compose BOM | 2025.05.01 |
 
-关键依赖：`jsoup`（HTML 解析）、`pdfbox-android`（PDF 文字层）、`sherpa-onnx:1.13.5`（本地离线 TTS，来自 jitpack，已 `exclude` 重复的 `sherpa-onnx-jvm`）、`androidx.webkit`。
+关键依赖：`jsoup`（HTML 解析）、`pdfbox-android`（PDF 文字层）、`androidx.webkit`。
 
 - **仓库配置阿里云镜像优先**（`src/settings.gradle.kts`），因为上游仓库在部分网络下 403/reset。加依赖时别把镜像顺序改掉。
 - `src/gradle.properties` 开了 `android.overridePathCheck=true`（路径含中文时 AGP 会报错）。
@@ -55,18 +50,18 @@
 | `.../app/` | 顶层 Compose 屏幕与外壳：`MainActivity`、`AppViewModel`、`ReaderScreen`、`BookshelfScreen`、`VocabularyScreen`、`ReviewUi`、`ListeningBar`、`ListeningSettingsSheet`、`MultiVoiceSettings`、`AiDrawerSheet`、`AppSnackbar`、`ThemeColors` |
 | `.../app/reader/` | WebView 阅读渲染：`ReaderScreen` 的引擎侧（`ReaderScripts` 注入 JS、`EpubPage`、`ReaderController`） |
 | `.../app/data/` | 导入器（EPUB/TXT/FB2/PDF）、词典、语境分析、书库、生词本、复习与提醒 |
-| `.../app/tts/` | 听书全部实现（35 个文件）：播放状态机、合成器、5 类引擎后端、多角色音色 |
+| `.../app/tts/` | 听书全部实现（26 个文件）：播放状态机、合成器、3 类引擎后端（系统 / 自建 OpenAI 兼容 / MiMo；Piper/Azure/火山已于 2026-08-29 移除）、多角色音色 |
 | `.../app/ai/` | 可选联网 AI：语境档案、整句翻译、术语表、说话人 LLM 标注 |
 | `.../app/translation/` | 中文译本对照（F-128，纯离线）：三级 DP 对齐、句/段/词级查询、对齐档案读写 |
-| `src/app/src/test/` | JVM 单测（51 个文件：tts 23 / ai 10 / data 9 / translation 5 / reader 1 / 外壳 3） |
-| `src/app/src/androidTest/` | 仪器测试（14 个文件） |
-| `src/app/src/main/assets/` | `dictionary/ecdict.sqlite`（离线词典）、`sherpa/<voice>/`（离线音色，`.onnx` 被 gitignore） |
-| `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，各 477 个条目（string+plurals） |
+| `src/app/src/test/` | JVM 单测（56 个文件：tts 19 / ai 16 / data 9 / translation 5 / reader 1 / 外壳 6） |
+| `src/app/src/androidTest/` | 仪器测试（13 个文件） |
+| `src/app/src/main/assets/` | `dictionary/ecdict.sqlite`（离线词典） |
+| `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，各 531 个条目（string+plurals） |
 | `tts-server/` | 自建 OpenAI 兼容 TTS 服务端（Python）+ IndexTTS 克隆音色 + frp 内网穿透配置 |
 | `tts-voice-studio/` | 本地音色调试工作台（Python + 单页 HTML） |
 | `bug收集/` | 缺陷文档库（BUG-001~026 分析/分级/验证方案，2026-08 自 legacy 线收录）；修 TTS/AI/服务端相关 bug 前先来这里查有没有前人分析 |
 | `.github/workflows/ci.yml` | GitHub Actions 单测 CI（push/PR 自动跑 `testDebugUnitTest`） |
-| `scripts/`、`src/scripts/` | 模型下载、克隆音色制作、音频对比、词典构建、示例 EPUB 生成 |
+| `scripts/`、`src/scripts/` | 克隆音色制作、音频对比、词典构建、示例 EPUB 生成 |
 | `artifacts/`、`验证截图/` | 本地验证产物（APK / logcat / 截图），`artifacts/` 被 gitignore |
 
 ## 项目约定

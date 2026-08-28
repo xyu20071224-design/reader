@@ -679,3 +679,14 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 验证：`testDebugUnitTest` 全绿（400）。新增测试：润色 prompt 配对/风格注入、重翻 prompt 与自检（空回复/丢锚点/术语被译掉/长度比）、精译两遍流程与检查点 mode、style.json 往返、重翻端到端（替换后查询返回新译文+新词级对齐、自检失败档案不动）、pairIndex 全局下标正确性。
 - **提交混杂记录**：`1e7239c` 因并行会话的 `git rm`（Azure/火山 TTS 删除）已在暂存区而被一并带入——该提交 = 本特性 + 对方 TTS 引擎移除的删除半场；推送前全量测试在此状态通过。并行 TTS 重构的其余文件仍在工作区由对方会话收尾。
 - 待真机：精译模式小样本、重翻（无反馈/带反馈/失败保旧）、风格说明主观效果；装前 aapt 验包名。
+
+## 2026-08-29 TTS 引擎收敛：移除 Piper/sherpa、Azure、火山（JVM 验证完毕，真机待验）
+
+- 结论：`TtsEngineMode` 由 6 值收敛为 3 值（SYSTEM / OPENAI_COMPAT / MIMO），离线优先与多角色能力不受影响（系统 TTS 兜底、自建/MiMo 走同一 `CloudTtsSynthesizer` 多角色管线）。
+- 删除：Piper 系 6 文件 + sherpa-onnx 1.13.5 依赖 + `assets/sherpa/` 内置模型（374 个文件）+ `scripts/download_tts_models.ps1`；Azure 3 文件 + `CloudVoiceStore`（Azure 专属缓存）；火山 1 文件；对应 5 个 JVM 测试 + 1 个仪器测试。
+- 共享面清理：工厂/试听/多角色门控/音色库摘除三分支；听书设置面板删两处 UI 区块与火山预设；`CloudTtsSettings` 摘除 region/apiKey/volc*/piper*/multilingual 字段与持久化键；strings 双语各删 48 键（531 对齐）。
+- 兼容性：prefs 残留的 PIPER/AZURE/VOLC 模式值经 `runCatching { valueOf }.getOrDefault(SYSTEM)` 自动回落系统 TTS，不会崩；`cloud_tts_voices`/`piper_voice_store` 等旧数据残留无害。
+- 保留决策：`VoiceNaming` 的火山/Azure 命名先验（`zh_female_*`、`zh-CN-XxxNeural`）是通用 id 形状解析器，自建服务端音色仍可能命中，故保留。
+- 验证方式：并行会话（AI 整本翻译第二期）同时占用工作区且其半成品一度编译不过，故采用 `git worktree` 隔离验证——把本次改动打成 patch 应用到 HEAD 干净副本跑 `testDebugUnitTest`，两次均全绿（Piper 移除后 43b5c2c、Azure/火山移除后 e67afe4）。
+- **提交混杂说明**：引擎实现文件与 strings 键删除因并行会话先 `git commit` 而被带入 `1e7239c`（对方已在 3d1d67d 记录）；`43b5c2c` 为 Piper 全量，`e67afe4` 为 Azure/火山剩余引用清理。
+- 待真机：系统 / 自建 / MiMo 三引擎各过一遍播放、语速、多角色、试听；确认包体缩减（预期 -100MB 级，native .so + 模型）。
