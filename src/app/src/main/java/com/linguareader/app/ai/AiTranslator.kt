@@ -15,6 +15,16 @@ interface AiChatClient {
 }
 
 /**
+ * AI 整本书翻译的批量出网出口。与 [AiChatClient] 分开定义，因为整本翻译
+ * 每批的输出量级远大于语境请求：需要更长的读超时与显式 max_tokens，
+ * 且单测需要能注入假客户端（[DeepSeekTranslator] 是具体类，不好继承）。
+ */
+interface AiTranslationChatClient {
+    /** One long-form JSON-mode chat round trip for a translation batch. */
+    suspend fun translateSegments(system: String, user: String): JSONObject
+}
+
+/**
  * Abstraction over context-aware translation backends.
  *
  * Implementations:

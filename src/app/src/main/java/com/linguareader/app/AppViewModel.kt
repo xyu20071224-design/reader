@@ -10,6 +10,7 @@ import com.linguareader.app.ai.AiLookupRequest
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.AiSettingsStore
+import com.linguareader.app.ai.AiTranslationRepository
 import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.ai.BookGlossaryRepository
 import com.linguareader.app.ai.BookContextProfile
@@ -40,6 +41,8 @@ import com.linguareader.app.data.WordLookup
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -47,6 +50,24 @@ sealed interface LaunchPromptUi {
     data class GreetingPrompt(val greeting: Greeting) : LaunchPromptUi
     data class UpdatePrompt(val note: UpdateNote) : LaunchPromptUi
 }
+
+/** 一本书的 AI 整本翻译进度（批次百分比；aligning = 翻译完成正在对齐）。 */
+data class AiTranslationProgress(
+    val percent: Int,
+    val aligning: Boolean = false,
+    /** 术语表/规模估算准备中（确认框弹出前）。 */
+    val preparing: Boolean = false
+)
+
+/**
+ * AI 生成译本的确认框数据：术语表已备齐、规模已估算，等用户确认才开翻。
+ */
+data class AiTranslationPrepare(
+    val book: Book,
+    val chapters: Int,
+    val batches: Int,
+    val glossaryTerms: Int
+)
 
 data class AppUiState(
     val books: List<Book> = emptyList(),
@@ -67,7 +88,11 @@ data class AppUiState(
     val aiSettings: AiSettings = AiSettings(),
     val aiStatuses: Map<String, AiBookStatus> = emptyMap(),
     /** 正在对齐中文译本的书 id（对齐是数十秒级操作，界面据此显示进度并防重复触发）。 */
-    val attachingTranslation: Set<String> = emptySet()
+    val attachingTranslation: Set<String> = emptySet(),
+    /** AI 整本翻译进行中的书 → 进度（含准备中），界面据此显示进度/取消并防重复触发。 */
+    val aiTranslationProgress: Map<String, AiTranslationProgress> = emptyMap(),
+    /** 非空时显示「AI 生成译本」确认框（术语已备齐、规模已估算）。 */
+    val aiTranslationPrepare: AiTranslationPrepare? = null
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -83,11 +108,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val aiRepository = BookContextRepository(application, aiSettingsStore)
     private val glossaryRepository = BookGlossaryRepository(application)
     private val translationRepository = TranslationMemoryRepository(application)
+    /** AI 整本翻译（生成译本对照）。 */
+    private val aiTranslationRepository =
+        AiTranslationRepository(application, aiSettingsStore, glossaryRepository)
     /** Multi-voice M2: per-chapter speaker tag cache (invalidated with the profile). */
     private val speakerTagRepository =
         SpeakerTagRepository(application, aiSettingsStore, glossaryRepository)
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
+    /** AI 整本翻译的在跑任务，按书 id 取消用。 */
+    private val aiTranslationJobs = mutableMapOf<String, Job>()
 
     init {
         val storedName = reviewPrefs.getString(ReviewMode.PREFERENCE_KEY, null)
@@ -219,6 +249,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             speakerTagRepository.delete(book.id)
             // 译本与对齐档案跟着英文书一起删。
             translationRepository.remove(book)
+            // AI 整本翻译的检查点（含在途任务）也随书清理。
+            aiTranslationJobs.remove(book.id)?.cancel()
+            aiTranslationRepository.delete(book.id)
             // Cloud TTS chapter audio cache is per book; remove it with the book.
             File(getApplication<Application>().filesDir, "tts_cache/${book.id}")
                 .deleteRecursively()
@@ -446,6 +479,125 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             refresh()
         }
+    }
+
+    // --- AI 生成译本对照 -------------------------------------------------------
+
+    /**
+     * 「AI 生成译本」第一步：备齐术语表（缺失时先生成语境档案并导入）、估算
+     * 规模，然后停在确认框等用户点头。全程除语境档案生成本身外不出网。
+     */
+    fun prepareAiTranslation(book: Book) {
+        if (book.hasTranslation || book.id in mutableState.value.aiTranslationProgress) return
+        val settings = mutableState.value.aiSettings
+        if (!settings.powerEnabled || !settings.remoteReady) {
+            mutableState.value = mutableState.value.copy(
+                notice = string(R.string.notice_translation_ai_need_key)
+            )
+            return
+        }
+        viewModelScope.launch {
+            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, preparing = true))
+            runCatching {
+                var glossary = glossaryRepository.load(book.id)
+                if (glossary.entries.isEmpty()) {
+                    // 术语先行：整本翻译的译法一致性靠它；档案缺失或降级时这里
+                    // 会触发一次远程生成（generate 自带降级，失败返回 local）。
+                    val profile = aiRepository.generate(book)
+                    runCatching { glossaryRepository.importFromProfile(book.id, profile) }
+                    glossary = glossaryRepository.load(book.id)
+                }
+                val estimate = aiTranslationRepository.estimate(book)
+                AiTranslationPrepare(book, estimate.chapters, estimate.batches, glossary.entries.count { it.enabled })
+            }.onSuccess { prepare ->
+                mutableState.value = mutableState.value.copy(
+                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id,
+                    aiTranslationPrepare = prepare
+                )
+            }.onFailure {
+                mutableState.value = mutableState.value.copy(
+                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id,
+                    notice = string(
+                        R.string.notice_translation_ai_failed,
+                        it.message ?: string(R.string.message_ai_context_failed)
+                    ),
+                    noticeTone = StatusTone.DANGER
+                )
+            }
+        }
+    }
+
+    fun dismissAiTranslationPrepare() {
+        if (mutableState.value.aiTranslationPrepare != null) {
+            mutableState.value = mutableState.value.copy(aiTranslationPrepare = null)
+        }
+    }
+
+    /** 确认框点「开始生成」：逐章逐批翻译（检查点续跑）→ 对齐 → 落盘。 */
+    fun startAiTranslation(book: Book) {
+        dismissAiTranslationPrepare()
+        if (book.id in mutableState.value.aiTranslationProgress) return
+        val settings = mutableState.value.aiSettings
+        if (!settings.powerEnabled || !settings.remoteReady) {
+            mutableState.value = mutableState.value.copy(
+                notice = string(R.string.notice_translation_ai_need_key)
+            )
+            return
+        }
+        aiTranslationJobs[book.id] = viewModelScope.launch {
+            val startedAt = System.currentTimeMillis()
+            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0))
+            mutableState.value = mutableState.value.copy(
+                notice = string(R.string.notice_translation_ai_started, book.title)
+            )
+            try {
+                val translationBook = aiTranslationRepository.translateBook(book) { percent ->
+                    setAiTranslationProgress(book.id, AiTranslationProgress(percent = percent))
+                }
+                setAiTranslationProgress(book.id, AiTranslationProgress(percent = 100, aligning = true))
+                val result = translationRepository.attachGenerated(book, translationBook)
+                library.saveTranslation(
+                    book,
+                    result.translationBook.id,
+                    result.translationBook.title,
+                    result.memory.alignedAt
+                )
+                val seconds = ((System.currentTimeMillis() - startedAt) / 1000).toInt()
+                mutableState.value = mutableState.value.copy(
+                    notice = string(R.string.notice_translation_ready, result.memory.pairs.size, seconds),
+                    noticeTone = StatusTone.SUCCESS
+                )
+                refresh()
+            } catch (cancelled: CancellationException) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(R.string.notice_translation_ai_cancelled)
+                )
+            } catch (failed: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(
+                        R.string.notice_translation_ai_failed,
+                        failed.message ?: string(R.string.message_ai_context_failed)
+                    ),
+                    noticeTone = StatusTone.DANGER
+                )
+            } finally {
+                aiTranslationJobs.remove(book.id)
+                mutableState.value = mutableState.value.copy(
+                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
+                )
+            }
+        }
+    }
+
+    /** 取消在跑的整本翻译；已完成批次的检查点保留，下次直接续跑。 */
+    fun cancelAiTranslation(book: Book) {
+        aiTranslationJobs.remove(book.id)?.cancel()
+    }
+
+    private fun setAiTranslationProgress(bookId: String, progress: AiTranslationProgress) {
+        mutableState.value = mutableState.value.copy(
+            aiTranslationProgress = mutableState.value.aiTranslationProgress + (bookId to progress)
+        )
     }
 
     /** 点词时查译本对照；未配译本或档案损坏时返回 null，界面不显示该区块。 */

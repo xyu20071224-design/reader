@@ -38,13 +38,27 @@ class TranslationMemoryRepository(private val application: Application) {
     suspend fun attach(book: Book, uri: Uri): AttachTranslationResult = withContext(Dispatchers.IO) {
         translationsDir.mkdirs()
         val translationBook = BookImporter(application, translationsDir).import(uri)
+        finishAttach(book, translationBook)
+    }
+
+    /**
+     * 接入一份已经写好章节文件的中文译本（AI 生成路径）：译文目录由
+     * [com.linguareader.app.ai.AiTranslationRepository] 落在 `files/translations/`
+     * 下，这里跳过 [BookImporter] 直接对齐落盘，其余契约与 [attach] 完全一致。
+     */
+    suspend fun attachGenerated(book: Book, translationBook: Book): AttachTranslationResult =
+        withContext(Dispatchers.IO) {
+            finishAttach(book, translationBook)
+        }
+
+    private suspend fun finishAttach(book: Book, translationBook: Book): AttachTranslationResult {
         val memory = buildMemory(book, translationBook)
         save(memory)
         cacheLock.withLock {
             cachedBookId = memory.sourceBookId
             cachedIndex = TranslationMemoryIndex(memory)
         }
-        AttachTranslationResult(translationBook = translationBook, memory = memory)
+        return AttachTranslationResult(translationBook = translationBook, memory = memory)
     }
 
     suspend fun lookup(

@@ -91,6 +91,14 @@ private val IMPORT_MIME_TYPES = arrayOf(
     "application/pdf"
 )
 
+/** 「加译本 → 导入译本文件」的可选文件类型（中文译本）。 */
+private val TRANSLATION_MIME_TYPES = arrayOf(
+    "application/epub+zip",
+    "application/zip",
+    "application/octet-stream",
+    "text/plain"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BookshelfScreen(
@@ -100,6 +108,10 @@ internal fun BookshelfScreen(
     onDelete: (Book) -> Unit,
     onAttachTranslation: (Book, android.net.Uri) -> Unit,
     onDetachTranslation: (Book) -> Unit,
+    onPrepareAiTranslation: (Book) -> Unit,
+    onStartAiTranslation: (Book) -> Unit,
+    onCancelAiTranslation: (Book) -> Unit,
+    onDismissAiTranslationPrepare: () -> Unit,
     onAiSettingsChange: (AiSettings) -> Unit,
     onLoadGlossary: suspend (String) -> BookGlossary,
     onAddGlossary: suspend (String, String, String) -> BookGlossary,
@@ -121,6 +133,8 @@ internal fun BookshelfScreen(
     // 「加译本」用独立的文件选择器：回调里要知道是给哪本英文书配的译本。
     var pendingTranslationBook by remember { mutableStateOf<Book?>(null) }
     var detachTranslationCandidate by remember { mutableStateOf<Book?>(null) }
+    // 「加译本」点击后先弹来源选择（导入文件 / AI 生成），再走各自分支。
+    var translationChoiceCandidate by remember { mutableStateOf<Book?>(null) }
     val translationLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             val target = pendingTranslationBook
@@ -235,21 +249,15 @@ internal fun BookshelfScreen(
                             aiEnabled = state.aiSettings.enabled,
                             aiStatus = state.aiStatuses[book.id],
                             attachingTranslation = book.id in state.attachingTranslation,
+                            aiTranslationProgress = state.aiTranslationProgress[book.id],
                             onOpen = { onOpen(book) },
                             onGlossary = { glossaryBook = book },
                             onTranslation = {
-                                if (book.hasTranslation) {
-                                    detachTranslationCandidate = book
-                                } else {
-                                    pendingTranslationBook = book
-                                    translationLauncher.launch(
-                                        arrayOf(
-                                            "application/epub+zip",
-                                            "application/zip",
-                                            "application/octet-stream",
-                                            "text/plain"
-                                        )
-                                    )
+                                when {
+                                    // 生成中：按钮变「取消生成」。
+                                    book.id in state.aiTranslationProgress -> onCancelAiTranslation(book)
+                                    book.hasTranslation -> detachTranslationCandidate = book
+                                    else -> translationChoiceCandidate = book
                                 }
                             },
                             onLongPressDelete = { deleteCandidate = book },
@@ -323,6 +331,59 @@ internal fun BookshelfScreen(
             },
             title = { Text(stringResource(R.string.shelf_translation_remove_title, book.title)) },
             text = { Text(stringResource(R.string.shelf_translation_remove_body)) },
+            containerColor = CardSurface,
+            shape = CardShape
+        )
+    }
+
+    translationChoiceCandidate?.let { book ->
+        AlertDialog(
+            onDismissRequest = { translationChoiceCandidate = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    translationChoiceCandidate = null
+                    pendingTranslationBook = book
+                    translationLauncher.launch(TRANSLATION_MIME_TYPES)
+                }) { Text(stringResource(R.string.shelf_translation_choice_import)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    translationChoiceCandidate = null
+                    onPrepareAiTranslation(book)
+                }) { Text(stringResource(R.string.shelf_translation_choice_ai)) }
+            },
+            title = { Text(stringResource(R.string.shelf_translation_choice_title)) },
+            text = { Text(stringResource(R.string.shelf_translation_choice_body)) },
+            containerColor = CardSurface,
+            shape = CardShape
+        )
+    }
+
+    state.aiTranslationPrepare?.let { prepare ->
+        AlertDialog(
+            onDismissRequest = onDismissAiTranslationPrepare,
+            confirmButton = {
+                TextButton(onClick = { onStartAiTranslation(prepare.book) }) {
+                    Text(stringResource(R.string.shelf_translation_ai_start))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissAiTranslationPrepare) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+            title = { Text(stringResource(R.string.shelf_translation_ai_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.shelf_translation_ai_confirm_body,
+                        prepare.book.title,
+                        prepare.chapters,
+                        prepare.batches,
+                        prepare.glossaryTerms
+                    )
+                )
+            },
             containerColor = CardSurface,
             shape = CardShape
         )
@@ -441,6 +502,7 @@ private fun BookCard(
     aiEnabled: Boolean,
     aiStatus: AiBookStatus?,
     attachingTranslation: Boolean,
+    aiTranslationProgress: AiTranslationProgress?,
     onOpen: () -> Unit,
     onGlossary: () -> Unit,
     onManageRoster: () -> Unit,
@@ -546,12 +608,24 @@ private fun BookCard(
                 )
             }
         }
-        if (attachingTranslation || book.hasTranslation) {
+        if (attachingTranslation || book.hasTranslation || aiTranslationProgress != null) {
+            val aiProgress = aiTranslationProgress
             Text(
-                if (attachingTranslation) stringResource(R.string.shelf_translation_aligning)
-                else book.translationTitle.ifBlank { stringResource(R.string.shelf_translation_ready) },
+                when {
+                    attachingTranslation -> stringResource(R.string.shelf_translation_aligning)
+                    aiProgress?.preparing == true ->
+                        stringResource(R.string.shelf_translation_ai_preparing)
+                    aiProgress?.aligning == true ->
+                        stringResource(R.string.shelf_translation_ai_aligning)
+                    aiProgress != null ->
+                        stringResource(R.string.shelf_translation_ai_progress, aiProgress.percent)
+                    else -> book.translationTitle.ifBlank { stringResource(R.string.shelf_translation_ready) }
+                },
                 style = MaterialTheme.typography.bodySmall,
-                color = if (attachingTranslation) InkFaint else Success,
+                color = when {
+                    attachingTranslation || aiProgress != null -> InkFaint
+                    else -> Success
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -610,14 +684,26 @@ private fun BookCard(
                     Icons.Filled.Translate,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp),
-                    tint = if (book.hasTranslation) Success else Accent
+                    tint = when {
+                        aiTranslationProgress != null -> InkFaint
+                        book.hasTranslation -> Success
+                        else -> Accent
+                    }
                 )
                 Spacer(Modifier.width(3.dp))
                 Text(
-                    if (book.hasTranslation) stringResource(R.string.shelf_translation_ready)
-                    else stringResource(R.string.shelf_translation_add),
+                    when {
+                        aiTranslationProgress != null ->
+                            stringResource(R.string.shelf_translation_ai_cancel)
+                        book.hasTranslation -> stringResource(R.string.shelf_translation_ready)
+                        else -> stringResource(R.string.shelf_translation_add)
+                    },
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (book.hasTranslation) Success else Accent
+                    color = when {
+                        aiTranslationProgress != null -> InkFaint
+                        book.hasTranslation -> Success
+                        else -> Accent
+                    }
                 )
             }
         }

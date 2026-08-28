@@ -614,3 +614,13 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 根因：书内 EPUB CSS 的裸 `div` 规则（如 `margin-top: 2em`）泄漏到注入的 `#lr-scroller`/`#lingua-reader-content`/`#lr-spacer` 上。绝对定位 `top` 定位 margin box，多出的 margin 让 scroller 比设置值下移（known-pitfalls #8 实测「每层 +32px」= 2em×16px 的谜底）。TTS overlay 早有同款 reset，三个布局骨架漏了；F-110/F-111 的 overshoot 自校准只补 scroller 自身 margin，补不到 content 的，故顶部空白残留、末行被裁在底栏上沿。
 - 修复：`ReaderScripts.installStyle` 给三骨架加 `margin/padding/border: 0 !important` reset；`#lr-scroller` 的 `padding-left: 28px` 同改 `!important`（`!important` 不看顺序与特异性，否则被 reset 清零 → 正文贴左，中途真机暴露此回归当日修复）。overshoot 自校准保留作保险。
 - 验证：`testDebugUnitTest` 全绿；覆盖安装真机（PKB110 / Android 16）用户确认页顶空白、底栏遮字、左侧边距三项均正常。
+
+## 2026-08-28 AI 整本翻译生成译本对照（第一期，JVM 层验证完毕、真机待验）
+
+- 功能：对没有中文译本的英文书，书架「加译本 → AI 生成译本」用 DeepSeek 逐章整本翻译（术语表注入 + 上一批译文衔接 + 批后自检重试），译文按段落 1:1 写成 XHTML 到 `files/translations/ai-<bookId>/`，复用 `attachGenerated` 对齐落盘；点词对照、词级高亮全部走既有离线管线。
+- 检查点：每批成功即原子写 `files/ai/ai-translations/<bookId>/<chapter>-<batch>.json`（含源文本 SHA-256 指纹），取消/断网/进程被杀只损失当前一批，重进续跑；指纹不符（书变了）自动作废重翻。
+- 质量设施：术语表缺失时先自动生成语境档案并停下让用户审阅；批后自检 = 段数完整 + 数字锚点保留 + 「保留原文」术语存活 + 长度比区间，失败带原因重试一次。
+- HTTP 层：`translateSegments` 显式 `max_tokens=8192`（原请求体未设，长批会被服务端默认值截断）、读超时 300s（原 60s 对分钟级长生成偏紧）。
+- 验证：`testDebugUnitTest` 全绿（395，新增 26：AiBookTranslatorTest 16 + AiTranslationRepositoryTest 7，含检查点续跑/指纹失效/带原因重试/端到端 attachGenerated 对齐命中）；CI push 兜底。
+- 待真机（需真实 Key，见下）：整本翻译进度/取消/续跑、生成后点词命中与词级高亮主观质量、与人工译本对齐质量对比。真机装包按老规矩 `-PverifyBuild` 并存包。
+- 已知边界：进度粒度是批次百分比（章内无细分）；两阶段润色、段级定点重翻、few-shot 风格范例留第二期；错误熔断/速率限制沿用 DeepSeek 既有语义（无新增）。

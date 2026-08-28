@@ -1,0 +1,180 @@
+package com.linguareader.app.ai
+
+import org.json.JSONArray
+import org.json.JSONObject
+import java.security.MessageDigest
+
+/**
+ * 一批待翻译段落：某章内连续的若干个叶级段落（与 [com.linguareader.app.tts.TtsTextExtractor]
+ * 的 blocks 同源）。批次以完整段落为界，绝不切断段落——段落 1:1 映射是译本对照
+ * 对齐质量的根基。
+ */
+data class TranslationBatch(
+    val chapterIndex: Int,
+    val batchIndex: Int,
+    /** 这些译文对应章内 blocks 的下标，按序排列。 */
+    val paragraphIndices: List<Int>,
+    val paragraphs: List<String>
+) {
+    val charCount: Int get() = paragraphs.sumOf { it.length }
+}
+
+/**
+ * AI 整本书翻译的纯逻辑核心：批次分组、prompt 构建（术语注入 + 上文携带）、
+ * 响应解析与批后自检。不依赖 Android，全部可 JVM 单测。
+ *
+ * 质量约定（对应产品定位：给学英文的人做忠实对照，不是出版译本）：
+ * 直译为主、语序贴原文、不合并拆分句子；数字原样保留；术语表词条按用户译法，
+ * 译法为空的词条「保留原文」不译——这同时保证对齐器的拉丁/数字锚点命中。
+ */
+object AiBookTranslator {
+
+    /** 每批源文字符上限。按输出端标定：约 3-4k 汉字译文，稳落在输出 token 上限内。 */
+    const val MAX_CHARS_PER_BATCH = 6_000
+
+    /** 术语表注入 prompt 的条数上限（与语境点词的 take(80) 同量级）。 */
+    private const val MAX_GLOSSARY_LINES = 80
+
+    const val TRANSLATION_SYSTEM_PROMPT =
+        "你是一位专业的英译中译者，正在为一款英语学习阅读器翻译整本英文书，" +
+            "译文将供中文读者与原文逐段对照使用。风格要求：直译为主、忠实原文；" +
+            "语序尽量贴近原文；不要合并或拆分句子；不添加任何解释、注释或译者按语；" +
+            "数字、年份、编号必须原样保留；用户提供的术语表中词条必须按给定译法处理，" +
+            "译法为「保留原文」的词条保持英文不译。" +
+            "输出要求：用户消息里每个段落带编号（如 [0]）。逐段翻译后只输出一个 JSON 对象：" +
+            "{\"segments\":[{\"i\":段落编号,\"t\":\"该段中文译文\"}]}，" +
+            "编号必须与输入一一对应，不得遗漏、不得新增。"
+
+    /**
+     * 把一章的段落按 [maxCharsPerBatch] 贪心分组；单个超长段落独立成批
+     * （不切断段落）。批次覆盖全部段落下标且按序。
+     */
+    fun groupIntoBatches(
+        chapterIndex: Int,
+        paragraphs: List<String>,
+        maxCharsPerBatch: Int = MAX_CHARS_PER_BATCH
+    ): List<TranslationBatch> {
+        val batches = mutableListOf<TranslationBatch>()
+        var indices = mutableListOf<Int>()
+        var chars = 0
+        paragraphs.forEachIndexed { index, paragraph ->
+            if (indices.isNotEmpty() && chars + paragraph.length > maxCharsPerBatch) {
+                batches += TranslationBatch(chapterIndex, batches.size, indices.toList(), indices.map { paragraphs[it] })
+                indices = mutableListOf()
+                chars = 0
+            }
+            indices += index
+            chars += paragraph.length
+        }
+        if (indices.isNotEmpty()) {
+            batches += TranslationBatch(chapterIndex, batches.size, indices.toList(), indices.map { paragraphs[it] })
+        }
+        return batches
+    }
+
+    fun buildUserPrompt(
+        bookTitle: String,
+        chapterTitle: String,
+        glossary: List<GlossaryEntry>,
+        previousTail: String?,
+        batch: TranslationBatch,
+        retryError: String? = null
+    ): String = buildString {
+        appendLine("书名：$bookTitle")
+        appendLine("本章标题：${chapterTitle.ifBlank { "第 ${batch.chapterIndex + 1} 章" }}")
+        val lines = glossaryLines(glossary)
+        if (lines.isNotEmpty()) {
+            appendLine("本书术语表（词条 | 译法 | 说明；译法为「保留原文」的保持英文不译）：")
+            lines.forEach { appendLine(it) }
+            appendLine()
+        }
+        if (!previousTail.isNullOrBlank()) {
+            appendLine("前情提要（上一段已完成的译文，仅供衔接语气与指代，不要翻译或输出它）：")
+            appendLine(previousTail)
+            appendLine()
+        }
+        appendLine("请把下面这些带编号的英文段落逐段翻译成简体中文：")
+        batch.paragraphs.forEachIndexed { position, paragraph ->
+            appendLine("[${batch.paragraphIndices[position]}] $paragraph")
+        }
+        appendLine()
+        if (retryError != null) {
+            appendLine("上一次输出未通过校验（$retryError）。请重新逐段完整翻译，确保每个编号都有对应译文、不合并不拆分段落。")
+            appendLine()
+        }
+        appendLine("只输出 JSON：{\"segments\":[{\"i\":编号,\"t\":\"中文译文\"}]}")
+    }
+
+    /**
+     * 解析并自检一批译文：编号必须完整覆盖批次、译文不得为空白、
+     * 数字锚点与「保留原文」术语必须原样出现。任一不过即抛
+     * [AiRequestException]（消息即失败原因，供带原因重试一次）。
+     */
+    fun extractValidated(
+        json: JSONObject,
+        batch: TranslationBatch,
+        keepOriginalTerms: List<String>
+    ): List<String> {
+        val array = json.optJSONArray("segments")
+            ?: throw AiRequestException("AI 译文缺少 segments 数组")
+        val byIndex = HashMap<Int, String>(array.length())
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val index = item.optInt("i", Int.MIN_VALUE)
+            val text = item.optString("t").trim()
+            if (index == Int.MIN_VALUE) continue
+            byIndex[index] = text
+        }
+        val missing = batch.paragraphIndices.filter { byIndex[it].isNullOrBlank() }
+        if (missing.isNotEmpty()) {
+            // 错误消息会原样进重试 prompt，别用 [N] 方括号格式——那和待翻译
+            // 段落的编号格式撞车，可能把模型（或解析器）带偏。
+            throw AiRequestException(
+                "AI 译文缺少编号 ${missing.joinToString("、")} 的段落（共 ${batch.paragraphIndices.size} 段）"
+            )
+        }
+        val translations = batch.paragraphIndices.map { byIndex.getValue(it) }
+
+        batch.paragraphs.forEachIndexed { position, source ->
+            val translated = translations[position]
+            Regex("\\d+").findAll(source).forEach { match ->
+                if (match.value !in translated) {
+                    throw AiRequestException("AI 译文丢失了数字锚点「${match.value}」")
+                }
+            }
+        }
+        keepOriginalTerms.forEach { term ->
+            val trimmed = term.trim()
+            if (trimmed.length < 2) return@forEach
+            val sourceHit = batch.paragraphs.any { it.contains(trimmed, ignoreCase = true) }
+            if (!sourceHit) return@forEach
+            val translatedHit = batch.paragraphIndices
+                .map { byIndex.getValue(it) }
+                .any { it.contains(trimmed, ignoreCase = true) }
+            if (!translatedHit) {
+                throw AiRequestException("AI 译文未按术语表保留原文「$trimmed」")
+            }
+        }
+        val sourceWords = batch.paragraphs.sumOf { it.split(Regex("\\s+")).count { w -> w.isNotBlank() } }
+        val translatedChars = translations.sumOf { it.length }
+        if (sourceWords > 0 && (translatedChars < sourceWords * 0.2 || translatedChars > sourceWords * 8)) {
+            throw AiRequestException("AI 译文长度异常（原文 $sourceWords 词，译文 $translatedChars 字）")
+        }
+        return translations
+    }
+
+    /** 批次源文本指纹：检查点复用时的有效性校验（书变了旧检查点自动失效）。 */
+    fun sourceHash(paragraphs: List<String>): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        paragraphs.forEach { digest.update(it.toByteArray(Charsets.UTF_8)); digest.update(byteArrayOf(0)) }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun glossaryLines(glossary: List<GlossaryEntry>): List<String> =
+        glossary.asSequence()
+            .filter { it.enabled && it.term.isNotBlank() }
+            .distinctBy { it.term.lowercase() }
+            .take(MAX_GLOSSARY_LINES)
+            .map { "${it.term.trim()} | ${it.translation.ifBlank { "保留原文" }} | ${it.note}" }
+            .toList()
+}

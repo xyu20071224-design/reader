@@ -14,7 +14,7 @@ import java.net.URL
  * are configurable; the default points at https://api.deepseek.com.
  */
 class DeepSeekTranslator(private val settings: AiSettings) :
-    AiTranslator, SentenceTranslator, AiChatClient {
+    AiTranslator, SentenceTranslator, AiChatClient, AiTranslationChatClient {
     override val id = "deepseek"
     override val displayName = "DeepSeek"
     override val offline = false
@@ -95,6 +95,21 @@ class DeepSeekTranslator(private val settings: AiSettings) :
      */
     override suspend fun chatJson(system: String, user: String): JSONObject =
         chat(system = system, user = user, jsonMode = true)
+
+    /**
+     * 整本书翻译的批量出口（[AiTranslationChatClient]）。与语境请求不同，
+     * 每批要原样吐回几千字的译文：输出 token 是真正的瓶颈，所以要显式
+     * max_tokens（不设的话服务端默认值更小，长批会被静默截断），并把
+     * 读超时放宽到 5 分钟（生成 8k token 是分钟级的事）。
+     */
+    override suspend fun translateSegments(system: String, user: String): JSONObject =
+        chat(
+            system = system,
+            user = user,
+            jsonMode = true,
+            readTimeoutMs = 300_000,
+            maxTokens = 8_192
+        )
 
     /**
      * Connectivity probe for the settings screen: sends one tiny chat request
@@ -303,17 +318,21 @@ class DeepSeekTranslator(private val settings: AiSettings) :
     private suspend fun chat(
         system: String,
         user: String,
-        jsonMode: Boolean
+        jsonMode: Boolean,
+        readTimeoutMs: Int = 60_000,
+        maxTokens: Int? = null
     ): JSONObject = withContext(Dispatchers.IO) {
-        val first = runCatching { request(system, user, jsonMode) }
+        val first = runCatching { request(system, user, jsonMode, readTimeoutMs, maxTokens) }
         first.getOrElse { error ->
             if (!jsonMode) throw error
             when {
-                shouldRetryWithoutJsonMode(error) -> request(system, user, jsonMode = false)
+                shouldRetryWithoutJsonMode(error) ->
+                    request(system, user, jsonMode = false, readTimeoutMs, maxTokens)
                 // BUG-013: a parse failure means the model ignored the JSON
                 // constraint — dropping the constraint on retry guarantees
                 // another non-JSON reply. Keep it and ask again.
-                shouldRetryKeepingJsonMode(error) -> request(system, user, jsonMode = true)
+                shouldRetryKeepingJsonMode(error) ->
+                    request(system, user, jsonMode = true, readTimeoutMs, maxTokens)
                 else -> throw error
             }
         }
@@ -322,14 +341,16 @@ class DeepSeekTranslator(private val settings: AiSettings) :
     private fun request(
         system: String,
         user: String,
-        jsonMode: Boolean
+        jsonMode: Boolean,
+        readTimeoutMs: Int = 60_000,
+        maxTokens: Int? = null
     ): JSONObject {
         val url = URL(settings.baseUrl.trimEnd('/') + "/chat/completions")
         val connection = url.openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
             connection.connectTimeout = 20_000
-            connection.readTimeout = 60_000
+            connection.readTimeout = readTimeoutMs
             connection.setRequestProperty("Authorization", "Bearer ${settings.apiKey}")
             connection.setRequestProperty("Content-Type", "application/json")
             connection.doOutput = true
@@ -341,6 +362,9 @@ class DeepSeekTranslator(private val settings: AiSettings) :
                     put(JSONObject().put("role", "system").put("content", system))
                     put(JSONObject().put("role", "user").put("content", user))
                 })
+            if (maxTokens != null) {
+                body.put("max_tokens", maxTokens)
+            }
             if (jsonMode) {
                 body.put("response_format", JSONObject().put("type", "json_object"))
             }
