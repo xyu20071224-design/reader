@@ -1,6 +1,7 @@
 package com.linguareader.app
 
 import android.app.Activity
+import android.content.res.Configuration
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
@@ -37,6 +38,12 @@ class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<AppViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 系统开屏（Android 12+ 默认 splash）永远纸色，见 values/themes.xml；
+        // 开屏结束后的窗口底色在这里按已存阅读主题二选一，让深色阅读主题用户
+        // 不闪白、浅色阅读主题用户在系统深色下不再黑屏。
+        if (chromeIsDark(storedReaderTheme(this), isSystemNightMode())) {
+            setTheme(R.style.Theme_LinguaReader_Dark)
+        }
         super.onCreate(savedInstanceState)
         setContent {
             val context = LocalContext.current
@@ -62,6 +69,10 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun isSystemNightMode(): Boolean =
+        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
 }
 
 /**

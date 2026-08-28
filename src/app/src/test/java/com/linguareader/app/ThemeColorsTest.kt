@@ -14,9 +14,12 @@ class ThemeColorsTest {
     @Test
     fun `chrome follows the reading theme`() {
         assertTrue(chromeIsDark(ReaderTheme.DARK, systemDark = false))
+        assertTrue(chromeIsDark(ReaderTheme.AMOLED, systemDark = false))
         assertFalse(chromeIsDark(ReaderTheme.PAPER, systemDark = true))
         assertFalse(chromeIsDark(ReaderTheme.WHITE, systemDark = true))
         assertFalse(chromeIsDark(ReaderTheme.SEPIA, systemDark = true))
+        assertFalse(chromeIsDark(ReaderTheme.GREEN, systemDark = true))
+        assertFalse(chromeIsDark(ReaderTheme.MORANDI, systemDark = true))
     }
 
     @Test

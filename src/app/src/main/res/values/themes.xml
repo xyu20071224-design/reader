@@ -1,12 +1,30 @@
 <resources>
-    <!-- windowBackground 显式钉在纸色（而非 Material Light 默认纯白）：
+    <!-- 启动窗口底色统一钉在纸色（而非 Material Light 默认纯白）：
          冷启动首帧与 Compose 首帧的 Paper(#F7F3EA) 之间不再有白→米跳变。
-         夜间版本见 values-night/themes.xml（#171717，修深色冷启动闪白）。 -->
+         不再提供 values-night 夜间覆盖——系统开屏（Android 12+ 默认 splash 背景取
+         windowBackground）永远米白，不随系统深色变黑（2026-08-29 决定）。
+         深色阅读主题用户由 MainActivity.onCreate 在 super 之前程序化切到
+         Theme.LinguaReader.Dark，保证开屏结束后的窗口底色与外壳一致、不闪白。 -->
     <style name="Theme.LinguaReader" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">#F7F3EA</item>
+        <!-- Android 12+ 系统开屏背景的显式控制点：实测 PKB110/ColorOS 只认这个
+             属性，不沿用 windowBackground（真机冷启动 splash 仍是黑的）。
+             API 31 以下该属性被忽略，放 values/ 无需 v31 限定符。 -->
+        <item name="android:windowSplashScreenBackground">#F7F3EA</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:navigationBarColor">#F7F3EA</item>
         <item name="android:statusBarColor">#F7F3EA</item>
+    </style>
+
+    <!-- 深色变体：仅在 MainActivity 里按已存阅读主题程序化选用（进首帧前的窗口底色），
+         不参与 Manifest 默认主题，也不由 values-night 资源限定符触发。 -->
+    <style name="Theme.LinguaReader.Dark" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#171717</item>
+        <item name="android:windowSplashScreenBackground">#171717</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#171717</item>
+        <item name="android:statusBarColor">#171717</item>
     </style>
 </resources>

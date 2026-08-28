@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
@@ -40,6 +41,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -61,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -148,13 +151,22 @@ internal fun BookshelfScreen(
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
     var rosterBook by remember { mutableStateOf<Book?>(null) }
 
-    Scaffold(
-        containerColor = Paper,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold)
+    // 书架外观：本地加载/保存（照听书设置弹层的先例，不走 AppViewModel），
+    // 状态在这里持有，背景与弹层共用。
+    val context = LocalContext.current
+    var shelfAppearance by remember { mutableStateOf(ShelfAppearance.load(context)) }
+    var showAppearanceSheet by rememberSaveable { mutableStateOf(false) }
+
+    Box(Modifier.fillMaxSize()) {
+        if (shelfAppearance.isCustomized) {
+            ShelfBackgroundLayer(shelfAppearance)
+        }
+        Scaffold(
+            containerColor = if (shelfAppearance.isCustomized) Color.Transparent else Paper,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        // 只显示书/词计数，不放应用名：顶栏动作多，放名字会把「语境阅读」挤成两行。
                         Text(
                             if (showVocabulary) {
                                 pluralStringResource(
@@ -169,118 +181,140 @@ internal fun BookshelfScreen(
                                     state.books.size
                                 )
                             },
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.titleMedium,
                             color = InkSoft
                         )
-                    }
-                },
-                actions = {
-                    TextButton(onClick = { showVocabulary = !showVocabulary }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.MenuBook,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = if (showVocabulary) Accent else InkSoft
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            if (showVocabulary) {
-                                stringResource(R.string.shelf_tab_shelf)
-                            } else {
-                                stringResource(R.string.shelf_tab_words, state.savedWords.size)
-                            }
-                        )
-                    }
-                    if (!showVocabulary) {
-                        TextButton(onClick = { showAiDrawer = true }) {
+                    },
+                    actions = {
+                        IconButton(onClick = { showAppearanceSheet = true }) {
                             Icon(
-                                Icons.Default.Settings,
+                                Icons.Default.Palette,
+                                contentDescription = stringResource(R.string.shelf_appearance_title),
+                                modifier = Modifier.size(20.dp),
+                                tint = if (shelfAppearance.isCustomized) Accent else InkSoft
+                            )
+                        }
+                        TextButton(onClick = { showVocabulary = !showVocabulary }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.MenuBook,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
-                                tint = if (state.aiSettings.enabled) Accent else InkSoft
+                                tint = if (showVocabulary) Accent else InkSoft
                             )
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.shelf_ai_center))
-                        }
-                        Button(
-                            onClick = { launcher.launch(IMPORT_MIME_TYPES) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Accent,
-                                contentColor = OnAccent
-                            ),
-                            shape = PillShape
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.shelf_import))
-                        }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Paper)
-            )
-        }
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            if (showVocabulary) {
-                VocabularyScreen(
-                    words = state.savedWords,
-                    reviewPreset = state.reviewPreset,
-                    customReview = state.customReview,
-                    reminders = state.reminders,
-                    onReviewModeChange = onReviewModeChange,
-                    onCustomReviewChange = onCustomReviewChange,
-                    onRemindersChange = onRemindersChange,
-                    onRemove = onRemoveWord,
-                    onReview = onReviewWord,
-                    onExport = onExportVocabulary,
-                    onSpeak = onSpeak
-                )
-            } else if (state.books.isEmpty() && !state.loading) {
-                EmptyBookshelf(onImport = { launcher.launch(IMPORT_MIME_TYPES) })
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(148.dp),
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    items(state.books, key = { it.id }) { book ->
-                        BookCard(
-                            book = book,
-                            aiEnabled = state.aiSettings.enabled,
-                            aiStatus = state.aiStatuses[book.id],
-                            attachingTranslation = book.id in state.attachingTranslation,
-                            aiTranslationProgress = state.aiTranslationProgress[book.id],
-                            onOpen = { onOpen(book) },
-                            onGlossary = { glossaryBook = book },
-                            onTranslation = {
-                                when {
-                                    // 生成中：按钮变「取消生成」。
-                                    book.id in state.aiTranslationProgress -> onCancelAiTranslation(book)
-                                    book.hasTranslation -> detachTranslationCandidate = book
-                                    else -> translationChoiceCandidate = book
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                if (showVocabulary) {
+                                    stringResource(R.string.shelf_tab_shelf)
+                                } else {
+                                    stringResource(R.string.shelf_tab_words, state.savedWords.size)
                                 }
-                            },
-                            onLongPressDelete = { deleteCandidate = book },
-                            onManageRoster = { rosterBook = book }
-                        )
+                            )
+                        }
+                        if (!showVocabulary) {
+                            TextButton(onClick = { showAiDrawer = true }) {
+                                Icon(
+                                    Icons.Default.Settings,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (state.aiSettings.enabled) Accent else InkSoft
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.shelf_ai_center))
+                            }
+                            Button(
+                                onClick = { launcher.launch(IMPORT_MIME_TYPES) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Accent,
+                                    contentColor = OnAccent
+                                ),
+                                shape = PillShape
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(stringResource(R.string.shelf_import))
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = if (shelfAppearance.isCustomized) Color.Transparent else Paper
+                    )
+                )
+            }
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                if (showVocabulary) {
+                    VocabularyScreen(
+                        words = state.savedWords,
+                        reviewPreset = state.reviewPreset,
+                        customReview = state.customReview,
+                        reminders = state.reminders,
+                        onReviewModeChange = onReviewModeChange,
+                        onCustomReviewChange = onCustomReviewChange,
+                        onRemindersChange = onRemindersChange,
+                        onRemove = onRemoveWord,
+                        onReview = onReviewWord,
+                        onExport = onExportVocabulary,
+                        onSpeak = onSpeak
+                    )
+                } else if (state.books.isEmpty() && !state.loading) {
+                    EmptyBookshelf(onImport = { launcher.launch(IMPORT_MIME_TYPES) })
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(148.dp),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                    ) {
+                        items(state.books, key = { it.id }) { book ->
+                            BookCard(
+                                book = book,
+                                aiEnabled = state.aiSettings.enabled,
+                                aiStatus = state.aiStatuses[book.id],
+                                attachingTranslation = book.id in state.attachingTranslation,
+                                aiTranslationProgress = state.aiTranslationProgress[book.id],
+                                containerAlpha = if (shelfAppearance.isCustomized) 0.9f else 1f,
+                                onOpen = { onOpen(book) },
+                                onGlossary = { glossaryBook = book },
+                                onTranslation = {
+                                    when {
+                                        // 生成中：按钮变「取消生成」。
+                                        book.id in state.aiTranslationProgress -> onCancelAiTranslation(book)
+                                        book.hasTranslation -> detachTranslationCandidate = book
+                                        else -> translationChoiceCandidate = book
+                                    }
+                                },
+                                onLongPressDelete = { deleteCandidate = book },
+                                onManageRoster = { rosterBook = book }
+                            )
+                        }
                     }
                 }
-            }
-            if (state.loading) {
-                Box(
-                    Modifier.fillMaxSize().background(Paper.copy(alpha = .72f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = Accent)
-                        Spacer(Modifier.height(12.dp))
-                        Text(stringResource(R.string.shelf_loading), color = InkSoft)
+                if (state.loading) {
+                    Box(
+                        Modifier.fillMaxSize().background(Paper.copy(alpha = .72f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Accent)
+                            Spacer(Modifier.height(12.dp))
+                            Text(stringResource(R.string.shelf_loading), color = InkSoft)
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showAppearanceSheet) {
+        ShelfAppearanceSheet(
+            appearance = shelfAppearance,
+            onAppearanceChange = { next ->
+                shelfAppearance = next
+                ShelfAppearance.save(context, next)
+            },
+            onDismiss = { showAppearanceSheet = false }
+        )
     }
 
     state.message?.let {
@@ -473,6 +507,45 @@ internal fun BookshelfScreen(
 }
 
 /**
+ * 书架自定义背景层：自定义图片（Crop 铺满）优先，否则用预设渐变；
+ * 最上面统一盖一层当前调色板纸色蒙版（浓度可在弹层调），保证顶栏与文字可读。
+ */
+@Composable
+private fun ShelfBackgroundLayer(appearance: ShelfAppearance) {
+    val scrim = Paper.copy(alpha = appearance.dimOpacity)
+    Box(Modifier.fillMaxSize()) {
+        val context = LocalContext.current
+        val imageFile = appearance.imageFile
+            ?.let { ShelfBackgroundStore.backgroundFile(context, it) }
+            ?.takeIf { it.isFile }
+        if (imageFile != null) {
+            val bitmap by produceState<android.graphics.Bitmap?>(null, imageFile.lastModified()) {
+                value = withContext(Dispatchers.IO) {
+                    runCatching { decodeSampledCover(imageFile, 1080) }.getOrNull()
+                }
+            }
+            bitmap?.let {
+                Image(
+                    bitmap = it.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+        } else {
+            appearance.preset?.let { preset ->
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(listOf(Color(preset.topColor), Color(preset.bottomColor)))
+                    )
+                )
+            }
+        }
+        Box(Modifier.fillMaxSize().background(scrim))
+    }
+}
+
+/**
  * 该书的多角色/角色管理（方向 A）：从书卡片「角色」入口打开，复用 [MultiVoiceSection]，
  * 让角色管理入口更浅。设置独立加载与保存（不与听书设置弹层抢占状态）。
  */
@@ -553,6 +626,7 @@ private fun BookCard(
     aiStatus: AiBookStatus?,
     attachingTranslation: Boolean,
     aiTranslationProgress: AiTranslationProgress?,
+    containerAlpha: Float = 1f,
     onOpen: () -> Unit,
     onGlossary: () -> Unit,
     onManageRoster: () -> Unit,
@@ -564,7 +638,10 @@ private fun BookCard(
             Card(
                 modifier = Modifier.fillMaxWidth().height(205.dp),
                 shape = CardShape,
-                colors = CardDefaults.cardColors(containerColor = BookCoverFallback),
+                // 自定义背景时书卡略透，与背景融合；有封面的书本来就完全被图盖住。
+                colors = CardDefaults.cardColors(
+                    containerColor = BookCoverFallback.copy(alpha = containerAlpha)
+                ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 val coverFile = book.coverRelativePath?.let { File(book.extractedDir, it) }
