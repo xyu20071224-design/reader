@@ -671,3 +671,11 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 根因：三个 `FilterChip` 放在普通 `Row` 里——前两颗（OpenAI 兼容 + Anthropic（Claude））占满对话框宽度后，第三颗被挤进 ~12dp 剩余宽度、标签纵向堆叠撑出隐形高块（uiautomator 树里 Gemini 完全缺席佐证）。
 - 修复：chips 容器换 `FlowRow`（水平 6dp/垂直 4dp spacedBy），放不下的 chip 整颗换行；去掉逐 chip 的 end padding。
 - 验证：真机（PKB110）uiautomator 边界数据 + 截图确认三 chip 两行排布、模型字段紧随其后、卡片一屏放下；`testDebugUnitTest` 全绿、`assembleDebug`/覆盖安装通过。
+
+## 2026-08-29 AI 整本翻译第二期（精译/句级重翻/风格说明）JVM 验证完毕，真机待验
+
+- 功能：①「精译」模式（每批初翻→对照原文修订一遍，耗时费用×2，确认框选择并记住上次，检查点带 mode 字段）；②句级定点重翻（查词面板「重译此句」→反馈可留空→单请求替换档案该句对 zs + 原子写 + 索引整体重建；仅句级命中开放，进行态保留旧译文，失败不动档案）；③风格说明（确认框可选文本，书级 style.json，随初翻/精修/重翻 prompt 注入）。
+- 实现：`TranslationLookupResult` 新增 `pairIndex`/`englishParagraph`（重翻定位与上下文）；`Index.build()` 改 `withIndex()` 分组；替换用 `copy(zhSentence=…)`，共享段落 String 契约与 v2 格式不变。
+- 验证：`testDebugUnitTest` 全绿（400）。新增测试：润色 prompt 配对/风格注入、重翻 prompt 与自检（空回复/丢锚点/术语被译掉/长度比）、精译两遍流程与检查点 mode、style.json 往返、重翻端到端（替换后查询返回新译文+新词级对齐、自检失败档案不动）、pairIndex 全局下标正确性。
+- **提交混杂记录**：`1e7239c` 因并行会话的 `git rm`（Azure/火山 TTS 删除）已在暂存区而被一并带入——该提交 = 本特性 + 对方 TTS 引擎移除的删除半场；推送前全量测试在此状态通过。并行 TTS 重构的其余文件仍在工作区由对方会话收尾。
+- 待真机：精译模式小样本、重翻（无反馈/带反馈/失败保旧）、风格说明主观效果；装前 aapt 验包名。
