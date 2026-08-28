@@ -624,3 +624,20 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 验证：`testDebugUnitTest` 全绿（395，新增 26：AiBookTranslatorTest 16 + AiTranslationRepositoryTest 7，含检查点续跑/指纹失效/带原因重试/端到端 attachGenerated 对齐命中）；CI push 兜底。
 - 待真机（需真实 Key，见下）：整本翻译进度/取消/续跑、生成后点词命中与词级高亮主观质量、与人工译本对齐质量对比。真机装包按老规矩 `-PverifyBuild` 并存包。
 - 已知边界：进度粒度是批次百分比（章内无细分）；两阶段润色、段级定点重翻、few-shot 风格范例留第二期；错误熔断/速率限制沿用 DeepSeek 既有语义（无新增）。
+
+## 2026-08-28 「获取可用模型」探测端点模型列表（复刻 dsh，JVM 层验证完毕、真机待验）
+
+- 功能：AI 中心 → 翻译设置 DeepSeek 区块模型字段下新增「获取可用模型」——复刻 DeepSeek Harness（`C:\work\deepseek-harness`，`packages/llm/llm-pi-ai/src/discovery.ts` + Models 设置页）的同名能力：用表单**当前草稿**（未保存的接口地址 + 未存储的 Key）`GET {baseUrl}/models` 探测 OpenAI 兼容端点，弹可搜索选择器点选填入模型字段；只填字段不自动保存，保存仍走原按钮。
+- 实现：新增 `ai/ModelDiscovery.kt`——`listingUrl` 去尾斜杠按前缀拼 `/models`（网关路径前缀不丢段）；Key 允许为空（匿名探测 Ollama/LM Studio 类本地网关），非 ASCII/含换行的 Key 本地预检拦下（防 HttpURLConnection 抛看不出原因的 IOException）；响应按实际字节 4MB 有界读取；401/403 报错附「请检查 API Key」；解析按 dsh 宽容规则（`data` 数组缺失报「手动填写」提示、无 id 行跳过、`display_name`/`context_length`/`max_tokens` 别名逐候选取值、容量只收正整数、id 去重保首）。UI 复用「测试连接」的行内瞬态模式与 `VoicePickerDialog` 结构（搜索 + 限高 360dp LazyColumn + 点行即选高亮）。
+- 文案：zh + en 两册同步新增 9 个 key（`aidrawer_fetch_models_*` × 6 / `aidrawer_model_picker_*` × 3）。
+- 验证：`testDebugUnitTest` 全绿（403，新增 8：`ModelDiscoveryTest`——正常解析/别名字段/坏行跳过/非法容量/data 缺失报错/重复 id/URL 拼接/Key 校验三分支）；`assembleDebug` 通过；CI push 兜底。
+- 待真机（或模拟器）：对话框长列表滚动与搜索、点选回填、空 Key 探测本地网关、错误路径（坏地址/坏 Key）行内提示。真实联网探测仅由用户点按钮触发，且复用既有 AI 出网边界（`enabled` + Key，本地网关匿名探测是 dsh 同款设计）。
+
+## 2026-08-29 AI 整本翻译真机验收（PKB110 / Android 16，用户操作通过）
+
+- 环境：`-PverifyBuild` 并存包 `com.linguareader.app.verify`（1.4.0-verify），测试书为 3 章英文样本（`artifacts/ai-translation-sample.txt`，含专名 Tom/London 与数字锚点 1926/7/12 等）。
+- 链路：用户真机完整走通「导入 TXT → AI 中心配 Key → 加译本 → AI 生成译本 → 开始生成」，全程无障碍；**用户确认验收通过**。
+- 设备侧产物核实（`run-as` 检查）：`files/translations/ai-<bookId>/` 生成、`files/translation-memory/<bookId>.json` 落盘、逐批检查点 `files/ai/ai-translations/<bookId>/{0,1,2}-0.json` 与章结构一一对应。
+- 对齐质量：档案 35 个句对 **100% 句级命中**（0 段落兜底）；样例「Tom Parker stepped off the train at London Station in 1926.」→「汤姆·帕克于1926年在伦敦车站下了火车。」——数字锚点保留、专名译名一致。档案副本存 `artifacts/ai-translation-memory-device.json`。
+- 截图：`验证截图/AI生成译本-验收-阅读页.png`。
+- 本日安装过程踩坑记录：① `-PverifyBuild` 构建产物曾被**并行会话的普通 `assembleDebug` 覆盖同一输出文件**（app-debug.apk 装成主包），构建后必须 `aapt dump badging` 验包名再装；② ColorOS 对 adb 重装静默拦截（报 Success 但包未安装），需开发者选项开启「USB 安装」类放行；③ `pm clear` 对应用目录报 SecurityException（ColorOS），重置 verify 包用卸载重装。
