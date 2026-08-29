@@ -145,6 +145,11 @@ private fun LinguaReaderApp(
                 onReviewWord = viewModel::reviewWord,
                 onExportVocabulary = viewModel::exportVocabulary,
                 onSpeak = speak,
+                update = state.update,
+                onCheckForUpdate = { viewModel.checkForUpdate(silent = false) },
+                onAutoCheckChange = viewModel::setAutoCheck,
+                onDownloadUpdate = viewModel::downloadUpdate,
+                onCancelUpdateDownload = viewModel::cancelUpdateDownload,
                 onDismissMessage = viewModel::clearMessage
             )
         } else {

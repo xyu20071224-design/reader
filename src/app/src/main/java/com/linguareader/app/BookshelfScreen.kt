@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
@@ -81,6 +82,7 @@ import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
+import com.linguareader.app.update.AppUpdateUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -129,6 +131,11 @@ internal fun BookshelfScreen(
     onReviewWord: (String, Boolean, (Boolean) -> Unit) -> Unit,
     onExportVocabulary: (android.net.Uri) -> Unit,
     onSpeak: (String) -> Unit,
+    update: AppUpdateUiState,
+    onCheckForUpdate: () -> Unit,
+    onAutoCheckChange: (Boolean) -> Unit,
+    onDownloadUpdate: () -> Unit,
+    onCancelUpdateDownload: () -> Unit,
     onDismissMessage: () -> Unit
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
@@ -148,6 +155,7 @@ internal fun BookshelfScreen(
         }
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
+    var showUpdateSheet by rememberSaveable { mutableStateOf(false) }
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
     var rosterBook by remember { mutableStateOf<Book?>(null) }
 
@@ -193,6 +201,24 @@ internal fun BookshelfScreen(
                                 modifier = Modifier.size(20.dp),
                                 tint = if (shelfAppearance.isCustomized) Accent else InkSoft
                             )
+                        }
+                        // 检查更新入口：本会话发现新版时给个小红点。
+                        IconButton(onClick = { showUpdateSheet = true }) {
+                            Box(contentAlignment = Alignment.TopEnd) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = stringResource(R.string.update_sheet_title),
+                                    modifier = Modifier.size(20.dp),
+                                    tint = InkSoft
+                                )
+                                if (update.updateAvailable) {
+                                    Box(
+                                        Modifier
+                                            .size(8.dp)
+                                            .background(Danger, CircleShape)
+                                    )
+                                }
+                            }
                         }
                         TextButton(onClick = { showVocabulary = !showVocabulary }) {
                             Icon(
@@ -470,6 +496,17 @@ internal fun BookshelfScreen(
             },
             containerColor = CardSurface,
             shape = CardShape
+        )
+    }
+
+    if (showUpdateSheet) {
+        UpdateSheet(
+            update = update,
+            onDismiss = { showUpdateSheet = false },
+            onCheckNow = onCheckForUpdate,
+            onAutoCheckChange = onAutoCheckChange,
+            onDownload = onDownloadUpdate,
+            onCancelDownload = onCancelUpdateDownload
         )
     }
 

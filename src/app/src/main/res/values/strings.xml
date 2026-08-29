@@ -616,4 +616,25 @@
     <string name="multivoice_book_required">请先打开一本书，再管理角色</string>
 
     <string name="shelf_roster">角色</string>
+
+    <!-- 自动更新（update/ 包，书架顶栏入口 + UpdateSheet） -->
+    <string name="update_sheet_title">检查更新</string>
+    <string name="update_current_version">当前版本 %1$s（versionCode %2$d）</string>
+    <string name="update_auto_check_label">启动时自动检查更新</string>
+    <string name="update_auto_check_hint">开启后每次启动联网查询 GitHub 最新 Release；默认关闭。</string>
+    <string name="update_check_now">检查更新</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_up_to_date">已是最新版本</string>
+    <string name="update_available_title">发现新版本 %1$s</string>
+    <string name="update_download">下载新版本</string>
+    <string name="update_downloading">正在下载 %1$d%%</string>
+    <string name="update_download_cancel">取消下载</string>
+    <string name="update_install">安装</string>
+    <string name="update_install_permission_hint">需要先允许「安装未知应用」，点击去系统设置授权。</string>
+    <string name="update_go_permission_settings">去授权</string>
+    <string name="update_error">更新失败：%1$s</string>
+    <string name="update_retry">重试</string>
+    <string name="update_notes_title">更新说明</string>
+    <string name="update_found_notice">发现新版本 %1$s，可在书架右上角「检查更新」里下载</string>
+    <string name="update_open_release_page">在浏览器打开发布页</string>
 </resources>
