@@ -220,44 +220,35 @@ internal fun BookshelfScreen(
                                 }
                             }
                         }
-                        TextButton(onClick = { showVocabulary = !showVocabulary }) {
+                        // 生词本/书架切换：只留图标，名字在标题（次级视图）与无障碍描述里。
+                        IconButton(onClick = { showVocabulary = !showVocabulary }) {
                             Icon(
                                 Icons.AutoMirrored.Filled.MenuBook,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
+                                contentDescription = stringResource(
+                                    if (showVocabulary) R.string.shelf_tab_shelf
+                                    else R.string.shelf_vocabulary
+                                ),
+                                modifier = Modifier.size(20.dp),
                                 tint = if (showVocabulary) Accent else InkSoft
-                            )
-                            Spacer(Modifier.width(5.dp))
-                            Text(
-                                if (showVocabulary) {
-                                    stringResource(R.string.shelf_tab_shelf)
-                                } else {
-                                    stringResource(R.string.shelf_tab_words, state.savedWords.size)
-                                }
                             )
                         }
                         if (!showVocabulary) {
-                            TextButton(onClick = { showAiDrawer = true }) {
+                            // AI 中心：图标入口，名字在抽屉头部与无障碍描述里。
+                            IconButton(onClick = { showAiDrawer = true }) {
                                 Icon(
                                     Icons.Default.Settings,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
+                                    contentDescription = stringResource(R.string.shelf_ai_center),
+                                    modifier = Modifier.size(20.dp),
                                     tint = if (state.aiSettings.enabled) Accent else InkSoft
                                 )
-                                Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.shelf_ai_center))
                             }
-                            Button(
-                                onClick = { launcher.launch(IMPORT_MIME_TYPES) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Accent,
-                                    contentColor = OnAccent
-                                ),
-                                shape = PillShape
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(stringResource(R.string.shelf_import))
+                            IconButton(onClick = { launcher.launch(IMPORT_MIME_TYPES) }) {
+                                Icon(
+                                    Icons.Default.Add,
+                                    contentDescription = stringResource(R.string.shelf_import),
+                                    modifier = Modifier.size(22.dp),
+                                    tint = Accent
+                                )
                             }
                         }
                         Spacer(Modifier.width(12.dp))

@@ -39,6 +39,7 @@
     </plurals>
     <string name="shelf_tab_shelf">Bookshelf</string>
     <string name="shelf_tab_words">Vocabulary %1$d</string>
+    <string name="shelf_vocabulary">Vocabulary</string>
     <string name="shelf_ai_center">AI center</string>
     <string name="shelf_import">Import</string>
 

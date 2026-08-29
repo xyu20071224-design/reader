@@ -37,6 +37,7 @@
     </plurals>
     <string name="shelf_tab_shelf">书架</string>
     <string name="shelf_tab_words">生词本 %1$d</string>
+    <string name="shelf_vocabulary">生词本</string>
     <string name="shelf_ai_center">AI 中心</string>
     <string name="shelf_import">导入</string>
 
