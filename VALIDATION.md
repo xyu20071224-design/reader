@@ -709,3 +709,13 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 顶栏「语境阅读」因动作过多被挤成两行（用户指示删应用名）：TopAppBar 标题改单行计数（「N 本书」/「生词本 N」），调色板入口保留。真机截图确认单行生效。
 - 待用户点图标正常冷启动复核开屏颜色；若仍黑，需区分是 ColorOS 启动动画深色垫底（应用无法控制）还是隐私遮罩（仅 adb/快照场景出现）。
 - **验收通过（2026-08-29）**：用户点图标冷启动确认开屏为米白纸色、顶栏单行计数满意。合并 main。
+
+## 2026-08-29 自动更新（GitHub Release 检查/下载/引导安装，模拟器验证完毕）
+
+- 功能：`update/` 新包——`UpdatePolicy`（纯逻辑版本比较，tag↔versionName 语义化）、`GitHubReleaseParser`（org.json 解析 `/releases/latest`，无 .apk 资产返回 null）、`GitHubUpdateChecker`（HttpURLConnection，10s/15s 超时，带 GitHub 要求的 UA 头）、`AppUpdateRepository`（检查+下载编排，下载到 `getExternalFilesDir("updates")`，进度回调、可取消、失败/取消均清半截 APK）、`ApkInstaller`（FileProvider + ACTION_VIEW；`canRequestPackageInstalls()` 为 false 时引导去系统「安装未知应用」授权页）、`AppUpdateSettings`（prefs `update_settings`，`auto_check_enabled` **默认 false**，遵守出网默认关闭的隐私边界）。
+- UI：书架顶栏新增刷新图标入口（本会话发现新版时红点）；`UpdateSheet`（ModalBottomSheet）：当前版本、自动检查开关、手动检查、状态行（检查中/已是最新/新版+更新说明+下载按钮/下载进度条+取消/已下载+安装/失败+重试）。发现新版且启动自动检查命中时 Snackbar 提示一次。strings zh/en 各 +20 键。
+- Manifest：新增 `REQUEST_INSTALL_PACKAGES`（实际授权仍由用户逐应用授予）+ FileProvider（authority 用 `${applicationId}.fileprovider`，verify 并存包天然兼容；`res/xml/file_paths.xml` 暴露 `external-files-path updates/`）。
+- 验证（lr_api35 模拟器，Android 16）：`testDebugUnitTest` 全绿（新增 UpdatePolicyTest 6 / GitHubReleaseParserTest 3 / AppUpdateSettingsTest 2）；`assembleDebug` 通过；装包实测：顶栏入口→UpdateSheet 渲染正确（版本 1.5.0 (versionCode 10)、开关默认关）→手动检查真实请求 GitHub API 返回「已是最新」（curl 旁证 API 形状：tag_name=`v1.5.0`、资产 `LinguaReader-v1.5.0.apk`）→开开关→force-stop 重启后开关保持开启、启动静默检查无崩溃无打扰。截图见 `验证截图/验证截图-自动更新-*.png`（5 张）。
+- **待验证（需 v1.6.0 发布后才可触发）**：下载进度→下载完成→安装按钮拉起系统安装器→覆盖安装成功；「安装未知应用」未授权时的引导跳转；发现新版时的红点与 Snackbar。发布 v1.6.0 时记得附 `LinguaReader-v1.6.0.apk` 资产（解析器只认 .apk 资产）。
+- 已知边界：Release 无 versionCode，靠 versionName 语义比较（仓库惯例两者同步递增，够用）；畸形 tag 一律按「不是新版」处理，宁可漏报。
+- 模拟器备注：该 AVD 的 uiautomator dump 会返回陈旧的幽灵窗口（词典/阅读器节点），与真实屏幕不符——自动化验证时以 `screencap` 截图为准，别信 dump。

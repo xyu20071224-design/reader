@@ -625,4 +625,25 @@
     <string name="multivoice_book_required">Open a book first to manage its characters</string>
 
     <string name="shelf_roster">Characters</string>
+
+    <!-- Auto update (update/ package, bookshelf top bar entry + UpdateSheet) -->
+    <string name="update_sheet_title">Check for updates</string>
+    <string name="update_current_version">Current version %1$s (versionCode %2$d)</string>
+    <string name="update_auto_check_label">Check for updates at launch</string>
+    <string name="update_auto_check_hint">When on, the app queries the latest GitHub release at startup; off by default.</string>
+    <string name="update_check_now">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date">You are up to date</string>
+    <string name="update_available_title">New version %1$s available</string>
+    <string name="update_download">Download new version</string>
+    <string name="update_downloading">Downloading %1$d%%</string>
+    <string name="update_download_cancel">Cancel download</string>
+    <string name="update_install">Install</string>
+    <string name="update_install_permission_hint">“Install unknown apps” must be allowed first; tap to open system settings.</string>
+    <string name="update_go_permission_settings">Grant permission</string>
+    <string name="update_error">Update failed: %1$s</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_notes_title">Release notes</string>
+    <string name="update_found_notice">New version %1$s found — download it from “Check for updates” on the bookshelf</string>
+    <string name="update_open_release_page">Open the release page in browser</string>
 </resources>

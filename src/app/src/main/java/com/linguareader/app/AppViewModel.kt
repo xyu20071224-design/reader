@@ -39,6 +39,10 @@ import com.linguareader.app.data.LibraryRepository
 import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.VocabularyRepository
 import com.linguareader.app.data.WordLookup
+import com.linguareader.app.update.AppUpdatePhase
+import com.linguareader.app.update.AppUpdateRepository
+import com.linguareader.app.update.AppUpdateUiState
+import com.linguareader.app.update.UpdateCheckOutcome
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -99,7 +103,9 @@ data class AppUiState(
     /** AI 整本翻译进行中的书 → 进度（含准备中），界面据此显示进度/取消并防重复触发。 */
     val aiTranslationProgress: Map<String, AiTranslationProgress> = emptyMap(),
     /** 非空时显示「AI 生成译本」确认框（术语已备齐、规模已估算）。 */
-    val aiTranslationPrepare: AiTranslationPrepare? = null
+    val aiTranslationPrepare: AiTranslationPrepare? = null,
+    /** 自动更新（GitHub Release 检查/下载）的流程状态。 */
+    val update: AppUpdateUiState = AppUpdateUiState()
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -129,6 +135,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val aiTranslationPrefs = getApplication<Application>().getSharedPreferences(
         "ai_translation", android.content.Context.MODE_PRIVATE
     )
+    /** 自动更新：检查 + 下载的编排层（网络细节在 update/ 包内）。 */
+    private val updateRepository = AppUpdateRepository(application)
+    private var updateJob: Job? = null
 
     companion object {
         private const val KEY_TRANSLATION_MODE = "mode"
@@ -163,8 +172,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             customReview = custom,
             reminders = reminders,
             launchPrompt = prompt,
-            aiSettings = aiSettingsStore.load()
+            aiSettings = aiSettingsStore.load(),
+            update = AppUpdateUiState(autoCheckEnabled = updateRepository.loadSettings().autoCheckEnabled)
         )
+        if (updateRepository.loadSettings().autoCheckEnabled) {
+            // 出厂默认关；用户开了开关才在启动时静默查一次，失败不打扰。
+            checkForUpdate(silent = true)
+        }
         refresh()
     }
 
@@ -397,6 +411,76 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearMessage() {
         mutableState.value = mutableState.value.copy(message = null)
+    }
+
+    // --- 自动更新（GitHub Release）-------------------------------------------
+
+    private fun setUpdate(transform: (AppUpdateUiState) -> AppUpdateUiState) {
+        mutableState.value = mutableState.value.copy(update = transform(mutableState.value.update))
+    }
+
+    fun setAutoCheck(enabled: Boolean) {
+        updateRepository.setAutoCheck(enabled)
+        setUpdate { it.copy(autoCheckEnabled = enabled) }
+    }
+
+    /**
+     * 检查更新。[silent] 为 true 表示启动自动检查：只在新版时 Snackbar 提示，
+     * 无更新/失败都静默归位，避免打扰；手动入口走 false，结果都在 UpdateSheet 里展示。
+     */
+    fun checkForUpdate(silent: Boolean = false) {
+        if (mutableState.value.update.phase == AppUpdatePhase.CHECKING) return
+        setUpdate { it.copy(phase = AppUpdatePhase.CHECKING, error = null) }
+        viewModelScope.launch {
+            when (val outcome = updateRepository.check()) {
+                is UpdateCheckOutcome.Available -> {
+                    setUpdate {
+                        it.copy(phase = AppUpdatePhase.AVAILABLE, info = outcome.info, error = null)
+                    }
+                    if (silent) {
+                        mutableState.value = mutableState.value.copy(
+                            notice = string(R.string.update_found_notice, outcome.info.versionName)
+                        )
+                    }
+                }
+                UpdateCheckOutcome.UpToDate -> setUpdate {
+                    it.copy(
+                        phase = if (silent) AppUpdatePhase.IDLE else AppUpdatePhase.UP_TO_DATE,
+                        error = null
+                    )
+                }
+                is UpdateCheckOutcome.Failure ->
+                    if (silent) setUpdate { it.copy(phase = AppUpdatePhase.IDLE) }
+                    else setUpdate { it.copy(phase = AppUpdatePhase.ERROR, error = outcome.message) }
+            }
+        }
+    }
+
+    fun downloadUpdate() {
+        val info = mutableState.value.update.info ?: return
+        if (mutableState.value.update.phase == AppUpdatePhase.DOWNLOADING) return
+        updateJob?.cancel()
+        setUpdate { it.copy(phase = AppUpdatePhase.DOWNLOADING, progress = 0, error = null) }
+        updateJob = viewModelScope.launch {
+            updateRepository.download(info) { downloaded, total ->
+                if (total > 0) {
+                    val percent = ((downloaded * 100) / total).toInt().coerceIn(0, 100)
+                    setUpdate { it.copy(progress = percent) }
+                }
+            }.onSuccess { apk ->
+                setUpdate { it.copy(phase = AppUpdatePhase.DOWNLOADED, downloadedApk = apk) }
+            }.onFailure { throwable ->
+                setUpdate { it.copy(phase = AppUpdatePhase.ERROR, error = throwable.message) }
+            }
+        }
+    }
+
+    fun cancelUpdateDownload() {
+        updateJob?.cancel()
+        updateJob = null
+        if (mutableState.value.update.phase == AppUpdatePhase.DOWNLOADING) {
+            setUpdate { it.copy(phase = AppUpdatePhase.AVAILABLE, progress = 0) }
+        }
     }
 
     suspend fun lookup(lookup: WordLookup): DictionaryLookupResult = dictionary.lookup(lookup)

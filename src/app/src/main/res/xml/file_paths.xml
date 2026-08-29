@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自动更新下载目录：getExternalFilesDir("updates")，免存储权限，仅 FileProvider 共享给安装器。 -->
+<paths>
+    <external-files-path
+        name="update_apks"
+        path="updates/" />
+</paths>
