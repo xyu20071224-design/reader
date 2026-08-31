@@ -66,11 +66,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.ai.AiBookStatus
 import com.linguareader.app.ai.AiSettings
@@ -221,7 +223,10 @@ internal fun BookshelfScreen(
                             }
                         }
                         // 生词本/书架切换：只留图标，名字在标题（次级视图）与无障碍描述里。
-                        IconButton(onClick = { showVocabulary = !showVocabulary }) {
+                        IconButton(
+                            onClick = { showVocabulary = !showVocabulary },
+                            modifier = Modifier.testTag(UiTags.SHELF_VOCABULARY)
+                        ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.MenuBook,
                                 contentDescription = stringResource(
@@ -234,7 +239,10 @@ internal fun BookshelfScreen(
                         }
                         if (!showVocabulary) {
                             // AI 中心：图标入口，名字在抽屉头部与无障碍描述里。
-                            IconButton(onClick = { showAiDrawer = true }) {
+                            IconButton(
+                                onClick = { showAiDrawer = true },
+                                modifier = Modifier.testTag(UiTags.SHELF_AI_CENTER)
+                            ) {
                                 Icon(
                                     Icons.Default.Settings,
                                     contentDescription = stringResource(R.string.shelf_ai_center),
@@ -242,7 +250,10 @@ internal fun BookshelfScreen(
                                     tint = if (state.aiSettings.enabled) Accent else InkSoft
                                 )
                             }
-                            IconButton(onClick = { launcher.launch(IMPORT_MIME_TYPES) }) {
+                            IconButton(
+                                onClick = { launcher.launch(IMPORT_MIME_TYPES) },
+                                modifier = Modifier.testTag(UiTags.SHELF_IMPORT)
+                            ) {
                                 Icon(
                                     Icons.Default.Add,
                                     contentDescription = stringResource(R.string.shelf_import),
@@ -279,7 +290,10 @@ internal fun BookshelfScreen(
                 } else {
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(148.dp),
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp)
+                            .testTag(UiTags.SHELF_GRID),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(20.dp)
                     ) {
@@ -613,7 +627,10 @@ private fun RosterSheet(
 @Composable
 private fun EmptyBookshelf(onImport: () -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp)
+            .testTag(UiTags.SHELF_EMPTY),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -661,7 +678,11 @@ private fun BookCard(
     onTranslation: () -> Unit,
     onLongPressDelete: () -> Unit
 ) {
-    Column(modifier = Modifier.clickable(onClick = onOpen)) {
+    Column(
+        modifier = Modifier
+            .testTag(UiTags.bookCard(book.id))
+            .clickable(onClick = onOpen)
+    ) {
         Box {
             Card(
                 modifier = Modifier.fillMaxWidth().height(205.dp),
@@ -898,6 +919,18 @@ private fun GlossaryDialog(
         containerColor = CardSurface,
         shape = CardShape
     )
+}
+
+@Preview(name = "空书架 · 日间", showBackground = true, widthDp = 380, heightDp = 620)
+@Composable
+private fun EmptyBookshelfLightPreview() {
+    PreviewScaffold { EmptyBookshelf(onImport = {}) }
+}
+
+@Preview(name = "空书架 · 夜间", showBackground = true, widthDp = 380, heightDp = 620)
+@Composable
+private fun EmptyBookshelfDarkPreview() {
+    PreviewScaffold(dark = true) { EmptyBookshelf(onImport = {}) }
 }
 
 private fun decodeSampledCover(file: File, targetWidth: Int): android.graphics.Bitmap? {

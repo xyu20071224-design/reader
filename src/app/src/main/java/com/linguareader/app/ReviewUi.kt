@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -107,7 +108,11 @@ internal fun ReviewSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Paper,
+        modifier = Modifier.testTag(UiTags.REVIEW_SHEET)
+    ) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 26.dp).padding(bottom = 34.dp),
             horizontalAlignment = Alignment.CenterHorizontally

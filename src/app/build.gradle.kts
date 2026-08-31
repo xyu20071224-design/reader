@@ -54,6 +54,19 @@ android {
         unitTests.isIncludeAndroidResources = true
     }
 
+    lint {
+        // 源码只有一份，CI 只跑 debug 变体；release 再跑一遍纯属浪费额度。
+        checkReleaseBuilds = false
+        // error 级问题直接失败；warning 不升级为 error——本仓库还没做过整轮 lint
+        // 清理，一上来全量升级会红几百条，反而没人看。清完再把 warningsAsErrors 打开。
+        abortOnError = true
+        warningsAsErrors = false
+        // 报告落盘：CI 失败时作为 artifact 上传，本地可直接开 HTML 看。
+        htmlReport = true
+        xmlReport = true
+        textReport = true
+    }
+
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }

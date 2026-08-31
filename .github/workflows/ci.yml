@@ -1,4 +1,4 @@
-# 单元测试 CI：JVM 单测（Robolectric），Gradle 根在 src/（仓库根没有 gradlew）
+# CI：JVM 单测（Robolectric）+ Android Lint。Gradle 根在 src/（仓库根没有 gradlew）
 name: CI
 
 on:
@@ -35,3 +35,42 @@ jobs:
 
       - name: 运行单元测试
         run: ./gradlew testDebugUnitTest --stacktrace
+
+  lint:
+    name: Android Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 赋予 Gradle wrapper 执行权限
+        run: chmod +x gradlew
+
+      - name: 安装 JDK 17（temurin）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # 首轮先观察不阻断：开发机是离线环境（lint-gradle 依赖不在本地缓存里），
+      # 这一步的真实结果只能由 CI 跑出来。等 CI 跑过一轮、确认 error 数为 0
+      # （或据报告补好 src/app/lint-baseline.xml）之后，删掉 continue-on-error
+      # 这一行，lint 即成为硬门禁。lint 配置见 src/app/build.gradle.kts 的 lint{}。
+      - name: 运行 Android Lint
+        continue-on-error: true
+        run: ./gradlew :app:lintDebug --stacktrace
+
+      - name: 上传 lint 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report-debug
+          path: |
+            src/app/build/reports/lint-results-debug.html
+            src/app/build/reports/lint-results-debug.xml
+          if-no-files-found: warn

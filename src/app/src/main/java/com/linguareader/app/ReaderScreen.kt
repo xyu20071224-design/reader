@@ -73,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -479,7 +480,9 @@ internal fun ReaderScreen(
                 chromeTopPx = chromeTopPx.roundToInt(),
                 chromeBottomPx = chromeBottomPx.roundToInt(),
                 controller = controller,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag(UiTags.READER_PAGE),
                 onReady = { page, count ->
                     initialPage = page
                     currentPage = page
@@ -565,7 +568,8 @@ internal fun ReaderScreen(
                 Row(
                     Modifier.fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .testTag(UiTags.READER_TOP_BAR),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = ::closeWithFlush) {
@@ -706,7 +710,9 @@ internal fun ReaderScreen(
         ) {
             ListeningBar(
                 state = ttsState,
-                modifier = Modifier.padding(bottom = 62.dp),
+                modifier = Modifier
+                    .padding(bottom = 62.dp)
+                    .testTag(UiTags.READER_LISTENING_BAR),
                 onToggle = { TtsPlaybackController.toggle(context) },
                 onPrevious = { TtsPlaybackController.previous(context) },
                 onNext = { TtsPlaybackController.next(context) },
@@ -725,7 +731,11 @@ internal fun ReaderScreen(
             visible = showReviewPrompt && dueWords.isNotEmpty(),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
-            Column(Modifier.padding(bottom = 62.dp)) {
+            Column(
+                Modifier
+                    .padding(bottom = 62.dp)
+                    .testTag(UiTags.REVIEW_PROMPT_BANNER)
+            ) {
                 ReviewPromptBanner(
                     count = dueWords.size,
                     dwellMillis = reviewPace.dwellMillis,
@@ -949,7 +959,11 @@ private fun ContentsSheet(
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Paper,
+        modifier = Modifier.testTag(UiTags.READER_CONTENTS_SHEET)
+    ) {
         Text(
             stringResource(R.string.reader_contents),
             style = MaterialTheme.typography.headlineSmall,
@@ -989,7 +1003,11 @@ private fun SettingsSheet(
     var fontSize by remember(preferences.fontPercent) { mutableFloatStateOf(preferences.fontPercent.toFloat()) }
     var lineHeight by remember(preferences.lineHeight) { mutableFloatStateOf(preferences.lineHeight) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Paper,
+        modifier = Modifier.testTag(UiTags.READER_SETTINGS_SHEET)
+    ) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 28.dp)) {
             Text(stringResource(R.string.reader_settings_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(20.dp))
@@ -1136,6 +1154,7 @@ private fun PageJumpDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.testTag(UiTags.READER_PAGE_JUMP_DIALOG),
         title = { Text(stringResource(R.string.reader_jump_title)) },
         text = {
             Column {
@@ -1251,7 +1270,11 @@ private fun LookupSheet(
     onTranslateSentence: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Paper,
+        modifier = Modifier.testTag(UiTags.READER_LOOKUP_SHEET)
+    ) {
         Column(
             Modifier.fillMaxWidth()
                 .verticalScroll(rememberScrollState())
