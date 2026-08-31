@@ -263,6 +263,59 @@ class AiBookTranslatorTest {
     }
 
     @Test
+    fun `soft checks are waived on the retry pass so one batch cannot kill the book`() {
+        // 数字锚点/术语/长度比是质量偏好，不是结构错误。首轮拒绝（原因进重试 prompt），
+        // 重试轮必须放行——否则模型把 1926 译成「那一年」就会中止整本书。
+        val batch = TranslationBatch(0, 0, listOf(0), listOf("The year 1926 changed everything."))
+        assertThrows(AiRequestException::class.java) {
+            AiBookTranslator.extractValidated(segmentsJson(0 to "那一年改变了一切。"), batch, emptyList())
+        }
+        assertEquals(
+            listOf("那一年改变了一切。"),
+            AiBookTranslator.extractValidated(
+                segmentsJson(0 to "那一年改变了一切。"), batch, emptyList(), strict = false
+            )
+        )
+
+        // 长度比同样是软校验。
+        val longBatch = TranslationBatch(0, 0, listOf(0), listOf(("word ".repeat(100)).trim()))
+        assertEquals(
+            listOf("短。"),
+            AiBookTranslator.extractValidated(
+                segmentsJson(0 to "短。"), longBatch, emptyList(), strict = false
+            )
+        )
+    }
+
+    @Test
+    fun `structural failures are rejected even on the retry pass`() {
+        // 缺编号/空译文属于结构错误：放行只会让对照错位，任何时候都必须拒绝。
+        val batch = TranslationBatch(0, 0, listOf(0, 1), listOf("One.", "Two."))
+        assertThrows(AiRequestException::class.java) {
+            AiBookTranslator.extractValidated(segmentsJson(0 to "一。"), batch, emptyList(), strict = false)
+        }
+        assertThrows(AiRequestException::class.java) {
+            AiBookTranslator.extractValidated(
+                segmentsJson(0 to "一。", 1 to "  "), batch, emptyList(), strict = false
+            )
+        }
+    }
+
+    @Test
+    fun `retry backoff is longest for rate limiting`() {
+        // 立刻原样重发在 429 上等于二次撞墙。
+        assertTrue(
+            AiBookTranslator.retryDelayMillis("AI 接口返回 HTTP 429：rate limited") >
+                AiBookTranslator.retryDelayMillis("AI 接口返回 HTTP 503：busy")
+        )
+        assertTrue(
+            AiBookTranslator.retryDelayMillis("AI 接口返回 HTTP 503：busy") >
+                AiBookTranslator.retryDelayMillis("AI 译文丢失了数字锚点「1926」")
+        )
+        assertTrue(AiBookTranslator.retryDelayMillis(null) > 0L)
+    }
+
+    @Test
     fun `single letter keep original terms are skipped to avoid false alarms`() {
         val batch = TranslationBatch(0, 0, listOf(0), listOf("I am here."))
         // "I" 作为保留原文词条会被任意译文触发误报，必须跳过。

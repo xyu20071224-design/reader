@@ -666,11 +666,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.value = mutableState.value.copy(
                 notice = string(R.string.notice_translation_ai_started, book.title)
             )
+            // 单批用尽重试后不再中止整本书：该批保留英文原文继续跑，末尾汇总告知用户。
+            var untranslatedParagraphs = 0
             try {
                 val translationBook = aiTranslationRepository.translateBook(
                     book,
                     mode = safeMode,
-                    styleNotes = styleNotes.trim().ifBlank { null }
+                    styleNotes = styleNotes.trim().ifBlank { null },
+                    onBatchFailed = { batch, _ -> untranslatedParagraphs += batch.paragraphs.size }
                 ) { percent ->
                     setAiTranslationProgress(book.id, AiTranslationProgress(percent = percent, polish = polish))
                 }
@@ -687,8 +690,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 val seconds = ((System.currentTimeMillis() - startedAt) / 1000).toInt()
                 mutableState.value = mutableState.value.copy(
-                    notice = string(R.string.notice_translation_ready, result.memory.pairs.size, seconds),
-                    noticeTone = StatusTone.SUCCESS
+                    notice = if (untranslatedParagraphs > 0) {
+                        string(
+                            R.string.notice_translation_ready_partial,
+                            result.memory.pairs.size,
+                            seconds,
+                            untranslatedParagraphs
+                        )
+                    } else {
+                        string(R.string.notice_translation_ready, result.memory.pairs.size, seconds)
+                    },
+                    noticeTone = if (untranslatedParagraphs > 0) StatusTone.NEUTRAL else StatusTone.SUCCESS
                 )
                 refresh()
             } catch (cancelled: CancellationException) {

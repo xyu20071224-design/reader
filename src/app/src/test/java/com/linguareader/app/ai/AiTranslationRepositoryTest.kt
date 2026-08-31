@@ -94,6 +94,18 @@ class AiTranslationRepositoryTest {
             BookGlossaryRepository(context)
         ) { chat }
 
+    /** 记录退避时长而不真的睡，单测才跑得快。 */
+    private fun repository(
+        chat: AiTranslationChatClient,
+        delays: MutableList<Long>
+    ): AiTranslationRepository =
+        AiTranslationRepository(
+            context,
+            AiSettingsStore(context),
+            BookGlossaryRepository(context),
+            retryDelay = { delays += it }
+        ) { chat }
+
     @Test
     fun `translates all batches, writes chapters and checkpoints`() = runBlocking {
         val book = makeSourceBook()
@@ -189,6 +201,48 @@ class AiTranslationRepositoryTest {
         // 第 1 批坏响应 1 次 + 带原因重试 1 次 + 第二章 1 次。
         assertEquals(3, chat.calls)
         assertTrue("缺少编号" in chat.prompts[1])
+    }
+
+    @Test
+    fun `a batch that exhausts retries keeps source text instead of aborting the book`() = runBlocking {
+        val book = makeSourceBook()
+        val delays = mutableListOf<Long>()
+        // 前两次调用（第一批的初翻 + 带原因重试）都失败，之后恢复正常。
+        val chat = object : AiTranslationChatClient {
+            var calls = 0
+            override suspend fun translateSegments(system: String, user: String): JSONObject {
+                calls++
+                if (calls <= 2) throw AiRequestException("AI 接口返回 HTTP 503：busy")
+                val array = JSONArray()
+                Regex("\\[(\\d+)] (.+)").findAll(user).forEach { match ->
+                    array.put(
+                        JSONObject()
+                            .put("i", match.groupValues[1].toInt())
+                            .put("t", "译${match.groupValues[1]}：${match.groupValues[2]}")
+                    )
+                }
+                return JSONObject().put("segments", array)
+            }
+        }
+        val failedParagraphs = mutableListOf<Int>()
+
+        val translation = repository(chat, delays).translateBook(
+            book,
+            onBatchFailed = { batch, _ -> failedParagraphs += batch.paragraphs.size }
+        ) { _ -> }
+
+        // 整本书没有因为一批失败而中止：第二章照常翻完。
+        assertEquals(listOf(2), failedParagraphs)
+        val first = File(translation.extractedDir, "chapter_000.xhtml").readText()
+        val second = File(translation.extractedDir, "chapter_001.xhtml").readText()
+        // 失败批保留英文原文占位，段数与英文侧仍严格 1:1，否则整章对照错位。
+        assertTrue("Hello world." in first)
+        assertTrue("In 1926 he left the town." in first)
+        assertEquals(2, Regex("<p>").findAll(first).count())
+        assertTrue("译0：Harry walked to Hogwarts alone." in second)
+        // 重试前退避过，且 5xx 走的是较长那档。
+        assertTrue(delays.isNotEmpty())
+        assertTrue(delays.all { it >= 4_000L })
     }
 
     @Test

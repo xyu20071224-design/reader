@@ -31,6 +31,11 @@ class AiTranslationRepository(
     context: Context,
     private val settingsStore: AiSettingsStore,
     private val glossaryRepository: BookGlossaryRepository,
+    /**
+     * 重试退避（测试注入空实现，避免单测真的睡过去）。
+     * 必须排在 chatClientFactory 之前：后者要留在末位，才能继续用尾随 lambda 构造。
+     */
+    private val retryDelay: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
     /** 翻译批量出口工厂（测试注入假客户端用）。 */
     private val chatClientFactory: (AiSettings) -> AiTranslationChatClient =
         { AiTranslators.forSettings(it) }
@@ -67,6 +72,11 @@ class AiTranslationRepository(
         book: Book,
         mode: String = MODE_STANDARD,
         styleNotes: String? = null,
+        /**
+         * 某一批用尽重试后仍然失败时回调（每批至多一次）。整本书不再因此中止，
+         * 该批以英文原文占位继续往下跑，调用方可据此提示「N 段未翻译」。
+         */
+        onBatchFailed: (suspend (batch: TranslationBatch, error: Throwable) -> Unit)? = null,
         onProgress: suspend (percent: Int) -> Unit
     ): Book = withContext(Dispatchers.IO) {
         val settings = settingsStore.load()
@@ -88,11 +98,22 @@ class AiTranslationRepository(
         val translatedChapters = chapterBatches.mapIndexed { chapterIndex, batches ->
             val chapter = book.chapters[chapterIndex]
             val paragraphs = batches.flatMap { batch ->
-                val translations = restoreOrTranslate(
-                    client, checkpoints, book, chapter, glossary, keepOriginalTerms,
-                    tail, batch, mode, styleNotes
-                )
-                tail = translations.last()
+                val translations = try {
+                    val done = restoreOrTranslate(
+                        client, checkpoints, book, chapter, glossary, keepOriginalTerms,
+                        tail, batch, mode, styleNotes
+                    )
+                    // 只有成功的批次才更新衔接上文，免得把英文原文当「前情提要」喂回去。
+                    tail = done.lastOrNull() ?: tail
+                    done
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    onBatchFailed?.invoke(batch, error)
+                    // 用英文原文占位：段落数必须与英文侧严格 1:1，否则整章对照错位；
+                    // 且 xhtmlFor 会滤掉空串，空占位会直接改变段数。
+                    batch.paragraphs
+                }
                 finishedBatches++
                 onProgress(finishedBatches * 100 / totalBatches)
                 translations
@@ -269,6 +290,8 @@ class AiTranslationRepository(
         } catch (error: Throwable) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             if (retryError == null) {
+                // 立刻原样重发在 429/5xx 上等于二次撞墙，先退避再试。
+                retryDelay(AiBookTranslator.retryDelayMillis(error.message))
                 return requestSegments(
                     client, checkpoints, hash, book, chapter, glossary, keepOriginalTerms,
                     tail, batch, mode, styleNotes, retryError = "请求失败：${error.message}",
@@ -278,11 +301,16 @@ class AiTranslationRepository(
             throw error
         }
         return try {
-            val translations = AiBookTranslator.extractValidated(json, batch, keepOriginalTerms)
+            // 首轮严格自检；重试轮只保硬校验（结构完整即收下），
+            // 免得数字锚点这类质量偏好把整本书拖垮。
+            val translations = AiBookTranslator.extractValidated(
+                json, batch, keepOriginalTerms, strict = retryError == null
+            )
             storeCheckpoint(checkpoints, batch, hash, translations, mode)
             translations
         } catch (error: AiRequestException) {
             if (retryError == null) {
+                retryDelay(AiBookTranslator.retryDelayMillis(error.message))
                 requestSegments(
                     client, checkpoints, hash, book, chapter, glossary, keepOriginalTerms,
                     tail, batch, mode, styleNotes, retryError = error.message,

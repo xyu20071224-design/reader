@@ -108,14 +108,22 @@ object AiBookTranslator {
     }
 
     /**
-     * 解析并自检一批译文：编号必须完整覆盖批次、译文不得为空白、
-     * 数字锚点与「保留原文」术语必须原样出现。任一不过即抛
-     * [AiRequestException]（消息即失败原因，供带原因重试一次）。
+     * 解析并自检一批译文。
+     *
+     * 校验分两档：
+     * - **硬校验**（任何时候都拒绝）：缺 segments 数组、编号没覆盖全批次、译文空白。
+     *   这类响应结构上就没法用，留着只会污染对照。
+     * - **软校验**（仅 [strict] 时拒绝）：数字锚点、「保留原文」术语、长度比。
+     *   这些是质量偏好而非结构错误。过去它们也是硬失败，于是模型把 1,000 译成
+     *   「一千」就判整批失败，而一批失败会中止整本书 —— 文本越长批数越多，
+     *   命中概率越接近 1，正是「长文本整本翻译总是失败」的成因。
+     *   现在首轮仍然拒绝（失败原因进重试 prompt 提醒模型），重试轮放行并保留译文。
      */
     fun extractValidated(
         json: JSONObject,
         batch: TranslationBatch,
-        keepOriginalTerms: List<String>
+        keepOriginalTerms: List<String>,
+        strict: Boolean = true
     ): List<String> {
         val array = json.optJSONArray("segments")
             ?: throw AiRequestException("AI 译文缺少 segments 数组")
@@ -136,6 +144,9 @@ object AiBookTranslator {
             )
         }
         val translations = batch.paragraphIndices.map { byIndex.getValue(it) }
+
+        // 软校验到此为止：重试轮只要结构完整就收下，别让质量偏好毁掉整本书。
+        if (!strict) return translations
 
         batch.paragraphs.forEachIndexed { position, source ->
             val translated = translations[position]
@@ -282,6 +293,22 @@ object AiBookTranslator {
         val sourceWords = enSentence.split(Regex("\\s+")).count { it.isNotBlank() }
         if (sourceWords > 0 && (translated.length < sourceWords * 0.2 || translated.length > sourceWords * 8)) {
             throw AiRequestException("重译译文长度异常（原文 $sourceWords 词，译文 ${translated.length} 字）")
+        }
+    }
+
+    /**
+     * 重试前的退避时长（毫秒）。过去是「立刻原样重发」，命中限流时等于二次撞墙。
+     * 429 退避最久，5xx 次之，解析/自检类失败最短（重发本身就可能换来好结果）。
+     */
+    fun retryDelayMillis(reason: String?): Long {
+        val status = reason
+            ?.let { Regex("HTTP (\\d{3})").find(it) }
+            ?.groupValues?.getOrNull(1)
+            ?.toIntOrNull()
+        return when {
+            status == 429 -> 8_000L
+            status != null && status >= 500 -> 4_000L
+            else -> 800L
         }
     }
 

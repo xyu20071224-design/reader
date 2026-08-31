@@ -107,6 +107,7 @@
     <string name="shelf_translation_remove_body">只删除译本与对齐档案；英文原书、生词和听书进度都不受影响。</string>
     <string name="notice_translation_aligning">正在为《%1$s》对齐译本…</string>
     <string name="notice_translation_ready">译本对齐完成：%1$d 个句对（耗时 %2$d 秒）</string>
+    <string name="notice_translation_ready_partial">译本对齐完成：%1$d 个句对（耗时 %2$d 秒）；%3$d 段未能翻译，已保留原文，重新生成可补齐</string>
     <string name="notice_translation_failed">译本对齐失败，请确认选的是同一本书的中文译本</string>
     <string name="notice_translation_removed">已移除《%1$s》的译本对照</string>
     <string name="shelf_translation_choice_title">添加中文译本</string>
