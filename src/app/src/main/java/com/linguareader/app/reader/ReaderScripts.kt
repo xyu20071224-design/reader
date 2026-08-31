@@ -9,6 +9,16 @@ object ReaderScripts {
     const val DEFAULT_CHROME_TOP_PX = 104
     const val DEFAULT_CHROME_BOTTOM_PX = 70
 
+    /**
+     * 「打开本章并停在最后一页」的 initialPage 哨兵（章节回翻时用）。
+     *
+     * JS 侧不会把它当普通页码 clamp，而是翻译成 restoreTarget = -1，在每次
+     * updateMetrics 里重新取末页；否则首次测量（字体/图片未就绪、pageCount
+     * 偏小）会把它拍成 0，且救援分支 restoreTarget <= pageCount - 1 永远不
+     * 成立，回翻就会停在上一章开头。
+     */
+    const val LAST_PAGE = Int.MAX_VALUE
+
     fun bootstrap(
         initialPage: Int,
         preferences: ReaderPreferences,
@@ -20,7 +30,14 @@ object ReaderScripts {
         /** 滚动模式首/尾提示文案（展示用，由 EpubPage 按当前语言传入；默认值仅供测试兜底）。 */
         scrollEndHint: String = "已到本章末尾 · 快滑或点击进入下一章",
         scrollStartHint: String = "已到本章开头 · 快滑或点击返回上一章"
-    ): String = """
+    ): String {
+        // 提示文案来自本地化字符串资源，可能带 ' " 反斜杠或换行：必须先转成 JS 字面量
+        // 再拼进脚本。否则一条带撇号的翻译（英文里 "chapter's end" 这类极常见）会让
+        // 整段 bootstrap IIFE 变成语法错误，注入失败 → 正文白屏、翻页全失效。
+        // 其余注入值同样走 JSONObject.quote（见 preferenceScript / savedWordsScript）。
+        val endHintLiteral = JSONObject.quote(scrollEndHint)
+        val startHintLiteral = JSONObject.quote(scrollStartHint)
+        return """
         (function() {
           if (window.__linguaReaderInstalled) {
             if ($initialScrollMode && window.lrEnterScrollMode) {
@@ -32,9 +49,16 @@ object ReaderScripts {
             return;
           }
           window.__linguaReaderInstalled = true;
-          let page = Math.max(0, $initialPage);
+          // Kotlin 侧用 LAST_PAGE(Int.MAX_VALUE) 当「本章最后一页」哨兵（从下一
+          // 章回翻进来）。它绝不能当普通页码参与 clamp：首次测量常跑在字体/图片
+          // 就绪之前，pageCount 偏小甚至为 1，clamp 会把它拍成 0；而 updateMetrics
+          // 里那个「测量变准后恢复」的救援分支判据是 restoreTarget <= pageCount - 1，
+          // 哨兵永远不满足，页码就永久停在 0 → 回翻落到上一章开头。所以在入口
+          // 就把哨兵翻译成 restoreTarget = -1，由 updateMetrics 单独处理。
+          const LR_LAST_PAGE = $LAST_PAGE;
+          let restoreTarget = $initialPage >= LR_LAST_PAGE ? -1 : Math.max(0, $initialPage);
+          let page = Math.max(0, restoreTarget);
           let pageCount = 1;
-          let restoreTarget = page;
           let scrollMode = $initialScrollMode;
           let scrollRatio = Math.max(0, Math.min(1, Number($initialScrollRatio) || 0));
           let scrollPageCount = Math.max(1, Number($initialScrollPageCount) || 1);
@@ -242,11 +266,19 @@ object ReaderScripts {
             spacer.style.width = innerW + 'px';
             spacer.style.height = '100%';
             pageCount = Math.max(1, Math.ceil(scroller.scrollWidth / window.innerWidth) - 1);
-            page = clamp(page, 0, pageCount - 1);
-            // A restored page must not be lost when the first measurement runs
-            // before fonts/images finish loading: resume it as soon as the real
-            // page count grows large enough to hold it again.
-            if (restoreTarget <= pageCount - 1) page = Math.max(page, restoreTarget);
+            // restoreTarget < 0 是「本章最后一页」哨兵：它必须先于 clamp 处理，
+            // 否则首次（字体未就绪、pageCount 偏小）测量会把页码拍成 0，而下面
+            // 的救援分支又永远救不回来。每次重排都重新取末页，重新分页后仍停在
+            // 章末；一旦用户翻页/跳页，restoreTarget 就被写成具体页码而失效。
+            if (restoreTarget < 0) {
+              page = pageCount - 1;
+            } else {
+              page = clamp(page, 0, pageCount - 1);
+              // A restored page must not be lost when the first measurement runs
+              // before fonts/images finish loading: resume it as soon as the real
+              // page count grows large enough to hold it again.
+              if (restoreTarget <= pageCount - 1) page = Math.max(page, restoreTarget);
+            }
             scroller.scrollLeft = page * window.innerWidth;
             ReaderBridge.onReady(page, pageCount);
           }
@@ -309,8 +341,13 @@ object ReaderScripts {
 
           function enterScrollMode(ratio, count) {
             if (scrollMode) return;
+            // 取值必须在置位之前。currentRatio() 见到 scrollMode 已为 true 就走
+            // currentScrollRatio()，而此刻布局还是分页布局（overflow-y:hidden，
+            // scrollTop 恒 0）→ 进度被抹成 0 → syncScroll() 把视图拉回章首。
+            // exitScrollMode() 的「先取值、后置位」才是正确的对称写法。
+            const entryRatio = ratio == null ? currentRatio() : clamp(Number(ratio) || 0, 0, 1);
             scrollMode = true;
-            scrollRatio = ratio == null ? currentRatio() : clamp(Number(ratio) || 0, 0, 1);
+            scrollRatio = entryRatio;
             if (count != null && Number(count) > 0) pageCount = Math.max(1, Number(count));
             applyScrollLayout();
             syncScroll();
@@ -363,11 +400,11 @@ object ReaderScripts {
               document.body.appendChild(hint);
             }
             if (atBottom) {
-              hint.textContent = '$scrollEndHint';
+              hint.textContent = $endHintLiteral;
               hint.setAttribute('data-direction', '1');
               hint.style.display = '';
             } else if (atTop) {
-              hint.textContent = '$scrollStartHint';
+              hint.textContent = $startHintLiteral;
               hint.setAttribute('data-direction', '-1');
               hint.style.display = '';
             } else {
@@ -392,8 +429,11 @@ object ReaderScripts {
               syncScroll();
               return;
             }
-            page = Number(value) || 0;
-            restoreTarget = page;
+            // 同一套哨兵约定：重复注入时 bootstrap 会用 lrSetPage(initialPage)
+            // 还原位置，回翻场景传进来的就是 LAST_PAGE。
+            const requested = Number(value) || 0;
+            restoreTarget = requested >= LR_LAST_PAGE ? -1 : Math.max(0, requested);
+            page = Math.max(0, restoreTarget);
             requestAnimationFrame(updateMetrics);
           };
 
@@ -414,6 +454,12 @@ object ReaderScripts {
           // scroll offset has to be recomputed against the new metrics.
           window.lrSyncPage = function() {
             if (scrollMode) {
+              requestAnimationFrame(updateMetrics);
+            } else if (restoreTarget < 0 || restoreTarget > page) {
+              // 还原还没落地（末页哨兵，或测量变准前页码救援目标尚未追上）：
+              // 此时按「当前渲染页」重新播种 restoreTarget 会把还原目标抹掉，
+              // 于是恢复过程中改设置（字号/行距/主题）就能让进度永久丢失。
+              // 只重新测量即可，updateMetrics 自己会把页码补回去。
               requestAnimationFrame(updateMetrics);
             } else if (window.lrSetPage) {
               window.lrSetPage(window.lrGetPage());
@@ -718,13 +764,79 @@ object ReaderScripts {
             }
           }
 
+          // 生词高亮按「整词」匹配。历史实现用 indexOf 做子串匹配，同时犯三个错：
+          //   app 会画进 apple（多画）、study 画不上 studied（漏画）、
+          //   run 只画出 running 的前三个字母（半画）。
+          // 现在改成 \b 词边界 + 形态展开，一次正则扫完一个文本节点。
+          function escapeForRegExp(value) {
+            return value.replace(/[^A-Za-z0-9_\s]/g, function (ch) { return '\\' + ch; });
+          }
+
+          function isPlainWord(value) {
+            if (!value.length) return false;
+            for (let i = 0; i < value.length; i++) {
+              const c = value.charAt(i).toLowerCase();
+              if ((c < 'a' || c > 'z') && c !== "'" && c !== '-') return false;
+            }
+            return true;
+          }
+
+          // 规则式变体只覆盖高频规整变化；不规则词（go/went）靠入库时存下的表面形。
+          function savedWordVariants(base) {
+            const out = [base];
+            if (!isPlainWord(base)) return out;
+            const w = base.toLowerCase();
+            const last = w.charAt(w.length - 1);
+            const prev = w.length >= 2 ? w.charAt(w.length - 2) : '';
+            const isVowel = function (ch) { return 'aeiou'.indexOf(ch) >= 0; };
+            out.push(w + 's', w + 'ed', w + 'ing');
+            // 辅音-元音-辅音结尾要双写末尾辅音：run -> running、stop -> stopped。
+            // 漏了这条，run 就只能画出 running 的前三个字母 —— 正是 issue 补2 的症状。
+            if (w.length >= 3) {
+              const third = w.charAt(w.length - 3);
+              if (!isVowel(third) && isVowel(prev) && !isVowel(last) && 'wxy'.indexOf(last) < 0) {
+                out.push(w + last + 'ing', w + last + 'ed');
+              }
+            }
+            if (last === 'y' && prev && 'aeiou'.indexOf(prev) < 0) {
+              out.push(w.slice(0, -1) + 'ies', w.slice(0, -1) + 'ied');
+            }
+            if (last === 'e') out.push(w.slice(0, -1) + 'ing', w + 'd');
+            if (last === 's' || last === 'x' || last === 'z' ||
+                w.slice(-2) === 'ch' || w.slice(-2) === 'sh') {
+              out.push(w + 'es');
+            }
+            return out;
+          }
+
+          function buildSavedPattern(words) {
+            const seen = Object.create(null);
+            const forms = [];
+            for (const raw of words) {
+              if (forms.length >= 1200) break;
+              const base = typeof raw === 'string' ? raw.trim() : '';
+              if (base.length < 2) continue;
+              const variants = savedWordVariants(base);
+              for (const variant of variants) {
+                const key = variant.toLowerCase();
+                if (seen[key]) continue;
+                seen[key] = true;
+                forms.push(variant);
+              }
+            }
+            if (forms.length === 0) return null;
+            // 长的排前面，短语要先于其中的单词命中。
+            forms.sort(function (a, b) { return b.length - a.length; });
+            const alt = forms.map(function (f) {
+              return escapeForRegExp(f).replace(/\s+/g, '\\s+');
+            }).join('|');
+            return new RegExp('\\b(' + alt + ')\\b', 'gi');
+          }
+
           function markSavedWords(root) {
             const version = ++savedMarkVersion;
-            const active = savedWords
-              .map(function(word) { return word && word.trim().length >= 2 ? word.trim() : null; })
-              .filter(Boolean)
-              .slice(0, 300);
-            if (active.length === 0) return;
+            const pattern = buildSavedPattern(savedWords.slice(0, 600));
+            if (!pattern) return;
             const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
             const textNodes = [];
             while (walker.nextNode()) {
@@ -737,38 +849,28 @@ object ReaderScripts {
               if (version !== savedMarkVersion) return;
               const text = node.nodeValue;
               if (!text || matchBudget <= 0) continue;
-              let remaining = text;
-              const segments = [];
-              let guard = 0;
-              while (guard++ < 1000) {
-                let best = null;
-                const lower = remaining.toLowerCase();
-                for (const word of active) {
-                  const index = lower.indexOf(word.toLowerCase());
-                  if (index >= 0 && (best === null || index < best.index)) {
-                    best = { index: index, word: word };
-                  }
-                }
-                if (!best) break;
+              pattern.lastIndex = 0;
+              let fragment = null;
+              let cursor = 0;
+              let match;
+              while ((match = pattern.exec(text)) !== null) {
                 if (matchBudget <= 0) break;
+                if (match[0].length === 0) { pattern.lastIndex++; continue; }
                 matchBudget--;
-                if (best.index > 0) segments.push(remaining.slice(0, best.index));
-                segments.push({ word: best.word });
-                remaining = remaining.slice(best.index + best.word.length);
-                if (remaining.length === 0) break;
+                if (!fragment) fragment = document.createDocumentFragment();
+                if (match.index > cursor) {
+                  fragment.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+                }
+                const span = document.createElement('span');
+                span.className = 'lr-saved-word';
+                // 用正文里的原样文本，别拿存储的拼写去覆盖（大小写与变形都要保留）。
+                span.textContent = match[0];
+                fragment.appendChild(span);
+                cursor = match.index + match[0].length;
               }
-              if (segments.length > 0) {
-                if (remaining.length > 0) segments.push(remaining);
-                const fragment = document.createDocumentFragment();
-                for (const segment of segments) {
-                  if (typeof segment === 'string') {
-                    fragment.appendChild(document.createTextNode(segment));
-                  } else {
-                    const span = document.createElement('span');
-                    span.className = 'lr-saved-word';
-                    span.textContent = segment.word;
-                    fragment.appendChild(span);
-                  }
+              if (fragment) {
+                if (cursor < text.length) {
+                  fragment.appendChild(document.createTextNode(text.slice(cursor)));
                 }
                 node.parentNode.replaceChild(fragment, node);
               }
@@ -1054,11 +1156,15 @@ object ReaderScripts {
           // Catch layout shifts from images that finish loading after fonts.
           setTimeout(updateMetrics, 300);
         })();
-    """.trimIndent()
+        """.trimIndent()
+    }
+
+    /** 一次注入的最大「生词形态」数（原型 + 表面形展开后按此截断）。 */
+    const val MAX_SAVED_WORD_FORMS = 600
 
     fun savedWordsScript(words: List<String>): String {
         val encoded = JSONArray().apply {
-            words.distinct().take(300).forEach { put(it) }
+            words.distinct().take(MAX_SAVED_WORD_FORMS).forEach { put(it) }
         }.toString()
         return "window.lrRefreshSavedWords && window.lrRefreshSavedWords($encoded);"
     }

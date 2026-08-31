@@ -37,10 +37,13 @@ class ReaderController {
     private var lastSavedWords: String? = null
 
     fun setSavedWords(words: List<String>) {
-        val key = words.distinct().sorted().joinToString("\u0000")
+        // 去重键必须与真正注入的那份一致：过去用全量算键、只注入前 300 个，
+        // 第 300 名之后的变动会触发一次毫无效果的整章重排。
+        val payload = words.distinct().take(ReaderScripts.MAX_SAVED_WORD_FORMS)
+        val key = payload.sorted().joinToString("\u0000")
         if (key == lastSavedWords) return
         lastSavedWords = key
-        webView.get()?.evaluateJavascript(ReaderScripts.savedWordsScript(words.distinct().take(300)), null)
+        webView.get()?.evaluateJavascript(ReaderScripts.savedWordsScript(payload), null)
     }
 
     fun applyPreferences(preferences: ReaderPreferences) {

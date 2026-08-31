@@ -127,7 +127,13 @@ data class SavedWord(
     val addedAt: Long,
     val reviewLevel: Int = 0,
     val nextReviewAt: Long = 0L,
-    val reviewCount: Int = 0
+    val reviewCount: Int = 0,
+    /**
+     * 正文里实际出现过的形态（headword=study 时的 studied/studying…）。
+     * 阅读页整词高亮要用：只按原型做子串匹配会漏掉变形，又会误伤 apple 里的 app。
+     * 老数据没有这个字段，读取时回退为空列表。
+     */
+    val surfaceForms: List<String> = emptyList()
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -145,6 +151,7 @@ data class SavedWord(
         .put("reviewLevel", reviewLevel)
         .put("nextReviewAt", nextReviewAt)
         .put("reviewCount", reviewCount)
+        .put("surfaceForms", JSONArray().apply { surfaceForms.forEach { put(it) } })
 
     companion object {
         fun fromJson(json: JSONObject) = SavedWord(
@@ -162,7 +169,12 @@ data class SavedWord(
             addedAt = json.optLong("addedAt"),
             reviewLevel = json.optInt("reviewLevel"),
             nextReviewAt = json.optLong("nextReviewAt"),
-            reviewCount = json.optInt("reviewCount")
+            reviewCount = json.optInt("reviewCount"),
+            surfaceForms = json.optJSONArray("surfaceForms")?.let { array ->
+                (0 until array.length())
+                    .map { array.optString(it) }
+                    .filter { it.isNotBlank() }
+            }.orEmpty()
         )
     }
 }

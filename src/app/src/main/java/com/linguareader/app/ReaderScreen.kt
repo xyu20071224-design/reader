@@ -321,7 +321,9 @@ internal fun ReaderScreen(
         flushProgressAsync()
         val stayScrolled = keepScrollMode && scrollMode
         chapterIndex = index
-        initialPage = if (fromEnd) Int.MAX_VALUE else 0
+        // 回翻用哨兵而不是「某个大页码」：JS 侧把 LAST_PAGE 翻译成
+        // restoreTarget = -1，每次重排都重新取末页，不会被首次测量拍成 0。
+        initialPage = if (fromEnd) ReaderScripts.LAST_PAGE else 0
         currentPage = 0
         pageCount = 1
         scrollMode = stayScrolled
@@ -469,7 +471,11 @@ internal fun ReaderScreen(
                 initialScrollRatio = scrollRatio,
                 initialScrollPageCount = scrollPageCount.coerceAtLeast(1),
                 preferences = preferences,
-                savedWords = if (reminders.contextHighlight) savedWords.map { it.headword } else emptyList(),
+                savedWords = if (reminders.contextHighlight) {
+                    savedWords.flatMap { word -> listOf(word.headword) + word.surfaceForms }
+                } else {
+                    emptyList()
+                },
                 chromeTopPx = chromeTopPx.roundToInt(),
                 chromeBottomPx = chromeBottomPx.roundToInt(),
                 controller = controller,

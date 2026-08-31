@@ -726,3 +726,12 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - 顶栏图标化：书架顶栏动作全部改纯图标（调色板/刷新/生词本切换/AI 中心/导入），删除「生词本 N」「AI 中心」「导入」文字——此前「2 本书」计数被挤成竖排两行。名字去处的兑现：生词本视图标题本来就显示「N 个生词/我的生词」，AI 抽屉头部有自己的标题；新增 `shelf_vocabulary` 文案（zh/en）只作无障碍 contentDescription，视觉零文字。`shelf_tab_words`（带计数）不再被顶栏使用，key 保留。真机确认：书架视图单行计数 + 5 图标，生词本视图 3 图标且次级页自带完整操作区（复习/导出/设置）。
 - 验证：`testDebugUnitTest` 全绿；改动后覆盖安装真机（同 versionCode 11 覆盖装成功，sideload 同版本号覆盖安装的坑未复现——此前记录的坑主要在跨签名/降级场景）。截图：验证截图/自动更新真机链路-*.png、顶栏图标化-*.png（本地）。
 - 发版备注：下次发版记得 versionCode 递增到 12（v1.5.1 已用 11）。
+
+## 2026-09-01 阅读进度两个精确 bug 修复（簇 E：进滑动丢进度 / 回翻跳上一章开头）
+
+- **进滑动模式丢进度跳章首**（`ReaderScripts.kt` `enterScrollMode`）：函数先 `scrollMode = true` 再取 `currentRatio()`，而 `currentRatio()` 第一句就是 `if (scrollMode) return currentScrollRatio()`；此刻布局仍是分页布局（`overflow-y:hidden`，`scrollTop` 恒 0）→ 比例被算成 0 → `syncScroll()` 把 `scrollTop` 设成 0 → 跳回章首。同文件 `exitScrollMode()` 是「先取值后置位」的正确写法，两者不对称即笔误。修法：把取值提到置位之前（`const entryRatio = ...`）。
+- **章节回翻跳到上一章开头**（`ReaderScripts.kt` `updateMetrics` + `ReaderScreen.kt` `selectChapter`）：回翻用 `initialPage = Int.MAX_VALUE` 当「最后一页」哨兵，但 JS 把它当普通页码 `clamp(page, 0, pageCount - 1)`；首次测量常跑在字体/图片就绪前，`pageCount` 偏小甚至为 1，页码被拍成 0，而那条专为「测量变准后恢复」写的救援分支判据是 `restoreTarget <= pageCount - 1`，`Int.MAX_VALUE` 永远不满足 → 页码永久停在 0。修法：哨兵显式化（Kotlin `ReaderScripts.LAST_PAGE`，JS 侧翻译成 `restoreTarget = -1`），`updateMetrics` 单独处理该分支（每次重排重新取末页），`lrSetPage` 认同一约定；普通页码的 clamp + 救援路径保持不变。
+- **顺带加固** `lrSyncPage`：还原尚未落地时（`restoreTarget < 0` 或 `restoreTarget > page`）不再按「当前渲染页」重新播种 `restoreTarget`，否则恢复过程中改字号/行距/主题会把还原目标抹成临时页，进度永久丢失（与上面第二条同源）。
+- **静态验证（本机无 JDK，跑不了 gradle）**：本会话机器 `JAVA_HOME` 未设、PATH 无 java、`~/.gradle` 与记忆里记的 `C:\work\reader\jdk\jdk-17.0.20+8` 均不存在，`testDebugUnitTest` 未能本地执行，**需由有 JDK 的机器或 CI 补跑**。已做的替代验证：①把 `bootstrap()` 注入的整段 JS 抽出、替换 Kotlin 插值后 `new Function()` 解析通过（含并行会话在同文件的改动）；②按源码逻辑仿真「测量序列 pageCount 1→12→12」：旧实现哨兵轨迹 `[0,0,0]`（章首，即缺陷），新实现 `[0,11,11]`（章末）；普通页码 7 两版同为 `[0,7,7]` 不变；③仿真进滑动比例：旧实现任何起始页都得 0，新实现第 1 页 0.000、第 10 页 0.818、末页 1.000 —— 与「只在非首页复现」的预测一致。
+- **新增回归用例**（`ReaderScriptsTest.kt`，4 个）：`enteringScrollModeReadsThePagedRatioBeforeFlippingTheMode`、`lastPageSentinelIsNeverClampedLikeAnOrdinaryPageIndex`、`preferenceSyncDoesNotOverwriteAPendingRestoreTarget`、`ordinaryRestoredPageKeepsTheClampAndRescuePath`。
+- **待真机验证（WebView 行为单测覆盖不到）**：①分页模式翻到第 10 页附近，慢速竖拖进入滑动模式 → 停在原位置而不是章首（第 1 页进入本来就无感，别拿它当判据）；②从第 N 章第 1 页向前翻/慢滑到章首再上翻 → 落在第 N-1 章**最后一页**而不是开头；③回翻落位后改字号 → 仍停在（新分页的）章末；④普通打开续读、章内翻页、滑动模式内跨章前后翻不受影响。

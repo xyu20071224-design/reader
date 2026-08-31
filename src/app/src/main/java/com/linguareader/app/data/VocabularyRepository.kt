@@ -98,6 +98,13 @@ class VocabularyRepository(private val context: Context) {
             val id = headword.lowercase(Locale.ROOT)
             val now = System.currentTimeMillis()
             val existing = current.firstOrNull { it.id == id }
+            // 同一个词可能以不同形态被查到（study / studied / studying），逐次累积，
+            // 供阅读页做整词高亮；原型本身单独传，不必重复存。
+            val surfaceForms = (existing?.surfaceForms.orEmpty() + entry.surfaceWord)
+                .map { it.trim() }
+                .filter { it.isNotBlank() && !it.equals(headword, ignoreCase = true) }
+                .distinctBy { it.lowercase(Locale.ROOT) }
+                .takeLast(MAX_SURFACE_FORMS)
             val saved = SavedWord(
                 id = id,
                 headword = headword,
@@ -113,7 +120,8 @@ class VocabularyRepository(private val context: Context) {
                 addedAt = existing?.addedAt ?: now,
                 reviewLevel = existing?.reviewLevel ?: 0,
                 nextReviewAt = existing?.nextReviewAt ?: now + pace.firstDelayMillis,
-                reviewCount = existing?.reviewCount ?: 0
+                reviewCount = existing?.reviewCount ?: 0,
+                surfaceForms = surfaceForms
             )
             val updated = current.filterNot { it.id == id } + saved
             write(updated)
@@ -168,6 +176,9 @@ class VocabularyRepository(private val context: Context) {
         words.sortedWith(compareBy<SavedWord> { it.nextReviewAt }.thenByDescending { it.addedAt })
 
     companion object {
+        /** 每个词最多累积多少个表面形，避免高亮词表无限膨胀。 */
+        private const val MAX_SURFACE_FORMS = 8
+
         fun csv(words: List<SavedWord>): String = buildString {
             appendLine("word,phonetic,meaning,ai_meaning,ai_source,ai_explanation,sentence,book,chapter,review_count,next_review_at")
             words.forEach { word ->

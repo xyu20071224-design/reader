@@ -131,4 +131,46 @@ class ModelsTest {
         assertEquals(0, restored.ttsChapterIndex)
         assertEquals(0, restored.ttsSentenceIndex)
     }
+
+    @Test
+    fun savedWordJsonRoundTripPreservesSurfaceForms() {
+        val original = SavedWord(
+            id = "study",
+            headword = "study",
+            phonetic = "",
+            meaning = "n. 学习",
+            sentence = "He studied hard.",
+            bookId = "book-1",
+            bookTitle = "A Test Book",
+            chapterTitle = "One",
+            addedAt = 42L,
+            surfaceForms = listOf("studied", "studying")
+        )
+
+        val restored = SavedWord.fromJson(original.toJson())
+
+        assertEquals(original, restored)
+        assertEquals(listOf("studied", "studying"), restored.surfaceForms)
+    }
+
+    @Test
+    fun savedWordsWithoutSurfaceFormsStayCompatible() {
+        // 老生词本没有 surfaceForms 字段：必须读成空列表，而不是解析失败丢整本生词。
+        val legacy = SavedWord(
+            id = "apple",
+            headword = "apple",
+            phonetic = "",
+            meaning = "n. 苹果",
+            sentence = "An apple a day.",
+            bookId = "book-1",
+            bookTitle = "A Test Book",
+            chapterTitle = "One",
+            addedAt = 1L
+        ).toJson()
+        legacy.remove("surfaceForms")
+
+        val restored = SavedWord.fromJson(legacy)
+
+        assertEquals(emptyList<String>(), restored.surfaceForms)
+    }
 }

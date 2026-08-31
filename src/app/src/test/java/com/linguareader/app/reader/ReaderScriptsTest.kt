@@ -275,6 +275,22 @@ class ReaderScriptsTest {
     }
 
     @Test
+    fun savedWordHighlightMatchesWholeWordsNotSubstrings() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 旧实现用 indexOf 做子串匹配，一次犯三个错：app 画进 apple（多画）、
+        // study 画不上 studied（漏画）、run 只画出 running 的前三个字母（半画）。
+        // 现在必须是 \b 词边界 + 形态展开。
+        assertContains(script, "escapeForRegExp")
+        assertContains(script, "savedWordVariants")
+        assertContains(script, "buildSavedPattern")
+        // 高亮要保留正文原样文本，不能拿存储的拼写覆盖大小写与变形。
+        assertContains(script, "span.textContent = match[0];")
+        // 子串匹配的老路径必须消失。
+        assertFalse(script.contains("lower.indexOf(word.toLowerCase())"))
+    }
+
+    @Test
     fun savedWordsScriptEncodesListAndCallsRefresh() {
         val script = ReaderScripts.savedWordsScript(listOf("carry", "look forward to", "carry"))
 
@@ -385,5 +401,92 @@ class ReaderScriptsTest {
         // 半透明底栏盖住。必须实测 rect 并把超出部分从高度里扣掉。
         assertContains(script, "__lrRect.bottom - (window.innerHeight - chromeBottom)")
         assertContains(script, "columnHeight - __lrOvershoot")
+    }
+
+    @Test
+    fun enteringScrollModeReadsThePagedRatioBeforeFlippingTheMode() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        val enter = script.indexOf("function enterScrollMode(")
+        val exit = script.indexOf("function exitScrollMode(")
+        assertTrue(enter >= 0 && exit > enter)
+        val body = script.substring(enter, exit)
+        // 先置位再取值时，currentRatio() 会走 currentScrollRatio() 分支，而此刻
+        // 还是分页布局（overflow-y:hidden，scrollTop 恒 0）→ 进度被抹成 0 →
+        // syncScroll() 把视图拉回章首（从第 1 页进入看不出来，从第 10 页必现）。
+        // exitScrollMode 一直是「先取值、后置位」，两个函数必须对称。
+        assertTrue(
+            body.indexOf("currentRatio()") < body.indexOf("scrollMode = true"),
+            "enterScrollMode must capture the paged ratio before setting scrollMode"
+        )
+        assertFalse(body.contains("scrollRatio = ratio == null ? currentRatio()"))
+    }
+
+    @Test
+    fun lastPageSentinelIsNeverClampedLikeAnOrdinaryPageIndex() {
+        val script = ReaderScripts.bootstrap(ReaderScripts.LAST_PAGE, ReaderPreferences())
+
+        // 章节回翻（fromEnd）用 LAST_PAGE 哨兵表示「本章最后一页」。旧实现把它
+        // 当普通页码：第一次测量常跑在字体/图片就绪之前，pageCount 偏小甚至为 1，
+        // clamp 把页码拍成 0；而救援分支判据 restoreTarget <= pageCount - 1 对
+        // Int.MAX_VALUE 永远不成立 → 页码永久停在 0 → 回翻落到上一章开头。
+        assertContains(script, "const LR_LAST_PAGE = 2147483647;")
+        assertContains(
+            script,
+            "let restoreTarget = 2147483647 >= LR_LAST_PAGE ? -1 : Math.max(0, 2147483647);"
+        )
+        // 哨兵分支必须先于 clamp，且每次重排都重新取末页。
+        val metrics = script.substring(script.indexOf("function updateMetrics("))
+        val sentinelBranch = metrics.indexOf("if (restoreTarget < 0) {")
+        val clampBranch = metrics.indexOf("page = clamp(page, 0, pageCount - 1);")
+        assertTrue(sentinelBranch >= 0 && clampBranch > sentinelBranch)
+        assertContains(script, "page = pageCount - 1;")
+        // 重复注入走 lrSetPage(initialPage)，同一套哨兵约定必须也认。
+        assertContains(
+            script,
+            "restoreTarget = requested >= LR_LAST_PAGE ? -1 : Math.max(0, requested);"
+        )
+        // 旧写法（哨兵直接当页码播种 restoreTarget）不能回来。
+        assertFalse(script.contains("let restoreTarget = page;"))
+    }
+
+    @Test
+    fun preferenceSyncDoesNotOverwriteAPendingRestoreTarget() {
+        val script = ReaderScripts.bootstrap(ReaderScripts.LAST_PAGE, ReaderPreferences())
+
+        // 改字号/行距/主题会走 lrSyncPage，它原本无条件按「当前渲染页」重新
+        // 播种 restoreTarget。若还原尚未落地（末页哨兵，或救援目标还没追上），
+        // 那一下就把还原目标抹成当前的临时页，进度永久丢失。
+        assertContains(script, "} else if (restoreTarget < 0 || restoreTarget > page) {")
+    }
+
+    @Test
+    fun ordinaryRestoredPageKeepsTheClampAndRescuePath() {
+        val script = ReaderScripts.bootstrap(7, ReaderPreferences())
+
+        // 普通页码的还原路径不受哨兵改动影响：仍然 clamp，仍然在测量变准后救回。
+        assertContains(script, "let restoreTarget = 7 >= LR_LAST_PAGE ? -1 : Math.max(0, 7);")
+        assertContains(
+            script,
+            "if (restoreTarget <= pageCount - 1) page = Math.max(page, restoreTarget);"
+        )
+    }
+
+    @Test
+    fun scrollHintsAreInjectedAsEscapedJsLiterals() {
+        // 提示文案来自本地化资源，英文里 "chapter's end" 这类撇号极常见。旧写法把它
+        // 裸拼进单引号 JS 字面量，一条带撇号的翻译就会让整段 bootstrap 变成语法错误：
+        // 注入失败即正文白屏、翻页全废。必须按 JS 字面量转义后再拼。
+        val script = ReaderScripts.bootstrap(
+            0,
+            ReaderPreferences(),
+            scrollEndHint = """chapter's end " \ next""",
+            scrollStartHint = "chapter's start"
+        )
+
+        assertContains(script, """hint.textContent = "chapter's end \" \\ next";""")
+        assertContains(script, """hint.textContent = "chapter's start";""")
+        // 旧的裸单引号拼接不能回来。
+        assertFalse(script.contains("hint.textContent = 'chapter"))
     }
 }
