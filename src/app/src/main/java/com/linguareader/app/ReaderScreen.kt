@@ -59,7 +59,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,7 +93,6 @@ import com.linguareader.app.ai.SentenceTranslationResult
 import com.linguareader.app.ai.SentenceTranslatorFactory
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
-import com.linguareader.app.data.DictionaryLookupResult
 import com.linguareader.app.data.PartOfSpeech
 import com.linguareader.app.data.ReaderFont
 import com.linguareader.app.data.ReaderPreferences
@@ -105,8 +103,13 @@ import com.linguareader.app.data.ReaderTheme
 import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.reader.EpubPage
+import com.linguareader.app.reader.ReaderBackAction
 import com.linguareader.app.reader.ReaderController
+import com.linguareader.app.reader.ReaderLookupSession
+import com.linguareader.app.reader.ReaderOverlays
+import com.linguareader.app.reader.ReaderPosition
 import com.linguareader.app.reader.ReaderScripts
+import com.linguareader.app.reader.SentenceTranslationCache
 import com.linguareader.app.translation.TranslationLookupResult
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.tts.TtsPlaybackController
@@ -137,6 +140,44 @@ private val WordLookupSaver = Saver<WordLookup?, List<Any>>(
             y = values[5] as Float
         )
     }
+)
+
+/**
+ * 阅读位置整体可跨旋转恢复（全部字段都是 Bundle 安全类型）。
+ * 重构前只有章节/还原页/滚动三项存得住，页数与「待落盘」标记会在旋转时丢；
+ * 现在一起存，旋转后不再白白重存一次进度。
+ */
+private val ReaderPositionSaver = Saver<ReaderPosition, List<Any>>(
+    save = {
+        listOf(
+            it.chapter, it.restorePage, it.page, it.pageCount,
+            it.scrollMode, it.scrollRatio, it.scrollPageCount,
+            it.savedPage, it.savedCount, it.dirty
+        )
+    },
+    restore = { values ->
+        ReaderPosition(
+            chapter = values[0] as Int,
+            restorePage = values[1] as Int,
+            page = values[2] as Int,
+            pageCount = values[3] as Int,
+            scrollMode = values[4] as Boolean,
+            scrollRatio = values[5] as Float,
+            scrollPageCount = values[6] as Int,
+            savedPage = values[7] as Int,
+            savedCount = values[8] as Int,
+            dirty = values[9] as Boolean
+        )
+    }
+)
+
+/**
+ * 弹层状态只把「选择起点」态存过旋转，其余弹层沿用重构前的行为（旋转即关闭）。
+ * 故意不整体保存：让目录/设置/跳页在旋转后自动重开是行为变更，不该混在重构里。
+ */
+private val ReaderOverlaysSaver = Saver<ReaderOverlays, Boolean>(
+    save = { it.choosingStart },
+    restore = { ReaderOverlays(choosingStart = it) }
 )
 
 private fun highlightCurrentTts(controller: ReaderController, ttsState: TtsPlaybackState) {
@@ -185,56 +226,32 @@ internal fun ReaderScreen(
     val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
     val ttsForThisBook = ttsState.bookId == book.id
     var ttsPositionReportJob by remember { mutableStateOf<Job?>(null) }
-    var chapterIndex by rememberSaveable(book.id) {
-        mutableIntStateOf(book.chapterIndex.coerceIn(0, book.chapters.lastIndex))
+    // 阅读位置（章节/页码/滚动/待落盘快照）与弹层编排都抽成了不依赖 Android 的
+    // 状态机：迁移规则和它们的回归测试在 reader/ReaderScreenState.kt 与
+    // ReaderScreenStateTest.kt，这里只负责把事件转成迁移、把结果画出来。
+    var position by rememberSaveable(book.id, stateSaver = ReaderPositionSaver) {
+        mutableStateOf(
+            ReaderPosition.forBook(
+                chapter = book.chapterIndex,
+                page = book.pageIndex,
+                chapterCount = book.chapters.size
+            )
+        )
     }
-    var initialPage by rememberSaveable(book.id) { mutableIntStateOf(book.pageIndex) }
-    var currentPage by remember { mutableIntStateOf(initialPage) }
-    var pageCount by remember { mutableIntStateOf(1) }
-    var scrollMode by rememberSaveable(book.id) { mutableStateOf(false) }
-    var scrollRatio by rememberSaveable(book.id) { mutableFloatStateOf(0f) }
-    var scrollPageCount by rememberSaveable(book.id) { mutableIntStateOf(1) }
-    var pendingPage by remember { mutableIntStateOf(initialPage) }
-    var pendingCount by remember { mutableIntStateOf(1) }
-    var needsSave by remember { mutableStateOf(false) }
-    var toolbarVisible by remember { mutableStateOf(true) }
-    var choosingStart by rememberSaveable { mutableStateOf(false) }
-    var showContents by remember { mutableStateOf(false) }
-    var showSettings by remember { mutableStateOf(false) }
-    var showListeningSettings by remember { mutableStateOf(false) }
-    var showPageJump by remember { mutableStateOf(false) }
+    var overlays by rememberSaveable(stateSaver = ReaderOverlaysSaver) {
+        mutableStateOf(ReaderOverlays())
+    }
     var lookup by rememberSaveable(stateSaver = WordLookupSaver) { mutableStateOf<WordLookup?>(null) }
     // 查词弹层（ModalBottomSheet）会盖住全局 Snackbar：收藏/移出生词的反馈
     // 必须画在弹层内部（SettingsStatus 行内模式），否则用户得到「毫无动静」。
-    var lookupStatus by remember { mutableStateOf<SettingsStatus?>(null) }
-    var dictionaryResult by remember { mutableStateOf<DictionaryLookupResult?>(null) }
-    var dictionaryLoading by remember { mutableStateOf(false) }
-    var aiResult by remember { mutableStateOf<AiLookupResult?>(null) }
-    var aiLoading by remember { mutableStateOf(false) }
-    var aiFailed by remember { mutableStateOf(false) }
-    // 远程 AI 尝试失败但已降级本地（F5）：失败信号必须可见，不再静默吞掉。
-    var aiRemoteFailed by remember { mutableStateOf(false) }
-    var sentenceTranslation by remember { mutableStateOf<SentenceTranslationResult?>(null) }
-    var translation by remember { mutableStateOf<TranslationLookupResult?>(null) }
-    var translationLoading by remember { mutableStateOf(false) }
-    // 句级定点重翻：进行态与完成信号（编辑态在 LookupSheet 内部）。
-    var retranslateLoading by remember { mutableStateOf(false) }
-    var retranslateDoneTick by remember { mutableStateOf(0) }
-    var sentenceTranslationError by remember { mutableStateOf<String?>(null) }
-    var sentenceTranslationLoading by remember { mutableStateOf(false) }
-    // 同一句重复点词不再重复出网（也不重复计费）；换书即失效，超过 64 句整体丢弃。
-    val sentenceTranslationCache = remember(book.id) {
-        mutableMapOf<String, SentenceTranslationResult>()
-    }
-    var showingRelatedPhrase by remember { mutableStateOf(false) }
+    // 会话整体抽成 ReaderLookupSession：开新查词的「重置矩阵」在里面定义并单测。
+    val sentenceTranslationCache = remember(book.id) { SentenceTranslationCache() }
+    var lookupSession by remember { mutableStateOf(ReaderLookupSession.empty(sentenceTranslationCache)) }
     // 复习卡组旋转屏后按 id 从 ViewModel 的 savedWords 恢复（SavedWord 本身不可 Bundle 化）。
     var reviewDeckIds by rememberSaveable { mutableStateOf<List<String>?>(null) }
     val reviewDeck = remember(savedWords, reviewDeckIds) {
         reviewDeckIds?.let { ids -> savedWords.filter { it.id in ids } }?.takeIf { it.isNotEmpty() }
     }
-    var showReviewSettings by remember { mutableStateOf(false) }
-    var showReviewPrompt by remember { mutableStateOf(false) }
-    var pendingClose by remember { mutableStateOf(false) }
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val dueWords = remember(savedWords, nowTick) {
         savedWords.filter { it.nextReviewAt <= nowTick }.sortedBy { it.nextReviewAt }
@@ -271,45 +288,34 @@ internal fun ReaderScreen(
         onAppearanceChanged(value.theme)
     }
 
-    fun progressOf(chapter: Int, page: Int, count: Int): Float {
-        val chapterProgress = if (count <= 1) 0f else page.toFloat() / (count - 1)
-        return (chapter + chapterProgress) / book.chapters.size.toFloat()
-    }
-
+    /** 有脏数据才写盘；取快照与清脏标记都在 [ReaderPosition] 里，这里只负责发协程。 */
     fun flushProgressAsync() {
-        if (!needsSave) return
-        needsSave = false
-        val chapter = chapterIndex
-        val page = pendingPage
-        val count = pendingCount
+        val save = position.saveRequest(book.chapters.size) ?: return
+        position = position.markSaved()
         scope.launch {
-            viewModel.saveProgress(book, chapter, page, progressOf(chapter, page, count))
+            viewModel.saveProgress(book, save.chapter, save.page, save.progress)
         }
     }
 
     fun performClose() {
-        val chapter = chapterIndex
-        val page = pendingPage
-        val count = pendingCount
-        val mustSave = needsSave
-        needsSave = false
+        val save = position.saveRequest(book.chapters.size)
+        position = position.markSaved()
         scope.launch {
-            if (mustSave) {
-                viewModel.saveProgress(book, chapter, page, progressOf(chapter, page, count))
+            if (save != null) {
+                viewModel.saveProgress(book, save.chapter, save.page, save.progress)
             }
             onClose()
         }
     }
 
     fun closeWithFlush() {
-        if (reminders.pausePrompt && dueWords.isNotEmpty() && !showReviewPrompt) {
-            showReviewPrompt = true
-            pendingClose = true
-            return
-        }
-        pendingClose = false
-        showReviewPrompt = false
-        performClose()
+        // 到期生词拦截（先弹提示条、记住「关闭待办」）的规则在 ReaderOverlays 里。
+        val decision = overlays.requestClose(
+            hasDueWords = dueWords.isNotEmpty(),
+            pausePrompt = reminders.pausePrompt
+        )
+        overlays = decision.overlays
+        if (!decision.promptReview) performClose()
     }
 
     fun selectChapter(
@@ -318,30 +324,27 @@ internal fun ReaderScreen(
         fromTts: Boolean = false,
         keepScrollMode: Boolean = false
     ) {
-        if (index !in book.chapters.indices) return
+        // 越界返回 null = 什么都别做（含不落盘、不通知 TTS），与旧代码提前 return 等价。
+        val next = position.selectChapter(
+            index = index,
+            chapterCount = book.chapters.size,
+            fromEnd = fromEnd,
+            keepScrollMode = keepScrollMode
+        ) ?: return
+        // 先把旧章的进度落盘，再换位置。
         flushProgressAsync()
-        val stayScrolled = keepScrollMode && scrollMode
-        chapterIndex = index
-        // 回翻用哨兵而不是「某个大页码」：JS 侧把 LAST_PAGE 翻译成
-        // restoreTarget = -1，每次重排都重新取末页，不会被首次测量拍成 0。
-        initialPage = if (fromEnd) ReaderScripts.LAST_PAGE else 0
-        currentPage = 0
-        pageCount = 1
-        scrollMode = stayScrolled
-        scrollRatio = if (stayScrolled && fromEnd) 1f else 0f
-        scrollPageCount = 1
-        pendingPage = 0
-        pendingCount = 1
-        needsSave = false
+        position = next
         if (ttsForThisBook && !fromTts) {
             TtsPlaybackController.onReaderChapterSelected(book.id, index)
         }
     }
 
     fun changeChapter(direction: Int, keepScrollMode: Boolean = false) {
-        val next = chapterIndex + direction
-        if (next !in book.chapters.indices) return
-        selectChapter(next, fromEnd = direction < 0, keepScrollMode = keepScrollMode)
+        selectChapter(
+            index = position.chapter + direction,
+            fromEnd = direction < 0,
+            keepScrollMode = keepScrollMode
+        )
     }
 
     fun reportTtsPositionDelayed() {
@@ -350,7 +353,7 @@ internal fun ReaderScreen(
             delay(350)
             controller.firstVisibleBlock { block ->
                 if (block != null) {
-                    TtsPlaybackController.onReaderPositionChanged(book.id, chapterIndex, block)
+                    TtsPlaybackController.onReaderPositionChanged(book.id, position.chapter, block)
                 }
             }
         }
@@ -363,15 +366,15 @@ internal fun ReaderScreen(
                 // start-point chooser (that used to restart/confuse playback).
                 TtsPlaybackController.pause(context)
             } else {
-                choosingStart = true
+                overlays = overlays.copy(choosingStart = true)
                 controller.setChoosingStart(true)
             }
             return
         }
         // Opening listening never auto-plays: enter standby and let the user
         // tap a word/sentence to choose the start point.
-        TtsPlaybackController.startStandby(context, book, chapterIndex)
-        choosingStart = true
+        TtsPlaybackController.startStandby(context, book, position.chapter)
+        overlays = overlays.copy(choosingStart = true)
         controller.setChoosingStart(true)
     }
 
@@ -391,7 +394,8 @@ internal fun ReaderScreen(
 
     LaunchedEffect(Unit) {
         TtsPlaybackController.chapterRequests.collect { requested ->
-            if (requested != chapterIndex) {
+            // 只有真的换章才动位置：与阅读器位置回报形成回路曾导致章末死循环。
+            if (requested != position.chapter) {
                 selectChapter(requested, fromTts = true)
             }
         }
@@ -399,7 +403,7 @@ internal fun ReaderScreen(
 
     LaunchedEffect(ttsForThisBook) {
         if (!ttsForThisBook) {
-            choosingStart = false
+            overlays = overlays.copy(choosingStart = false)
             controller.setChoosingStart(false)
             controller.clearHighlight()
         }
@@ -409,68 +413,62 @@ internal fun ReaderScreen(
         ttsState.highlightBlockIndex,
         ttsState.highlightOffset,
         ttsState.chapterIndex,
-        chapterIndex
+        position.chapter
     ) {
-        if (ttsForThisBook && ttsState.chapterIndex == chapterIndex) {
+        if (ttsForThisBook && ttsState.chapterIndex == position.chapter) {
             highlightCurrentTts(controller, ttsState)
         }
     }
 
     BackHandler {
-        when {
-            lookup != null -> lookup = null
-            showSettings -> showSettings = false
-            showContents -> showContents = false
-            showPageJump -> showPageJump = false
-            else -> closeWithFlush()
+        // 优先级链（查词 > 设置 > 目录 > 跳页 > 退出）由 ReaderOverlays 定义并单测。
+        val back = overlays.onBack(lookupOpen = lookup != null)
+        overlays = back.overlays
+        when (back.action) {
+            ReaderBackAction.DismissLookup -> lookup = null
+            ReaderBackAction.CloseSheet -> Unit
+            ReaderBackAction.LeaveReader -> closeWithFlush()
         }
     }
 
     LaunchedEffect(lookup) {
         val request = lookup ?: return@LaunchedEffect
-        dictionaryLoading = true
-        aiResult = null
-        aiLoading = false
-        aiFailed = false
-        aiRemoteFailed = false
-        lookupStatus = null
-        sentenceTranslation = sentenceTranslationCache[request.sentence.trim()]
-        sentenceTranslationError = null
-        sentenceTranslationLoading = false
-        translation = null
-        translationLoading = book.hasTranslation
-        retranslateLoading = false
-        dictionaryResult = viewModel.lookup(request)
-        showingRelatedPhrase = false
-        dictionaryLoading = false
+        val dictionary = viewModel.lookup(request)
+        // begin() 一次性归零上一次的 AI/译文/错误/行内反馈；归零矩阵在状态类里单测。
+        lookupSession = lookupSession.begin(
+            dictionaryResult = dictionary,
+            hasTranslation = book.hasTranslation,
+            sentence = request.sentence
+        )
         // 译本对照是纯本地查询，先于联网 AI 出结果。
         if (book.hasTranslation) {
-            translation = viewModel.translationLookup(book, chapterIndex, request)
-            translationLoading = false
+            lookupSession = lookupSession.withTranslation(
+                viewModel.translationLookup(book, position.chapter, request)
+            )
         }
         if (aiSettings.enabled) {
-            aiLoading = true
+            lookupSession = lookupSession.copy(aiLoading = true)
             val outcome = runCatching {
-                viewModel.aiLookup(book, request, dictionaryResult?.entry)
-            }.onFailure { aiFailed = true }.getOrNull()
+                viewModel.aiLookup(book, request, dictionary.entry)
+            }.onFailure { lookupSession = lookupSession.markAiFailed() }.getOrNull()
             // outcome 非 null 时 result 仍可能为 null（本地兜底也没东西可给），
             // remoteFailed 与 result 正交，两条失败路径都要能反馈。
-            aiResult = outcome?.result
-            aiRemoteFailed = outcome?.remoteFailed == true
-            aiLoading = false
+            if (outcome != null) {
+                lookupSession = lookupSession.withAiResult(outcome.result, outcome.remoteFailed == true)
+            }
         }
     }
 
     Box(
         Modifier.fillMaxSize().background(Color(android.graphics.Color.parseColor(preferences.theme.background)))
     ) {
-        key(chapterIndex) {
+        key(position.chapter) {
             EpubPage(
-                chapterFile = File(book.extractedDir, book.chapters[chapterIndex].relativePath),
-                initialPage = initialPage,
-                initialScrollMode = scrollMode,
-                initialScrollRatio = scrollRatio,
-                initialScrollPageCount = scrollPageCount.coerceAtLeast(1),
+                chapterFile = File(book.extractedDir, book.chapters[position.chapter].relativePath),
+                initialPage = position.restorePage,
+                initialScrollMode = position.scrollMode,
+                initialScrollRatio = position.scrollRatio,
+                initialScrollPageCount = position.scrollPageCount.coerceAtLeast(1),
                 preferences = preferences,
                 savedWords = if (reminders.contextHighlight) {
                     savedWords.flatMap { word -> listOf(word.headword) + word.surfaceForms }
@@ -484,25 +482,15 @@ internal fun ReaderScreen(
                     .fillMaxSize()
                     .testTag(UiTags.READER_PAGE),
                 onReady = { page, count ->
-                    initialPage = page
-                    currentPage = page
-                    pageCount = count
-                    pendingPage = page
-                    pendingCount = count
-                    needsSave = true
-                    TtsPlaybackController.onReaderChapterLoaded(book.id, chapterIndex)
-                    controller.setChoosingStart(choosingStart)
-                    if (ttsForThisBook && ttsState.chapterIndex == chapterIndex) {
+                    position = position.onReady(page, count)
+                    TtsPlaybackController.onReaderChapterLoaded(book.id, position.chapter)
+                    controller.setChoosingStart(overlays.choosingStart)
+                    if (ttsForThisBook && ttsState.chapterIndex == position.chapter) {
                         highlightCurrentTts(controller, ttsState)
                     }
                 },
                 onPageChanged = { page, count ->
-                    initialPage = page
-                    currentPage = page
-                    pageCount = count
-                    pendingPage = page
-                    pendingCount = count
-                    needsSave = true
+                    position = position.onPageChanged(page, count)
                     // A manual page turn scrolls the highlight away with the
                     // text; clear it here so no stale block lingers on the new
                     // page before the next sentence re-applies it.
@@ -512,48 +500,42 @@ internal fun ReaderScreen(
                     }
                 },
                 onChapterRequested = { direction ->
-                    if (reminders.pausePrompt && dueWords.isNotEmpty() && !showReviewPrompt) {
-                        showReviewPrompt = true
+                    if (reminders.pausePrompt && dueWords.isNotEmpty() && !overlays.reviewPrompt) {
+                        overlays = overlays.copy(reviewPrompt = true)
                     }
-                    changeChapter(direction, keepScrollMode = scrollMode)
+                    changeChapter(direction, keepScrollMode = position.scrollMode)
                 },
                 onWord = {
                     lookup = it
-                    dictionaryResult = null
-                    showingRelatedPhrase = false
-                    toolbarVisible = false
+                    // 清空会话：新查词的正式重置在 LaunchedEffect(lookup) 的 begin() 里做。
+                    lookupSession = ReaderLookupSession.empty(sentenceTranslationCache)
+                    overlays = overlays.copy(toolbarVisible = false)
                 },
                 onSentenceTapped = { block, offset ->
-                    if (choosingStart) {
+                    if (overlays.choosingStart) {
                         // Only the first tap after entering choose mode is
                         // consumed as the start point.
-                        choosingStart = false
+                        overlays = overlays.copy(choosingStart = false)
                         controller.setChoosingStart(false)
                         TtsPlaybackController.startFromBlockOffset(
                             context,
                             book,
-                            chapterIndex,
+                            position.chapter,
                             block,
                             offset
                         )
                     }
                 },
-                onScrollModeChanged = { active -> scrollMode = active },
+                onScrollModeChanged = { active -> position = position.onScrollModeChanged(active) },
                 onScrollProgress = { ratio, page, count ->
-                    scrollRatio = ratio
-                    scrollPageCount = count
-                    currentPage = page
-                    pageCount = count
-                    pendingPage = page
-                    pendingCount = count
-                    needsSave = true
+                    position = position.onScrollProgress(ratio, page, count)
                 },
-                onToolbarRequested = { toolbarVisible = !toolbarVisible }
+                onToolbarRequested = { overlays = overlays.toggleToolbar() }
             )
         }
 
         AnimatedVisibility(
-            visible = toolbarVisible,
+            visible = overlays.toolbarVisible,
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
             Column(
@@ -579,7 +561,7 @@ internal fun ReaderScreen(
                         )
                     }
                     Text(
-                        book.chapters[chapterIndex].title,
+                        book.chapters[position.chapter].title,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -594,7 +576,7 @@ internal fun ReaderScreen(
                             )
                         }
                     }
-                    TextButton(onClick = { showContents = true }) {
+                    TextButton(onClick = { overlays = overlays.copy(contents = true) }) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(stringResource(R.string.reader_contents))
@@ -613,12 +595,12 @@ internal fun ReaderScreen(
                             color = Ink
                         )
                     }
-                    TextButton(onClick = { showSettings = true }) {
+                    TextButton(onClick = { overlays = overlays.copy(settings = true) }) {
                         Text("Aa", fontWeight = FontWeight.Bold)
                     }
                 }
                 LinearProgressIndicator(
-                    progress = { progressOf(chapterIndex, currentPage, pageCount) },
+                    progress = { position.progress(book.chapters.size) },
                     modifier = Modifier.fillMaxWidth().height(2.dp),
                     color = Accent,
                     trackColor = Accent.copy(alpha = .12f)
@@ -654,19 +636,19 @@ internal fun ReaderScreen(
                     tint = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
                 )
             }
-            if (scrollMode) {
+            if (position.scrollMode) {
                 Text(
                     stringResource(
                         R.string.reader_scroll_progress,
-                        chapterIndex + 1,
+                        position.chapter + 1,
                         book.chapters.size,
-                        (scrollRatio * 100).roundToInt()
+                        (position.scrollRatio * 100).roundToInt()
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
                     modifier = Modifier
                         .semantics { contentDescription = pageIndicatorLabel }
-                        .clickable { showPageJump = true }
+                        .clickable { overlays = overlays.copy(pageJump = true) }
                 )
                 TextButton(onClick = controller::exitScrollMode) {
                     Text(
@@ -678,16 +660,16 @@ internal fun ReaderScreen(
                 Text(
                     stringResource(
                         R.string.reader_pages_label,
-                        chapterIndex + 1,
+                        position.chapter + 1,
                         book.chapters.size,
-                        currentPage + 1,
-                        pageCount
+                        position.page + 1,
+                        position.pageCount
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
                     modifier = Modifier
                         .semantics { contentDescription = pageIndicatorLabel }
-                        .clickable { showPageJump = true }
+                        .clickable { overlays = overlays.copy(pageJump = true) }
                 )
             }
             IconButton(
@@ -719,16 +701,16 @@ internal fun ReaderScreen(
                 onStop = { TtsPlaybackController.stop(context) },
                 onRateChange = { TtsPlaybackController.setRate(context, it) },
                 onCacheBook = { TtsPlaybackController.cacheWholeBook(context) },
-                choosingStart = choosingStart,
+                choosingStart = overlays.choosingStart,
                 onChooseStart = {
-                    choosingStart = !choosingStart
-                    controller.setChoosingStart(choosingStart)
+                    overlays = overlays.copy(choosingStart = !overlays.choosingStart)
+                    controller.setChoosingStart(overlays.choosingStart)
                 }
             )
         }
 
         AnimatedVisibility(
-            visible = showReviewPrompt && dueWords.isNotEmpty(),
+            visible = overlays.reviewPrompt && dueWords.isNotEmpty(),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             Column(
@@ -740,67 +722,65 @@ internal fun ReaderScreen(
                     count = dueWords.size,
                     dwellMillis = reviewPace.dwellMillis,
                     onStart = {
-                        showReviewPrompt = false
-                        pendingClose = false
+                        overlays = overlays.startReviewFromPrompt()
                         reviewDeckIds = dueWords.take(reviewPace.sessionMaxWords).map { it.id }
                     },
                     onDismiss = {
-                        showReviewPrompt = false
-                        if (pendingClose) {
-                            pendingClose = false
-                            performClose()
-                        }
+                        val dismissal = overlays.dismissReviewPrompt()
+                        overlays = dismissal.overlays
+                        if (dismissal.leaveReader) performClose()
                     }
                 )
             }
         }
     }
 
-    if (showContents) {
+    if (overlays.contents) {
         ContentsSheet(
             book = book,
-            currentChapter = chapterIndex,
+            currentChapter = position.chapter,
             onSelect = {
                 selectChapter(it)
-                showContents = false
+                overlays = overlays.copy(contents = false)
             },
-            onDismiss = { showContents = false }
+            onDismiss = { overlays = overlays.copy(contents = false) }
         )
     }
 
-    if (showSettings) {
+    if (overlays.settings) {
         SettingsSheet(
             preferences = preferences,
             reviewPace = reviewPace,
             onOpenReviewSettings = {
-                showSettings = false
-                showReviewSettings = true
+                overlays = overlays.copy(settings = false, reviewSettings = true)
             },
             onOpenListeningSettings = {
-                showSettings = false
-                showListeningSettings = true
+                overlays = overlays.copy(settings = false, listeningSettings = true)
             },
             onChange = ::persistPreferences,
-            onDismiss = { showSettings = false }
+            onDismiss = { overlays = overlays.copy(settings = false) }
         )
     }
 
-    if (showListeningSettings) {
+    if (overlays.listeningSettings) {
         // Multi-voice M4: the reader knows the book, so its character list and
         // voice assignments can be managed right here.
-        ListeningSettingsSheet(onDismiss = { showListeningSettings = false }, book = book)
-    }
-
-    if (showPageJump) {
-        PageJumpDialog(
-            currentPage = currentPage,
-            pageCount = pageCount,
-            onJump = controller::jumpToPage,
-            onDismiss = { showPageJump = false }
+        ListeningSettingsSheet(
+            onDismiss = { overlays = overlays.copy(listeningSettings = false) },
+            book = book
         )
     }
 
-    if (showReviewSettings) {
+    if (overlays.pageJump) {
+        PageJumpDialog(
+            currentPage = position.page,
+            pageCount = position.pageCount,
+            onJump = controller::jumpToPage,
+            onDismiss = { overlays = overlays.copy(pageJump = false) }
+        )
+    }
+
+    if (overlays.reviewSettings) {
         ReviewSettingsSheet(
             preset = reviewPreset,
             custom = customReview,
@@ -808,7 +788,7 @@ internal fun ReaderScreen(
             onChangePreset = onReviewModeChange,
             onChangeCustom = onCustomReviewChange,
             onChangeReminders = onRemindersChange,
-            onDismiss = { showReviewSettings = false }
+            onDismiss = { overlays = overlays.copy(reviewSettings = false) }
         )
     }
 
@@ -822,42 +802,40 @@ internal fun ReaderScreen(
     }
 
     lookup?.let { currentLookup ->
-        val displayedEntry = if (showingRelatedPhrase) dictionaryResult?.relatedPhrase
-        else dictionaryResult?.entry
+        val displayedEntry = if (lookupSession.showingRelatedPhrase) lookupSession.dictionaryResult?.relatedPhrase
+        else lookupSession.dictionaryResult?.entry
         val savedId = (displayedEntry?.matchedPhrase ?: displayedEntry?.headword)
             ?.lowercase(Locale.ROOT)
         LookupSheet(
             lookup = currentLookup,
             entry = displayedEntry,
-            relatedPhrase = dictionaryResult?.relatedPhrase,
-            loading = dictionaryLoading,
-            saveStatus = lookupStatus,
-            aiContext = aiResult,
-            aiLoading = aiLoading,
-            aiFailed = aiFailed,
-            aiRemoteFailed = aiRemoteFailed,
+            relatedPhrase = lookupSession.dictionaryResult?.relatedPhrase,
+            loading = lookupSession.dictionaryLoading,
+            saveStatus = lookupSession.status,
+            aiContext = lookupSession.aiResult,
+            aiLoading = lookupSession.aiLoading,
+            aiFailed = lookupSession.aiFailed,
+            aiRemoteFailed = lookupSession.aiRemoteFailed,
             sentenceTranslationReady = SentenceTranslatorFactory.isConfigured(aiSettings),
             hasTranslation = book.hasTranslation,
-            translation = translation,
-            translationLoading = translationLoading,
-            sentenceTranslation = sentenceTranslation,
-            sentenceTranslationError = sentenceTranslationError,
-            sentenceTranslationLoading = sentenceTranslationLoading,
+            translation = lookupSession.translation,
+            translationLoading = lookupSession.translationLoading,
+            sentenceTranslation = lookupSession.sentenceTranslation,
+            sentenceTranslationError = lookupSession.sentenceTranslationError,
+            sentenceTranslationLoading = lookupSession.sentenceTranslationLoading,
             isSaved = savedId != null && savedWords.any { word -> word.id == savedId },
-            isPhraseView = showingRelatedPhrase,
+            isPhraseView = lookupSession.showingRelatedPhrase,
             showReviewEntry = reminders.contextHighlight,
             retranslateAvailable = aiSettings.powerEnabled && aiSettings.remoteReady && book.isAiTranslation,
-            retranslateLoading = retranslateLoading,
-            retranslateDoneTick = retranslateDoneTick,
+            retranslateLoading = lookupSession.retranslateLoading,
+            retranslateDoneTick = lookupSession.retranslateDoneTick,
             onRetranslate = { feedback ->
-                val hit = translation ?: return@LookupSheet
-                if (retranslateLoading) return@LookupSheet
-                retranslateLoading = true
+                val hit = lookupSession.translation ?: return@LookupSheet
+                if (lookupSession.retranslateLoading) return@LookupSheet
+                lookupSession = lookupSession.startRetranslate()
                 viewModel.retranslateTranslation(book, hit, feedback.ifBlank { null }) { ok ->
-                    retranslateLoading = false
-                    retranslateDoneTick++
                     // 弹层开着时全局 Snackbar 不可见，结果走行内 lookupStatus。
-                    lookupStatus = if (ok) {
+                    val status = if (ok) {
                         SettingsStatus.success(
                             context.getString(R.string.reader_translation_retranslated)
                         )
@@ -869,8 +847,13 @@ internal fun ReaderScreen(
                     if (ok) {
                         // 重查拿新译文与新词级对齐（WordAligner 查询时现算）。
                         scope.launch {
-                            translation = viewModel.translationLookup(book, chapterIndex, currentLookup)
+                            lookupSession = lookupSession.finishRetranslate(
+                                status = status,
+                                translation = viewModel.translationLookup(book, position.chapter, currentLookup)
+                            )
                         }
+                    } else {
+                        lookupSession = lookupSession.finishRetranslate(status = status)
                     }
                 }
             },
@@ -881,8 +864,8 @@ internal fun ReaderScreen(
                     reviewDeckIds = listOf(word.id)
                 }
             },
-            onShowPhrase = { showingRelatedPhrase = true },
-            onShowWord = { showingRelatedPhrase = false },
+            onShowPhrase = { lookupSession = lookupSession.setShowingRelatedPhrase(true) },
+            onShowWord = { lookupSession = lookupSession.setShowingRelatedPhrase(false) },
             onSpeak = {
                 onSpeak(displayedEntry?.matchedPhrase ?: displayedEntry?.headword ?: currentLookup.word)
             },
@@ -893,59 +876,55 @@ internal fun ReaderScreen(
                         .firstOrNull { word -> word.id == savedId }?.headword
                     viewModel.removeSavedWord(savedId)
                     // 弹层开着时全局 Snackbar 不可见，反馈改在弹层内联展示。
-                    lookupStatus = SettingsStatus.success(
-                        context.getString(
-                            R.string.notice_word_removed,
-                            removedHeadword ?: currentLookup.word
+                    lookupSession = lookupSession.setStatus(
+                        SettingsStatus.success(
+                            context.getString(
+                                R.string.notice_word_removed,
+                                removedHeadword ?: currentLookup.word
+                            )
                         )
                     )
                 } else {
                     viewModel.saveWord(
                         book,
-                        book.chapters[chapterIndex].title,
+                        book.chapters[position.chapter].title,
                         currentLookup,
                         entry,
-                        aiResult
+                        lookupSession.aiResult
                     )
-                    lookupStatus = SettingsStatus.success(
-                        context.getString(R.string.notice_word_saved, currentLookup.word)
+                    lookupSession = lookupSession.setStatus(
+                        SettingsStatus.success(
+                            context.getString(R.string.notice_word_saved, currentLookup.word)
+                        )
                     )
                 }
             },
             onTranslateSentence = {
                 val key = currentLookup.sentence.trim()
-                val cached = sentenceTranslationCache[key]
+                val cached = lookupSession.cachedSentenceOrNull(key)
                 when {
-                    sentenceTranslationLoading -> Unit
+                    lookupSession.sentenceTranslationLoading -> Unit
                     cached != null -> {
-                        sentenceTranslation = cached
-                        sentenceTranslationError = null
+                        lookupSession = lookupSession.withSentenceTranslation(cached)
                     }
                     else -> scope.launch {
-                        sentenceTranslationLoading = true
-                        sentenceTranslationError = null
+                        lookupSession = lookupSession.beginSentenceTranslation()
                         // 成功与失败都必须留下可见结果：静默失败是历史缺陷。
                         runCatching { viewModel.translateSentence(book, currentLookup.sentence) }
                             .onSuccess { result ->
-                                sentenceTranslation = result
-                                if (sentenceTranslationCache.size >= 64) {
-                                    sentenceTranslationCache.clear()
-                                }
-                                sentenceTranslationCache[key] = result
+                                lookupSession = lookupSession.cacheSentence(key, result)
                             }
                             .onFailure {
-                                sentenceTranslation = null
-                                sentenceTranslationError =
+                                lookupSession = lookupSession.withSentenceTranslationError(
                                     context.getString(R.string.translate_sentence_failed)
+                                )
                             }
-                        sentenceTranslationLoading = false
                     }
                 }
             },
             onDismiss = {
                 lookup = null
-                showingRelatedPhrase = false
-                lookupStatus = null
+                lookupSession = lookupSession.setShowingRelatedPhrase(false).clearStatus()
             }
         )
     }
