@@ -1,5 +1,9 @@
 package com.linguareader.app
 
+import com.linguareader.app.tts.TtsAudioCache
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.Locale
 import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -458,6 +462,15 @@ internal fun ListeningSettingsBody(
                 )
             }
 
+            // D2.4：音频缓存的占用/上限/清理。
+            // 「必须显示实测占用」是这块的重点——配额是个魔法数字，占用不是；
+            // 用户只有看得见数字，才知道 512 MB 对自己是宽是紧。
+            AudioCacheSection(
+                limitMb = settings.cacheLimitMb,
+                onLimitChange = { settings = settings.copy(cacheLimitMb = it) },
+                onStatus = { status = it }
+            )
+
             Spacer(Modifier.height(20.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (onDismiss != null) {
@@ -612,4 +625,90 @@ private fun SystemVoiceDropdown(
             }
         }
     }
+}
+/**
+ * 音频缓存：占用、上限、清空（方案 D2.4）。
+ *
+ * 放在听书设置里而不是单开一个「存储」页：缓存本来就是听书产生的，而这个 App
+ * 目前没有统一的设置页（各功能各自弹层）。全局的「各类占用 + 孤儿数据清理」需要
+ * 共享 AppViewModel 里那份 per-book 存储清单，单开一轮做，别在这里复制第二份清单。
+ */
+@Composable
+private fun AudioCacheSection(
+    limitMb: Int,
+    onLimitChange: (Int) -> Unit,
+    onStatus: (SettingsStatus) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val cache = remember { TtsAudioCache(context) }
+    // 每次进入设置都重新量一次；清理后也刷新。
+    var usedBytes by remember { mutableStateOf(-1L) }
+    LaunchedEffect(Unit) {
+        usedBytes = withContext(Dispatchers.IO) { cache.totalBytes() }
+    }
+
+    Spacer(Modifier.height(16.dp))
+    Text(
+        stringResource(R.string.tts_cache_section),
+        style = MaterialTheme.typography.labelLarge,
+        color = InkSoft
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        when {
+            usedBytes < 0 -> ""
+            usedBytes == 0L -> stringResource(R.string.tts_cache_usage_empty)
+            else -> stringResource(R.string.tts_cache_usage, formatBytes(usedBytes))
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        color = Ink
+    )
+    Spacer(Modifier.height(6.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            stringResource(R.string.tts_cache_limit_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = InkSoft
+        )
+        Spacer(Modifier.width(8.dp))
+        CloudTtsSettings.CACHE_LIMIT_OPTIONS_MB.forEach { option ->
+            val selected = limitMb == option
+            TextButton(onClick = { onLimitChange(option) }) {
+                Text(
+                    if (option <= 0) stringResource(R.string.tts_cache_limit_unlimited)
+                    else stringResource(R.string.tts_cache_limit_mb, option),
+                    color = if (selected) Accent else InkSoft,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                )
+            }
+        }
+    }
+    Text(
+        stringResource(R.string.tts_cache_hint),
+        style = MaterialTheme.typography.labelSmall,
+        color = InkFaint
+    )
+    TextButton(
+        onClick = {
+            scope.launch {
+                val freed = withContext(Dispatchers.IO) { cache.clearAll() }
+                usedBytes = withContext(Dispatchers.IO) { cache.totalBytes() }
+                onStatus(
+                    SettingsStatus.success(
+                        context.getString(R.string.tts_cache_cleared, formatBytes(freed))
+                    )
+                )
+            }
+        },
+        enabled = usedBytes > 0
+    ) { Text(stringResource(R.string.tts_cache_clear)) }
+}
+
+/** 人类可读的字节数（占用要给人看，不是给机器看）。 */
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f GB", bytes / 1024.0 / 1024.0 / 1024.0)
+    bytes >= 1024L * 1024L -> String.format(Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0)
+    bytes >= 1024L -> String.format(Locale.US, "%.0f KB", bytes / 1024.0)
+    else -> "$bytes B"
 }

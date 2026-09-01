@@ -1,3 +1,14 @@
+## 2026-09-02 音频缓存占用与清理（D2.4a）真机验收（PKB110 / Android 16 / ColorOS）
+
+入口：阅读页 →「Aa」→ 滚到底「听书设置」→ 弹层底部「音频缓存」。
+
+- **占用显示准确**：`run-as` 用 `dd` 造 3 个 1 MB 假缓存文件（3 章 × 1 音色）→ 界面显示「当前占用 **3.0 MB**」，与 `du -sk` 的 3100 KB 相符。✅
+- **上限档位**：256 / 512 / 1024 / 不限四档可选，选中态高亮；点 256 MB → 保存 → `shared_prefs/cloud_tts_settings.xml` 出现 `<int name="cache_limit_mb" value="256" />`。✅
+- **清空**：点「清空音频缓存」→ 内联提示「已清空 **3.0 MB**，下次播放会重新合成」→ 占用变为「当前没有缓存音频」→ 盘上 `files/tts_cache` 只剩空目录（`ls -A | wc -l` = 0）。✅
+- 稳定性：pid 不变，crash 缓冲无记录。✅
+- **本轮只做了缓存这半块**（D2.4a）。全局「各类占用 + 孤儿数据清理」（D2.4b）需要复用 `AppViewModel` 里那份 per-book 存储清单 —— 在弹层里再抄一份清单，等于把刚删掉的重复又请回来，所以单开一轮做。
+- **D2.3 的淘汰仍未真机验**：需要云 TTS 真实合成才能填满配额；本轮用假文件只验了占用/清空这条链路。
+
 ## 2026-09-01 数据所有权第 1 刀（D1）真机验收（PKB110 / Android 16 / ColorOS）
 
 包 `com.linguareader.app.verify`（分支 `feat/book-data-ownership` @ `7496d4f`）。判据全部走 `run-as` 读盘 + `uiautomator dump` 读对话框。

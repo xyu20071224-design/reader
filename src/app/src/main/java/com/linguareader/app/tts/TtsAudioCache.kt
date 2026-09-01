@@ -72,6 +72,18 @@ class TtsAudioCache(context: Context) : BookScopedStore {
     fun totalBytes(): Long = entries().sumOf { it.bytes }
 
     /**
+     * 清空整个音频缓存，返回释放的字节数。
+     *
+     * 用户在设置里主动按的，所以不做任何保护 —— 包括正在听的那本。下次播放会
+     * 重新合成（云 TTS 会重新计费，文案里要说清楚）。
+     */
+    fun clearAll(): Long {
+        val freed = totalBytes()
+        root.listFiles().orEmpty().forEach { it.deleteRecursively() }
+        return freed
+    }
+
+    /**
      * 淘汰到 [limitBytes] 以下，返回释放的字节数。
      *
      * - [limitBytes] <= 0 表示**不限**（用户可选），直接不动；
