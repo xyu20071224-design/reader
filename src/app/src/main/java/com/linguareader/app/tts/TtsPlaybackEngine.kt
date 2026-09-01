@@ -3,6 +3,7 @@ package com.linguareader.app.tts
 import com.linguareader.app.data.Book
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,7 +58,16 @@ class TtsPlaybackEngine(
      *  synthesize with; null keeps the engine default. */
     private val voiceForSpeaker: (String, String) -> String? = { _, _ -> null }
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    /**
+     * 注意 [CoroutineExceptionHandler]：`SupervisorJob` 只负责「兄弟协程互不牵连」，
+     * **不会**吞掉未捕获异常——没有 handler 时它会一路冒到线程默认处理器，
+     * 而本引擎默认跑在 `Dispatchers.Main.immediate` 上，等于直接崩掉进程。
+     * 而 [chapterLoader] 最终会走到 `Jsoup.parse(File(...))`：章节文件缺失或损坏
+     * （导入残缺、外部存储被清理）就抛 IOException。那本该降级成暂停，不该是崩溃。
+     */
+    private val scope = CoroutineScope(
+        SupervisorJob() + dispatcher + CoroutineExceptionHandler { _, _ -> pause() }
+    )
 
     private var synthesizer: TtsSynthesizer? = null
     private val pendingReady = mutableListOf<() -> Unit>()
@@ -439,7 +449,10 @@ class TtsPlaybackEngine(
         if (changedChapter != chapterIndex || waitingForChapter()) return
         val version = navigationVersion
         scope.launch {
-            val loadedChapter = chapterLoader(currentBook, changedChapter)
+            // 跟随失败无关紧要：放弃这一次即可，不要惊动正在播的队列
+            // （交给 scope 的 handler 会一路 pause，那是过度反应）。
+            val loadedChapter = runCatching { chapterLoader(currentBook, changedChapter) }
+                .getOrNull() ?: return@launch
             if (version != navigationVersion) return@launch
             if (loadedChapter.sentenceBelongsToBlock(sentenceIndex, blockText)) return@launch
             val target = loadedChapter.firstSentenceIndexInBlock(blockText) ?: return@launch

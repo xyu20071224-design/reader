@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import com.linguareader.app.MainActivity
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.LibraryRepository
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,7 +46,14 @@ import java.util.Collections
  * live in the pure [TtsPlaybackEngine], which is unit-tested in isolation.
  */
 class TtsPlaybackService : Service() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = CoroutineScope(
+    SupervisorJob() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, _ ->
+        // 兜底：章节抽取（extractor.chapter）里 Jsoup.parse(File) 会在章节文件
+        // 缺失/损坏时抛 IOException。别让前台服务进程因此崩掉——停掉这次播放即可，
+        // 下次点开书时用户自会看到章节坏了的提示。
+        stopSelf()
+    }
+)
     private val saveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** Multi-voice M2: background speaker tagging, never on the playback path. */
     private val tagScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
