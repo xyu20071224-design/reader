@@ -3,6 +3,7 @@ package com.linguareader.app.data
 import android.content.Context
 import android.net.Uri
 import com.linguareader.app.ai.AiLookupResult
+import com.linguareader.app.data.BookScopedStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -67,7 +68,7 @@ object ReviewScheduler {
     ): SavedWord = reviewed(word, remembered, now, mode.toPace())
 }
 
-class VocabularyRepository(private val context: Context) {
+class VocabularyRepository(private val context: Context) : BookScopedStore {
     private val vocabularyFile = File(context.filesDir, "vocabulary.json")
     private val mutex = Mutex()
 
@@ -126,6 +127,30 @@ class VocabularyRepository(private val context: Context) {
             val updated = current.filterNot { it.id == id } + saved
             write(updated)
             sorted(updated)
+        }
+    }
+
+    override val storeId: String = "vocabulary"
+
+    /** 生词本是单个 JSON 文件，不是目录；这里返回文件本身。 */
+    override fun storageRoots(): List<File> = listOf(vocabularyFile)
+
+    /**
+     * 删书连带删该书生词（2026-09-01 拍板的**行为变更**）。
+     *
+     * 此前生词完全不随书删除：保存时记了 bookId，却只有按词 id 删的 remove(id)，
+     * 于是书从书架消失后，它的生词还留在生词本里，带着一个打不开的书名，且没有
+     * 任何入口能按书清掉。现在随书清理 —— 因为不可逆，删除对话框必须显示条数。
+     */
+    override suspend fun deleteBookData(book: Book) { removeByBook(book.id) }
+
+    suspend fun removeByBook(bookId: String): List<SavedWord> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val current = read()
+            if (bookId.isBlank()) return@withLock sorted(current)
+            val remaining = current.filterNot { it.bookId == bookId }
+            if (remaining.size != current.size) write(remaining)
+            sorted(remaining)
         }
     }
 

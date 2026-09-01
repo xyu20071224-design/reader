@@ -19,7 +19,7 @@ interface BookScopedStore {
     val storeId: String
 
     /**
-     * 这处存储在磁盘上的根目录。供孤儿对账（磁盘上有、书库里没有）与测试枚举用；
+     * 这处存储在磁盘上的根（目录，或像生词本那样的单个文件）。供孤儿对账
      * **不要**拿它去拼单本书的路径 —— 那是各实现自己的事。
      */
     fun storageRoots(): List<File>

@@ -154,6 +154,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // internal 而非 private：漂移守卫测试要读它（BookDeletionCascadeTest）。
     internal val bookDataStores: List<BookScopedStore> = listOf(
         library,
+        vocabulary,
         aiRepository,
         glossaryRepository,
         speakerTagRepository,

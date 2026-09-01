@@ -143,16 +143,17 @@ class BookDeletionCascadeTest {
     }
 
     /**
-     * **故意钉住的缺陷现状**：生词不随书删除。
+     * D1.4 的**行为变更**：生词随书删除。
      *
-     * VocabularyRepository 保存时记了 bookId，却只有按词 id 删的 remove(id)，
-     * 没有按书删的入口；VocabularyScreen 也不按「书还在不在」过滤，于是删完书
-     * 生词照旧显示，还带着一个打不开的书名。
+     * 本用例原先钉的是相反的现状（生词全部保留）—— VocabularyRepository 记了
+     * bookId 却只有按词 id 删的 remove(id)，于是书从书架消失后生词还留着，带着
+     * 一个打不开的书名，且没有任何入口能按书清掉。2026-09-01 拍板改为随书删，
+     * **这次翻面就是那个变更的留痕**。
      *
-     * D1.4 落地后本用例应翻面成「该书生词已清空、别的书不受影响」。
+     * 不可逆，所以删除对话框必须显示条数（见 shelf_delete_body）。
      */
     @Test
-    fun savedWordsSurviveBookDeletion_currentBehaviour() {
+    fun savedWordsAreDeletedWithTheirBook() {
         val target = book("cascade-b")
         seed(target)
         seedVocabulary(savedWord("w1", target.id), savedWord("w2", "other-book"))
@@ -160,7 +161,8 @@ class BookDeletionCascadeTest {
         val viewModel = AppViewModel(context)
         deleteAndAwait(viewModel, target)
 
-        assertEquals(listOf(target.id, "other-book"), loadVocabularyBookIds())
+        // 只清这本书的，别的书一条不动。
+        assertEquals(listOf("other-book"), loadVocabularyBookIds())
     }
 
     /** 级联改成遍历清单后最容易出的新事故是「删过头」，这条守住边界。 */
@@ -195,6 +197,7 @@ class BookDeletionCascadeTest {
             "per-book 存储清单变了。新增存储请同时更新：本用例、perBookStores() 落点表、孤儿对账。",
             setOf(
                 "books",
+                "vocabulary",
                 "ai/book-context",
                 "ai/glossary",
                 "ai/speaker-tags",

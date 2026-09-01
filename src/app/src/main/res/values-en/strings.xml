@@ -61,6 +61,10 @@
     <string name="shelf_loading">Organising books…</string>
     <string name="shelf_delete_title">Delete \"%1$s\"?</string>
     <string name="shelf_delete_body">The local copy of the book and its reading progress are removed as well.</string>
+    <plurals name="shelf_delete_body_words">
+        <item quantity="one">The local copy, reading progress and %1$d saved word from this book will be deleted. This cannot be undone.</item>
+        <item quantity="other">The local copy, reading progress and %1$d saved words from this book will be deleted. This cannot be undone.</item>
+    </plurals>
     <string name="shelf_empty_title">Start with an English book</string>
     <string name="shelf_empty_body">Import a DRM-free reflowable EPUB, TXT, FB2 or text-based PDF. Books and progress stay on this device.</string>
     <string name="shelf_empty_action">Choose an e-book file</string>

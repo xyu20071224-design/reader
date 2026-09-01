@@ -26,6 +26,11 @@ class StringResourcesTest {
         assertEquals("回到朗读处", context.getString(R.string.player_back_to_speaking))
         assertEquals("多角色音色（实验）", context.getString(R.string.multivoice_title))
         assertEquals("2 本书", context.resources.getQuantityString(R.plurals.shelf_book_count, 2, 2))
+        // 删书连带删生词是不可逆的行为变更，条数必须出现在确认文案里
+        assertEquals(
+            "本地书籍副本、阅读进度与该书的 3 条生词会一并删除，且不可恢复。",
+            context.resources.getQuantityString(R.plurals.shelf_delete_body_words, 3, 3)
+        )
         assertEquals("1 本书", context.resources.getQuantityString(R.plurals.shelf_book_count, 1, 1))
     }
 
@@ -41,6 +46,10 @@ class StringResourcesTest {
         assertEquals("1 book", context.resources.getQuantityString(R.plurals.shelf_book_count, 1, 1))
         assertEquals("2 books", context.resources.getQuantityString(R.plurals.shelf_book_count, 2, 2))
         assertEquals("1 word", context.resources.getQuantityString(R.plurals.shelf_word_count, 1, 1))
+        assertEquals(
+            "The local copy, reading progress and 1 saved word from this book will be deleted. This cannot be undone.",
+            context.resources.getQuantityString(R.plurals.shelf_delete_body_words, 1, 1)
+        )
         assertEquals("5 words", context.resources.getQuantityString(R.plurals.shelf_word_count, 5, 5))
     }
 

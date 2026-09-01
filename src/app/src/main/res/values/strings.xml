@@ -59,6 +59,9 @@
     <string name="shelf_loading">正在整理图书…</string>
     <string name="shelf_delete_title">删除《%1$s》？</string>
     <string name="shelf_delete_body">本地书籍副本与阅读进度会一并删除。</string>
+    <plurals name="shelf_delete_body_words">
+        <item quantity="other">本地书籍副本、阅读进度与该书的 %1$d 条生词会一并删除，且不可恢复。</item>
+    </plurals>
     <string name="shelf_empty_title">从一本英文书开始</string>
     <string name="shelf_empty_body">导入无 DRM 的可重排 EPUB、TXT、FB2 或文字版 PDF。图书和阅读进度只保存在本机。</string>
     <string name="shelf_empty_action">选择电子书文件</string>

@@ -376,7 +376,18 @@ internal fun BookshelfScreen(
                 }
             },
             title = { Text(stringResource(R.string.shelf_delete_title, book.title)) },
-            text = { Text(stringResource(R.string.shelf_delete_body)) },
+            text = {
+                // 删书连带删该书生词，且不可恢复 —— 条数必须摆在按下去之前。
+                val wordCount = state.savedWords.count { it.bookId == book.id }
+                Text(
+                    if (wordCount == 0) stringResource(R.string.shelf_delete_body)
+                    else pluralStringResource(
+                        R.plurals.shelf_delete_body_words,
+                        wordCount,
+                        wordCount
+                    )
+                )
+            },
             containerColor = CardSurface,
             shape = CardShape
         )
