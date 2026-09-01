@@ -165,6 +165,7 @@
     <string name="player_speed_value">Speed %1$s</string>
     <string name="player_speed_hint">0.5×–2.0×; tap the page to start from that sentence</string>
     <string name="player_stop">Stop listening</string>
+    <string name="player_back_to_speaking">Back to narration</string>
 
     <!-- Multi-voice -->
     <!-- Common (shared across modules) -->

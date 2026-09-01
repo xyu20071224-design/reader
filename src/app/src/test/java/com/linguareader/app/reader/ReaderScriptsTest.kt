@@ -174,8 +174,17 @@ class ReaderScriptsTest {
         assertContains(script, "let anchorLocus = { blockIndex: 41, charOffset: 128, anchor: \"exact\" };")
         assertContains(script, "const anchoredPage = anchorLocus ? pagedPageForLocus(anchorLocus) : null;")
         assertContains(script, "if (anchoredPage !== null) {")
-        // 用户主动翻页后要重新取锚点，否则下一次重排又会按旧锚点弹回去
-        assertContains(script, "refreshAnchorLocus();\n            ReaderBridge.onPageChanged(page, pageCount);")
+        // 用户主动翻页后要重新取锚点，否则下一次重排又会按旧锚点弹回去。
+        // 只钉顺序不钉相邻：取锚点必须发生在回报之前（回报会触发 Kotlin 侧落盘），
+        // 中间允许插入别的「用户因果」处理（如用户接管窗口的置位）。
+        val applyPageBody = Regex("function applyPage\\(reanchor\\) \\{([\\s\\S]*?)\\n          \\}")
+            .find(script)?.groupValues?.get(1)
+        assertNotNull(applyPageBody, "找不到 applyPage 函数体——它被改名或改写了")
+        assertTrue(
+            applyPageBody.indexOf("refreshAnchorLocus();") <
+                applyPageBody.indexOf("ReaderBridge.onPageChanged(page, pageCount);"),
+            "锚点必须在回报之前重取，否则落盘的是上一次的锚点"
+        )
     }
 
     @Test
@@ -208,6 +217,51 @@ class ReaderScriptsTest {
         // scroll 事件密度极高，落位后清空锚点，之后按 scrollRatio 维持
         assertContains(script, "const anchoredRatio = anchorLocus ? scrollRatioForLocus(anchorLocus) : null;")
         assertContains(script, "anchorLocus = null;")
+    }
+
+    /**
+     * 听书自动跟随的「用户接管窗口」。
+     *
+     * 跟随本身是好事（朗读到哪看到哪），但用户想往后翻两页确认个人名时，
+     * 下一句一念就把视口拽回去，等于翻不动页。所以用户自己动过之后要让位
+     * 一段时间：窗口内不跟随，到期或按「回到朗读处」立刻恢复。
+     *
+     * 关键约束是**只有用户因果才置位**：程序化移动（重排、还原、跟随自己
+     * 造成的滚动）若也置位，跟随会把自己永久锁死。
+     */
+    @Test
+    fun followYieldsToTheUserTakeoverWindow() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "const LR_FOLLOW_TAKEOVER_MS = ${ReaderScripts.FOLLOW_TAKEOVER_MS};")
+        assertContains(script, "function noteUserTakeover()")
+        assertContains(script, "userTakeoverUntil = Date.now() + LR_FOLLOW_TAKEOVER_MS;")
+        // 跟随让位
+        assertContains(script, "if (Date.now() < userTakeoverUntil) return;")
+        // 用户翻页：与 refreshAnchorLocus 共用 reanchor 这个因果判据
+        assertContains(script, "if (reanchor) noteUserTakeover();")
+
+        // 置位点只允许两处：用户翻页（applyPage 的 reanchor）与拖动滚动。
+        // 多出来的一处几乎必然是程序化路径，会把跟随锁死。
+        assertEquals(
+            2,
+            Regex("noteUserTakeover\\(\\);").findAll(script).count(),
+            "用户接管窗口的置位点只能是「用户自己动」的两条路径"
+        )
+    }
+
+    /**
+     * 「回到朗读处」：用户主动要求跟回朗读位置，因此立刻结束接管窗口，
+     * 并复用 lrScrollToLocus 那套已验证的锚点落位机器（锚点跟着走，
+     * 落盘的阅读进度就是朗读处本身）。
+     */
+    @Test
+    fun backToSpeakingEndsTheTakeoverWindowAndReusesLocusLanding() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "window.lrBackToSpeaking = function(blockIndex, charOffset)")
+        assertContains(script, "userTakeoverUntil = 0;")
+        assertContains(script, "return window.lrScrollToLocus(blockIndex, charOffset, 'exact');")
     }
 
     @Test

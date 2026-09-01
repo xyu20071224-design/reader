@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Close
@@ -53,7 +54,9 @@ internal fun ListeningBar(
     onRateChange: (Float) -> Unit,
     onCacheBook: () -> Unit = {},
     choosingStart: Boolean = false,
-    onChooseStart: () -> Unit = {}
+    onChooseStart: () -> Unit = {},
+    /** 「回到朗读处」：把视口挪回正在朗读的那句，并恢复自动跟随。 */
+    onBackToSpeaking: () -> Unit = {}
 ) {
     var speedMenuOpen by remember { mutableStateOf(false) }
     // semantics{} 不是 composable 作用域，无障碍标签先在这里取出来。
@@ -62,6 +65,7 @@ internal fun ListeningBar(
     val playLabel = stringResource(R.string.player_play)
     val nextLabel = stringResource(R.string.player_next)
     val startLabel = stringResource(R.string.player_set_start)
+    val backToSpeakingLabel = stringResource(R.string.player_back_to_speaking)
     val cacheLabel = stringResource(R.string.player_cache_book)
     val speedLabel = stringResource(R.string.player_speed)
     val stopLabel = stringResource(R.string.player_stop)
@@ -148,6 +152,20 @@ internal fun ListeningBar(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
             )
+            // 朗读处未知（老链路只有句文本、或还没开始念）时不显示：按下也没地方去。
+            if (state.highlightBlockIndex >= 0) {
+                IconButton(
+                    onClick = onBackToSpeaking,
+                    modifier = Modifier.semantics { contentDescription = backToSpeakingLabel }
+                ) {
+                    Icon(
+                        Icons.Filled.MyLocation,
+                        contentDescription = null,
+                        tint = InkFaint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
             IconButton(
                 onClick = onChooseStart,
                 modifier = Modifier.semantics { contentDescription = startLabel }

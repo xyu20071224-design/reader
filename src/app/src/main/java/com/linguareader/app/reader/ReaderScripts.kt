@@ -25,6 +25,15 @@ object ReaderScripts {
     const val ANCHOR_CHAPTER_START = "chapter-start"
     const val ANCHOR_CHAPTER_END = "chapter-end"
 
+    /**
+     * 听书自动跟随的「用户接管窗口」时长（毫秒）。
+     *
+     * 用户自己翻页/滚动之后，这段时间内不再把视口拽回朗读处——否则想往后翻两页
+     * 看看，下一句一念就被弹回来，等于翻不动页。窗口到期或用户按下「回到朗读处」
+     * 即恢复跟随。数值是唯一来源：JS 侧的 LR_FOLLOW_TAKEOVER_MS 由这里注入。
+     */
+    const val FOLLOW_TAKEOVER_MS = 10_000
+
     fun bootstrap(
         initialPage: Int,
         preferences: ReaderPreferences,
@@ -90,6 +99,14 @@ object ReaderScripts {
           let anchorLocus = $anchorLiteral;
           let dragScrollActive = false;
           let lastScrollY = 0;
+          // 用户接管窗口：见 Kotlin 侧 ReaderScripts.FOLLOW_TAKEOVER_MS 的注释。
+          // 只由「用户自己动」的路径置位（applyPage(true) 与拖动滚动），程序化
+          // 移动（重排、还原、跟随本身）绝不置位，否则跟随会把自己锁死。
+          const LR_FOLLOW_TAKEOVER_MS = $FOLLOW_TAKEOVER_MS;
+          let userTakeoverUntil = 0;
+          function noteUserTakeover() {
+            userTakeoverUntil = Date.now() + LR_FOLLOW_TAKEOVER_MS;
+          }
           // Real heights (CSS px) of the Compose top toolbar and bottom bar,
           // measured in ReaderScreen and pushed here. They replace the old
           // hardcoded 104px / 70px reserves so the content never sits under
@@ -525,6 +542,8 @@ object ReaderScripts {
             const scroller = document.getElementById('lr-scroller');
             if (scroller) scroller.scrollLeft = page * window.innerWidth;
             if (reanchor) refreshAnchorLocus();
+            // 同一个因果：用户自己翻的页，暂停自动跟随，别立刻把他拽回朗读处。
+            if (reanchor) noteUserTakeover();
             ReaderBridge.onPageChanged(page, pageCount);
           }
 
@@ -743,6 +762,7 @@ object ReaderScripts {
             if (dragScrollActive) {
               const scroller = document.getElementById('lr-scroller');
               if (scroller) {
+                noteUserTakeover();
                 scroller.scrollTop -= (event.clientY - lastScrollY);
                 lastScrollY = event.clientY;
                 scrollRatio = currentScrollRatio();
@@ -1100,6 +1120,8 @@ object ReaderScripts {
           // the viewport until the next manual turn.
           function followRangeIntoView(range) {
             if (!scrollMode) return;
+            // 用户刚自己动过：这段时间归他，不跟随。
+            if (Date.now() < userTakeoverUntil) return;
             const scroller = document.getElementById('lr-scroller');
             if (!scroller) return;
             const sr = scroller.getBoundingClientRect();
@@ -1349,6 +1371,15 @@ object ReaderScripts {
             restoreTarget = page;
             applyPage(false);
             return true;
+          };
+
+          // 「回到朗读处」：把视口挪回正在朗读的那一句，并立刻结束用户接管窗口。
+          // 复用 lrScrollToLocus 的落位机器——回到朗读处也是一次用户主动的位置
+          // 变更，所以锚点跟着走，之后重排/落盘的阅读进度就是朗读处本身。
+          window.lrBackToSpeaking = function(blockIndex, charOffset) {
+            userTakeoverUntil = 0;
+            if (!window.lrScrollToLocus) return false;
+            return window.lrScrollToLocus(blockIndex, charOffset, 'exact');
           };
 
           window.lrSetChoosingStart = function(enabled) {

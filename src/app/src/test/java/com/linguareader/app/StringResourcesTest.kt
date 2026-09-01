@@ -23,6 +23,7 @@ class StringResourcesTest {
         assertEquals("导入", context.getString(R.string.shelf_import))
         assertEquals("已导入《雾都孤儿》", context.getString(R.string.notice_book_imported, "雾都孤儿"))
         assertEquals("上一句", context.getString(R.string.player_previous))
+        assertEquals("回到朗读处", context.getString(R.string.player_back_to_speaking))
         assertEquals("多角色音色（实验）", context.getString(R.string.multivoice_title))
         assertEquals("2 本书", context.resources.getQuantityString(R.plurals.shelf_book_count, 2, 2))
         assertEquals("1 本书", context.resources.getQuantityString(R.plurals.shelf_book_count, 1, 1))
@@ -34,6 +35,7 @@ class StringResourcesTest {
         assertEquals("Import", context.getString(R.string.shelf_import))
         assertEquals("Deleted \"Oliver Twist\"", context.getString(R.string.notice_book_deleted, "Oliver Twist"))
         assertEquals("Previous sentence", context.getString(R.string.player_previous))
+        assertEquals("Back to narration", context.getString(R.string.player_back_to_speaking))
         assertEquals("Character voices (experimental)", context.getString(R.string.multivoice_title))
         // 英文单复数由 plurals 处理（中文只有一种形式）
         assertEquals("1 book", context.resources.getQuantityString(R.plurals.shelf_book_count, 1, 1))

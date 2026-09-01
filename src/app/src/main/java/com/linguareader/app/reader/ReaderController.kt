@@ -144,6 +144,21 @@ class ReaderController {
         )
     }
 
+    /**
+     * 把视口挪回正在朗读的那一句（听书条的「回到朗读处」）。
+     *
+     * 与 [scrollToLocus] 的区别只在因果：这条同时结束 JS 侧的用户接管窗口
+     * （[ReaderScripts.FOLLOW_TAKEOVER_MS]），于是滚动模式的自动跟随立刻复活。
+     * 调用方要负责压掉这次落位引发的位置回报，否则引擎会被拉到该块首句。
+     */
+    fun backToSpeaking(blockIndex: Int, charOffset: Int) {
+        if (blockIndex < 0) return
+        webView.get()?.evaluateJavascript(
+            "window.lrBackToSpeaking && window.lrBackToSpeaking($blockIndex, ${charOffset.coerceAtLeast(0)})",
+            null
+        )
+    }
+
     fun firstVisibleBlock(callback: (String?) -> Unit) {
         val script = """
             (function() {
