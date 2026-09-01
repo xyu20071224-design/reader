@@ -144,31 +144,15 @@ private val WordLookupSaver = Saver<WordLookup?, List<Any>>(
 
 /**
  * 阅读位置整体可跨旋转恢复（全部字段都是 Bundle 安全类型）。
- * 重构前只有章节/还原页/滚动三项存得住，页数与「待落盘」标记会在旋转时丢；
- * 现在一起存，旋转后不再白白重存一次进度。
+ *
+ * 存档格式故意放在 [ReaderPosition.toSaveList] / [ReaderPosition.fromSaveList]：
+ * 它在 reader 包里，能被 JVM 单测直接盯住。放在这里当匿名 lambda 时漏过一次
+ * 字段——M1 加的三个锚点字段没进存档，旋转后锚点被还原成 -1，重排漂移复现，
+ * 而单测全绿。存档与状态定义必须住在一起。
  */
 private val ReaderPositionSaver = Saver<ReaderPosition, List<Any>>(
-    save = {
-        listOf(
-            it.chapter, it.restorePage, it.page, it.pageCount,
-            it.scrollMode, it.scrollRatio, it.scrollPageCount,
-            it.savedPage, it.savedCount, it.dirty
-        )
-    },
-    restore = { values ->
-        ReaderPosition(
-            chapter = values[0] as Int,
-            restorePage = values[1] as Int,
-            page = values[2] as Int,
-            pageCount = values[3] as Int,
-            scrollMode = values[4] as Boolean,
-            scrollRatio = values[5] as Float,
-            scrollPageCount = values[6] as Int,
-            savedPage = values[7] as Int,
-            savedCount = values[8] as Int,
-            dirty = values[9] as Boolean
-        )
-    }
+    save = { it.toSaveList() },
+    restore = { values -> ReaderPosition.fromSaveList(values) }
 )
 
 /**

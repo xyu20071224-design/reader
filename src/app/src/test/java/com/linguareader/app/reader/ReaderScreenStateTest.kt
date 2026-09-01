@@ -23,6 +23,60 @@ class ReaderScreenStateTest {
     private fun opened(chapter: Int = 3, page: Int = 5) =
         ReaderPosition.forBook(chapter = chapter, page = page, chapterCount = chapterCount)
 
+    // ── 旋转存档（Saver 格式）─────────────────────────────────────────
+
+    /**
+     * 旋转/进程重建的存档必须原样还原**每一个**字段。
+     *
+     * 这条是 2026-09-01 真机事故的回归：M1 给 [ReaderPosition] 加了三个锚点字段，
+     * ReaderScreen 里的 Saver 却还在存旧的十项，于是旋转后 locusBlock 变回 -1，
+     * 位置退回按页码兜底，重排漂移原样复现（竖屏 4/21 → 横屏 4/41，块 11 → 5）。
+     * 当时全套单测是绿的，因为没有一条测过存档。
+     */
+    @Test
+    fun saveListRoundTripPreservesEveryField() {
+        val original = ReaderPosition(
+            chapter = 4,
+            restorePage = 9,
+            page = 6,
+            pageCount = 21,
+            scrollMode = true,
+            scrollRatio = 0.625f,
+            scrollPageCount = 13,
+            locusBlock = 11,
+            locusOffset = 128,
+            locusAnchor = ReaderPosition.ANCHOR_CHAPTER_END,
+            savedPage = 5,
+            savedCount = 20,
+            dirty = true
+        )
+
+        val restored = ReaderPosition.fromSaveList(original.toSaveList())
+
+        // data class 的 equals 覆盖全部字段：漏存任何一项这里都会红。
+        assertEquals(original, restored)
+    }
+
+    /**
+     * 存档槽位数必须跟着字段数走。
+     *
+     * 上一条只能证明「当前这些字段存得住」，证明不了「以后新增的字段也存得住」——
+     * 加字段时若忘了改 [ReaderPosition.toSaveList]，round-trip 用例照样绿（新字段
+     * 两边都是默认值）。所以再钉一条：主构造器参数个数 == SAVE_SLOTS == 存档长度。
+     */
+    @Test
+    fun saveListCoversEveryDeclaredField() {
+        val fieldCount = ReaderPosition::class.java.declaredFields
+            .count { !it.isSynthetic && !java.lang.reflect.Modifier.isStatic(it.modifiers) }
+
+        assertEquals(
+            fieldCount,
+            ReaderPosition.SAVE_SLOTS,
+            "ReaderPosition 新增了字段但没进 toSaveList/fromSaveList：旋转后这个字段会丢"
+        )
+        assertEquals(ReaderPosition.SAVE_SLOTS, opened().toSaveList().size)
+    }
+
     // ── M1 第 1 刀：语义锚点 ──────────────────────────────────────────
 
     @Test

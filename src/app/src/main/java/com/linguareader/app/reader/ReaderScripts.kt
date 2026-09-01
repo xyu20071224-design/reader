@@ -65,7 +65,7 @@ object ReaderScripts {
             if ($initialScrollMode && window.lrEnterScrollMode) {
               window.lrEnterScrollMode($initialScrollRatio, $initialScrollPageCount);
             } else {
-              window.lrSetPage($initialPage);
+              window.lrSetPage($initialPage, true);
             }
             ${preferenceScript(preferences, syncCurrentPage = false)}
             return;
@@ -402,7 +402,7 @@ object ReaderScripts {
             updateMetrics();
             page = pageFromRatio(scrollRatio);
             restoreTarget = page;
-            applyPage();
+            applyPage(true);
             hideEndHint();
             ReaderBridge.onScrollModeChanged(false);
           }
@@ -517,14 +517,21 @@ object ReaderScripts {
             };
           }
 
-          function applyPage() {
+          // reanchor = 「这一次是用户自己动的」。只有这种因果才允许重取锚点。
+          // 重排/还原路径必须传假：分页的视口起点常常落在页首块的中间，重取会把
+          // 锚点向下取整到该页的第一个块，于是每重排一次就往回退一块——2026-09-01
+          // 真机实测转两次屏就从块 5 退到 4、3，最后钉死在章首块 0。
+          function applyPage(reanchor) {
             const scroller = document.getElementById('lr-scroller');
             if (scroller) scroller.scrollLeft = page * window.innerWidth;
-            refreshAnchorLocus();
+            if (reanchor) refreshAnchorLocus();
             ReaderBridge.onPageChanged(page, pageCount);
           }
 
-          window.lrSetPage = function(value) {
+          // keepAnchor = 「这是还原/重排，不是用户跳页」。用户跳页必须作废锚点，
+          // 否则 updateMetrics 里锚点优先，跳页会被旧锚点原样拉回去。
+          window.lrSetPage = function(value, keepAnchor) {
+            if (!keepAnchor) anchorLocus = null;
             if (scrollMode) {
               // Page jumps inside scroll mode map the target page to a scroll
               // ratio instead of exiting: the mode stays sticky until the
@@ -568,7 +575,8 @@ object ReaderScripts {
               // 只重新测量即可，updateMetrics 自己会把页码补回去。
               requestAnimationFrame(updateMetrics);
             } else if (window.lrSetPage) {
-              window.lrSetPage(window.lrGetPage());
+              // 改字号/行距/主题：位置没动，锚点必须留着，正是它让重排后不漂移。
+              window.lrSetPage(window.lrGetPage(), true);
             }
           };
 
@@ -592,7 +600,7 @@ object ReaderScripts {
             if (candidate >= 0 && candidate < pageCount) {
               page = candidate;
               restoreTarget = candidate;
-              applyPage();
+              applyPage(true);
             } else {
               ReaderBridge.onChapterRequested(Number(direction));
             }
@@ -1263,6 +1271,20 @@ object ReaderScripts {
           // 当前阅读位置的语义锚点。页码/比例都是随字号、旋转、分栏变化的派生量，
           // 只有 (块下标, 块内字符偏移) 在重排后仍指着同一段文字。
           window.lrLocusHere = function() {
+            // 分页模式：锚点是权威值，回报它本身而不是「现在视口起点是谁」。
+            // 后者会把锚点向下取整到页首块，Kotlin 侧一落盘就把退化后的值变成
+            // 新真相，下次重排再退一格——幂等性必须在这里守住。
+            // 老书（迁移中）和刚落位的章节还没有锚点，这时取一次并记住。
+            if (!scrollMode) {
+              if (!anchorLocus || anchorLocus.anchor !== 'exact') refreshAnchorLocus();
+              if (!anchorLocus) return null;
+              return JSON.stringify({
+                blockIndex: anchorLocus.blockIndex,
+                charOffset: Math.max(0, Number(anchorLocus.charOffset) || 0)
+              });
+            }
+            // 滚动模式是连续的，视口起点本身就是精确位置，没有取整损失；
+            // 而且这里刻意不写回 anchorLocus，避免每次重测都跑一遍块内二分。
             const blocks = ttsBlocks();
             const index = firstVisibleBlockIndex(blocks);
             if (index < 0) return null;
@@ -1285,12 +1307,12 @@ object ReaderScripts {
               anchor: mode
             };
             if (mode === 'chapter-start') {
-              if (scrollMode) { scrollRatio = 0; syncScroll(); } else { page = 0; applyPage(); }
+              if (scrollMode) { scrollRatio = 0; syncScroll(); } else { page = 0; applyPage(false); }
               return true;
             }
             if (mode === 'chapter-end') {
               if (scrollMode) { scrollRatio = 1; syncScroll(); }
-              else { page = Math.max(0, pageCount - 1); applyPage(); }
+              else { page = Math.max(0, pageCount - 1); applyPage(false); }
               return true;
             }
             const blocks = ttsBlocks();
@@ -1325,7 +1347,7 @@ object ReaderScripts {
               Math.max(0, pageCount - 1)
             );
             restoreTarget = page;
-            applyPage();
+            applyPage(false);
             return true;
           };
 

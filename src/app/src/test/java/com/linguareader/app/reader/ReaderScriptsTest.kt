@@ -101,9 +101,51 @@ class ReaderScriptsTest {
         // 末页/章首是语义锚，不再是挤进页码字段的哨兵值
         assertContains(script, "if (mode === 'chapter-start')")
         assertContains(script, "if (mode === 'chapter-end')")
-        assertContains(script, "page = Math.max(0, pageCount - 1); applyPage();")
+        // 还原路径落位时不能重取锚点（applyPage(false)）：锚点刚被显式写进去，
+        // 重取会立刻把它向下取整到页首块，还原当场就退化。
+        assertContains(script, "page = Math.max(0, pageCount - 1); applyPage(false); }")
         // 精确锚点走的是既有的 Range 定位器，而不是另起一套几何推算
         assertContains(script, "rangeFromNormalizedOffset(target.el, offset, 1)")
+    }
+
+    /**
+     * 锚点只能由「用户自己动了」这个因果重取，重排/还原一律不许重取。
+     *
+     * 2026-09-01 真机回归：applyPage() 里无条件 refreshAnchorLocus()，于是每次
+     * 重排都把锚点向下取整到当前页的第一个块，转两次屏就从块 5 退到 3，再转就
+     * 钉死在章首块 0——「位置真相」被派生量反向覆写。裸 applyPage() 调用一旦
+     * 复活，这条就红。
+     */
+    @Test
+    fun anchorIsRefreshedOnlyByUserInitiatedMovement() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "function applyPage(reanchor)")
+        assertContains(script, "if (reanchor) refreshAnchorLocus();")
+        // 用户翻页 = 真因果，必须重取
+        assertContains(script, "applyPage(true);")
+        // 不允许任何「不声明因果」的调用点
+        assertFalse(
+            script.contains("applyPage();"),
+            "applyPage() 必须显式声明因果：用户动作传 true，重排/还原传 false"
+        )
+    }
+
+    /**
+     * 分页模式下回报锚点必须回报「权威锚点」本身，而不是现在视口起点是谁。
+     * 后者是取整后的派生量，落盘一次就把退化值变成新真相。
+     */
+    @Test
+    fun locusReadbackReturnsTheAuthoritativeAnchorInPagedMode() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "if (!anchorLocus || anchorLocus.anchor !== 'exact') refreshAnchorLocus();")
+        assertContains(script, "blockIndex: anchorLocus.blockIndex")
+        // 用户跳页要作废锚点，否则跳页会被旧锚点拉回去
+        assertContains(script, "window.lrSetPage = function(value, keepAnchor)")
+        assertContains(script, "if (!keepAnchor) anchorLocus = null;")
+        // 改字号是重排不是跳页：锚点要留着
+        assertContains(script, "window.lrSetPage(window.lrGetPage(), true);")
     }
 
     @Test

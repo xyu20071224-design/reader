@@ -1,3 +1,17 @@
+## 2026-09-01 M1 语义锚点真机验收（PKB110 / Android 16 / ColorOS）
+
+- 包：`com.linguareader.app.verify`（1.5.1-verify，versionCode 11），测试书《The Lantern Library (Verify 12ch)》（id `8712e2f68447c3460f34`，每段带 `[Cnn-Pnnn]` 标记）。判据以 metadata.json 的 `locusBlockIndex`/`locusCharOffset` 为主，页指示器/可见段落标记为辅（模型不看图，全靠 run-as + uiautomator dump）。
+- **A1 旋转不漂移**：竖屏 `3/12 · 4/21`（块 11）→ 横屏 `3/12 · 7/41`（块 11）→ 竖屏 `3/12 · 4/21`（块 11）→ 再横屏 `3/12 · 7/41`（块 11）→ 再竖屏 `3/12 · 4/21`（块 11）。页码随方向重排变化，块恒 11。✅
+- **A2 改字号不漂移**：140%→100%→130%→110%→140%，`locusBlockIndex` 恒 11（页码随字号 3→1→2→1 变化属预期）。✅
+- **A3 回翻停末页**：章 3 往前翻，落到章 2 末页 `2/12 · 12/12`（块 77）。✅
+- **A4 进滑动不跳章首**：章 3 第 10/12 页（≈82%，块 62）慢拖进滑动，指示器 `3/12 · 章节进度 84%`（块 62）。✅
+- **A5 冷启动续读**：滚动模式杀进程重开，`locusBlockIndex` 恒 13，退出与重进一致。✅（已知边界：`scrollMode`/`scrollRatio` 未落盘，冷启动默认回到分页模式再按锚点落到同一块——模式记忆不在 M1 范围，锚点语义不受影响。）
+- 验收当场发现并修复 **两处「锚点被派生量反向覆写」缺陷**（均是真机才暴露、单测之前全绿）：
+  1. **旋转丢失锚点**：`ReaderPositionSaver`（`ReaderScreen.kt`）还存旧十项，M1 新增的 `locusBlock/Offset/Anchor` 三项没进存档 → 旋转后锚点被还原成 -1，退回按页码兜底，漂移复现。修复：存档格式迁入 `ReaderPosition.toSaveList()/fromSaveList()`，新增 `SAVE_SLOTS` 与反射字段数守卫（`saveListCoversEveryDeclaredField`）+ 全字段 round-trip 用例。
+  2. **重排/还原每次向下取整一块**：`applyPage()` 无条件 `refreshAnchorLocus()`，分页视口起点常落在页首块中间，重取就把锚点取整到该页第一块；`lrLocusHere()` 也从视口重取而非回报权威锚点。两者叠加 → 每重排一次倒退一块，实测转两次屏从块 5→3→0（章首）。修复：`applyPage(reanchor)` 只由用户动作传 true；`lrLocusHere()` 分页模式回报 `anchorLocus` 本身；`lrSetPage(value, keepAnchor)` 用户跳页作废锚点、重排/还原保留锚点。新增 `anchorIsRefreshedOnlyByUserInitiatedMovement` 等 3 条守卫。
+- 单测：**490 tests / 0 failures / 1 skipped**（M1-2 后为 486，本轮 +4）。
+- 结论：位置真相（章、块下标、块内偏移）在旋转/改字号/回翻/进滑动/冷启动五条路径上均稳定，M1 验收通过。
+
 ## 2026-08-06 F-122 短语识别逻辑修复（增量验证）
 
 - 根因：短语匹配只看“点击词是否在词条中”，词组后部宾语/补足语（如 `good day` 的 `day`、`out of time` 的 `time`）或点击偏移漂移到相邻词时，仍会短语优先，导致点到单词却显示词组释义。

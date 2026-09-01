@@ -176,12 +176,54 @@ internal data class ReaderPosition(
     /** 落盘已交出去：清脏标记。取快照与清标记分开，避免节流轮询里重复写同一份。 */
     fun markSaved(): ReaderPosition = if (dirty) copy(dirty = false) else this
 
+    /**
+     * 旋转 / 进程重建时的可 Bundle 化快照，字段顺序即声明顺序。
+     *
+     * **必须覆盖全部字段。** 2026-09-01 真机踩过：M1 给 ReaderPosition 加了三个
+     * 锚点字段，却漏改 ReaderScreen 里的 Saver，于是旋转后锚点被还原成默认的
+     * -1，位置退回按页码兜底，重排漂移原样复现（竖屏 4/21 → 横屏 4/41，锚点块
+     * 11 → 5），而所有单测照样绿——因为它们测的是迁移函数，不是存档。
+     * 现在存档挪进这里，并由 ReaderScreenStateTest 的反射守卫盯着字段数：
+     * 以后再加字段忘了改这里，测试会红。
+     */
+    fun toSaveList(): List<Any> = listOf(
+        chapter, restorePage, page, pageCount,
+        scrollMode, scrollRatio, scrollPageCount,
+        locusBlock, locusOffset, locusAnchor,
+        savedPage, savedCount, dirty
+    )
+
     companion object {
         /** [locusBlock] 的「尚无锚点」取值，与 Book.NO_LOCUS 同义。 */
         const val NO_LOCUS = -1
         const val ANCHOR_EXACT = "exact"
         const val ANCHOR_CHAPTER_START = "chapter-start"
         const val ANCHOR_CHAPTER_END = "chapter-end"
+
+        /** [toSaveList] 的槽位数，必须等于 ReaderPosition 的字段数。 */
+        const val SAVE_SLOTS = 13
+
+        /** [toSaveList] 的逆操作；长度对不上说明存档格式漏了字段，直接抛。 */
+        fun fromSaveList(values: List<Any>): ReaderPosition {
+            require(values.size == SAVE_SLOTS) {
+                "ReaderPosition 存档应有 $SAVE_SLOTS 项，实际 ${values.size}"
+            }
+            return ReaderPosition(
+                chapter = values[0] as Int,
+                restorePage = values[1] as Int,
+                page = values[2] as Int,
+                pageCount = values[3] as Int,
+                scrollMode = values[4] as Boolean,
+                scrollRatio = values[5] as Float,
+                scrollPageCount = values[6] as Int,
+                locusBlock = values[7] as Int,
+                locusOffset = values[8] as Int,
+                locusAnchor = values[9] as String,
+                savedPage = values[10] as Int,
+                savedCount = values[11] as Int,
+                dirty = values[12] as Boolean
+            )
+        }
 
         /**
          * 打开一本书时的初始位置。锚点优先，页码是迁移期兜底：老书还没有锚点
