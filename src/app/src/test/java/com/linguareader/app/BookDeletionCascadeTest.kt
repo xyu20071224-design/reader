@@ -165,6 +165,59 @@ class BookDeletionCascadeTest {
         assertEquals(listOf("other-book"), loadVocabularyBookIds())
     }
 
+    /**
+     * D1.5：AI 译本正文的清理不依赖 `translationBookId` 字段。
+     *
+     * 该字段一旦与磁盘不一致（metadata 写坏、迁移遗漏、attach 中途失败），
+     * 正文目录就没人认领了。AI 译本的目录名是「前缀 + 原书 id」，可以从书本身推出来，
+     * 所以这条路不该再经过那个字段。（出版译本的目录名是内容哈希、不可推导，
+     * 只能靠字段 + 孤儿对账兜底。）
+     */
+    @Test
+    fun aiTranslationBodyIsCleanedEvenWhenTheMetadataFieldIsBlank() {
+        val target = book("cascade-e", translationId = "")
+        seed(target)
+        val aiBody = File(context.filesDir, "translations/ai-${target.id}")
+        File(aiBody, "chapter_000.xhtml").apply { parentFile?.mkdirs() }.writeText("<html/>")
+        assertTrue(aiBody.exists())
+
+        val viewModel = AppViewModel(context)
+        deleteAndAwait(viewModel, target)
+
+        assertFalse("AI 译本正文靠字段才删得掉 —— 字段一空就成孤儿", aiBody.exists())
+    }
+
+    /**
+     * D1.7 孤儿对账：磁盘上有、书库里没有的数据要被报出来 —— **只报不删**。
+     *
+     * 孤儿不只来自「删书漏清」：重新导入同一本书的不同版本会换 id（id = 源文件
+     * 内容哈希），旧 id 名下的数据当场就没人认领。这条同时守住反向：**活着的书
+     * 一处都不许被报成孤儿**，否则将来接上清理入口就是误删。
+     */
+    @Test
+    fun orphanAuditReportsUnclaimedDataAndSparesLiveBooks() = kotlinx.coroutines.runBlocking {
+        val alive = book("cascade-f")
+        seed(alive)
+        // 三处没人认领的残留：换过 id 的旧书目录、旧音频缓存、没人引用的译本正文。
+        File(context.filesDir, "books/ghost-book").apply { mkdirs() }
+        writeFile("tts_cache/ghost-book/0/v/0.mp3", "id3")
+        writeFile("translations/nobody-claims-me/chapter_000.xhtml", "<html/>")
+
+        val viewModel = AppViewModel(context)
+        pump { !viewModel.state.value.loading }
+        val report = viewModel.auditOrphans()
+
+        val paths = report.map { it.path.name }.toSet()
+        assertTrue("漏报孤儿：$paths", paths.containsAll(setOf("ghost-book", "nobody-claims-me")))
+        // 活着的书一处都不许被报出来
+        assertTrue(
+            "把活着的书报成了孤儿：" + report.filter { it.path.name.contains(alive.id) },
+            report.none { it.path.name.contains(alive.id) }
+        )
+        // 只报不删
+        assertTrue(File(context.filesDir, "books/ghost-book").exists())
+    }
+
     /** 级联改成遍历清单后最容易出的新事故是「删过头」，这条守住边界。 */
     @Test
     fun deletingOneBookNeverTouchesAnotherBooksData() {

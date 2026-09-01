@@ -23,6 +23,7 @@ import com.linguareader.app.translation.TranslationLookupResult
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.translation.TranslationMemoryRepository
 import com.linguareader.app.data.Book
+import com.linguareader.app.data.BookDataOrphan
 import com.linguareader.app.data.BookScopedStore
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
@@ -51,7 +52,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 sealed interface LaunchPromptUi {
@@ -317,6 +320,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         )
     }
+
+    /**
+     * 孤儿对账（方案 D1.7）：**只报不删**。
+     *
+     * 自动删是不可逆的，而对账逻辑自己可能有 bug（比如把正在导入的中间态误判成
+     * 孤儿）。所以这里只产出报告，清理入口留给 D2.4 的「存储占用」页面，由用户
+     * 按下去。启动时也不跑 —— 扫盘要 IO，会拖慢冷启动。
+     */
+    internal suspend fun auditOrphans(): List<BookDataOrphan> = withContext(Dispatchers.IO) {
+        val books = library.loadBooks()
+        bookDataStores.flatMap { store ->
+            runCatching { store.orphans(books) }.getOrDefault(emptyList()).map { file ->
+                BookDataOrphan(storeId = store.storeId, path = file, bytes = sizeOf(file))
+            }
+        }
+    }
+
+    private fun sizeOf(file: File): Long =
+        if (file.isDirectory) file.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+        else file.length()
 
     fun deleteBook(book: Book) {
         viewModelScope.launch {

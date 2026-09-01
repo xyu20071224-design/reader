@@ -55,11 +55,35 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
     private suspend fun finishAttach(book: Book, translationBook: Book): AttachTranslationResult {
         val memory = buildMemory(book, translationBook)
         save(memory)
+        // 只有档案确认落盘，才允许丢正文。
+        if (memoryFile(memory.sourceBookId).isFile) {
+            discardTranslationBodyIfRedundant(translationBook)
+        }
         cacheLock.withLock {
             cachedBookId = memory.sourceBookId
             cachedIndex = TranslationMemoryIndex(memory)
         }
         return AttachTranslationResult(translationBook = translationBook, memory = memory)
+    }
+
+    /**
+     * 对齐完成后丢弃**出版译本**的正文（方案 D1.8）。
+     *
+     * 依据：对齐档案自带译文全文（段落表 `zhParagraphs` + 句对的 `zs`），而
+     * `translations/<译本id>/` 里的章节文件**运行期零读取** —— 只在这里被
+     * `buildMemory` 消费一次。留着就是整本译本白占空间。
+     *
+     * **AI 译本不删**：它是花钱产出的、唯一的一份，档案一旦损坏就再也拿不回来；
+     * 出版译本的原文件还在用户手上，需要时重新导入即可。
+     *
+     * 删之前必须确认档案真的落盘了 —— 否则正文和档案一起没，译本就彻底丢了。
+     */
+    private fun discardTranslationBodyIfRedundant(translationBook: Book) {
+        if (translationBook.id.isBlank()) return
+        if (translationBook.id.startsWith(Book.AI_TRANSLATION_ID_PREFIX)) return
+        val archive = File(translationBook.extractedDir)
+        if (!archive.canonicalPath.startsWith(translationsDir.canonicalPath + File.separator)) return
+        archive.deleteRecursively()
     }
 
     /** 读取整份档案（句级重翻需要原文、所在段落与上下文）。 */
@@ -122,11 +146,36 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
 
     override suspend fun deleteBookData(book: Book) { remove(book) }
 
+    /**
+     * 两个根、两套命名，默认推断不适用：
+     * - `translation-memory/<原书id>.json` 按书命名，用默认判据；
+     * - `translations/<译本id>/` 按**译本** id 命名 —— 出版译本是内容哈希（只能靠
+     *   某本书的 translationBookId 认领），AI 译本是「前缀 + 原书 id」。
+     *   两者都没人认领时才是孤儿。
+     */
+    override fun orphans(books: List<Book>): List<File> {
+        val known = books.map { it.id }.toSet()
+        val claimed = books.mapNotNull { it.translationBookId.takeIf(String::isNotBlank) }.toSet() +
+            books.map { Book.AI_TRANSLATION_ID_PREFIX + it.id }.toSet()
+        val memoryOrphans = memoryDir.listFiles().orEmpty()
+            .filter { it.name.removeSuffix(".json") !in known }
+        val bodyOrphans = translationsDir.listFiles().orEmpty()
+            .filter { it.name !in claimed }
+        return memoryOrphans + bodyOrphans
+    }
+
     suspend fun remove(book: Book) = withContext(Dispatchers.IO) {
         memoryFile(book.id).delete()
+        // 译本正文目录有两种命名：
+        //  - 导入的出版译本 = 源文件内容哈希，只能靠 metadata 里的 translationBookId 找回；
+        //  - AI 生成译本 = 前缀 + 原书 id，**可以从书本身推出来**。
+        // 所以 AI 那份不再依赖那个字段：字段一旦与磁盘不一致（metadata 写坏、迁移
+        // 遗漏、attach 中途失败），正文就会变成没人认领的孤儿（方案证据 5）。
+        // 出版译本那份仍然依赖字段——它的目录名不可推导，兜底交给孤儿对账（D1.7）。
         if (book.translationBookId.isNotBlank()) {
             File(translationsDir, book.translationBookId).deleteRecursively()
         }
+        File(translationsDir, Book.AI_TRANSLATION_ID_PREFIX + book.id).deleteRecursively()
         cacheLock.withLock {
             if (cachedBookId == book.id) {
                 cachedBookId = null

@@ -31,4 +31,27 @@ interface BookScopedStore {
      * 单处失败继续清理其余，但那是兜底，不是许可。
      */
     suspend fun deleteBookData(book: Book)
+
+    /**
+     * 磁盘上属于「书库里已经没有的书」的数据 —— 孤儿。**只报，不删**。
+     *
+     * 孤儿的来源不止「删书漏清」：重新导入同一本书的不同版本会换 id
+     * （id = 源文件内容哈希），旧 id 名下的数据当场就没人认领了。
+     *
+     * 默认实现假设「每个根的直接子项按 bookId 命名」（`<bookId>/` 或 `<bookId>.json`），
+     * 这对绝大多数存储成立；命名规则不同的（如译本正文按译本 id）自行覆盖。
+     */
+    fun orphans(books: List<Book>): List<File> {
+        val known = books.map { it.id }.toSet()
+        return storageRoots().flatMap { root ->
+            root.listFiles().orEmpty().filter { it.name.removeSuffix(".json") !in known }
+        }
+    }
 }
+
+/** 一处孤儿数据（[storeId] 来自 [BookScopedStore.storeId]）。 */
+data class BookDataOrphan(
+    val storeId: String,
+    val path: File,
+    val bytes: Long
+)

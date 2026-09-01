@@ -144,6 +144,14 @@ class VocabularyRepository(private val context: Context) : BookScopedStore {
      */
     override suspend fun deleteBookData(book: Book) { removeByBook(book.id) }
 
+    /**
+     * 生词本是一个文件、不是按书命名的目录，默认的「子项名 = bookId」推断不适用。
+     * 这里返回空 —— 但**存量脏数据确实存在**：D1.4 之前删掉的书，其生词至今仍留在
+     * 文件里。那是「记录级孤儿」，不是文件级的，要清理得按 bookId 过滤记录，
+     * 归 D2.4 的存储占用页面处理。
+     */
+    override fun orphans(books: List<Book>): List<File> = emptyList()
+
     suspend fun removeByBook(bookId: String): List<SavedWord> = withContext(Dispatchers.IO) {
         mutex.withLock {
             val current = read()
