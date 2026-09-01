@@ -61,6 +61,9 @@ tts-server/voices/*.ogg
 # Local debug/verification artefacts (APKs, logcats, ffmpeg, audio samples)
 artifacts/
 
+# Local build toolchain (JDK + Android SDK + gradle home), moved into the workspace 2026-09-01
+toolchain/
+
 # AI assistant local artifacts
 .agents/
 
