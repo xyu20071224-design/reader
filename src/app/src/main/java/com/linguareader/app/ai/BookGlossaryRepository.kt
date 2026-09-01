@@ -1,5 +1,7 @@
 package com.linguareader.app.ai
 
+import com.linguareader.app.data.Book
+import com.linguareader.app.data.BookScopedStore
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -15,7 +17,7 @@ import java.io.File
  * overwrites user-edited entries. Manual entries always win over auto-imported
  * ones during [importFromProfile].
  */
-class BookGlossaryRepository(private val context: Context) {
+class BookGlossaryRepository(private val context: Context) : BookScopedStore {
     private val glossaryDir = File(context.filesDir, "ai/glossary").apply { mkdirs() }
     private val mutex = Mutex()
 
@@ -270,6 +272,12 @@ class BookGlossaryRepository(private val context: Context) {
             }
         }
     }
+
+    override val storeId: String = "ai/glossary"
+
+    override fun storageRoots(): List<File> = listOf(glossaryDir)
+
+    override suspend fun deleteBookData(book: Book) { delete(book.id) }
 
     fun delete(bookId: String) {
         glossaryFile(bookId).delete()

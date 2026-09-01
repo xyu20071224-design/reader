@@ -10,7 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-class LibraryRepository(private val context: Context) {
+class LibraryRepository(private val context: Context) : BookScopedStore {
     // v1 stored every book inside a single library.json; v2 keeps one
     // metadata.json per book so progress writes touch one small file only.
     private val legacyMetadataFile = File(context.filesDir, "library.json")
@@ -126,6 +126,12 @@ class LibraryRepository(private val context: Context) {
             )
         }
     }
+
+    override val storeId: String = "books"
+
+    override fun storageRoots(): List<File> = listOf(booksDir)
+
+    override suspend fun deleteBookData(book: Book) { deleteBook(book) }
 
     suspend fun deleteBook(book: Book) = withContext(Dispatchers.IO) {
         mutex.withLock {

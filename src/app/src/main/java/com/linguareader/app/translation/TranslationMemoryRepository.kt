@@ -1,5 +1,6 @@
 package com.linguareader.app.translation
 
+import com.linguareader.app.data.BookScopedStore
 import android.app.Application
 import android.net.Uri
 import com.linguareader.app.data.Book
@@ -22,7 +23,7 @@ import java.io.File
  * 用与听书相同的叶级选择器 [TtsTextExtractor] 抽取段落、读写对齐档案，并把
  * **查询索引按书缓存**（否则每次点词都要重读整份档案）。
  */
-class TranslationMemoryRepository(private val application: Application) {
+class TranslationMemoryRepository(private val application: Application) : BookScopedStore {
 
     private val translationsDir = File(application.filesDir, "translations")
     private val memoryDir = File(application.filesDir, "translation-memory")
@@ -113,6 +114,13 @@ class TranslationMemoryRepository(private val application: Application) {
         )
         result.copy(wordAlignment = alignment)
     }
+
+    override val storeId: String = "translations"
+
+    /** 两处：译本正文与对齐档案。它们本该同生共死，却分属两个删除键（见方案证据 4/5）。 */
+    override fun storageRoots(): List<File> = listOf(translationsDir, memoryDir)
+
+    override suspend fun deleteBookData(book: Book) { remove(book) }
 
     suspend fun remove(book: Book) = withContext(Dispatchers.IO) {
         memoryFile(book.id).delete()

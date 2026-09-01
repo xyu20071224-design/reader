@@ -1,5 +1,7 @@
 package com.linguareader.app.ai
 
+import com.linguareader.app.data.Book
+import com.linguareader.app.data.BookScopedStore
 import android.content.Context
 import com.linguareader.app.tts.SpeakerLlmTagger
 import com.linguareader.app.tts.SpeakerRoster
@@ -32,7 +34,7 @@ class SpeakerTagRepository(
     private val glossaryRepository: BookGlossaryRepository,
     /** Chat backend factory (D1: the same client as the profile, protocol-aware). */
     private val chatClientFactory: (AiSettings) -> AiChatClient = { AiTranslators.forSettings(it) }
-) {
+) : BookScopedStore {
     private val appContext = context.applicationContext
     private val tagsDir = File(appContext.filesDir, "ai/speaker-tags")
     private val mutex = Mutex()
@@ -144,6 +146,12 @@ class SpeakerTagRepository(
         }
 
     /** Drops every cached chapter of a book (book deleted, profile regenerated). */
+    override val storeId: String = "ai/speaker-tags"
+
+    override fun storageRoots(): List<File> = listOf(tagsDir)
+
+    override suspend fun deleteBookData(book: Book) { delete(book.id) }
+
     fun delete(bookId: String) {
         if (bookId.isBlank()) return
         bookDir(bookId).deleteRecursively()

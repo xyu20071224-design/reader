@@ -1,5 +1,7 @@
 package com.linguareader.app.tts
 
+import com.linguareader.app.data.Book
+import com.linguareader.app.data.BookScopedStore
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -27,7 +29,7 @@ class VoiceMapRepository(
     private val charactersProvider: suspend (String) -> List<VoiceCharacter>,
     private val cooccurrenceProvider: suspend (String) -> Map<Pair<String, String>, Int> =
         { emptyMap() }
-) {
+) : BookScopedStore {
     private val appContext = context.applicationContext
     private val mapsDir = File(appContext.filesDir, "voice_maps")
     private val mutex = Mutex()
@@ -96,6 +98,12 @@ class VoiceMapRepository(
         if (updated != current) store(updated)
         return updated
     }
+
+    override val storeId: String = "voice_maps"
+
+    override fun storageRoots(): List<File> = listOf(mapsDir)
+
+    override suspend fun deleteBookData(book: Book) { delete(book.id) }
 
     fun delete(bookId: String) {
         if (bookId.isBlank()) return

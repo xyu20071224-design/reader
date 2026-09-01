@@ -1,5 +1,6 @@
 package com.linguareader.app.ai
 
+import com.linguareader.app.data.BookScopedStore
 import android.content.Context
 import com.linguareader.app.R
 import com.linguareader.app.data.Book
@@ -39,7 +40,7 @@ class AiTranslationRepository(
     /** 翻译批量出口工厂（测试注入假客户端用）。 */
     private val chatClientFactory: (AiSettings) -> AiTranslationChatClient =
         { AiTranslators.forSettings(it) }
-) {
+) : BookScopedStore {
     private val appContext = context.applicationContext
     private val checkpointDir = File(appContext.filesDir, "ai/ai-translations")
     private val translationsDir = File(appContext.filesDir, "translations")
@@ -124,6 +125,12 @@ class AiTranslationRepository(
     }
 
     /** 删除一本书的全部翻译检查点与风格说明（删书时随书清理）。 */
+    override val storeId: String = "ai/ai-translations"
+
+    override fun storageRoots(): List<File> = listOf(checkpointDir)
+
+    override suspend fun deleteBookData(book: Book) { delete(book.id) }
+
     fun delete(bookId: String) {
         if (bookId.isBlank()) return
         File(checkpointDir, bookId).deleteRecursively()

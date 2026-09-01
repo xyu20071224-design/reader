@@ -19,7 +19,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.io.File
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -79,7 +78,8 @@ class CloudTtsSynthesizer(
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val cacheRoot = File(appContext.filesDir, "tts_cache")
+    /** 缓存路径的唯一知情者（见 TtsAudioCache 的类注释：这条路径以前被写了两遍）。 */
+    private val cache = TtsAudioCache(appContext)
 
     @Volatile
     private var shutdown = false
@@ -364,10 +364,7 @@ class CloudTtsSynthesizer(
         chapterIndex: Int,
         sentenceIndex: Int,
         voice: String
-    ): File = File(
-        cacheRoot,
-        "$bookId/$chapterIndex/${cacheVoiceSegment(voice)}/$sentenceIndex.mp3"
-    )
+    ): File = cache.fileFor(bookId, chapterIndex, sentenceIndex, voice)
 
     private fun parseUtteranceId(id: String): Triple<String, Int, Int>? {
         // 引擎生成的 utteranceId 是 4 段 "bookId:chapter:sentence:attempt"
@@ -380,33 +377,4 @@ class CloudTtsSynthesizer(
         return Triple(parts[0], chapter, sentence)
     }
 
-    companion object {
-        /**
-         * 音色 id → 缓存目录名。**必须是单射**，否则缓存会串音。
-         *
-         * 旧实现是 voice.replace(Regex("[^A-Za-z0-9._-]"), "_") —— 有损映射：
-         * 两个不同音色可以消毒成同一个目录名（自建服务器把参考音频命名成
-         * 「男声.wav」「女声.wav」，两者都变成同一串下划线），而命中判据只有
-         * 「文件存在且非空」，于是**放出另一个音色的音频**，且永远发现不了。
-         *
-         * 现在只在「这个 id 当目录名会出事」时才改写，其余原样保留：
-         * - 原样保留 ⇒ 单射显然成立，且**存量缓存全部继续命中**（MiMo 的
-         *   mimo-clone:<slug>、系统音色名、常见服务器音色名都落在这一档）；
-         * - 含路径分隔符 / 空串 / 单点 / 双点 的才换成哈希 —— 这几种当目录名会
-         *   穿越或指错地方，哈希同时保证单射。
-         *
-         * 注意这里**没有**引擎维度：同一个音色 id 在两台不同服务器上可能是不同的
-         * 声音，那条要等缓存清理入口就绪后一起改（改键会作废存量缓存，见
-         * 「重构方案-数据所有权与生命周期.md」D2.2）。
-         */
-        internal fun cacheVoiceSegment(voice: String): String {
-            val unusable = voice.isEmpty() ||
-                voice == "." ||
-                voice == ".." ||
-                voice.any { it == '/' || it == '\\' || it == '\u0000' }
-            if (!unusable) return voice
-            val digest = MessageDigest.getInstance("SHA-256").digest(voice.toByteArray())
-            return "h-" + digest.joinToString("") { "%02x".format(it) }.take(16)
-        }
-    }
 }

@@ -83,8 +83,8 @@ class CloudTtsSynthesizerTest {
      */
     @Test
     fun cacheDirectoryNameIsInjectiveAcrossVoiceIds() {
-        val a = CloudTtsSynthesizer.cacheVoiceSegment("男声.wav")
-        val b = CloudTtsSynthesizer.cacheVoiceSegment("女声.wav")
+        val a = TtsAudioCache.voiceSegment("男声.wav")
+        val b = TtsAudioCache.voiceSegment("女声.wav")
         assertNotEquals(a, b, "两个不同音色不能落到同一个缓存目录（会串音）")
     }
 
@@ -96,7 +96,7 @@ class CloudTtsSynthesizerTest {
     fun ordinaryVoiceIdsKeepTheirLegacyDirectoryName() {
         // 系统音色 / 服务器音色 / MiMo（id 形如 mimo-clone:<ascii-slug>，含冒号）
         for (id in listOf("alloy", "zh-CN-XiaoxiaoNeural", "voice_03.wav", "mimo-clone:bingtang")) {
-            assertEquals(id, CloudTtsSynthesizer.cacheVoiceSegment(id), "$id 的缓存目录名不该变")
+            assertEquals(id, TtsAudioCache.voiceSegment(id), "$id 的缓存目录名不该变")
         }
     }
 
@@ -104,15 +104,15 @@ class CloudTtsSynthesizerTest {
     @Test
     fun pathUnsafeVoiceIdsFallBackToAHash() {
         for (id in listOf("", ".", "..", "a/b", "..\\evil")) {
-            val segment = CloudTtsSynthesizer.cacheVoiceSegment(id)
+            val segment = TtsAudioCache.voiceSegment(id)
             assertTrue(segment.startsWith("h-"), "$id 应改用哈希目录名，实际 $segment")
             assertFalse(segment.contains('/'), "哈希目录名不能含路径分隔符")
             assertFalse(segment.contains('\\'), "哈希目录名不能含路径分隔符")
         }
         // 仍然是单射：两个不同的非法 id 不能撞到一起
         assertNotEquals(
-            CloudTtsSynthesizer.cacheVoiceSegment("a/b"),
-            CloudTtsSynthesizer.cacheVoiceSegment("a/c")
+            TtsAudioCache.voiceSegment("a/b"),
+            TtsAudioCache.voiceSegment("a/c")
         )
     }
 }

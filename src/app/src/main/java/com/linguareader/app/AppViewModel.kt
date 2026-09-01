@@ -23,6 +23,7 @@ import com.linguareader.app.translation.TranslationLookupResult
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.translation.TranslationMemoryRepository
 import com.linguareader.app.data.Book
+import com.linguareader.app.data.BookScopedStore
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
 import com.linguareader.app.data.DictionaryRepository
@@ -39,6 +40,8 @@ import com.linguareader.app.data.LibraryRepository
 import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.VocabularyRepository
 import com.linguareader.app.data.WordLookup
+import com.linguareader.app.tts.MultiVoiceSupport
+import com.linguareader.app.tts.TtsAudioCache
 import com.linguareader.app.update.AppUpdatePhase
 import com.linguareader.app.update.AppUpdateRepository
 import com.linguareader.app.update.AppUpdateUiState
@@ -135,6 +138,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val aiTranslationPrefs = getApplication<Application>().getSharedPreferences(
         "ai_translation", android.content.Context.MODE_PRIVATE
     )
+    /** 云 TTS 音频缓存：路径的唯一知情者，删书时按这份清单清理。 */
+    private val ttsAudioCache = TtsAudioCache(application)
+    /** 角色→音色映射：以前删书是在这里手写 File 路径，绕过了它自带的 delete。 */
+    private val voiceMaps = MultiVoiceSupport.voiceMapRepository(application)
+
+    /**
+     * **「一本书的数据由什么构成」的权威清单。**
+     *
+     * 以前这份清单是 deleteBook 里一串手写调用 + 两行裸路径字符串，没有编译期
+     * 保证、没有对账，新增一处存储时也没有任何机制提醒你回来加一行 —— 它已经
+     * 漏过一处（生词本）。现在删书只是遍历它；新增 per-book 存储时，
+     * **实现 BookScopedStore 并登记到这里**是唯一要做的事。
+     */
+    // internal 而非 private：漂移守卫测试要读它（BookDeletionCascadeTest）。
+    internal val bookDataStores: List<BookScopedStore> = listOf(
+        library,
+        aiRepository,
+        glossaryRepository,
+        speakerTagRepository,
+        translationRepository,
+        aiTranslationRepository,
+        ttsAudioCache,
+        voiceMaps
+    )
+
     /** 自动更新：检查 + 下载的编排层（网络细节在 update/ 包内）。 */
     private val updateRepository = AppUpdateRepository(application)
     private var updateJob: Job? = null
@@ -291,20 +319,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteBook(book: Book) {
         viewModelScope.launch {
-            library.deleteBook(book)
-            aiRepository.delete(book.id)
-            glossaryRepository.delete(book.id)
-            speakerTagRepository.delete(book.id)
-            // 译本与对齐档案跟着英文书一起删。
-            translationRepository.remove(book)
-            // AI 整本翻译的检查点（含在途任务）也随书清理。
+            // 在途的整本翻译任务先停，否则它会往刚清掉的检查点目录里继续写。
             aiTranslationJobs.remove(book.id)?.cancel()
-            aiTranslationRepository.delete(book.id)
-            // Cloud TTS chapter audio cache is per book; remove it with the book.
-            File(getApplication<Application>().filesDir, "tts_cache/${book.id}")
-                .deleteRecursively()
-            // Multi-voice M3: the per-book character → voice mapping goes too.
-            File(getApplication<Application>().filesDir, "voice_maps/${book.id}.json").delete()
+            // 单处清理失败（文件被占用、目录权限异常）不该中断其余清理 ——
+            // 半清理的残留比一次报错更难查。失败的项留给孤儿对账兜底（方案 D1.7）。
+            val failed = bookDataStores.mapNotNull { store ->
+                runCatching { store.deleteBookData(book) }.exceptionOrNull()?.let { store.storeId }
+            }
+            if (failed.isNotEmpty()) {
+                android.util.Log.w("AppViewModel", "删书残留：${failed.joinToString()}（书 ${book.id}）")
+            }
             mutableState.value = mutableState.value.copy(
                 notice = string(R.string.notice_book_deleted, book.title),
                 noticeTone = StatusTone.DANGER

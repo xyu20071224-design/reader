@@ -1,5 +1,6 @@
 package com.linguareader.app.ai
 
+import com.linguareader.app.data.BookScopedStore
 import android.content.Context
 import com.linguareader.app.data.Book
 import kotlinx.coroutines.CancellationException
@@ -59,7 +60,7 @@ internal suspend fun lookupWithContextFallback(
 class BookContextRepository(
     private val context: Context,
     private val settingsStore: AiSettingsStore
-) {
+) : BookScopedStore {
     private val profilesDir = File(context.filesDir, "ai/book-context").apply { mkdirs() }
     private val mutex = Mutex()
 
@@ -137,6 +138,12 @@ class BookContextRepository(
         }
         return lookupWithContextFallback(translator, profile, request)
     }
+
+    override val storeId: String = "ai/book-context"
+
+    override fun storageRoots(): List<File> = listOf(profilesDir)
+
+    override suspend fun deleteBookData(book: Book) { delete(book.id) }
 
     fun delete(bookId: String) {
         profileFile(bookId).delete()
