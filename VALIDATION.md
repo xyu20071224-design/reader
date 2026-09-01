@@ -1,3 +1,24 @@
+## 2026-09-02 1.6.0 release 包（R8 + 资源裁剪）真机 smoke（PKB110 / Android 16 / ColorOS）
+
+包：`assembleRelease -PverifyBuild` → `com.linguareader.app.verify` **12 / 1.6.0-verify**，用 debug keystore 经 `apksigner` 签名后安装（工程无 `signingConfig`，产物是 `app-release-unsigned.apk`）。
+
+**体积**：debug 55.7 MB → release **33.3 MB**（−40%）；其中 **dex 合计 20 MB → 1.8 MB（−91%）**。剩下的大头压不动：`assets/dictionary/ecdict.sqlite` 25.5 MB（asset）、BouncyCastle 的后量子算法参数表约 4 MB（jar 内 `org/` 下资源，`shrinkResources` 只管 `res/`）。
+
+| # | 检查项 | 为什么要查 | 结果 |
+| --- | --- | --- | --- |
+| 1 | 冷启动 | 基线 | ✅ 起来了，更新说明弹「1.6.0-verify」 |
+| 2 | 打开书 + 渲染 | 桥的 `onReady` | ✅ 页码指示 `15/48 · 3/52` |
+| 3 | 翻页 | `onPageChanged(page,count,origin)` **三参数新签名**过 R8 | ✅ 3/52 → 4/52 |
+| 4 | 点词查词 | `onWord` 混淆后会**静默失效**（不崩、不报错、点了没反应） | ✅ less → 词典释义 |
+| 5 | 译本对照 | 5 MB 对齐档案读取 | ✅ 「魔戒首部曲 · 句级 · 置信度 93%」+ 整句中文 |
+| 6 | **MiMo 预置音色名** | `res/raw/keep.xml` 保 `@string/tts_mimo_voice_*`，被裁掉会退化成原始 key | ✅ 显示「MiMo 默认（mimo_default）」，**未出现 `tts_mimo_voice_*`** |
+| 7 | 听书 | 新桥方法 `onSpeakingOffscreen` + 新按钮 | ✅ 听书条齐全（上一句/暂停/下一句/**回到朗读处**/设置起点/语速/停止），播放正常 |
+| 8 | 存储占用页面 | 本版新增 UI + `formatStorageBytes` | ✅ 合计 8.2 MB，分项与孤儿区正确 |
+| 9 | 复习卡 | BUG-032 修复在 release 下 | ✅ 「第 1 / 2 张 · run through」 |
+| 10 | 崩溃 | — | ✅ 全程 pid 不变，crash 缓冲无本应用记录 |
+
+**方法学变化（记一笔）**：release 包**不是 debuggable**，`run-as` 直接报 `package not debuggable` —— 这一轮的取证只能靠 `uiautomator dump` + `dumpsys`，读不了 `filesDir`。以后验 release 包时别再指望 run-as。
+
 ## 2026-09-02 开机重排复习提醒（D3.2）真机验收 —— **接收器被 ColorOS 拦掉，降级路径有效**
 
 - **结论先写**：`BootRescheduleReceiver` 已正确注册（`dumpsys package` 能看到它挂在 `BOOT_COMPLETED` 上），但 **PKB110 / ColorOS 不把开机广播投递给它**。重启后等到 uptime 3 分钟、用 `logcat -d -s BootReschedule:V` 过滤全量 buffer，**一条日志都没有**；`dumpsys alarm` 里也没有闹钟。应用不处于 stopped 状态（已 `am start` 过），可排除「从未启动过收不到广播」这一常见原因。

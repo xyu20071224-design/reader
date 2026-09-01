@@ -33,6 +33,13 @@ android {
             }
         }
         release {
+            // release 也认 -PverifyBuild：R8 + 资源裁剪是这个项目唯一没被真机验证过的
+            // 构建路径，而验证时不能覆盖用户的正式包（签名不同装不上，卸载又会清掉
+            // 真实书库）。给它同样的并存后缀，才可能把 release 包装上去挨个点一遍。
+            if (project.hasProperty("verifyBuild")) {
+                applicationIdSuffix = ".verify"
+                versionNameSuffix = "-verify"
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
