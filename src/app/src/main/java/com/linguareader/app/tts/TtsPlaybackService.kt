@@ -650,10 +650,6 @@ class TtsPlaybackService : Service() {
         }
 
         /** Called after a manual page turn so the queue follows the reader. */
-        fun onReaderPositionChanged(bookId: String, chapterIndex: Int, blockText: String) {
-            companionInstance?.engine?.onReaderPositionChanged(bookId, chapterIndex, blockText)
-        }
-
         /** Called by the settings sheet after cloud TTS configuration changes. */
         fun onCloudSettingsChanged(context: Context) {
             if (_state.value.bookId != null) {

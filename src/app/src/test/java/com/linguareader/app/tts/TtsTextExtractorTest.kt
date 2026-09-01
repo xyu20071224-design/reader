@@ -90,10 +90,7 @@ class TtsTextExtractorTest {
         // "Second" starts at normalized offset 13.
         assertEquals(1, chapter.sentenceIndexAt(block, 13))
         assertEquals(0, chapter.sentenceIndexAt(block, 1))
-        assertEquals(2, chapter.firstSentenceIndexInBlock("Third block."))
-        assertTrue(chapter.sentenceBelongsToBlock(1, block))
-        assertFalse(chapter.sentenceBelongsToBlock(2, block))
-        assertNull(chapter.firstSentenceIndexInBlock("No such paragraph."))
+        assertNull(chapter.sentenceIndexAt("No such paragraph.", 0))
     }
 
     @Test

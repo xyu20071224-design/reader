@@ -164,14 +164,6 @@ private val ReaderOverlaysSaver = Saver<ReaderOverlays, Boolean>(
     restore = { ReaderOverlays(choosingStart = it) }
 )
 
-/**
- * 「回到朗读处」落位后压住位置回报的时长（毫秒）。
- *
- * 要盖住回报本身的 350ms 去抖，再留出重排触发的第二次 onPageChanged；
- * 压得过短，落位就会被当成用户翻页反向拽动引擎。
- */
-private const val TTS_JUMP_REPORT_SUPPRESS_MS = 1_500L
-
 private fun highlightCurrentTts(controller: ReaderController, ttsState: TtsPlaybackState) {
     if (ttsState.highlightBlockIndex >= 0 && ttsState.highlightLength > 0) {
         controller.highlightBlock(
@@ -217,10 +209,7 @@ internal fun ReaderScreen(
     }
     val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
     val ttsForThisBook = ttsState.bookId == book.id
-    var ttsPositionReportJob by remember { mutableStateOf<Job?>(null) }
-    // 「回到朗读处」自己造成的翻页不是用户翻页：在这个时间点之前不回报位置，
-    // 否则引擎会把朗读拉到落地页首块的第一句（BUG-034 的落地侧）。
-    var ttsReportSuppressedUntil by remember { mutableLongStateOf(0L) }
+
     var locusRefreshJob by remember { mutableStateOf<Job?>(null) }
     // 阅读位置（章节/页码/滚动/待落盘快照）与弹层编排都抽成了不依赖 Android 的
     // 状态机：迁移规则和它们的回归测试在 reader/ReaderScreenState.kt 与
@@ -369,31 +358,14 @@ internal fun ReaderScreen(
         }
     }
 
-    fun reportTtsPositionDelayed() {
-        if (System.currentTimeMillis() < ttsReportSuppressedUntil) return
-        ttsPositionReportJob?.cancel()
-        ttsPositionReportJob = scope.launch {
-            delay(350)
-            // 等待期间可能刚按下「回到朗读处」：落位引发的翻页不能反向拽动引擎。
-            if (System.currentTimeMillis() < ttsReportSuppressedUntil) return@launch
-            controller.firstVisibleBlock { block ->
-                if (block != null) {
-                    TtsPlaybackController.onReaderPositionChanged(book.id, position.chapter, block)
-                }
-            }
-        }
-    }
-
     /**
      * 听书条的「回到朗读处」：把视口挪回正在朗读的那句并恢复自动跟随。
      *
-     * 落位会触发一次 onPageChanged，因此先开一段抑制窗口把位置回报压住；
-     * 高亮在落位后重画（onPageChanged 的常规清除对这次跳转不适用）。
+     * 不需要再压制任何回报——「翻页拽动朗读」那条路已经整条删除（方案 §8.1
+     * 拍板：页面跟朗读，不是朗读跟页面）。落位后重画一次高亮即可。
      */
     fun backToSpeaking() {
         if (ttsState.highlightBlockIndex < 0) return
-        ttsReportSuppressedUntil = System.currentTimeMillis() + TTS_JUMP_REPORT_SUPPRESS_MS
-        ttsPositionReportJob?.cancel()
         controller.backToSpeaking(ttsState.highlightBlockIndex, ttsState.highlightOffset)
         scope.launch {
             delay(400)
@@ -543,14 +515,7 @@ internal fun ReaderScreen(
                     // A manual page turn scrolls the highlight away with the
                     // text; clear it here so no stale block lingers on the new
                     // page before the next sentence re-applies it.
-                    if (ttsForThisBook &&
-                        System.currentTimeMillis() >= ttsReportSuppressedUntil
-                    ) {
-                        controller.clearHighlight()
-                    }
-                    if (ttsForThisBook && ttsState.isPlaying) {
-                        reportTtsPositionDelayed()
-                    }
+                    if (ttsForThisBook) controller.clearHighlight()
                 },
                 onChapterRequested = { direction ->
                     if (reminders.pausePrompt && dueWords.isNotEmpty() && !overlays.reviewPrompt) {

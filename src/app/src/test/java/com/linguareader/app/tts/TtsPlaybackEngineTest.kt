@@ -484,11 +484,12 @@ class TtsPlaybackEngineTest {
         h.engine.shutdown()
     }
 
-    // ── M0 安全网：阅读器三个入口的特征化测试 ───────────────────────────
-    // 重构方案（重构方案-位置语义统一与因果标记.md）第 2 刀要改这三个入口，
-    // 而它们在此之前 **零单测覆盖**。下面的用例先把「当前行为」原样钉住，
-    // 改结构时任何非预期的行为变化都会立刻变红；其中 BUG-034 那条是故意
-    // 记录缺陷现状的，第 2 刀落地时会连同断言一起翻面。
+    // ── 阅读器入口的特征化测试 ─────────────────────────────────────────
+    // M0 安全网原本钉住三个入口的当时行为，其中
+    // readerPositionChangePullsPlaybackToBlockFirstSentence_BUG034 是故意记录
+    // 缺陷现状的。第 2 刀（2026-09-01，方案 §8.1 拍板 (b)）把「翻页拽动朗读」
+    // 整条路径删除 —— 契约反转成「页面跟朗读」，那三条用例连同 API 一起作废。
+    // 剩下的两个入口（章节加载握手 / 换章）仍在，覆盖在下面。
 
     /** 一个块两句，方便区分「块首句」与「块内其它句」。 */
     private fun twoBlockChapter(): TtsChapter = TtsChapter(
@@ -498,58 +499,22 @@ class TtsPlaybackEngineTest {
     )
 
     @Test
-    fun readerPositionChangePullsPlaybackToBlockFirstSentence_BUG034() = runTest {
-        // 现状（缺陷）：播放中翻页 → 朗读被无条件拉到新页首块的**首句**，
-        // 块内偏移信息在回报载荷里就已丢失。致因见 TtsPlaybackEngine.kt:457-460。
+    fun playbackKeepsItsSentenceWhenTheReaderMovesWithinTheSameChapter() = runTest {
+        // BUG-034 的根除断言：阅读器在章内怎么翻都不该动朗读队列。引擎已经不再
+        // 暴露任何「按阅读位置重定位」的入口，这里守的是「换章之外没有第二条
+        // 能拽动 sentenceIndex 的路」——将来若有人再加回来，这条会先红。
         val dispatcher = StandardTestDispatcher(testScheduler)
         val h = plainHarness(dispatcher, { _, _ -> twoBlockChapter() })
         h.engine.startPlayback(book(), 0, 1) // 正在念 "A two."（块 0 的第 2 句）
         testScheduler.advanceUntilIdle()
         assertEquals("A two.", h.state.currentSentence)
 
-        h.engine.onReaderPositionChanged("b1", 0, "B one. B two.")
-        testScheduler.advanceUntilIdle()
-
-        assertEquals(2, h.state.sentenceIndex)
-        assertEquals("B one.", h.state.currentSentence)
-        h.engine.shutdown()
-    }
-
-    @Test
-    fun readerPositionChangeKeepsPlaybackWhenSpokenSentenceIsInThatBlock() = runTest {
-        // 唯一的豁免（TtsPlaybackEngine.kt:457）：当前朗读句就在回报的块里。
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val h = plainHarness(dispatcher, { _, _ -> twoBlockChapter() })
-        h.engine.startPlayback(book(), 0, 1)
-        testScheduler.advanceUntilIdle()
-
-        h.engine.onReaderPositionChanged("b1", 0, "A one. A two.")
+        // 章节加载握手（阅读器渲染完同一章）不得改变朗读位置
+        h.engine.onReaderChapterLoaded("b1", 0)
         testScheduler.advanceUntilIdle()
 
         assertEquals(1, h.state.sentenceIndex)
         assertEquals("A two.", h.state.currentSentence)
-        h.engine.shutdown()
-    }
-
-    @Test
-    fun readerPositionChangeIsIgnoredWhenPausedOrForAnotherBookOrChapter() = runTest {
-        // TtsPlaybackEngine.kt:447-449 的三道早退：书不符 / 未在播 / 章不符。
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val h = plainHarness(dispatcher, { _, _ -> twoBlockChapter() })
-        h.engine.startPlayback(book(), 0, 1)
-        testScheduler.advanceUntilIdle()
-
-        h.engine.onReaderPositionChanged("other-book", 0, "B one. B two.")
-        h.engine.onReaderPositionChanged("b1", 3, "B one. B two.")
-        h.engine.onReaderPositionChanged("b1", 0, "   ")
-        testScheduler.advanceUntilIdle()
-        assertEquals(1, h.state.sentenceIndex)
-
-        h.engine.pause()
-        testScheduler.advanceUntilIdle()
-        h.engine.onReaderPositionChanged("b1", 0, "B one. B two.")
-        testScheduler.advanceUntilIdle()
-        assertEquals(1, h.state.sentenceIndex)
         h.engine.shutdown()
     }
 

@@ -59,12 +59,6 @@ data class TtsChapter(
         return null
     }
 
-    /** Flat index of the first sentence in a block (used for page-follow sync). */
-    fun firstSentenceIndexInBlock(blockText: String): Int? {
-        val (blockIndex, _) = locateBlock(blockText, 0) ?: return null
-        return (0 until blockIndex).sumOf { sentencesByBlock[it].size }
-    }
-
     fun blockIndexForSentence(sentenceIndex: Int): Int {
         var remaining = sentenceIndex.coerceAtLeast(0)
         sentencesByBlock.forEachIndexed { index, list ->
@@ -72,11 +66,6 @@ data class TtsChapter(
             remaining -= list.size
         }
         return sentencesByBlock.lastIndex.coerceAtLeast(0)
-    }
-
-    fun sentenceBelongsToBlock(sentenceIndex: Int, blockText: String): Boolean {
-        val (blockIndex, _) = locateBlock(blockText, 0) ?: return false
-        return blockIndexForSentence(sentenceIndex) == blockIndex
     }
 
     /**

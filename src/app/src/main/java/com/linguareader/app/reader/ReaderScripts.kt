@@ -1198,7 +1198,7 @@ object ReaderScripts {
 
           // 视口起点所在的叶子块下标（-1 = 没有）。选择规则与历史实现逐字一致，
           // 只是把「返回文本」换成「返回下标」——块文本会撞车（正文里重复段落
-          // 很常见），下标才是稳定身份。lrFirstVisibleBlock 仍返回文本供旧链路用。
+          // 很常见），下标才是稳定身份。按文本回报的旧接口已随「翻页拽动朗读」删除。
           function firstVisibleBlockIndex(blocks) {
             const scroller = document.getElementById('lr-scroller');
             if (!scroller) return -1;
@@ -1227,12 +1227,6 @@ object ReaderScripts {
             }
             return candidate;
           }
-
-          window.lrFirstVisibleBlock = function() {
-            const blocks = ttsBlocks();
-            const index = firstVisibleBlockIndex(blocks);
-            return index >= 0 && blocks[index] ? blocks[index].text : null;
-          };
 
           // 视口起点落在该块正文的第几个（归一化后）字符上。
           // 长段落可以横跨好几页，只记块下标会把位置粗化成「整段」；这里用二分

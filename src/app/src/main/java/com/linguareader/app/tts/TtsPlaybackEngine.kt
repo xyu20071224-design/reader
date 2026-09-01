@@ -443,27 +443,12 @@ class TtsPlaybackEngine(
         if (playing) loadAndSpeakCurrent()
     }
 
-    fun onReaderPositionChanged(bookId: String, changedChapter: Int, blockText: String) {
-        val currentBook = book ?: return
-        if (currentBook.id != bookId || !playing || blockText.isBlank()) return
-        if (changedChapter != chapterIndex || waitingForChapter()) return
-        val version = navigationVersion
-        scope.launch {
-            // 跟随失败无关紧要：放弃这一次即可，不要惊动正在播的队列
-            // （交给 scope 的 handler 会一路 pause，那是过度反应）。
-            val loadedChapter = runCatching { chapterLoader(currentBook, changedChapter) }
-                .getOrNull() ?: return@launch
-            if (version != navigationVersion) return@launch
-            if (loadedChapter.sentenceBelongsToBlock(sentenceIndex, blockText)) return@launch
-            val target = loadedChapter.firstSentenceIndexInBlock(blockText) ?: return@launch
-            if (target == sentenceIndex) return@launch
-            sentenceIndex = target
-            if (playing) {
-                synthesizer?.stop()
-                speakCurrent()
-            }
-        }
-    }
+    // 「阅读器翻页 → 拽动朗读队列」这条路已删除（2026-09-01，方案 §8.1 拍板 (b)）。
+    // 原因：它无条件把朗读拉到新页首块的**首句**，用户翻一页回看就丢掉正在念的
+    // 位置（BUG-034），章末更会与阅读器位置回报形成回路。现在的契约反过来：
+    // **页面跟朗读**（听书跟随，见 ReaderScripts.followRangeIntoView），用户自己
+    // 翻页则由「用户接管窗口」让位若干秒，并由听书条的「回到朗读处」手动跟回。
+    // 换章仍然跟随，那条走 onReaderChapterSelected。
 
     // ── Queue / synthesis ─────────────────────────────────────────────────
 

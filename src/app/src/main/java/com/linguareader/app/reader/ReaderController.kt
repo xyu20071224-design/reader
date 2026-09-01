@@ -105,16 +105,11 @@ class ReaderController {
     }
 
     /**
-     * Returns the normalized text of the first paragraph visible on the
-     * current page; used to start listening from the current reading position
-     * and to let the queue follow manual page turns.
-     */
-    /**
      * 读取当前阅读位置的语义锚点 (块下标, 块内字符偏移)。
      *
-     * 与 [firstVisibleBlock] 的区别：那个返回**块文本**，正文里出现重复段落时
-     * 会指到别的块去（TtsTextExtractor.locateBlock 按文本全等匹配）；锚点返回
-     * **下标**，是稳定身份。位置落盘走这条。
+     * 返回**下标**而不是块文本：正文里重复段落很常见，按文本匹配会指到别的块
+     * 去（旧的 lrFirstVisibleBlock 就栽在这里，已随「翻页拽动朗读」一起删除）。
+     * 位置落盘走这条。
      */
     fun readLocus(callback: (Int, Int) -> Unit) {
         val script = """
@@ -159,16 +154,4 @@ class ReaderController {
         )
     }
 
-    fun firstVisibleBlock(callback: (String?) -> Unit) {
-        val script = """
-            (function() {
-              var block = window.lrFirstVisibleBlock ? window.lrFirstVisibleBlock() : null;
-              return block == null ? 'null' : JSON.stringify(block);
-            })()
-        """.trimIndent()
-        webView.get()?.evaluateJavascript(script) { value ->
-            val decoded = runCatching { JSONTokener(value ?: "null").nextValue() }.getOrNull()
-            callback(decoded as? String)
-        }
-    }
 }

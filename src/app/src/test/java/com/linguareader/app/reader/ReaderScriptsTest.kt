@@ -264,12 +264,13 @@ class ReaderScriptsTest {
     }
 
     @Test
-    fun firstVisibleBlockStillReturnsTextForTheLegacyTtsPath() {
+    fun blockIndexHelperSurvivesWhileTheTextBasedReportIsGone() {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())
 
-        // 旧链路（TTS 位置回报）暂时仍吃块文本，改造放在第 2 刀
-        assertContains(script, "window.lrFirstVisibleBlock = function()")
-        assertContains(script, "return index >= 0 && blocks[index] ? blocks[index].text : null;")
+        // 按块文本回报位置的旧接口已随「翻页拽动朗读」一起删除（方案 §8.1 拍板 (b)）：
+        // 块文本会撞车（正文里重复段落很常见），下标才是稳定身份。
+        assertFalse(script.contains("window.lrFirstVisibleBlock"), "按文本回报的旧接口不该回来")
+        // 内部的下标版仍是锚点机器的一部分（lrLocusHere / refreshAnchorLocus 都用它）
         assertContains(script, "function firstVisibleBlockIndex(blocks)")
     }
 
@@ -529,7 +530,7 @@ class ReaderScriptsTest {
 
         assertContains(script, "lrHighlightSentence")
         assertContains(script, "lrClearHighlight")
-        assertContains(script, "lrFirstVisibleBlock")
+        assertContains(script, "lrHighlightBlock")
         assertContains(script, "lrSetChoosingStart")
         assertContains(script, "ReaderBridge.onSentenceTapped")
         assertContains(script, "TTS_BLOCK_SELECTOR")
