@@ -103,6 +103,7 @@ import com.linguareader.app.data.ReaderTheme
 import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.reader.EpubPage
+import com.linguareader.app.reader.LocusOrigin
 import com.linguareader.app.reader.ReaderBackAction
 import com.linguareader.app.reader.ReaderController
 import com.linguareader.app.reader.ReaderLookupSession
@@ -209,6 +210,8 @@ internal fun ReaderScreen(
     }
     val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
     val ttsForThisBook = ttsState.bookId == book.id
+    // 朗读句已跑出视口（用户接管期间不硬翻页，改在听书条上点亮「回到朗读处」）。
+    var speakingOffscreen by remember { mutableStateOf(false) }
 
     var locusRefreshJob by remember { mutableStateOf<Job?>(null) }
     // 阅读位置（章节/页码/滚动/待落盘快照）与弹层编排都抽成了不依赖 Android 的
@@ -509,14 +512,17 @@ internal fun ReaderScreen(
                         highlightCurrentTts(controller, ttsState)
                     }
                 },
-                onPageChanged = { page, count ->
+                onPageChanged = { page, count, origin ->
                     position = position.onPageChanged(page, count)
                     refreshLocusDelayed()
-                    // A manual page turn scrolls the highlight away with the
-                    // text; clear it here so no stale block lingers on the new
-                    // page before the next sentence re-applies it.
-                    if (ttsForThisBook) controller.clearHighlight()
+                    // 只有**用户自己**翻页才清高亮：那一下确实把高亮的文字翻走了。
+                    // 听书跟随（Tts）与「回到朗读处」（Jump）恰恰是奔着高亮去的，
+                    // 清掉会让人看见高亮闪一下没了，要等下一句才回来。
+                    if (ttsForThisBook && origin == LocusOrigin.User) {
+                        controller.clearHighlight()
+                    }
                 },
+                onSpeakingOffscreen = { offscreen -> speakingOffscreen = offscreen },
                 onChapterRequested = { direction ->
                     if (reminders.pausePrompt && dueWords.isNotEmpty() && !overlays.reviewPrompt) {
                         overlays = overlays.copy(reviewPrompt = true)
@@ -724,6 +730,7 @@ internal fun ReaderScreen(
                     overlays = overlays.copy(choosingStart = !overlays.choosingStart)
                     controller.setChoosingStart(overlays.choosingStart)
                 },
+                speakingOffscreen = speakingOffscreen && ttsState.isPlaying,
                 onBackToSpeaking = { backToSpeaking() }
             )
         }

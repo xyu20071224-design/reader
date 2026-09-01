@@ -88,7 +88,7 @@ class ReaderScriptsTest {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())
 
         assertContains(script, "window.lrLocusHere = function()")
-        assertContains(script, "window.lrScrollToLocus = function(blockIndex, charOffset, anchor)")
+        assertContains(script, "window.lrScrollToLocus = function(blockIndex, charOffset, anchor, origin)")
         // 锚点必须是「块下标 + 块内偏移」，不能退回块文本（重复段落会撞车）
         assertContains(script, "blockIndex: index")
         assertContains(script, "charOffset: blockCharOffsetAtViewStart(blocks[index])")
@@ -101,9 +101,10 @@ class ReaderScriptsTest {
         // 末页/章首是语义锚，不再是挤进页码字段的哨兵值
         assertContains(script, "if (mode === 'chapter-start')")
         assertContains(script, "if (mode === 'chapter-end')")
-        // 还原路径落位时不能重取锚点（applyPage(false)）：锚点刚被显式写进去，
-        // 重取会立刻把它向下取整到页首块，还原当场就退化。
-        assertContains(script, "page = Math.max(0, pageCount - 1); applyPage(false); }")
+        // 还原路径落位时不能重取锚点（因果是 'restore'/'jump'，不是 'user'）：
+        // 锚点刚被显式写进去，重取会立刻把它向下取整到页首块，还原当场就退化。
+        assertContains(script, "page = Math.max(0, pageCount - 1); applyPage(cause); }")
+        assertContains(script, "const cause = String(origin || 'restore');")
         // 精确锚点走的是既有的 Range 定位器，而不是另起一套几何推算
         assertContains(script, "rangeFromNormalizedOffset(target.el, offset, 1)")
     }
@@ -120,15 +121,18 @@ class ReaderScriptsTest {
     fun anchorIsRefreshedOnlyByUserInitiatedMovement() {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())
 
-        assertContains(script, "function applyPage(reanchor)")
-        assertContains(script, "if (reanchor) refreshAnchorLocus();")
+        assertContains(script, "function applyPage(origin)")
+        assertContains(script, "if (origin === 'user') {")
+        assertContains(script, "refreshAnchorLocus();")
         // 用户翻页 = 真因果，必须重取
-        assertContains(script, "applyPage(true);")
+        assertContains(script, "applyPage('user');")
         // 不允许任何「不声明因果」的调用点
         assertFalse(
             script.contains("applyPage();"),
-            "applyPage() 必须显式声明因果：用户动作传 true，重排/还原传 false"
+            "applyPage() 必须显式声明因果：用户动作传 'user'，其余传 tts/jump/restore"
         )
+        // 因果必须随回报一起交给 Kotlin，否则清高亮之类的决定又要靠猜
+        assertContains(script, "ReaderBridge.onPageChanged(page, pageCount, origin);")
     }
 
     /**
@@ -177,12 +181,12 @@ class ReaderScriptsTest {
         // 用户主动翻页后要重新取锚点，否则下一次重排又会按旧锚点弹回去。
         // 只钉顺序不钉相邻：取锚点必须发生在回报之前（回报会触发 Kotlin 侧落盘），
         // 中间允许插入别的「用户因果」处理（如用户接管窗口的置位）。
-        val applyPageBody = Regex("function applyPage\\(reanchor\\) \\{([\\s\\S]*?)\\n          \\}")
+        val applyPageBody = Regex("function applyPage\\(origin\\) \\{([\\s\\S]*?)\\n          \\}")
             .find(script)?.groupValues?.get(1)
         assertNotNull(applyPageBody, "找不到 applyPage 函数体——它被改名或改写了")
         assertTrue(
             applyPageBody.indexOf("refreshAnchorLocus();") <
-                applyPageBody.indexOf("ReaderBridge.onPageChanged(page, pageCount);"),
+                applyPageBody.indexOf("ReaderBridge.onPageChanged(page, pageCount, origin);"),
             "锚点必须在回报之前重取，否则落盘的是上一次的锚点"
         )
     }
@@ -235,18 +239,108 @@ class ReaderScriptsTest {
         assertContains(script, "const LR_FOLLOW_TAKEOVER_MS = ${ReaderScripts.FOLLOW_TAKEOVER_MS};")
         assertContains(script, "function noteUserTakeover()")
         assertContains(script, "userTakeoverUntil = Date.now() + LR_FOLLOW_TAKEOVER_MS;")
-        // 跟随让位
-        assertContains(script, "if (Date.now() < userTakeoverUntil) return;")
-        // 用户翻页：与 refreshAnchorLocus 共用 reanchor 这个因果判据
-        assertContains(script, "if (reanchor) noteUserTakeover();")
+        // 跟随让位——并且不是默默让位：改为回报「朗读句已离屏」，听书条据此提示
+        assertContains(
+            script,
+            "if (Date.now() < userTakeoverUntil) { reportSpeakingOffscreen(true); return; }"
+        )
+        // 用户翻页：与 refreshAnchorLocus 共用 origin === 'user' 这个因果判据
+        assertContains(script, "if (origin === 'user') {")
 
-        // 置位点只允许两处：用户翻页（applyPage 的 reanchor）与拖动滚动。
+        // 置位点只允许两处：用户翻页（applyPage 的 origin === 'user'）与拖动滚动。
         // 多出来的一处几乎必然是程序化路径，会把跟随锁死。
         assertEquals(
             2,
             Regex("noteUserTakeover\\(\\);").findAll(script).count(),
             "用户接管窗口的置位点只能是「用户自己动」的两条路径"
         )
+    }
+
+    /**
+     * 退化尺寸不许写成新真相。
+     *
+     * 真机实测（PKB110，2026-09-01）：听书时切到别的 App 再回来，页码指示变成
+     * 「3/216」——后台那一刻 innerWidth 掉到 0/极小，
+     * pageCount = ceil(scrollWidth / innerWidth) 炸成两百多页，而且不会自愈。
+     * 分页跟随解禁后这条更要命：跟随会在两百多页的幻觉里乱翻。
+     */
+    @Test
+    fun degenerateViewportIsNeverMeasured() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(
+            script,
+            "if (document.hidden || window.innerWidth <= 1 || window.innerHeight <= 1) return;"
+        )
+        // 挡掉之后必须有人把正确尺寸补回来，否则回前台就一直是旧分页
+        assertContains(script, "document.addEventListener('visibilitychange', function() {")
+        assertContains(script, "if (!document.hidden) requestAnimationFrame(updateMetrics);")
+        // 跟随同样不在不可见时动
+        val follow = script.substring(
+            script.indexOf("function followRangeIntoView(range)"),
+            script.indexOf("function showTtsHighlight(range)")
+        )
+        assertContains(follow, "if (document.hidden) return;")
+    }
+
+    /**
+     * 分页模式的听书跟随（T2.3 解禁）。
+     *
+     * 这里曾经是禁区：followRangeIntoView 开头一句 `if (!scrollMode) return;`
+     * 把分页跟随整条关掉，因为翻页会触发阅读器位置回报、把引擎拽回该页首块，
+     * 章末形成死循环（2026-08-23 真机事故）。第 2 刀删掉了那条回报路径（契约
+     * 反转成「页面跟朗读」），回路不可能再闭合，于是解禁——但保留两道护栏：
+     * 用户接管窗口内不翻页，且只有目标页与当前页不同才翻、300ms 内合并。
+     */
+    @Test
+    fun pagedFollowTurnsThePageWithTtsOriginBehindTwoGuards() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        val follow = script.substring(
+            script.indexOf("function followRangeIntoView(range)"),
+            script.indexOf("function showTtsHighlight(range)")
+        )
+        // 禁区解除：跟随不再对分页模式一刀切早退
+        assertFalse(
+            follow.contains("!scrollMode) return"),
+            "分页跟随不该再被整条禁用（回报路径已删，回路不可能闭合）"
+        )
+        // 护栏 1：句子已在当前页就什么都不做
+        assertContains(follow, "if (target === page) { reportSpeakingOffscreen(false); return; }")
+        // 护栏 2：合并窗口，且翻页必须声明 'tts' 因果（否则会被当成用户翻页清高亮）
+        assertContains(script, "const LR_FOLLOW_COALESCE_MS = ${ReaderScripts.FOLLOW_COALESCE_MS};")
+        assertContains(script, "}, LR_FOLLOW_COALESCE_MS);")
+        assertContains(script, "applyPage('tts');")
+        // 跟随翻页必须把阅读锚点也挪到正在念的那句：页面跟朗读，位置真相也跟。
+        // 不同步的话，真机上听到第 10 页、锚点还钉在块 0，一旋转就弹回章首。
+        assertContains(script, "speakingLocus = {")
+        assertContains(script, "anchor: 'exact'")
+        val turn = script.substring(
+            script.indexOf("function scheduleTtsPageTurn(target)"),
+            script.indexOf("function followRangeIntoView(range)")
+        )
+        assertTrue(
+            turn.indexOf("anchorLocus = {") < turn.indexOf("applyPage('tts');"),
+            "锚点要在跟随翻页之前挪好，否则这一页的落位仍按旧锚点算"
+        )
+    }
+
+    /**
+     * 朗读句离屏的「主动提示」：用户接管期间不硬翻页，但要让他知道朗读跑远了。
+     * 只在状态翻转时回报一次，否则每句都过桥一次纯属噪音。
+     */
+    @Test
+    fun speakingOffscreenIsReportedOnlyWhenItFlips() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "if (next === speakingOffscreen) return;")
+        assertContains(script, "ReaderBridge.onSpeakingOffscreen(next);")
+        // 高亮被清掉（换章/停止）时提示必须熄灭，否则会一直亮着
+        val clear = script.substring(
+            script.indexOf("function clearTtsOverlay()"),
+            script.indexOf("window.lrClearHighlight")
+        )
+        assertContains(clear, "reportSpeakingOffscreen(false);")
     }
 
     /**
@@ -260,7 +354,7 @@ class ReaderScriptsTest {
 
         assertContains(script, "window.lrBackToSpeaking = function(blockIndex, charOffset)")
         assertContains(script, "userTakeoverUntil = 0;")
-        assertContains(script, "return window.lrScrollToLocus(blockIndex, charOffset, 'exact');")
+        assertContains(script, "return window.lrScrollToLocus(blockIndex, charOffset, 'exact', 'jump');")
     }
 
     @Test

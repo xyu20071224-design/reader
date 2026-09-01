@@ -24,6 +24,12 @@ object ReaderScripts {
      */
     const val FOLLOW_TAKEOVER_MS = 10_000
 
+    /**
+     * 听书跟随翻页的合并窗口（毫秒）。方案 §8.2 拍板：只有当朗读句不在当前页时
+     * 才翻页，且这么长时间内只落最后一个目标——一句一翻会晃得没法读。
+     */
+    const val FOLLOW_COALESCE_MS = 300
+
     fun bootstrap(
         initialPage: Int,
         preferences: ReaderPreferences,
@@ -86,9 +92,10 @@ object ReaderScripts {
           let dragScrollActive = false;
           let lastScrollY = 0;
           // 用户接管窗口：见 Kotlin 侧 ReaderScripts.FOLLOW_TAKEOVER_MS 的注释。
-          // 只由「用户自己动」的路径置位（applyPage(true) 与拖动滚动），程序化
+          // 只由「用户自己动」的路径置位（applyPage('user') 与拖动滚动），程序化
           // 移动（重排、还原、跟随本身）绝不置位，否则跟随会把自己锁死。
           const LR_FOLLOW_TAKEOVER_MS = $FOLLOW_TAKEOVER_MS;
+          const LR_FOLLOW_COALESCE_MS = $FOLLOW_COALESCE_MS;
           let userTakeoverUntil = 0;
           function noteUserTakeover() {
             userTakeoverUntil = Date.now() + LR_FOLLOW_TAKEOVER_MS;
@@ -235,6 +242,12 @@ object ReaderScripts {
           }
 
           function updateMetrics() {
+            // 退化尺寸不测量。真机实测（PKB110，2026-09-01）：切到别的 App 再回来，
+            // 后台那一刻 innerWidth/innerHeight 可能是 0 或极小，而
+            // pageCount = ceil(scrollWidth / innerWidth) 会炸成几百页——页码指示变成
+            // 「3/216」、进度条与章内比例全部报废，且不会自己恢复。宁可这一轮不测，
+            // 也不要把垃圾度量写成新真相；恢复可见时由 visibilitychange 补测一次。
+            if (document.hidden || window.innerWidth <= 1 || window.innerHeight <= 1) return;
             // WebView occasionally computes 100vh as the first fragment's height
             // when column-fill is active, so pin the pagination box explicitly.
             document.body.style.width = window.innerWidth + 'px';
@@ -401,7 +414,7 @@ object ReaderScripts {
             updateMetrics();
             page = pageFromRatio(scrollRatio);
             restoreTarget = page;
-            applyPage(true);
+            applyPage('user');
             hideEndHint();
             ReaderBridge.onScrollModeChanged(false);
           }
@@ -516,17 +529,23 @@ object ReaderScripts {
             };
           }
 
-          // reanchor = 「这一次是用户自己动的」。只有这种因果才允许重取锚点。
-          // 重排/还原路径必须传假：分页的视口起点常常落在页首块的中间，重取会把
-          // 锚点向下取整到该页的第一个块，于是每重排一次就往回退一块——2026-09-01
-          // 真机实测转两次屏就从块 5 退到 4、3，最后钉死在章首块 0。
-          function applyPage(reanchor) {
+          // origin = 「这一次翻页是谁造成的」：
+          //   'user'    用户自己翻页 / 退出滚动模式 —— 唯一允许重取锚点的因果
+          //   'tts'     听书自动跟随
+          //   'jump'    跳页 / 目录 / 「回到朗读处」
+          //   'restore' 打开、重新注入、重排后的还原
+          // 重排/还原绝不能重取锚点：分页的视口起点常落在页首块中间，重取会把锚点
+          // 向下取整到该页第一个块，于是每重排一次退一块——2026-09-01 真机实测转两次
+          // 屏就从块 5 退到 4、3，最后钉死在章首块 0。
+          function applyPage(origin) {
             const scroller = document.getElementById('lr-scroller');
             if (scroller) scroller.scrollLeft = page * window.innerWidth;
-            if (reanchor) refreshAnchorLocus();
-            // 同一个因果：用户自己翻的页，暂停自动跟随，别立刻把他拽回朗读处。
-            if (reanchor) noteUserTakeover();
-            ReaderBridge.onPageChanged(page, pageCount);
+            if (origin === 'user') {
+              refreshAnchorLocus();
+              // 用户自己翻的页：暂停自动跟随，别立刻把他拽回朗读处。
+              noteUserTakeover();
+            }
+            ReaderBridge.onPageChanged(page, pageCount, origin);
           }
 
           // keepAnchor = 「这是还原/重排，不是用户跳页」。用户跳页必须作废锚点，
@@ -602,7 +621,7 @@ object ReaderScripts {
             if (candidate >= 0 && candidate < pageCount) {
               page = candidate;
               restoreTarget = candidate;
-              applyPage(true);
+              applyPage('user');
             } else {
               ReaderBridge.onChapterRequested(Number(direction));
             }
@@ -1088,43 +1107,103 @@ object ReaderScripts {
           function clearTtsOverlay() {
             const overlay = document.getElementById('lr-tts-overlay');
             if (overlay) overlay.remove();
+            // 没有高亮就谈不上「朗读句离屏」，提示随之熄灭。
+            reportSpeakingOffscreen(false);
           }
 
           window.lrClearHighlight = clearTtsOverlay;
 
-          // While audio is playing the highlight must stay visible: in scroll
-          // mode bring the spoken sentence into view before drawing. Paged
-          // mode deliberately does NOT flip pages here: a page turn emits
-          // onPageChanged, which this app's reader answers with a
-          // position report that drags the engine back to the page's first
-          // visible block — at chapter boundaries that feedback loop restarts
-          // the old chapter from sentence 0 (verified on PKB110). Paged mode
-          // keeps the pre-existing behaviour: the highlight may draw outside
-          // the viewport until the next manual turn.
+          // 正在朗读的那句的锚点（块下标 + 块内偏移），由 lrHighlightBlock 写入。
+          let speakingLocus = null;
+
+          // 朗读句是否已离开视口。只在状态变化时回报一次，听书条据此点亮
+          // 「回到朗读处」——用户接管期间我们不硬翻页，但必须让他知道朗读跑远了。
+          let speakingOffscreen = false;
+          function reportSpeakingOffscreen(flag) {
+            const next = !!flag;
+            if (next === speakingOffscreen) return;
+            speakingOffscreen = next;
+            ReaderBridge.onSpeakingOffscreen(next);
+          }
+
+          // 跟随翻页的合并窗口（方案 §8.2）：一句一翻会晃得没法读，
+          // LR_FOLLOW_COALESCE_MS 内只落最后一个目标页。
+          let ttsFollowTimer = 0;
+          let ttsFollowTarget = -1;
+          function scheduleTtsPageTurn(target) {
+            ttsFollowTarget = target;
+            if (ttsFollowTimer) return;
+            ttsFollowTimer = setTimeout(function() {
+              ttsFollowTimer = 0;
+              const wanted = ttsFollowTarget;
+              ttsFollowTarget = -1;
+              if (wanted < 0 || wanted === page || document.hidden) return;
+              // 合并期间用户可能刚接管：那就不翻，改成提示。
+              if (Date.now() < userTakeoverUntil) { reportSpeakingOffscreen(true); return; }
+              // 页面跟着朗读走，阅读位置也得跟着走：把锚点挪到正在念的那句。
+              // 不挪的话，锚点还钉在进本章时的位置，一旦旋转/改字号，视口就按旧
+              // 锚点弹回章首——真机实测听到第 10 页、锚点仍是块 0。
+              if (speakingLocus) {
+                anchorLocus = {
+                  blockIndex: speakingLocus.blockIndex,
+                  charOffset: speakingLocus.charOffset,
+                  anchor: 'exact'
+                };
+              }
+              page = clamp(wanted, 0, Math.max(0, pageCount - 1));
+              restoreTarget = page;
+              applyPage('tts');
+              reportSpeakingOffscreen(false);
+            }, LR_FOLLOW_COALESCE_MS);
+          }
+
+          // 听书跟随：把正在朗读的句子带进视口。
+          //
+          // 分页模式曾经整条禁用（2026-08-23 真机事故）：翻页会触发阅读器位置回报，
+          // 引擎被拽回该页首块，章末形成死循环。那条回报路径已随第 2 刀删除
+          // （契约反转为「页面跟朗读」），回路不可能再闭合，故解禁。两道护栏：
+          //   ① 用户接管窗口内不跟随，改为回报「朗读句已离屏」；
+          //   ② 只有句子不在当前页/视口时才动，且 300ms 内合并。
           function followRangeIntoView(range) {
-            if (!scrollMode) return;
-            // 用户刚自己动过：这段时间归他，不跟随。
-            if (Date.now() < userTakeoverUntil) return;
+            // 页面不可见时不跟随：此时几何值不可信（见 updateMetrics 的退化守卫），
+            // 而且用户也看不见，翻了只会把位置搅乱。
+            if (document.hidden) return;
             const scroller = document.getElementById('lr-scroller');
             if (!scroller) return;
-            const sr = scroller.getBoundingClientRect();
             const rects = range.getClientRects();
             let first = null;
             for (let i = 0; i < rects.length; i++) {
               if (rects[i].width > 0 && rects[i].height > 0) { first = rects[i]; break; }
             }
             if (!first) return;
-            const contentTop = first.top - sr.top + scroller.scrollTop;
-            const viewTop = scroller.scrollTop;
-            const viewBottom = scroller.scrollTop + scroller.clientHeight;
-            if (contentTop < viewTop + 8 || contentTop + first.height > viewBottom - 8) {
+            const sr = scroller.getBoundingClientRect();
+            if (scrollMode) {
+              const contentTop = first.top - sr.top + scroller.scrollTop;
+              const viewTop = scroller.scrollTop;
+              const viewBottom = scroller.scrollTop + scroller.clientHeight;
+              if (contentTop >= viewTop + 8 && contentTop + first.height <= viewBottom - 8) {
+                reportSpeakingOffscreen(false);
+                return;
+              }
+              if (Date.now() < userTakeoverUntil) { reportSpeakingOffscreen(true); return; }
               const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
               scroller.scrollTop = clamp(contentTop - scroller.clientHeight * 0.25, 0, max);
               scrollRatio = currentScrollRatio();
               page = pageFromRatio(scrollRatio);
               updateEndHint();
               ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+              reportSpeakingOffscreen(false);
+              return;
             }
+            const docLeft = scroller.scrollLeft + (first.left - sr.left);
+            const target = clamp(
+              Math.floor(docLeft / Math.max(1, window.innerWidth)),
+              0,
+              Math.max(0, pageCount - 1)
+            );
+            if (target === page) { reportSpeakingOffscreen(false); return; }
+            if (Date.now() < userTakeoverUntil) { reportSpeakingOffscreen(true); return; }
+            scheduleTtsPageTurn(target);
           }
 
           function showTtsHighlight(range) {
@@ -1193,6 +1272,11 @@ object ReaderScripts {
             const blocks = ttsBlocks();
             const target = blocks[Number(blockIndex)];
             if (!target || Number(length) <= 0) return;
+            // 记住正在念的位置：跟随翻页时用它更新阅读锚点（见 scheduleTtsPageTurn）。
+            speakingLocus = {
+              blockIndex: Number(blockIndex),
+              charOffset: Math.max(0, Number(offset) || 0)
+            };
             showTtsHighlight(rangeFromNormalizedOffset(target.el, Number(offset), Number(length)));
           };
 
@@ -1296,22 +1380,24 @@ object ReaderScripts {
           // 把视口挪到锚点处。anchor: 'exact' | 'chapter-start' | 'chapter-end'。
           // 末页哨兵在这里升格为一等语义，不再挤进页码字段（旧实现用
           // Int.MAX_VALUE/-1 混在 restoreTarget 里，被 clamp 一夹就落回章首）。
-          window.lrScrollToLocus = function(blockIndex, charOffset, anchor) {
+          window.lrScrollToLocus = function(blockIndex, charOffset, anchor, origin) {
             const scroller = document.getElementById('lr-scroller');
             if (!scroller) return false;
             const mode = String(anchor || 'exact');
+            // 还原/切章默认是 'restore'；「回到朗读处」这类一次性落位传 'jump'。
+            const cause = String(origin || 'restore');
             anchorLocus = {
               blockIndex: Number(blockIndex),
               charOffset: Math.max(0, Number(charOffset) || 0),
               anchor: mode
             };
             if (mode === 'chapter-start') {
-              if (scrollMode) { scrollRatio = 0; syncScroll(); } else { page = 0; applyPage(false); }
+              if (scrollMode) { scrollRatio = 0; syncScroll(); } else { page = 0; applyPage(cause); }
               return true;
             }
             if (mode === 'chapter-end') {
               if (scrollMode) { scrollRatio = 1; syncScroll(); }
-              else { page = Math.max(0, pageCount - 1); applyPage(false); }
+              else { page = Math.max(0, pageCount - 1); applyPage(cause); }
               return true;
             }
             const blocks = ttsBlocks();
@@ -1346,7 +1432,7 @@ object ReaderScripts {
               Math.max(0, pageCount - 1)
             );
             restoreTarget = page;
-            applyPage(false);
+            applyPage(cause);
             return true;
           };
 
@@ -1356,7 +1442,7 @@ object ReaderScripts {
           window.lrBackToSpeaking = function(blockIndex, charOffset) {
             userTakeoverUntil = 0;
             if (!window.lrScrollToLocus) return false;
-            return window.lrScrollToLocus(blockIndex, charOffset, 'exact');
+            return window.lrScrollToLocus(blockIndex, charOffset, 'exact', 'jump');
           };
 
           window.lrSetChoosingStart = function(enabled) {
@@ -1375,6 +1461,12 @@ object ReaderScripts {
             // the chapter, and updateMetrics keeps the current page stable.
             setTimeout(updateMetrics, 30);
           };
+          // 回到前台补测一次：后台期间的 resize 被上面的守卫挡掉了，这里把正确
+          // 尺寸下的分页补回来。
+          document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) requestAnimationFrame(updateMetrics);
+          }, true);
+
           window.addEventListener('resize', function() {
             setTimeout(updateMetrics, 80);
           });

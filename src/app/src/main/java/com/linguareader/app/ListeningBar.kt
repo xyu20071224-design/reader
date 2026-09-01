@@ -55,6 +55,11 @@ internal fun ListeningBar(
     onCacheBook: () -> Unit = {},
     choosingStart: Boolean = false,
     onChooseStart: () -> Unit = {},
+    /**
+     * 朗读句已跑出视口。用户接管期间我们不硬把页面翻回去（那样他就没法往后
+     * 看了），改成在这里主动提示：按钮点亮 + 一行说明。
+     */
+    speakingOffscreen: Boolean = false,
     /** 「回到朗读处」：把视口挪回正在朗读的那句，并恢复自动跟随。 */
     onBackToSpeaking: () -> Unit = {}
 ) {
@@ -152,18 +157,40 @@ internal fun ListeningBar(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
             )
-            // 朗读处未知（老链路只有句文本、或还没开始念）时不显示：按下也没地方去。
+            // 朗读处未知（还没开始念）时不显示：按下也没地方去。
             if (state.highlightBlockIndex >= 0) {
-                IconButton(
-                    onClick = onBackToSpeaking,
-                    modifier = Modifier.semantics { contentDescription = backToSpeakingLabel }
-                ) {
-                    Icon(
-                        Icons.Filled.MyLocation,
-                        contentDescription = null,
-                        tint = InkFaint,
-                        modifier = Modifier.size(18.dp)
-                    )
+                if (speakingOffscreen) {
+                    // 主动提示：朗读跑出视口了。不弹窗、不硬翻页（用户接管期间
+                    // 页面归他），只把入口从图标撑成带字的按钮并点亮。
+                    TextButton(
+                        onClick = onBackToSpeaking,
+                        modifier = Modifier.semantics { contentDescription = backToSpeakingLabel }
+                    ) {
+                        Icon(
+                            Icons.Filled.MyLocation,
+                            contentDescription = null,
+                            tint = Accent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            " " + backToSpeakingLabel,
+                            color = Accent,
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                } else {
+                    IconButton(
+                        onClick = onBackToSpeaking,
+                        modifier = Modifier.semantics { contentDescription = backToSpeakingLabel }
+                    ) {
+                        Icon(
+                            Icons.Filled.MyLocation,
+                            contentDescription = null,
+                            tint = InkFaint,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
             IconButton(

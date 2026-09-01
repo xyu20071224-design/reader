@@ -22,13 +22,14 @@ import java.io.File
 private class ReaderBridge(
     private val webView: WebView,
     private val readyCallback: (Int, Int) -> Unit,
-    private val pageChangedCallback: (Int, Int) -> Unit,
+    private val pageChangedCallback: (Int, Int, LocusOrigin) -> Unit,
     private val chapterRequestedCallback: (Int) -> Unit,
     private val wordCallback: (WordLookup) -> Unit,
     private val toolbarRequestedCallback: () -> Unit,
     private val sentenceTappedCallback: (String, Int) -> Unit,
     private val scrollModeChangedCallback: (Boolean) -> Unit,
-    private val scrollProgressCallback: (Float, Int, Int) -> Unit
+    private val scrollProgressCallback: (Float, Int, Int) -> Unit,
+    private val speakingOffscreenCallback: (Boolean) -> Unit
 ) {
     private fun post(action: () -> Unit): Unit {
         webView.post(action)
@@ -40,8 +41,8 @@ private class ReaderBridge(
     }
 
     @JavascriptInterface
-    fun onPageChanged(page: Int, pageCount: Int): Unit = post {
-        pageChangedCallback(page, pageCount)
+    fun onPageChanged(page: Int, pageCount: Int, origin: String): Unit = post {
+        pageChangedCallback(page, pageCount, LocusOrigin.of(origin))
     }
 
     @JavascriptInterface
@@ -83,6 +84,12 @@ private class ReaderBridge(
         scrollModeChangedCallback(active)
     }
 
+    /** 朗读句是否已离开视口（用户接管期间不硬翻页，改在听书条上提示）。 */
+    @JavascriptInterface
+    fun onSpeakingOffscreen(offscreen: Boolean): Unit = post {
+        speakingOffscreenCallback(offscreen)
+    }
+
     @JavascriptInterface
     fun onScrollProgress(progress: Float, page: Int, pageCount: Int): Unit = post {
         scrollProgressCallback(
@@ -112,13 +119,15 @@ fun EpubPage(
     controller: ReaderController,
     modifier: Modifier = Modifier,
     onReady: (Int, Int) -> Unit,
-    onPageChanged: (Int, Int) -> Unit,
+    onPageChanged: (Int, Int, LocusOrigin) -> Unit,
     onChapterRequested: (Int) -> Unit,
     onWord: (WordLookup) -> Unit,
     onToolbarRequested: () -> Unit,
     onSentenceTapped: (String, Int) -> Unit = { _, _ -> },
     onScrollModeChanged: (Boolean) -> Unit = {},
-    onScrollProgress: (Float, Int, Int) -> Unit = { _, _, _ -> }
+    onScrollProgress: (Float, Int, Int) -> Unit = { _, _, _ -> },
+    /** 朗读句离屏/回到视口（用户接管期间的主动提示）。 */
+    onSpeakingOffscreen: (Boolean) -> Unit = {}
 ) {
     val latestPreferences by rememberUpdatedState(preferences)
     val latestReady by rememberUpdatedState(onReady)
@@ -132,6 +141,7 @@ fun EpubPage(
     val latestInitialScrollPageCount by rememberUpdatedState(initialScrollPageCount)
     val latestScrollModeChanged by rememberUpdatedState(onScrollModeChanged)
     val latestScrollProgress by rememberUpdatedState(onScrollProgress)
+    val latestSpeakingOffscreen by rememberUpdatedState(onSpeakingOffscreen)
     val latestSavedWords by rememberUpdatedState(savedWords)
     val latestChromeTop by rememberUpdatedState(chromeTopPx)
     val latestChromeBottom by rememberUpdatedState(chromeBottomPx)
@@ -163,7 +173,9 @@ fun EpubPage(
                     ReaderBridge(
                         webView = this,
                         readyCallback = { page, count -> latestReady(page, count) },
-                        pageChangedCallback = { page, count -> latestPageChanged(page, count) },
+                        pageChangedCallback = { page, count, origin ->
+                            latestPageChanged(page, count, origin)
+                        },
                         chapterRequestedCallback = { latestChapterRequested(it) },
                         wordCallback = { latestWord(it) },
                         toolbarRequestedCallback = { latestToolbarRequested() },
@@ -171,7 +183,8 @@ fun EpubPage(
                         scrollModeChangedCallback = { active -> latestScrollModeChanged(active) },
                         scrollProgressCallback = { progress, page, count ->
                             latestScrollProgress(progress, page, count)
-                        }
+                        },
+                        speakingOffscreenCallback = { latestSpeakingOffscreen(it) }
                     ),
                     "ReaderBridge"
                 )
