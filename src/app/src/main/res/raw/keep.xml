@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  资源裁剪白名单。
+  ListeningSettingsSheet.kt 的 mimoPresetName() 用
+  resources.getIdentifier(nameKey, "string", packageName) 动态解析 MiMo 预置音色名，
+  key 来自 tts/MiMoVoice.kt 的 Preset.nameKey，没有任何静态引用——
+  不显式保留的话 shrinkResources 会把这 9 条 string 裁掉，
+  UI 上音色名退化成 "tts_mimo_voice_bingtang" 这种原始 key（代码里 id==0 时回退 key）。
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/tts_mimo_voice_*" />
