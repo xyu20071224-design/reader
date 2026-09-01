@@ -1077,39 +1077,145 @@ object ReaderScripts {
             showTtsHighlight(rangeFromNormalizedOffset(target.el, Number(offset), Number(length)));
           };
 
-          window.lrFirstVisibleBlock = function() {
+          // 视口起点所在的叶子块下标（-1 = 没有）。选择规则与历史实现逐字一致，
+          // 只是把「返回文本」换成「返回下标」——块文本会撞车（正文里重复段落
+          // 很常见），下标才是稳定身份。lrFirstVisibleBlock 仍返回文本供旧链路用。
+          function firstVisibleBlockIndex(blocks) {
             const scroller = document.getElementById('lr-scroller');
-            if (!scroller) return null;
-            const blocks = ttsBlocks();
+            if (!scroller) return -1;
+            let candidate = -1;
             if (scrollMode) {
               const top = scroller.scrollTop;
-              let candidate = null;
-              for (const block of blocks) {
-                const rect = block.el.getBoundingClientRect();
+              for (let i = 0; i < blocks.length; i++) {
+                const rect = blocks[i].el.getBoundingClientRect();
                 const docTop = scroller.scrollTop + rect.top;
                 const docBottom = docTop + rect.height;
                 if (docBottom <= top) continue;
-                candidate = block;
+                candidate = i;
                 if (docTop >= top - 2) break;
               }
-              return candidate ? candidate.text : null;
+              return candidate;
             }
             const pageLeft = Math.round(scroller.scrollLeft / Math.max(1, window.innerWidth)) *
               window.innerWidth;
-            const pageRight = pageLeft + window.innerWidth;
-            let candidate = null;
-            for (const block of blocks) {
-              const rect = block.el.getBoundingClientRect();
+            for (let i = 0; i < blocks.length; i++) {
+              const rect = blocks[i].el.getBoundingClientRect();
               const docLeft = scroller.scrollLeft + rect.left;
               const docRight = docLeft + rect.width;
               if (docRight <= pageLeft) continue;
-              if (docLeft >= pageLeft - 2) {
-                candidate = block;
-                break;
-              }
-              candidate = block;
+              candidate = i;
+              if (docLeft >= pageLeft - 2) break;
             }
-            return candidate ? candidate.text : null;
+            return candidate;
+          }
+
+          window.lrFirstVisibleBlock = function() {
+            const blocks = ttsBlocks();
+            const index = firstVisibleBlockIndex(blocks);
+            return index >= 0 && blocks[index] ? blocks[index].text : null;
+          };
+
+          // 视口起点落在该块正文的第几个（归一化后）字符上。
+          // 长段落可以横跨好几页，只记块下标会把位置粗化成「整段」；这里用二分
+          // 找出第一个仍在本页/本屏内的字符，代价是 log2(块长) 次 Range 构造。
+          function blockCharOffsetAtViewStart(block) {
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller || !block) return 0;
+            const length = block.text.length;
+            if (length <= 1) return 0;
+            const sr = scroller.getBoundingClientRect();
+            const startEdge = scrollMode
+              ? scroller.scrollTop
+              : Math.round(scroller.scrollLeft / Math.max(1, window.innerWidth)) *
+                window.innerWidth;
+            function startsInView(offset) {
+              const range = rangeFromNormalizedOffset(block.el, offset, 1);
+              if (!range) return true;
+              const rects = range.getClientRects();
+              let box = null;
+              for (let i = 0; i < rects.length; i++) {
+                if (rects[i].width > 0 || rects[i].height > 0) { box = rects[i]; break; }
+              }
+              if (!box) return true;
+              // 与 followRangeIntoView 同一套换算（减去容器 rect 再加滚动偏移）：
+              // 直接用 rect.top + scrollTop 会漏掉容器自身的偏移。
+              const docPos = scrollMode
+                ? scroller.scrollTop + (box.top - sr.top)
+                : scroller.scrollLeft + (box.left - sr.left);
+              return docPos >= startEdge - 2;
+            }
+            if (startsInView(0)) return 0;
+            let lo = 0;
+            let hi = length - 1;
+            while (lo < hi) {
+              const mid = (lo + hi) >> 1;
+              if (startsInView(mid)) hi = mid; else lo = mid + 1;
+            }
+            return lo;
+          }
+
+          // 当前阅读位置的语义锚点。页码/比例都是随字号、旋转、分栏变化的派生量，
+          // 只有 (块下标, 块内字符偏移) 在重排后仍指着同一段文字。
+          window.lrLocusHere = function() {
+            const blocks = ttsBlocks();
+            const index = firstVisibleBlockIndex(blocks);
+            if (index < 0) return null;
+            return JSON.stringify({
+              blockIndex: index,
+              charOffset: blockCharOffsetAtViewStart(blocks[index])
+            });
+          };
+
+          // 把视口挪到锚点处。anchor: 'exact' | 'chapter-start' | 'chapter-end'。
+          // 末页哨兵在这里升格为一等语义，不再挤进页码字段（旧实现用
+          // Int.MAX_VALUE/-1 混在 restoreTarget 里，被 clamp 一夹就落回章首）。
+          window.lrScrollToLocus = function(blockIndex, charOffset, anchor) {
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller) return false;
+            const mode = String(anchor || 'exact');
+            if (mode === 'chapter-start') {
+              if (scrollMode) { scrollRatio = 0; syncScroll(); } else { page = 0; applyPage(); }
+              return true;
+            }
+            if (mode === 'chapter-end') {
+              if (scrollMode) { scrollRatio = 1; syncScroll(); }
+              else { page = Math.max(0, pageCount - 1); applyPage(); }
+              return true;
+            }
+            const blocks = ttsBlocks();
+            const target = blocks[Number(blockIndex)];
+            if (!target) return false;
+            const maxOffset = Math.max(0, target.text.length - 1);
+            const offset = clamp(Math.max(0, Number(charOffset) || 0), 0, maxOffset);
+            const range = rangeFromNormalizedOffset(target.el, offset, 1) ||
+              rangeFromNormalizedOffset(target.el, 0, 1);
+            if (!range) return false;
+            const rects = range.getClientRects();
+            let box = null;
+            for (let i = 0; i < rects.length; i++) {
+              if (rects[i].width > 0 || rects[i].height > 0) { box = rects[i]; break; }
+            }
+            if (!box) return false;
+            const sr = scroller.getBoundingClientRect();
+            if (scrollMode) {
+              const docTop = scroller.scrollTop + (box.top - sr.top);
+              const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+              scroller.scrollTop = clamp(docTop - scroller.clientHeight * 0.15, 0, max);
+              scrollRatio = currentScrollRatio();
+              page = pageFromRatio(scrollRatio);
+              updateEndHint();
+              ReaderBridge.onScrollProgress(scrollRatio, page, pageCount);
+              return true;
+            }
+            const docLeft = scroller.scrollLeft + (box.left - sr.left);
+            page = clamp(
+              Math.round(docLeft / Math.max(1, window.innerWidth)),
+              0,
+              Math.max(0, pageCount - 1)
+            );
+            restoreTarget = page;
+            applyPage();
+            return true;
           };
 
           window.lrSetChoosingStart = function(enabled) {

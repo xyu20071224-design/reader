@@ -81,6 +81,54 @@ class ReaderScriptsTest {
         assertContains(script, "if (!sawContent)")
     }
 
+    // ── M1 第 1 刀：位置语义锚点（ReadingLocus）的 JS 侧 ──────────────────
+
+    @Test
+    fun bootstrapExposesLocusReadAndRestore() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "window.lrLocusHere = function()")
+        assertContains(script, "window.lrScrollToLocus = function(blockIndex, charOffset, anchor)")
+        // 锚点必须是「块下标 + 块内偏移」，不能退回块文本（重复段落会撞车）
+        assertContains(script, "blockIndex: index")
+        assertContains(script, "charOffset: blockCharOffsetAtViewStart(blocks[index])")
+    }
+
+    @Test
+    fun locusRestoreHandlesChapterStartAndEndAsSemanticAnchors() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 末页/章首是语义锚，不再是挤进页码字段的哨兵值
+        assertContains(script, "if (mode === 'chapter-start')")
+        assertContains(script, "if (mode === 'chapter-end')")
+        assertContains(script, "page = Math.max(0, pageCount - 1); applyPage();")
+        // 精确锚点走的是既有的 Range 定位器，而不是另起一套几何推算
+        assertContains(script, "rangeFromNormalizedOffset(target.el, offset, 1)")
+    }
+
+    @Test
+    fun locusCharOffsetUsesBinarySearchAgainstContainerRelativeGeometry() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 长段落横跨多页时不能把位置粗化成整段：二分找第一个仍在本页的字符
+        assertContains(script, "function blockCharOffsetAtViewStart(block)")
+        assertContains(script, "const mid = (lo + hi) >> 1;")
+        // 几何换算必须减去容器 rect（followRangeIntoView 的写法），
+        // 直接 rect.top + scrollTop 会漏掉容器自身偏移
+        assertContains(script, "scroller.scrollTop + (box.top - sr.top)")
+        assertContains(script, "scroller.scrollLeft + (box.left - sr.left)")
+    }
+
+    @Test
+    fun firstVisibleBlockStillReturnsTextForTheLegacyTtsPath() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 旧链路（TTS 位置回报）暂时仍吃块文本，改造放在第 2 刀
+        assertContains(script, "window.lrFirstVisibleBlock = function()")
+        assertContains(script, "return index >= 0 && blocks[index] ? blocks[index].text : null;")
+        assertContains(script, "function firstVisibleBlockIndex(blocks)")
+    }
+
     @Test
     fun tapToStartUsesSameBlockSelectorAsTtsExtractor() {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())

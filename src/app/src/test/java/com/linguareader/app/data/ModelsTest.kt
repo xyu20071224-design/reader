@@ -2,6 +2,7 @@ package com.linguareader.app.data
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ModelsTest {
@@ -28,6 +29,88 @@ class ModelsTest {
         val restored = Book.fromJson(original.toJson())
 
         assertEquals(original, restored)
+    }
+
+    // ── M1 第 1 刀：位置语义锚点 ──────────────────────────────────────────
+
+    @Test
+    fun bookJsonRoundTripPreservesReadingLocus() {
+        val original = Book(
+            id = "book-locus",
+            title = "Anchored",
+            author = "Ada Reader",
+            extractedDir = "/tmp/book",
+            coverRelativePath = null,
+            chapters = listOf(Chapter("One", "OPS/one.xhtml")),
+            addedAt = 1L,
+            chapterIndex = 2,
+            pageIndex = 7,
+            progress = .5f,
+            locusBlockIndex = 41,
+            locusCharOffset = 128,
+            locusAnchor = Book.ANCHOR_CHAPTER_END
+        )
+
+        val restored = Book.fromJson(original.toJson())
+
+        assertEquals(original, restored)
+        assertEquals(41, restored.locusBlockIndex)
+        assertEquals(128, restored.locusCharOffset)
+        assertEquals(Book.ANCHOR_CHAPTER_END, restored.locusAnchor)
+        assertTrue(restored.hasLocus)
+    }
+
+    @Test
+    fun booksWithoutLocusFieldsFallBackToPageIndex() {
+        // 迁移（方案 §5 的 M1/M2）：老 metadata.json 没有 locus* 三个键，
+        // 读出来必须是「尚无锚点」而不是「锚在第 0 块」——后者会把所有老书
+        // 的阅读位置一把拽回章首。
+        val legacy = Book(
+            id = "book-legacy",
+            title = "Old",
+            author = "",
+            extractedDir = "/tmp/old",
+            coverRelativePath = null,
+            chapters = listOf(Chapter("One", "OPS/one.xhtml")),
+            addedAt = 1L,
+            chapterIndex = 3,
+            pageIndex = 9,
+            progress = .25f
+        ).toJson().apply {
+            remove("locusBlockIndex")
+            remove("locusCharOffset")
+            remove("locusAnchor")
+        }
+
+        val restored = Book.fromJson(legacy)
+
+        assertEquals(Book.NO_LOCUS, restored.locusBlockIndex)
+        assertEquals(0, restored.locusCharOffset)
+        assertEquals(Book.ANCHOR_EXACT, restored.locusAnchor)
+        assertFalse(restored.hasLocus)
+        // 页码仍在，迁移期靠它落位
+        assertEquals(3, restored.chapterIndex)
+        assertEquals(9, restored.pageIndex)
+    }
+
+    @Test
+    fun chapterEndAnchorCountsAsALocusEvenWithoutBlockIndex() {
+        // 末页锚点不需要块下标：它在重排后每次重新解析为「当前的最后一页」。
+        // 旧实现把它塞进页码字段（Int.MAX_VALUE），被 clamp 一夹就落回章首。
+        val book = Book(
+            id = "book-end",
+            title = "End",
+            author = "",
+            extractedDir = "/tmp/end",
+            coverRelativePath = null,
+            chapters = listOf(Chapter("One", "OPS/one.xhtml")),
+            addedAt = 1L,
+            locusAnchor = Book.ANCHOR_CHAPTER_END
+        )
+
+        assertTrue(book.hasLocus)
+        assertEquals(Book.NO_LOCUS, book.locusBlockIndex)
+        assertEquals(Book.ANCHOR_CHAPTER_END, Book.fromJson(book.toJson()).locusAnchor)
     }
 
     @Test

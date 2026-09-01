@@ -30,8 +30,25 @@ data class Book(
     val chapters: List<Chapter>,
     val addedAt: Long,
     val chapterIndex: Int = 0,
+    /**
+     * 章内页码。**派生展示量，不是位置真相**——它随字号、行距、屏幕方向、分栏
+     * 变化，同一段文字在竖屏是第 4 页、横屏可能是第 7 页（2026-09-01 真机实测
+     * 旋转后内容位置倒退约一成）。位置真相是下面的 [locusBlockIndex] 锚点。
+     *
+     * 迁移期（到 v1.6.0）继续双写：老书首次打开时还没有锚点，仍靠它落位，
+     * 落位后立刻算出锚点写回。见「重构方案-位置语义统一与因果标记.md」§5。
+     */
     val pageIndex: Int = 0,
     val progress: Float = 0f,
+    /**
+     * 阅读位置的语义锚点：章内第 N 个 TTS_BLOCK 叶子块（与听书侧同一套块序）。
+     * -1 = 尚无锚点（老数据或从未打开过），此时回退到 [pageIndex]。
+     */
+    val locusBlockIndex: Int = -1,
+    /** 锚点块内的归一化文本字符偏移；长段落横跨多页时靠它区分。 */
+    val locusCharOffset: Int = 0,
+    /** 语义锚：exact / chapter-start / chapter-end。末页不再用哨兵页码表达。 */
+    val locusAnchor: String = ANCHOR_EXACT,
     val sourceFormat: String = "epub",
     /** Last listened position: chapter and sentence index inside that chapter. */
     val ttsChapterIndex: Int = 0,
@@ -65,6 +82,9 @@ data class Book(
         .put("chapterIndex", chapterIndex)
         .put("pageIndex", pageIndex)
         .put("progress", progress.toDouble())
+        .put("locusBlockIndex", locusBlockIndex)
+        .put("locusCharOffset", locusCharOffset)
+        .put("locusAnchor", locusAnchor)
         .put("sourceFormat", sourceFormat)
         .put("ttsChapterIndex", ttsChapterIndex)
         .put("ttsSentenceIndex", ttsSentenceIndex)
@@ -72,9 +92,18 @@ data class Book(
         .put("translationTitle", translationTitle)
         .put("translationAlignedAt", translationAlignedAt)
 
+    /** 有语义锚点可用（否则调用方回退到 [pageIndex]）。 */
+    val hasLocus: Boolean get() = locusBlockIndex >= 0 || locusAnchor != ANCHOR_EXACT
+
     companion object {
         /** AI 生成译本的 id / 目录名前缀（实现在 ai/AiTranslationRepository）。 */
         const val AI_TRANSLATION_ID_PREFIX = "ai-"
+
+        /** [locusBlockIndex] 的「尚无锚点」取值。 */
+        const val NO_LOCUS = -1
+        const val ANCHOR_EXACT = "exact"
+        const val ANCHOR_CHAPTER_START = "chapter-start"
+        const val ANCHOR_CHAPTER_END = "chapter-end"
 
         fun fromJson(json: JSONObject): Book {
             val chapterArray = json.getJSONArray("chapters")
@@ -91,6 +120,11 @@ data class Book(
                 chapterIndex = json.optInt("chapterIndex"),
                 pageIndex = json.optInt("pageIndex"),
                 progress = json.optDouble("progress").toFloat(),
+                // 老数据没有这三个键：blockIndex 缺省 -1 表示「还没有锚点」，
+                // 打开这本书时会走一次旧的页码还原，落位后立刻补写。
+                locusBlockIndex = json.optInt("locusBlockIndex", NO_LOCUS),
+                locusCharOffset = json.optInt("locusCharOffset", 0),
+                locusAnchor = json.optString("locusAnchor").ifBlank { ANCHOR_EXACT },
                 sourceFormat = json.optString("sourceFormat", "epub").ifBlank { "epub" },
                 ttsChapterIndex = json.optInt("ttsChapterIndex"),
                 ttsSentenceIndex = json.optInt("ttsSentenceIndex"),
