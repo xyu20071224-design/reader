@@ -1,3 +1,13 @@
+## 2026-09-02 开机重排复习提醒（D3.2）真机验收 —— **接收器被 ColorOS 拦掉，降级路径有效**
+
+- **结论先写**：`BootRescheduleReceiver` 已正确注册（`dumpsys package` 能看到它挂在 `BOOT_COMPLETED` 上），但 **PKB110 / ColorOS 不把开机广播投递给它**。重启后等到 uptime 3 分钟、用 `logcat -d -s BootReschedule:V` 过滤全量 buffer，**一条日志都没有**；`dumpsys alarm` 里也没有闹钟。应用不处于 stopped 状态（已 `am start` 过），可排除「从未启动过收不到广播」这一常见原因。
+- **降级路径按设计生效**：打开 App → `AppViewModel.rescheduleReviewReminders()` 立刻补排，`dumpsys alarm` 出现
+  `RTC_WAKEUP … com.linguareader.app.verify`，`origWhen=2026-09-02 13:54:35.836`，与最早待复习词 study 的 `nextReviewAt=1788328475836` **完全一致**，tag 指向 `ReviewReminderReceiver`。✅
+- **前置条件（踩过一次）**：通知权限没授予时 `ReviewReminderScheduler.schedule()` 会**主动 cancel 闹钟**而不是排它 —— 所以「没有闹钟」既可能是没到期词，也可能是没权限。本轮先测得 `granted=false` 时无闹钟，用户在系统设置里授予后才排得起来。
+- **`pm grant` 在这台机器上直接抛异常**：`SecurityException: Neither user 2000 nor current process has android.permission.GRANT_RUNTIME_PERMISSIONS` —— 比记忆里记的「grant 报成功但检查仍 false」更硬，通知权限只能人工在系统设置里开。
+- **接收器保留**：非 ColorOS 设备、或将来 ROM 放宽自启限制时它就有用，代价只是一个类 + 一条权限。但**不能把「重启后提醒还在」当成已实现的行为**——在本项目的主力真机上它不成立。
+- 未再做的一步：ColorOS 的「自启动」白名单里放行 verify 包后重测，可区分「自启限制」与「其它原因」。需要再重启一次，本轮未做。
+
 ## 2026-09-02 存储占用页面与缓存键引擎维度（D2.4b / D2.2）真机验收（PKB110 / Android 16 / ColorOS）
 
 入口：书架顶栏新增「存储占用」图标（打开即扫盘，启动时不扫）。

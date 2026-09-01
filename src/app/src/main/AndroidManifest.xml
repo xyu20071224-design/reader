@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 复习提醒是单次闹钟，重启会被系统清空；靠它在开机后重排（D3.2）。
+         ColorOS 等 ROM 的自启限制可能直接拦掉这条广播 —— 那时仍由「打开 App 时
+         AppViewModel.rescheduleReviewReminders()」兜底，不是唯一依赖。 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 应用内下载 APK 后拉起系统安装器；实际能否安装仍由用户在系统设置里逐应用授予「安装未知应用」。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <queries>
@@ -31,6 +35,18 @@
         <receiver
             android:name=".data.ReviewReminderReceiver"
             android:exported="false" />
+        <!-- 开机后重排复习提醒。exported=true 是系统广播接收器的要求；
+             directBootAware 让锁屏未解锁时也能收到 LOCKED_BOOT_COMPLETED。 -->
+        <receiver
+            android:name=".data.BootRescheduleReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".tts.TtsPlaybackService"
             android:exported="false"
