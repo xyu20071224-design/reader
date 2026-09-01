@@ -14,26 +14,12 @@ object TtsPlaybackController {
 
     val chapterRequests: SharedFlow<Int> get() = TtsPlaybackService.chapterRequests
 
-    fun startFromChapter(
-        context: Context,
-        book: Book,
-        chapterIndex: Int,
-        sentenceIndex: Int
-    ) = TtsPlaybackService.startFromChapter(context, book, chapterIndex, sentenceIndex)
-
     /** Opens the listening session without playing; the user picks the start. */
     fun startStandby(
         context: Context,
         book: Book,
         chapterIndex: Int
     ) = TtsPlaybackService.startStandby(context, book, chapterIndex)
-
-    fun startFromSentence(
-        context: Context,
-        book: Book,
-        chapterIndex: Int,
-        sentenceText: String
-    ) = TtsPlaybackService.startFromSentence(context, book, chapterIndex, sentenceText)
 
     fun startFromBlockOffset(
         context: Context,

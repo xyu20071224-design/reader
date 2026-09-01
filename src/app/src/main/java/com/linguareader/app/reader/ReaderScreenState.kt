@@ -135,18 +135,26 @@ internal data class ReaderPosition(
         keepScrollMode = keepScrollMode
     )
 
-    /** 全书进度 0..1，用于顶栏进度条与书架续读。 */
-    fun progress(chapterCount: Int): Float {
-        if (chapterCount <= 0) return 0f
-        val inChapter = if (pageCount <= 1) 0f else page.toFloat() / (pageCount - 1)
-        return (chapter + inChapter) / chapterCount.toFloat()
-    }
+    /** 章内进度 0..1；整章只有一页（pageTotal <= 1）时算 0，增量全由章号承担。 */
+    private fun inChapterRatio(pageIndex: Int, pageTotal: Int): Float =
+        if (pageTotal <= 1) 0f else pageIndex.toFloat() / (pageTotal - 1)
+
+    /**
+     * 全书进度 0..1 的唯一算式。顶栏读实时页码、落盘读快照页码，
+     * 两条路差的只是传进来的 (pageIndex, pageTotal)——公式与空书守卫共用这一份。
+     */
+    private fun bookProgress(chapterCount: Int, pageIndex: Int, pageTotal: Int): Float =
+        if (chapterCount <= 0) 0f
+        else (chapter + inChapterRatio(pageIndex, pageTotal)) / chapterCount.toFloat()
+
+    /** 全书进度 0..1，用于顶栏进度条与书架续读；读的是实时页码。 */
+    fun progress(chapterCount: Int): Float = bookProgress(chapterCount, page, pageCount)
 
     /** 有脏数据才给出落盘请求；干净时返回 null，调用方直接跳过一次写盘。 */
     fun saveRequest(chapterCount: Int): ReaderProgressSave? {
         if (!dirty) return null
-        val inChapter = if (savedCount <= 1) 0f else savedPage.toFloat() / (savedCount - 1)
-        val progress = if (chapterCount <= 0) 0f else (chapter + inChapter) / chapterCount.toFloat()
+        // 落盘走快照页码，不跟着实时页码抖动。
+        val progress = bookProgress(chapterCount, savedPage, savedCount)
         return ReaderProgressSave(
             chapter = chapter,
             page = savedPage,

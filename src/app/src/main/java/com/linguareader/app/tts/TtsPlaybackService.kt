@@ -346,8 +346,6 @@ class TtsPlaybackService : Service() {
         val json = intent.getStringExtra(EXTRA_BOOK_JSON) ?: return
         val newBook = runCatching { Book.fromJson(JSONObject(json)) }.getOrNull() ?: return
         val requestedChapter = intent.getIntExtra(EXTRA_CHAPTER, 0)
-        val requestedSentence = intent.getIntExtra(EXTRA_SENTENCE, 0)
-        val sentenceText = intent.getStringExtra(EXTRA_SENTENCE_TEXT)?.trim().orEmpty()
         val blockText = intent.getStringExtra(EXTRA_BLOCK_TEXT).orEmpty()
         val blockOffset = intent.getIntExtra(EXTRA_BLOCK_OFFSET, 0)
         refreshVoiceMap(newBook)
@@ -357,14 +355,6 @@ class TtsPlaybackService : Service() {
         // playback it was meant to stop.
         val generation = ++playGeneration
         when {
-            sentenceText.isNotEmpty() -> scope.launch {
-                val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
-                if (generation != playGeneration) return@launch
-                val index = chapter.sentences.indexOfFirst { it == sentenceText }
-                    .takeIf { it >= 0 } ?: 0
-                engine.startPlayback(newBook, requestedChapter, index)
-            }
-
             blockText.isNotEmpty() -> scope.launch {
                 val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
                 if (generation != playGeneration) return@launch
@@ -372,7 +362,8 @@ class TtsPlaybackService : Service() {
                 engine.startPlayback(newBook, requestedChapter, index)
             }
 
-            else -> engine.startPlayback(newBook, requestedChapter, requestedSentence)
+            // 没带起点（如点到空块）时从章首起播，纯防御兜底。
+            else -> engine.startPlayback(newBook, requestedChapter, 0)
         }
     }
 
@@ -561,8 +552,6 @@ class TtsPlaybackService : Service() {
 
         private const val EXTRA_BOOK_JSON = "book_json"
         private const val EXTRA_CHAPTER = "chapter"
-        private const val EXTRA_SENTENCE = "sentence"
-        private const val EXTRA_SENTENCE_TEXT = "sentence_text"
         private const val EXTRA_BLOCK_TEXT = "block_text"
         private const val EXTRA_BLOCK_OFFSET = "block_offset"
         private const val EXTRA_RATE = "rate"
@@ -572,20 +561,6 @@ class TtsPlaybackService : Service() {
 
         private val _chapterRequests = MutableSharedFlow<Int>(extraBufferCapacity = 1)
         val chapterRequests: SharedFlow<Int> = _chapterRequests.asSharedFlow()
-
-        fun startFromChapter(
-            context: Context,
-            book: Book,
-            chapterIndex: Int,
-            sentenceIndex: Int
-        ) {
-            val intent = Intent(context, TtsPlaybackService::class.java)
-                .setAction(ACTION_PLAY)
-                .putExtra(EXTRA_BOOK_JSON, book.toJson().toString())
-                .putExtra(EXTRA_CHAPTER, chapterIndex)
-                .putExtra(EXTRA_SENTENCE, sentenceIndex)
-            ContextCompat.startForegroundService(context, intent)
-        }
 
         /** Opens listening without playing; the user picks the start point. */
         fun startStandby(
@@ -597,20 +572,6 @@ class TtsPlaybackService : Service() {
                 .setAction(ACTION_STANDBY)
                 .putExtra(EXTRA_BOOK_JSON, book.toJson().toString())
                 .putExtra(EXTRA_CHAPTER, chapterIndex)
-            ContextCompat.startForegroundService(context, intent)
-        }
-
-        fun startFromSentence(
-            context: Context,
-            book: Book,
-            chapterIndex: Int,
-            sentenceText: String
-        ) {
-            val intent = Intent(context, TtsPlaybackService::class.java)
-                .setAction(ACTION_PLAY)
-                .putExtra(EXTRA_BOOK_JSON, book.toJson().toString())
-                .putExtra(EXTRA_CHAPTER, chapterIndex)
-                .putExtra(EXTRA_SENTENCE_TEXT, sentenceText)
             ContextCompat.startForegroundService(context, intent)
         }
 
