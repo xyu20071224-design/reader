@@ -2,12 +2,43 @@ package com.linguareader.app.reader
 
 import com.linguareader.app.data.ReaderPreferences
 import com.linguareader.app.data.ReaderTheme
+import com.linguareader.app.tts.TtsTextExtractor
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ReaderScriptsTest {
+
+    /**
+     * M0 安全网：块选择器的**双实现漂移守卫**。
+     *
+     * 块序号（highlightBlockIndex / 未来的 ReadingLocus.blockIndex）的语义由两套
+     * 独立实现共同定义：JS 的 `TTS_BLOCK_SELECTOR`（ReaderScripts.kt）与 Kotlin 的
+     * [TtsTextExtractor.BLOCK_SELECTOR]。两边只要有一处改了，块序就会静默错位，
+     * 而错位表现为「高亮画在别的段落」——历史上正是这么翻的车（Jsoup select 含自身）。
+     * 两处源码注释互相声明了这条约束，但此前**没有任何测试兜住**它。
+     *
+     * JS 侧写成两段字面量拼接，所以这里把引号内的片段抠出来再拼，逐字比对。
+     */
+    @Test
+    fun ttsBlockSelectorStaysIdenticalOnBothSides() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+        val declaration = Regex("const TTS_BLOCK_SELECTOR\\s*=\\s*((?:'[^']*'\\s*\\+?\\s*)+);")
+            .find(script)
+        assertNotNull(declaration, "bootstrap 里找不到 TTS_BLOCK_SELECTOR 声明——JS 侧被改名或改写了")
+        val jsSelector = Regex("'([^']*)'")
+            .findAll(declaration.groupValues[1])
+            .joinToString("") { it.groupValues[1] }
+
+        assertEquals(
+            TtsTextExtractor.BLOCK_SELECTOR,
+            jsSelector,
+            "JS 与 Kotlin 的块选择器已漂移：块序号会静默错位，改一侧必须同时改另一侧"
+        )
+    }
     @Test
     fun bootstrapContainsWordAndSentenceExtraction() {
         val script = ReaderScripts.bootstrap(4, ReaderPreferences())

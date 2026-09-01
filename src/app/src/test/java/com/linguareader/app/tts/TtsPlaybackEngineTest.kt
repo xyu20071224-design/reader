@@ -484,6 +484,135 @@ class TtsPlaybackEngineTest {
         h.engine.shutdown()
     }
 
+    // ── M0 安全网：阅读器三个入口的特征化测试 ───────────────────────────
+    // 重构方案（重构方案-位置语义统一与因果标记.md）第 2 刀要改这三个入口，
+    // 而它们在此之前 **零单测覆盖**。下面的用例先把「当前行为」原样钉住，
+    // 改结构时任何非预期的行为变化都会立刻变红；其中 BUG-034 那条是故意
+    // 记录缺陷现状的，第 2 刀落地时会连同断言一起翻面。
+
+    /** 一个块两句，方便区分「块首句」与「块内其它句」。 */
+    private fun twoBlockChapter(): TtsChapter = TtsChapter(
+        chapterIndex = 0,
+        title = "Ch0",
+        blocks = listOf("A one. A two.", "B one. B two.")
+    )
+
+    @Test
+    fun readerPositionChangePullsPlaybackToBlockFirstSentence_BUG034() = runTest {
+        // 现状（缺陷）：播放中翻页 → 朗读被无条件拉到新页首块的**首句**，
+        // 块内偏移信息在回报载荷里就已丢失。致因见 TtsPlaybackEngine.kt:457-460。
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = plainHarness(dispatcher, { _, _ -> twoBlockChapter() })
+        h.engine.startPlayback(book(), 0, 1) // 正在念 "A two."（块 0 的第 2 句）
+        testScheduler.advanceUntilIdle()
+        assertEquals("A two.", h.state.currentSentence)
+
+        h.engine.onReaderPositionChanged("b1", 0, "B one. B two.")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(2, h.state.sentenceIndex)
+        assertEquals("B one.", h.state.currentSentence)
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun readerPositionChangeKeepsPlaybackWhenSpokenSentenceIsInThatBlock() = runTest {
+        // 唯一的豁免（TtsPlaybackEngine.kt:457）：当前朗读句就在回报的块里。
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = plainHarness(dispatcher, { _, _ -> twoBlockChapter() })
+        h.engine.startPlayback(book(), 0, 1)
+        testScheduler.advanceUntilIdle()
+
+        h.engine.onReaderPositionChanged("b1", 0, "A one. A two.")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(1, h.state.sentenceIndex)
+        assertEquals("A two.", h.state.currentSentence)
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun readerPositionChangeIsIgnoredWhenPausedOrForAnotherBookOrChapter() = runTest {
+        // TtsPlaybackEngine.kt:447-449 的三道早退：书不符 / 未在播 / 章不符。
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = plainHarness(dispatcher, { _, _ -> twoBlockChapter() })
+        h.engine.startPlayback(book(), 0, 1)
+        testScheduler.advanceUntilIdle()
+
+        h.engine.onReaderPositionChanged("other-book", 0, "B one. B two.")
+        h.engine.onReaderPositionChanged("b1", 3, "B one. B two.")
+        h.engine.onReaderPositionChanged("b1", 0, "   ")
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, h.state.sentenceIndex)
+
+        h.engine.pause()
+        testScheduler.advanceUntilIdle()
+        h.engine.onReaderPositionChanged("b1", 0, "B one. B two.")
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, h.state.sentenceIndex)
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun readerChapterSelectedResetsToChapterStartAndSavesProgress() = runTest {
+        // TtsPlaybackEngine.kt:429-442：手动切章无条件把句索引清零并排期落盘。
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = plainHarness(dispatcher, { _, index -> chapter("S0.", "S1.", chapterIndex = index) })
+        h.engine.startPlayback(book(chapterCount = 3), 0, 1)
+        testScheduler.advanceUntilIdle()
+        assertEquals(1, h.state.sentenceIndex)
+
+        h.engine.onReaderChapterSelected("b1", 2)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(2, h.state.chapterIndex)
+        assertEquals(0, h.state.sentenceIndex)
+        assertTrue(h.progressSaves.contains(Triple("b1", 2, 0)))
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun readerChapterSelectedIsIgnoredForAnotherBook() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = plainHarness(dispatcher, { _, index -> chapter("S0.", chapterIndex = index) })
+        h.engine.startPlayback(book(chapterCount = 3), 0, 0)
+        testScheduler.advanceUntilIdle()
+
+        h.engine.onReaderChapterSelected("other-book", 2)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(0, h.state.chapterIndex)
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun readerChapterLoadedCompletesTheHandshakeOnlyForTheAwaitedChapter() = runTest {
+        // TtsPlaybackEngine.kt:411-419：只认「等的就是这一章」的回执。
+        // 观察口径：握手完成前引擎停在旧章；回执到位后才继续念新章。
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = plainHarness(dispatcher, { _, index -> chapter("C" + index + "-0.", "C" + index + "-1.", chapterIndex = index) })
+        h.engine.startPlayback(book(chapterCount = 2), 0, 0)
+        testScheduler.advanceUntilIdle()
+        val fake = h.synthesizer as FakeTtsSynthesizer
+
+        // 念完第 0 章两句 → 引擎请求切到第 1 章并等待阅读器回执
+        fake.emitStart(fake.spoken.last().utteranceId)
+        fake.emitDone(fake.spoken.last().utteranceId)
+        testScheduler.advanceUntilIdle()
+        fake.emitStart(fake.spoken.last().utteranceId)
+        fake.emitDone(fake.spoken.last().utteranceId)
+        testScheduler.runCurrent()
+
+        assertTrue(h.chapterRequests.contains(1))
+        h.engine.onReaderChapterLoaded("b1", 0)   // 不是在等的那一章：应被忽略
+        h.engine.onReaderChapterLoaded("other", 1) // 书不符：应被忽略
+        h.engine.onReaderChapterLoaded("b1", 1)   // 正主
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(1, h.state.chapterIndex)
+        h.engine.shutdown()
+    }
+
     @Test
     fun standbyDoesNotSpeakUntilResume() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
