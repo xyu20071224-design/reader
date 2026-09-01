@@ -8,6 +8,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -68,5 +71,48 @@ class CloudTtsSynthesizerTest {
             "云 TTS 必须解析引擎的 4 段 utteranceId，但 speak() 直接触发了 onError（无声音）"
         )
         synth.shutdown()
+    }
+
+    /**
+     * 缓存目录名必须是音色 id 的**单射**映射。
+     *
+     * 旧实现把非 [A-Za-z0-9._-] 的字符统统换成下划线当目录名，那是有损的：
+     * 自建服务器把参考音频命名成「男声.wav」「女声.wav」时，两个音色消毒成同一个
+     * 目录，而缓存命中判据只有「文件存在且非空」—— 于是放出另一个音色的音频，
+     * 且不会报任何错。这条测试在旧实现下必红。
+     */
+    @Test
+    fun cacheDirectoryNameIsInjectiveAcrossVoiceIds() {
+        val a = CloudTtsSynthesizer.cacheVoiceSegment("男声.wav")
+        val b = CloudTtsSynthesizer.cacheVoiceSegment("女声.wav")
+        assertNotEquals(a, b, "两个不同音色不能落到同一个缓存目录（会串音）")
+    }
+
+    /**
+     * 只有「当目录名会出事」的 id 才允许改写，其余原样保留 —— 这条守的是
+     * **存量缓存不作废**：云 TTS 合成是要花钱的，换个键就等于让用户重新买一遍。
+     */
+    @Test
+    fun ordinaryVoiceIdsKeepTheirLegacyDirectoryName() {
+        // 系统音色 / 服务器音色 / MiMo（id 形如 mimo-clone:<ascii-slug>，含冒号）
+        for (id in listOf("alloy", "zh-CN-XiaoxiaoNeural", "voice_03.wav", "mimo-clone:bingtang")) {
+            assertEquals(id, CloudTtsSynthesizer.cacheVoiceSegment(id), "$id 的缓存目录名不该变")
+        }
+    }
+
+    /** 当目录名会穿越或指错地方的 id 必须换成哈希，且哈希里不能再有分隔符。 */
+    @Test
+    fun pathUnsafeVoiceIdsFallBackToAHash() {
+        for (id in listOf("", ".", "..", "a/b", "..\\evil")) {
+            val segment = CloudTtsSynthesizer.cacheVoiceSegment(id)
+            assertTrue(segment.startsWith("h-"), "$id 应改用哈希目录名，实际 $segment")
+            assertFalse(segment.contains('/'), "哈希目录名不能含路径分隔符")
+            assertFalse(segment.contains('\\'), "哈希目录名不能含路径分隔符")
+        }
+        // 仍然是单射：两个不同的非法 id 不能撞到一起
+        assertNotEquals(
+            CloudTtsSynthesizer.cacheVoiceSegment("a/b"),
+            CloudTtsSynthesizer.cacheVoiceSegment("a/c")
+        )
     }
 }
