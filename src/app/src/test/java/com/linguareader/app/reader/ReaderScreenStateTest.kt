@@ -185,12 +185,14 @@ class ReaderScreenStateTest {
     // ── 位置：切章 ────────────────────────────────────────────────────
 
     @Test
-    fun flippingBackIntoTheChapterUsesTheLastPageSentinel() {
-        // 回翻必须交出哨兵而不是某个大页码：JS 侧把它翻译成 restoreTarget = -1，
-        // 每次重排都重新取末页。用普通大页码会被首次测量（pageCount 偏小）拍成 0，
-        // 于是回翻停在上一章开头 —— 这正是修过的那个 bug。
+    fun flippingBackIntoTheChapterAsksForTheChapterEndAnchor() {
+        // 「本章最后一页」是语义，不是页码：以前塞 Int.MAX_VALUE 哨兵进 restorePage，
+        // 现在由 anchor 表达，JS 每次重排都按它重新取末页。绝不能退回「传一个大页码」
+        // ——那会被首次测量（字体未就绪、pageCount 偏小）拍成 0，回翻停在上一章开头。
         val position = opened().selectChapter(2, chapterCount, fromEnd = true)!!
-        assertEquals(ReaderScripts.LAST_PAGE, position.restorePage)
+        assertEquals(ReaderPosition.ANCHOR_CHAPTER_END, position.locusAnchor)
+        assertEquals(ReaderPosition.NO_LOCUS, position.locusBlock)
+        assertEquals(0, position.restorePage)
         assertEquals(2, position.chapter)
         assertEquals(0, position.page)
     }
@@ -198,6 +200,7 @@ class ReaderScreenStateTest {
     @Test
     fun jumpingForwardStartsAtTheTopOfTheChapter() {
         val position = opened().selectChapter(7, chapterCount)!!
+        assertEquals(ReaderPosition.ANCHOR_CHAPTER_START, position.locusAnchor)
         assertEquals(0, position.restorePage)
         assertEquals(0, position.page)
         assertFalse(position.scrollMode)
@@ -225,8 +228,14 @@ class ReaderScreenStateTest {
     @Test
     fun previousChapterLandsOnItsLastPageAndNextChapterOnItsFirst() {
         val position = opened(chapter = 4)
-        assertEquals(ReaderScripts.LAST_PAGE, position.changeChapter(-1, chapterCount)!!.restorePage)
-        assertEquals(0, position.changeChapter(1, chapterCount)!!.restorePage)
+        assertEquals(
+            ReaderPosition.ANCHOR_CHAPTER_END,
+            position.changeChapter(-1, chapterCount)!!.locusAnchor
+        )
+        assertEquals(
+            ReaderPosition.ANCHOR_CHAPTER_START,
+            position.changeChapter(1, chapterCount)!!.locusAnchor
+        )
     }
 
     // ── 位置：滚动模式 ────────────────────────────────────────────────
@@ -247,9 +256,11 @@ class ReaderScreenStateTest {
     @Test
     fun scrollProgressNeverRewritesTheRestoreTarget() {
         // 滚动模式的还原走比例；把换算页码写进还原目标，切回分页会把位置带偏。
-        val position = opened().selectChapter(1, chapterCount, fromEnd = true)!!
-            .onScrollProgress(ratio = .5f, page = 3, count = 6)
-        assertEquals(ReaderScripts.LAST_PAGE, position.restorePage)
+        val landed = opened().selectChapter(1, chapterCount, fromEnd = true)!!
+        val position = landed.onScrollProgress(ratio = .5f, page = 3, count = 6)
+        assertEquals(landed.restorePage, position.restorePage)
+        // 章末语义也不能被滚动进度冲掉。
+        assertEquals(ReaderPosition.ANCHOR_CHAPTER_END, position.locusAnchor)
         assertEquals(.5f, position.scrollRatio)
         assertEquals(6, position.scrollPageCount)
         assertTrue(position.dirty)

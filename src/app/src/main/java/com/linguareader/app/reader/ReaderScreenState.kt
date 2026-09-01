@@ -15,8 +15,11 @@ internal data class ReaderPosition(
     /** 当前章节下标。 */
     val chapter: Int,
     /**
-     * 注入 WebView 的「还原目标页」。可以是 [ReaderScripts.LAST_PAGE] 哨兵
-     * （从下一章回翻进来时用），所以它不等同于 [page]，也绝不参与页码 clamp。
+     * 注入 WebView 的「还原目标页」，只有普通页码一种含义。
+     *
+     * 迁移期兜底用：老书没有锚点（[locusBlock] < 0）时靠它落位。「本章最后一页」
+     * 曾经用 [Int.MAX_VALUE] 哨兵挤在这个字段里，现在由 [locusAnchor] =
+     * [ANCHOR_CHAPTER_END] 表达——一个字段只表示一件事。
      */
     val restorePage: Int,
     /** 当前渲染页（0 基）。 */
@@ -91,9 +94,9 @@ internal data class ReaderPosition(
      * 切章。越界返回 null（调用方据此跳过保存/通知 TTS 等副作用，与旧代码的
      * `if (index !in indices) return` 等价）。
      *
-     * @param fromEnd 从下一章回翻进来：落在新章最后一页，用 [ReaderScripts.LAST_PAGE]
-     *   哨兵而不是「某个大页码」——JS 侧会翻译成 restoreTarget = -1 并在每次重排时
-     *   重新取末页，普通大页码会被首次（字体未就绪、pageCount 偏小）测量拍成 0。
+     * @param fromEnd 从下一章回翻进来：落在新章最后一页。这条语义由
+     *   [ANCHOR_CHAPTER_END] 承担，JS 每次重排都重新取末页；不能退回「传一个大
+     *   页码」的老写法——那会被首次（字体未就绪、pageCount 偏小）测量拍成 0。
      * @param keepScrollMode 在滚动模式里跨章：保持滚动模式，回翻时比例落在章末。
      */
     fun selectChapter(
@@ -106,8 +109,8 @@ internal data class ReaderPosition(
         val stayScrolled = keepScrollMode && scrollMode
         return ReaderPosition(
             chapter = index,
-            // 迁移期两条路并存：JS 有锚点就按锚点落位，没有才看这个哨兵页码。
-            restorePage = if (fromEnd) ReaderScripts.LAST_PAGE else 0,
+            // 切章一定带锚点（章首/章末），页码只是无害的初值。
+            restorePage = 0,
             locusBlock = NO_LOCUS,
             locusOffset = 0,
             locusAnchor = if (fromEnd) ANCHOR_CHAPTER_END else ANCHOR_CHAPTER_START,

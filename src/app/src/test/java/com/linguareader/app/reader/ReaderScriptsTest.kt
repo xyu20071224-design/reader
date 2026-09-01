@@ -193,7 +193,6 @@ class ReaderScriptsTest {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())
 
         assertContains(script, "let anchorLocus = null;")
-        assertContains(script, "} else if (restoreTarget < 0) {")
         assertContains(script, "if (restoreTarget <= pageCount - 1) page = Math.max(page, restoreTarget);")
     }
 
@@ -646,50 +645,57 @@ class ReaderScriptsTest {
         assertFalse(body.contains("scrollRatio = ratio == null ? currentRatio()"))
     }
 
+    /**
+     * 「本章最后一页」曾经是挤在页码字段里的 Int.MAX_VALUE 哨兵（JS 内部译成
+     * restoreTarget = -1），一个字段身兼两种含义，还得在 clamp、救援分支、
+     * lrSetPage、lrSyncPage 四处各写一次特判。现在它由语义锚
+     * anchor='chapter-end' 表达，页码字段回归单一含义。
+     *
+     * 这条守卫盯着「哨兵别回来」：任何一处重新引入 restoreTarget < 0 的编码，
+     * 都意味着页码字段又开始表达两件事。
+     */
     @Test
-    fun lastPageSentinelIsNeverClampedLikeAnOrdinaryPageIndex() {
-        val script = ReaderScripts.bootstrap(ReaderScripts.LAST_PAGE, ReaderPreferences())
+    fun lastPageIsExpressedAsAChapterEndAnchorInsteadOfAPageSentinel() {
+        val script = ReaderScripts.bootstrap(
+            initialPage = 0,
+            preferences = ReaderPreferences(),
+            initialLocusAnchor = ReaderScripts.ANCHOR_CHAPTER_END
+        )
 
-        // 章节回翻（fromEnd）用 LAST_PAGE 哨兵表示「本章最后一页」。旧实现把它
-        // 当普通页码：第一次测量常跑在字体/图片就绪之前，pageCount 偏小甚至为 1，
-        // clamp 把页码拍成 0；而救援分支判据 restoreTarget <= pageCount - 1 对
-        // Int.MAX_VALUE 永远不成立 → 页码永久停在 0 → 回翻落到上一章开头。
-        assertContains(script, "const LR_LAST_PAGE = 2147483647;")
-        assertContains(
-            script,
-            "let restoreTarget = 2147483647 >= LR_LAST_PAGE ? -1 : Math.max(0, 2147483647);"
-        )
-        // 哨兵分支必须先于 clamp，且每次重排都重新取末页。
+        // 哨兵的所有痕迹都不许在
+        assertFalse(script.contains("LR_LAST_PAGE"), "页码哨兵常量不该回来")
+        assertFalse(script.contains("restoreTarget < 0"), "restoreTarget 不该再用负数表达语义")
+        assertFalse(script.contains("page = pageCount - 1;"), "末页不该再由页码分支硬取")
+        // 还原目标只剩普通页码一种含义
+        assertContains(script, "let restoreTarget = Math.max(0, 0);")
+        assertContains(script, "restoreTarget = Math.max(0, requested);")
+        // 末页语义走锚点，并且每次重排都重新取（重新分页后仍停章末）
+        assertContains(script, "anchor: \"chapter-end\"")
+        assertContains(script, "if (locus.anchor === 'chapter-end') return Math.max(0, pageCount - 1);")
         val metrics = script.substring(script.indexOf("function updateMetrics("))
-        val sentinelBranch = metrics.indexOf("if (restoreTarget < 0) {")
-        val clampBranch = metrics.indexOf("page = clamp(page, 0, pageCount - 1);")
-        assertTrue(sentinelBranch >= 0 && clampBranch > sentinelBranch)
-        assertContains(script, "page = pageCount - 1;")
-        // 重复注入走 lrSetPage(initialPage)，同一套哨兵约定必须也认。
-        assertContains(
-            script,
-            "restoreTarget = requested >= LR_LAST_PAGE ? -1 : Math.max(0, requested);"
+        assertTrue(
+            metrics.indexOf("const anchoredPage = anchorLocus ? pagedPageForLocus(anchorLocus) : null;") <
+                metrics.indexOf("page = clamp(page, 0, pageCount - 1);"),
+            "锚点必须先于 clamp 决定页码"
         )
-        // 旧写法（哨兵直接当页码播种 restoreTarget）不能回来。
-        assertFalse(script.contains("let restoreTarget = page;"))
     }
 
     @Test
     fun preferenceSyncDoesNotOverwriteAPendingRestoreTarget() {
-        val script = ReaderScripts.bootstrap(ReaderScripts.LAST_PAGE, ReaderPreferences())
+        val script = ReaderScripts.bootstrap(7, ReaderPreferences())
 
         // 改字号/行距/主题会走 lrSyncPage，它原本无条件按「当前渲染页」重新
-        // 播种 restoreTarget。若还原尚未落地（末页哨兵，或救援目标还没追上），
+        // 播种 restoreTarget。若还原尚未落地（测量变准前救援目标还没追上），
         // 那一下就把还原目标抹成当前的临时页，进度永久丢失。
-        assertContains(script, "} else if (restoreTarget < 0 || restoreTarget > page) {")
+        assertContains(script, "} else if (restoreTarget > page) {")
     }
 
     @Test
     fun ordinaryRestoredPageKeepsTheClampAndRescuePath() {
         val script = ReaderScripts.bootstrap(7, ReaderPreferences())
 
-        // 普通页码的还原路径不受哨兵改动影响：仍然 clamp，仍然在测量变准后救回。
-        assertContains(script, "let restoreTarget = 7 >= LR_LAST_PAGE ? -1 : Math.max(0, 7);")
+        // 普通页码的还原路径不受哨兵删除影响：仍然 clamp，仍然在测量变准后救回。
+        assertContains(script, "let restoreTarget = Math.max(0, 7);")
         assertContains(
             script,
             "if (restoreTarget <= pageCount - 1) page = Math.max(page, restoreTarget);"

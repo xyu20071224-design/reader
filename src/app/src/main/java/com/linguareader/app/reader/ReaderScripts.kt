@@ -9,16 +9,6 @@ object ReaderScripts {
     const val DEFAULT_CHROME_TOP_PX = 104
     const val DEFAULT_CHROME_BOTTOM_PX = 70
 
-    /**
-     * 「打开本章并停在最后一页」的 initialPage 哨兵（章节回翻时用）。
-     *
-     * JS 侧不会把它当普通页码 clamp，而是翻译成 restoreTarget = -1，在每次
-     * updateMetrics 里重新取末页；否则首次测量（字体/图片未就绪、pageCount
-     * 偏小）会把它拍成 0，且救援分支 restoreTarget <= pageCount - 1 永远不
-     * 成立，回翻就会停在上一章开头。
-     */
-    const val LAST_PAGE = Int.MAX_VALUE
-
     /** [bootstrap] 的语义锚点参数：块下标 < 0 且 anchor = exact 表示「没有锚点」。 */
     const val NO_LOCUS_BLOCK = -1
     const val ANCHOR_EXACT = "exact"
@@ -80,15 +70,11 @@ object ReaderScripts {
             return;
           }
           window.__linguaReaderInstalled = true;
-          // Kotlin 侧用 LAST_PAGE(Int.MAX_VALUE) 当「本章最后一页」哨兵（从下一
-          // 章回翻进来）。它绝不能当普通页码参与 clamp：首次测量常跑在字体/图片
-          // 就绪之前，pageCount 偏小甚至为 1，clamp 会把它拍成 0；而 updateMetrics
-          // 里那个「测量变准后恢复」的救援分支判据是 restoreTarget <= pageCount - 1，
-          // 哨兵永远不满足，页码就永久停在 0 → 回翻落到上一章开头。所以在入口
-          // 就把哨兵翻译成 restoreTarget = -1，由 updateMetrics 单独处理。
-          const LR_LAST_PAGE = $LAST_PAGE;
-          let restoreTarget = $initialPage >= LR_LAST_PAGE ? -1 : Math.max(0, $initialPage);
-          let page = Math.max(0, restoreTarget);
+          // 还原目标页。这里只剩「普通页码」一种含义——「本章最后一页」曾经用
+          // Int.MAX_VALUE 哨兵挤在这个字段里，现在由语义锚 anchor='chapter-end'
+          // 表达（见 anchorLocus / pagedPageForLocus），页码字段不再身兼二职。
+          let restoreTarget = Math.max(0, $initialPage);
+          let page = restoreTarget;
           let pageCount = 1;
           let scrollMode = $initialScrollMode;
           let scrollRatio = Math.max(0, Math.min(1, Number($initialScrollRatio) || 0));
@@ -316,18 +302,14 @@ object ReaderScripts {
             spacer.style.width = innerW + 'px';
             spacer.style.height = '100%';
             pageCount = Math.max(1, Math.ceil(scroller.scrollWidth / window.innerWidth) - 1);
-            // restoreTarget < 0 是「本章最后一页」哨兵：它必须先于 clamp 处理，
-            // 否则首次（字体未就绪、pageCount 偏小）测量会把页码拍成 0，而下面
-            // 的救援分支又永远救不回来。每次重排都重新取末页，重新分页后仍停在
-            // 章末；一旦用户翻页/跳页，restoreTarget 就被写成具体页码而失效。
             // 锚点优先：有锚点就按「那段文字现在落在第几页」重新算，页码不参与。
             // 这是旋转 / 改字号 / 图片加载完后位置不再漂移的关键——旧实现把裸
             // 页码硬套到新分页上，同一个「第 4 页」在竖屏和横屏指的是不同文字。
+            // 「本章最后一页」（章节回翻）也走这条：anchor='chapter-end' 每次重排
+            // 都重新取末页，正是原来那个页码哨兵分支干的事。
             const anchoredPage = anchorLocus ? pagedPageForLocus(anchorLocus) : null;
             if (anchoredPage !== null) {
               page = anchoredPage;
-            } else if (restoreTarget < 0) {
-              page = pageCount - 1;
             } else {
               page = clamp(page, 0, pageCount - 1);
               // A restored page must not be lost when the first measurement runs
@@ -561,11 +543,12 @@ object ReaderScripts {
               syncScroll();
               return;
             }
-            // 同一套哨兵约定：重复注入时 bootstrap 会用 lrSetPage(initialPage)
-            // 还原位置，回翻场景传进来的就是 LAST_PAGE。
+            // 重复注入时 bootstrap 会用 lrSetPage(initialPage) 还原位置。回翻场景
+            // 靠 keepAnchor=true 保住 anchor='chapter-end'，由 updateMetrics 取末页，
+            // 这里收到的一律是普通页码。
             const requested = Number(value) || 0;
-            restoreTarget = requested >= LR_LAST_PAGE ? -1 : Math.max(0, requested);
-            page = Math.max(0, restoreTarget);
+            restoreTarget = Math.max(0, requested);
+            page = restoreTarget;
             requestAnimationFrame(updateMetrics);
           };
 
@@ -587,8 +570,8 @@ object ReaderScripts {
           window.lrSyncPage = function() {
             if (scrollMode) {
               requestAnimationFrame(updateMetrics);
-            } else if (restoreTarget < 0 || restoreTarget > page) {
-              // 还原还没落地（末页哨兵，或测量变准前页码救援目标尚未追上）：
+            } else if (restoreTarget > page) {
+              // 还原还没落地（测量变准前，页码救援目标尚未追上当前渲染页）：
               // 此时按「当前渲染页」重新播种 restoreTarget 会把还原目标抹掉，
               // 于是恢复过程中改设置（字号/行距/主题）就能让进度永久丢失。
               // 只重新测量即可，updateMetrics 自己会把页码补回去。

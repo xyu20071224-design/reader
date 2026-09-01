@@ -1,3 +1,14 @@
+## 2026-09-01 删除 LAST_PAGE 页码哨兵后的真机回归（PKB110 / Android 16 / ColorOS）
+
+- 背景：M1 的 T1.6 只做了一半——语义锚点已接线，但「本章最后一页」仍同时用 `restorePage = Int.MAX_VALUE` 哨兵表达（JS 内部译成 `restoreTarget = -1`）。本次把哨兵删干净，末页语义只由 `anchor='chapter-end'` 承担。
+- 包：`com.linguareader.app.verify`（1.5.1-verify，versionCode 11），测试书 id `8712e2f68447c3460f34`。
+- **回翻停末页**：章 5 第 `1/12` 页按「上一页」→ 落到 `4/12 · 12/12`（`pageIndex=11`，块 76）；t+3s / t+6s / t+10s 三次采样均保持 `12/12`，无「重排后回弹首页」。✅ 这正是哨兵当年要防的失败模式，锚点路径同样挡住了。
+- **章内回翻**：末页再按「上一页」→ `4/12 · 11/12`（块 69），未误触发换章。✅
+- **旋转不漂移**：竖 `11/12` → 横 `16/19` → 竖 `11/12` → 横 `16/19` → 竖 `11/12`，`locusBlockIndex` 恒 69。✅
+- **冷启动续读**：force-stop 后重开，落回 `5/12 · 1/12`，与退出时一致。✅
+- 稳定性：pid 不变，crash 缓冲无本应用记录。✅
+- 单测：**492 / 0 failures / 1 skipped**（用例数不变：3 条断言哨兵的用例改断言锚点，1 条哨兵专项测试换成「哨兵别回来」的反向守卫）。
+
 ## 2026-09-01 听书跟随「用户接管窗口 + 回到朗读处」真机验收（PKB110 / Android 16 / ColorOS）
 
 - 包：`com.linguareader.app.verify`（1.5.1-verify，versionCode 11，含 commit `d186373`），测试书《The Lantern Library (Verify 12ch)》（id `8712e2f68447c3460f34`）。分工：用户看屏幕验交互，agent 用 `uiautomator dump` + `run-as cat metadata.json` 验后端状态。
