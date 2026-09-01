@@ -737,3 +737,27 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **静态验证（JVM 之外的补充）**：①把 `bootstrap()` 注入的整段 JS 抽出、替换 Kotlin 插值后 `new Function()` 解析通过（含并行会话在同文件的改动）；②按源码逻辑仿真「测量序列 pageCount 1→12→12」：旧实现哨兵轨迹 `[0,0,0]`（章首，即缺陷），新实现 `[0,11,11]`（章末）；普通页码 7 两版同为 `[0,7,7]` 不变；③仿真进滑动比例：旧实现任何起始页都得 0，新实现第 1 页 0.000、第 10 页 0.818、末页 1.000 —— 与「只在非首页复现」的预测一致。
 - **新增回归用例**（`ReaderScriptsTest.kt`，4 个）：`enteringScrollModeReadsThePagedRatioBeforeFlippingTheMode`、`lastPageSentinelIsNeverClampedLikeAnOrdinaryPageIndex`、`preferenceSyncDoesNotOverwriteAPendingRestoreTarget`、`ordinaryRestoredPageKeepsTheClampAndRescuePath`。
 - **真机验证仍欠着（当前被设备侧阻塞）**：PKB110 插上后只以 MTP 出现（Windows PnP 只见 `OPPO Find X8`，无 Android ADB Interface），`adb devices` 全空——手机端 USB 调试未开，装包未能进行。APK 已就绪（`src/app/build/outputs/apk/debug/app-debug.apk`）。待验清单（WebView 行为单测覆盖不到）：①分页模式翻到第 10 页附近，慢速竖拖进入滑动模式 → 停在原位置而不是章首（第 1 页进入本来就无感，别拿它当判据）；②从第 N 章第 1 页向前翻/慢滑到章首再上翻 → 落在第 N-1 章**最后一页**而不是开头；③回翻落位后改字号 → 仍停在（新分页的）章末；④普通打开续读、章内翻页、滑动模式内跨章前后翻不受影响。
+
+## 2026-09-01 真机全量验收（PKB110 / Android 16 / ColorOS PKB110_16.0.9.400）：簇 E + 生词划线 + 进度互覆盖 + 崩溃兜底
+
+- **设备侧阻塞已解除**：上一条记的「只以 MTP 出现」就是 USB 调试未开。开启开发者选项 + USB 调试 + **ColorOS 的「USB 安装」**（不开则 `adb install` 被系统拒），首次连接为 `unauthorized`，`adb kill-server && adb start-server` 重新握手后在机上勾「一律允许」即转为 `device`（序列号 `ZXJRNJVWY9C6BYDA`）。
+- **验证包**：`assembleDebug -PverifyBuild` → `com.linguareader.app.verify` / 1.5.1-verify，与日常包 `com.linguareader.app`（同 versionCode 11）并存，数据互不干扰。分支 `feat/refactor`（含 2658db6 阅读页状态重构 + 30c55ce 元数据回写 + 52977a9 TTS 异常兜底）。
+- **测试素材**：脚本生成 12 章 EPUB（每章 80 段、约 9 KB），**每段带 `[Cnn-Pnnn]` 标记**，并在每章 P010/P050 埋同一句探针：`The app ... an apple. She likes to study, and yesterday she studied ... he was running through the city, past two other cities.` 产物 `artifacts/TheLanternLibrary-verify-12ch.epub`（未入库）。
+- **方法学（本轮新增，后续照抄即可）**：模型看不了截图时，用三条文本化证据代替肉眼——① `uiautomator dump` 读页码指示与控件 contentDescription；② `run-as <pkg> cat files/books/<id>/metadata.json` 直接读盘上进度字段；③ 段落标记定位内容位置。手势用 `input swipe x1 y1 x2 y2 <ms>`（>700ms 即「慢速」，触发进滑动模式而非翻页）。
+
+| 验证项 | 判据 | 结果 |
+| --- | --- | --- |
+| 簇 E-① 进滑动不跳章首 | 第 10/12 页慢拖 1000ms → 章节进度应 ≈82% | **`1/12 · 章节进度 83%`** ✅ |
+| 簇 E-② 回翻停末页 | 第 2 章第 1 页按上一页 → 应落 1/12 · **12**/12 | **`1/12 · 12/12`**，`pageIndex=11` ✅（两次复现） |
+| 簇 E-③ 落位后改字号 | 字号 100%→140%，章内 12 页→21 页 | **`1/12 · 21/21`**，仍在新分页章末 ✅ |
+| B1 生词整词高亮 | app/apple、study/studied、running、city/cities | 用户肉眼确认全部正确 ✅；UI 树旁证：高亮节点精确为 `"Running"` 整词且保留正文原大小写 |
+| B3 听书/阅读进度互不覆盖 | 交替写盘不得互相打回 | 播 25s → `ttsSent 2→16`；**翻一页后 `page 4→5` 且 `ttsSent` 仍 16**；再播 25s 后 **`page` 仍 5**、`ttsSent=47` ✅ |
+| B5 章节损坏不崩溃 | 删掉 `OPS/ch03.xhtml` 后跳该章起播 | WebView 报 `ERR_FILE_NOT_FOUND`，听书条**退回「播放」态（降级为暂停）**，**PID 17355 全程未变、无 FATAL** ✅ |
+| BUG-033 听书条遮挡正文 | 状态条出现时正文末行是否被盖 | 用户确认**不遮挡** ✅ |
+| 返回键优先级 | 目录/设置 → 返回逐层关闭，再返回退到书架 | 三级依次正确 ✅ |
+
+- **本轮新发现（尚未编号，建议记为观察项）：旋转后按「页码」而非「阅读比例」还原，内容位置发生漂移。** 竖屏 `3/12 · 4/21` → 横屏 `3/12 · 4/41` → 转回竖屏 `3/12 · 4/21`。页码守住了，但横屏 41 页时的第 4 页 ≈ 章内 10%，而竖屏 21 页时的第 4 页 ≈ 章内 19%——即旋转一次内容位置倒退约一成。修法方向与簇 E 同源：跨重排应还原比例（或末页哨兵那样的语义锚点），不是裸页码。
+- **`BUG-034`（次要候选，未修）真机确认存在**：播放中手动翻一页，`ttsSentenceIndex` 从 16 直接跳到 45 左右（被拉到新页首句）。
+- **数据层旁证（`files/vocabulary.json`）**：`study` → `surfaceForms=[]`（点的就是原型，靠 JS 规则展开命中 `studied`）；`city` → `surfaceForms=["cities"]`；点 `running` 时词典判为短语 `run through` 并记下 `surfaceForms=["running"]`。说明整词高亮是「入库表面形 + JS 词形展开」两条腿一起走。
+- **未做**：R8 release 包的真机冒烟（`feat/release-r8`）。原因是 release 没有 `signingConfig`，产物是 `app-release-unsigned.apk` 装不上，需先用 debug keystore 补签再装；合入 main 前必须补这一轮（点词/翻页/滚动/听书通知栏/PDF 导入/MiMo 音色名）。
+- **设备状态变更说明**：验证期间打开了「充电时保持唤醒」（`stay_on_while_plugged_in=3`），并临时锁过横屏（`accelerometer_rotation 0 / user_rotation 1`），结束时已还原 `accelerometer_rotation=1`；自动旋转设置回到系统默认。验证包与测试书未卸载，如需清理：`adb uninstall com.linguareader.app.verify`。
