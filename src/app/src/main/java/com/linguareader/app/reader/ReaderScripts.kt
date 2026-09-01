@@ -19,12 +19,25 @@ object ReaderScripts {
      */
     const val LAST_PAGE = Int.MAX_VALUE
 
+    /** [bootstrap] 的语义锚点参数：块下标 < 0 且 anchor = exact 表示「没有锚点」。 */
+    const val NO_LOCUS_BLOCK = -1
+    const val ANCHOR_EXACT = "exact"
+    const val ANCHOR_CHAPTER_START = "chapter-start"
+    const val ANCHOR_CHAPTER_END = "chapter-end"
+
     fun bootstrap(
         initialPage: Int,
         preferences: ReaderPreferences,
         initialScrollMode: Boolean = false,
         initialScrollRatio: Float = 0f,
         initialScrollPageCount: Int = 1,
+        /**
+         * 语义锚点：位置的权威表示。给了就由它决定落位，页码只作迁移期兜底
+         * （老书还没有锚点时才走 [initialPage]）。见「重构方案-位置语义统一与因果标记.md」。
+         */
+        initialLocusBlock: Int = NO_LOCUS_BLOCK,
+        initialLocusOffset: Int = 0,
+        initialLocusAnchor: String = ANCHOR_EXACT,
         chromeTopPx: Int = DEFAULT_CHROME_TOP_PX,
         chromeBottomPx: Int = DEFAULT_CHROME_BOTTOM_PX,
         /** 滚动模式首/尾提示文案（展示用，由 EpubPage 按当前语言传入；默认值仅供测试兜底）。 */
@@ -37,6 +50,15 @@ object ReaderScripts {
         // 其余注入值同样走 JSONObject.quote（见 preferenceScript / savedWordsScript）。
         val endHintLiteral = JSONObject.quote(scrollEndHint)
         val startHintLiteral = JSONObject.quote(scrollStartHint)
+        // 锚点缺省（老数据/从未打开过）时注入 null，JS 侧原样走旧的页码还原路径，
+        // 迁移期两条路并存：有锚点用锚点，没有才用页码。
+        val hasLocus = initialLocusBlock >= 0 || initialLocusAnchor != ANCHOR_EXACT
+        val anchorLiteral = if (!hasLocus) "null" else buildString {
+            append("{ blockIndex: ").append(initialLocusBlock)
+            append(", charOffset: ").append(initialLocusOffset.coerceAtLeast(0))
+            append(", anchor: ").append(JSONObject.quote(initialLocusAnchor))
+            append(" }")
+        }
         return """
         (function() {
           if (window.__linguaReaderInstalled) {
@@ -62,6 +84,10 @@ object ReaderScripts {
           let scrollMode = $initialScrollMode;
           let scrollRatio = Math.max(0, Math.min(1, Number($initialScrollRatio) || 0));
           let scrollPageCount = Math.max(1, Number($initialScrollPageCount) || 1);
+          // 位置的权威表示。分页模式下每次重排都按它重新落位——页码是派生量，
+          // 字号/旋转/分栏一变就指向别的文字（真机实测旋转后内容倒退约一成）。
+          // null 表示「本章还没有锚点」，此时沿用 restoreTarget 那套旧路径。
+          let anchorLocus = $anchorLiteral;
           let dragScrollActive = false;
           let lastScrollY = 0;
           // Real heights (CSS px) of the Compose top toolbar and bottom bar,
@@ -246,6 +272,13 @@ object ReaderScripts {
               // Only place scrollTop once the flow has grown to hold the saved
               // ratio, leaving the earlier passes to report a stable estimate
               // without visibly yanking the scroll position.
+              // 滚动模式里锚点只用于「首次落位」：scroll 事件密度极高，每次都
+              // 跑一遍二分不划算；落位成功即清空，之后仍按 scrollRatio 维持。
+              const anchoredRatio = anchorLocus ? scrollRatioForLocus(anchorLocus) : null;
+              if (anchoredRatio !== null && max > 0) {
+                scrollRatio = anchoredRatio;
+                anchorLocus = null;
+              }
               if (max > 0 && scroller.scrollHeight >= (scrollPageCount - 1) * columnHeight) {
                 scroller.scrollTop = scrollRatio * max;
               }
@@ -270,7 +303,13 @@ object ReaderScripts {
             // 否则首次（字体未就绪、pageCount 偏小）测量会把页码拍成 0，而下面
             // 的救援分支又永远救不回来。每次重排都重新取末页，重新分页后仍停在
             // 章末；一旦用户翻页/跳页，restoreTarget 就被写成具体页码而失效。
-            if (restoreTarget < 0) {
+            // 锚点优先：有锚点就按「那段文字现在落在第几页」重新算，页码不参与。
+            // 这是旋转 / 改字号 / 图片加载完后位置不再漂移的关键——旧实现把裸
+            // 页码硬套到新分页上，同一个「第 4 页」在竖屏和横屏指的是不同文字。
+            const anchoredPage = anchorLocus ? pagedPageForLocus(anchorLocus) : null;
+            if (anchoredPage !== null) {
+              page = anchoredPage;
+            } else if (restoreTarget < 0) {
               page = pageCount - 1;
             } else {
               page = clamp(page, 0, pageCount - 1);
@@ -412,9 +451,76 @@ object ReaderScripts {
             }
           }
 
+          // ── 语义锚点：位置真相 ────────────────────────────────────────
+          // 这三个函数把 (块下标, 块内偏移) 与「当前分页/滚动几何」互相换算。
+          // 定位复用 rangeFromNormalizedOffset（TTS 高亮用了很久的那套），
+          // 不另起一套几何推算——真机上几何假设翻过车（known-pitfalls #8）。
+
+          function firstBoxOfLocus(locus) {
+            const blocks = ttsBlocks();
+            const target = blocks[Number(locus.blockIndex)];
+            if (!target) return null;
+            const maxOffset = Math.max(0, target.text.length - 1);
+            const offset = clamp(Math.max(0, Number(locus.charOffset) || 0), 0, maxOffset);
+            const range = rangeFromNormalizedOffset(target.el, offset, 1) ||
+              rangeFromNormalizedOffset(target.el, 0, 1);
+            if (!range) return null;
+            const rects = range.getClientRects();
+            for (let i = 0; i < rects.length; i++) {
+              if (rects[i].width > 0 || rects[i].height > 0) return rects[i];
+            }
+            return null;
+          }
+
+          function pagedPageForLocus(locus) {
+            if (!locus) return null;
+            if (locus.anchor === 'chapter-start') return 0;
+            if (locus.anchor === 'chapter-end') return Math.max(0, pageCount - 1);
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller) return null;
+            const box = firstBoxOfLocus(locus);
+            if (!box) return null;
+            const sr = scroller.getBoundingClientRect();
+            const docLeft = scroller.scrollLeft + (box.left - sr.left);
+            return clamp(
+              Math.round(docLeft / Math.max(1, window.innerWidth)),
+              0,
+              Math.max(0, pageCount - 1)
+            );
+          }
+
+          function scrollRatioForLocus(locus) {
+            if (!locus) return null;
+            if (locus.anchor === 'chapter-start') return 0;
+            if (locus.anchor === 'chapter-end') return 1;
+            const scroller = document.getElementById('lr-scroller');
+            if (!scroller) return null;
+            const box = firstBoxOfLocus(locus);
+            if (!box) return null;
+            const sr = scroller.getBoundingClientRect();
+            const docTop = scroller.scrollTop + (box.top - sr.top);
+            const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+            if (max <= 0) return 0;
+            return clamp(docTop / max, 0, 1);
+          }
+
+          // 用户主动移动后重新取锚点：此后任何重排（改字号、旋转、图片加载完）
+          // 都会按新锚点落位，而不是把裸页码硬套到新的分页上。
+          function refreshAnchorLocus() {
+            const blocks = ttsBlocks();
+            const index = firstVisibleBlockIndex(blocks);
+            if (index < 0) return;
+            anchorLocus = {
+              blockIndex: index,
+              charOffset: blockCharOffsetAtViewStart(blocks[index]),
+              anchor: 'exact'
+            };
+          }
+
           function applyPage() {
             const scroller = document.getElementById('lr-scroller');
             if (scroller) scroller.scrollLeft = page * window.innerWidth;
+            refreshAnchorLocus();
             ReaderBridge.onPageChanged(page, pageCount);
           }
 
@@ -1173,6 +1279,11 @@ object ReaderScripts {
             const scroller = document.getElementById('lr-scroller');
             if (!scroller) return false;
             const mode = String(anchor || 'exact');
+            anchorLocus = {
+              blockIndex: Number(blockIndex),
+              charOffset: Math.max(0, Number(charOffset) || 0),
+              anchor: mode
+            };
             if (mode === 'chapter-start') {
               if (scrollMode) { scrollRatio = 0; syncScroll(); } else { page = 0; applyPage(); }
               return true;

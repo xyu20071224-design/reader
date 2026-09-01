@@ -109,6 +109,41 @@ class ReaderController {
      * current page; used to start listening from the current reading position
      * and to let the queue follow manual page turns.
      */
+    /**
+     * 读取当前阅读位置的语义锚点 (块下标, 块内字符偏移)。
+     *
+     * 与 [firstVisibleBlock] 的区别：那个返回**块文本**，正文里出现重复段落时
+     * 会指到别的块去（TtsTextExtractor.locateBlock 按文本全等匹配）；锚点返回
+     * **下标**，是稳定身份。位置落盘走这条。
+     */
+    fun readLocus(callback: (Int, Int) -> Unit) {
+        val script = """
+            (function() {
+              return window.lrLocusHere ? window.lrLocusHere() : null;
+            })()
+        """.trimIndent()
+        webView.get()?.evaluateJavascript(script) { value ->
+            val decoded = runCatching { JSONTokener(value ?: "null").nextValue() }.getOrNull()
+            val json = when (decoded) {
+                is String -> runCatching { JSONObject(decoded) }.getOrNull()
+                is JSONObject -> decoded
+                else -> null
+            } ?: return@evaluateJavascript
+            val block = json.optInt("blockIndex", -1)
+            if (block < 0) return@evaluateJavascript
+            callback(block, json.optInt("charOffset", 0).coerceAtLeast(0))
+        }
+    }
+
+    /** 把视口挪到锚点处。[anchor] 见 [ReaderScripts.ANCHOR_EXACT] 等常量。 */
+    fun scrollToLocus(blockIndex: Int, charOffset: Int, anchor: String) {
+        val encoded = JSONObject.quote(anchor)
+        webView.get()?.evaluateJavascript(
+            "window.lrScrollToLocus && window.lrScrollToLocus($blockIndex, $charOffset, $encoded)",
+            null
+        )
+    }
+
     fun firstVisibleBlock(callback: (String?) -> Unit) {
         val script = """
             (function() {

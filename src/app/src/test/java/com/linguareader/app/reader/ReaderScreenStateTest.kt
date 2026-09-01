@@ -23,6 +23,73 @@ class ReaderScreenStateTest {
     private fun opened(chapter: Int = 3, page: Int = 5) =
         ReaderPosition.forBook(chapter = chapter, page = page, chapterCount = chapterCount)
 
+    // ── M1 第 1 刀：语义锚点 ──────────────────────────────────────────
+
+    @Test
+    fun locusFromTheLibraryIsCarriedIntoTheInitialPosition() {
+        val position = ReaderPosition.forBook(
+            chapter = 2, page = 7, chapterCount = chapterCount,
+            locusBlock = 41, locusOffset = 128
+        )
+
+        assertEquals(41, position.locusBlock)
+        assertEquals(128, position.locusOffset)
+        assertEquals(ReaderPosition.ANCHOR_EXACT, position.locusAnchor)
+        // 页码仍带着：老书没有锚点时靠它落位
+        assertEquals(7, position.restorePage)
+    }
+
+    @Test
+    fun aFreshLocusMarksThePositionDirtySoItGetsPersisted() {
+        val position = opened().withLocus(41, 128)
+
+        assertTrue(position.dirty)
+        val save = position.saveRequest(chapterCount)
+        assertEquals(41, save?.locusBlock)
+        assertEquals(128, save?.locusOffset)
+    }
+
+    @Test
+    fun anIdenticalLocusDoesNotDirtyThePosition() {
+        // 锚点每 250ms 取一次，同一位置反复取到相同值不该反复触发写盘。
+        val position = opened().withLocus(41, 128).markSaved()
+
+        assertFalse(position.withLocus(41, 128).dirty)
+        assertTrue(position.withLocus(41, 200).dirty)
+    }
+
+    @Test
+    fun anUnknownLocusIsIgnoredInsteadOfErasingTheCurrentOne() {
+        val position = opened().withLocus(41, 128).markSaved()
+
+        val after = position.withLocus(-1, 0)
+
+        assertEquals(41, after.locusBlock)
+        assertFalse(after.dirty)
+    }
+
+    @Test
+    fun turningBackAChapterAnchorsAtChapterEndInsteadOfAPageNumber() {
+        // 旧实现把「末页」塞进页码字段（Int.MAX_VALUE），首次测量 pageCount 偏小
+        // 时被 clamp 拍成 0，回翻就落到上一章开头。现在它是一等语义锚。
+        val position = opened().changeChapter(-1, chapterCount)!!
+
+        assertEquals(ReaderPosition.ANCHOR_CHAPTER_END, position.locusAnchor)
+        assertEquals(ReaderPosition.NO_LOCUS, position.locusBlock)
+        assertEquals(ReaderPosition.ANCHOR_CHAPTER_END, position.saveRequest(chapterCount)?.locusAnchor ?: run {
+            // 切章当下是干净的（还没渲染），先置脏再取
+            position.copy(dirty = true).saveRequest(chapterCount)?.locusAnchor
+        })
+    }
+
+    @Test
+    fun forwardChapterChangeAnchorsAtChapterStart() {
+        val position = opened().changeChapter(1, chapterCount)!!
+
+        assertEquals(ReaderPosition.ANCHOR_CHAPTER_START, position.locusAnchor)
+        assertEquals(ReaderPosition.NO_LOCUS, position.locusBlock)
+    }
+
     // ── 位置：落盘脏标记 ──────────────────────────────────────────────
 
     @Test

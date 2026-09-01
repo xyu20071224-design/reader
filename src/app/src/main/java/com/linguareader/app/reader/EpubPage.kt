@@ -98,6 +98,10 @@ private class ReaderBridge(
 fun EpubPage(
     chapterFile: File,
     initialPage: Int,
+    /** 语义锚点：给了就由它决定落位，[initialPage] 只作迁移期兜底。 */
+    initialLocusBlock: Int = ReaderScripts.NO_LOCUS_BLOCK,
+    initialLocusOffset: Int = 0,
+    initialLocusAnchor: String = ReaderScripts.ANCHOR_EXACT,
     initialScrollMode: Boolean = false,
     initialScrollRatio: Float = 0f,
     initialScrollPageCount: Int = 1,
@@ -131,6 +135,9 @@ fun EpubPage(
     val latestSavedWords by rememberUpdatedState(savedWords)
     val latestChromeTop by rememberUpdatedState(chromeTopPx)
     val latestChromeBottom by rememberUpdatedState(chromeBottomPx)
+    val latestLocusBlock by rememberUpdatedState(initialLocusBlock)
+    val latestLocusOffset by rememberUpdatedState(initialLocusOffset)
+    val latestLocusAnchor by rememberUpdatedState(initialLocusAnchor)
 
     AndroidView(
         modifier = modifier,
@@ -175,6 +182,9 @@ fun EpubPage(
                             ReaderScripts.bootstrap(
                                 initialPage,
                                 latestPreferences,
+                                initialLocusBlock = latestLocusBlock,
+                                initialLocusOffset = latestLocusOffset,
+                                initialLocusAnchor = latestLocusAnchor,
                                 initialScrollMode = latestInitialScrollMode,
                                 initialScrollRatio = latestInitialScrollRatio,
                                 initialScrollPageCount = latestInitialScrollPageCount.coerceAtLeast(1),

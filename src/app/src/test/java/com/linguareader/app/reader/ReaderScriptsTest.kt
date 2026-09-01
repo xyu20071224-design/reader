@@ -120,6 +120,55 @@ class ReaderScriptsTest {
     }
 
     @Test
+    fun anchorLocusDrivesPagedRelayoutInsteadOfRawPageIndex() {
+        val script = ReaderScripts.bootstrap(
+            initialPage = 3,
+            preferences = ReaderPreferences(),
+            initialLocusBlock = 41,
+            initialLocusOffset = 128
+        )
+
+        // 锚点被注入，且重排时锚点优先于页码
+        assertContains(script, "let anchorLocus = { blockIndex: 41, charOffset: 128, anchor: \"exact\" };")
+        assertContains(script, "const anchoredPage = anchorLocus ? pagedPageForLocus(anchorLocus) : null;")
+        assertContains(script, "if (anchoredPage !== null) {")
+        // 用户主动翻页后要重新取锚点，否则下一次重排又会按旧锚点弹回去
+        assertContains(script, "refreshAnchorLocus();\n            ReaderBridge.onPageChanged(page, pageCount);")
+    }
+
+    @Test
+    fun withoutALocusTheLegacyPageRestorePathStaysIntact() {
+        // 迁移期：老书还没有锚点，必须原样走 restoreTarget 那条路
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        assertContains(script, "let anchorLocus = null;")
+        assertContains(script, "} else if (restoreTarget < 0) {")
+        assertContains(script, "if (restoreTarget <= pageCount - 1) page = Math.max(page, restoreTarget);")
+    }
+
+    @Test
+    fun chapterEndAnchorIsResolvedAtEveryRelayout() {
+        val script = ReaderScripts.bootstrap(
+            initialPage = 0,
+            preferences = ReaderPreferences(),
+            initialLocusAnchor = ReaderScripts.ANCHOR_CHAPTER_END
+        )
+
+        assertContains(script, "anchor: \"chapter-end\"")
+        // 末页锚点每次重排重新取「当前的最后一页」，而不是记死一个页码
+        assertContains(script, "if (locus.anchor === 'chapter-end') return Math.max(0, pageCount - 1);")
+    }
+
+    @Test
+    fun scrollModeUsesTheAnchorOnlyForTheFirstLanding() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences(), initialLocusBlock = 5)
+
+        // scroll 事件密度极高，落位后清空锚点，之后按 scrollRatio 维持
+        assertContains(script, "const anchoredRatio = anchorLocus ? scrollRatioForLocus(anchorLocus) : null;")
+        assertContains(script, "anchorLocus = null;")
+    }
+
+    @Test
     fun firstVisibleBlockStillReturnsTextForTheLegacyTtsPath() {
         val script = ReaderScripts.bootstrap(0, ReaderPreferences())
 

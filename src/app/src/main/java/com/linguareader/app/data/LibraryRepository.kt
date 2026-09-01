@@ -57,19 +57,41 @@ class LibraryRepository(private val context: Context) {
         return runCatching { Book.fromJson(JSONObject(metadata.readText())) }.getOrNull()
     }
 
-    suspend fun saveProgress(book: Book, chapterIndex: Int, pageIndex: Int, progress: Float) =
-        withContext(Dispatchers.IO) {
-            mutex.withLock {
-                val latest = readMetadata(book.id) ?: book
-                writeMetadata(
-                    latest.copy(
-                        chapterIndex = chapterIndex,
-                        pageIndex = pageIndex,
-                        progress = progress.coerceIn(0f, 1f)
-                    )
+    /**
+     * 阅读进度落盘。
+     *
+     * [locusBlockIndex] 是位置真相（章内块下标），页码只是派生展示量、迁移期
+     * 兜底：它随字号/旋转/分栏变化，同一个页码在不同排版下指着不同的文字。
+     * 传 [Book.NO_LOCUS] 表示这次还没取到锚点——此时**保留盘上已有的锚点**，
+     * 不要用「没有」覆盖掉一个有效锚点。
+     */
+    suspend fun saveProgress(
+        book: Book,
+        chapterIndex: Int,
+        pageIndex: Int,
+        progress: Float,
+        locusBlockIndex: Int = Book.NO_LOCUS,
+        locusCharOffset: Int = 0,
+        locusAnchor: String = Book.ANCHOR_EXACT
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val latest = readMetadata(book.id) ?: book
+            val hasNewLocus = locusBlockIndex >= 0 || locusAnchor != Book.ANCHOR_EXACT
+            // 换章时锚点会先变成 chapter-start/end 再落到具体块：章号变了就必须
+            // 接受新锚点，否则会拿上一章的块下标去定位新章。
+            val chapterChanged = latest.chapterIndex != chapterIndex
+            writeMetadata(
+                latest.copy(
+                    chapterIndex = chapterIndex,
+                    pageIndex = pageIndex,
+                    progress = progress.coerceIn(0f, 1f),
+                    locusBlockIndex = if (hasNewLocus || chapterChanged) locusBlockIndex else latest.locusBlockIndex,
+                    locusCharOffset = if (hasNewLocus || chapterChanged) locusCharOffset.coerceAtLeast(0) else latest.locusCharOffset,
+                    locusAnchor = if (hasNewLocus || chapterChanged) locusAnchor else latest.locusAnchor
                 )
-            }
+            )
         }
+    }
 
     suspend fun saveListeningProgress(book: Book, chapterIndex: Int, sentenceIndex: Int) =
         withContext(Dispatchers.IO) {

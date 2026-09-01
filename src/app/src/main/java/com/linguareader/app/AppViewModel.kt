@@ -259,14 +259,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         refresh()
     }
 
-    suspend fun saveProgress(book: Book, chapterIndex: Int, pageIndex: Int, progress: Float) {
-        library.saveProgress(book, chapterIndex, pageIndex, progress)
+    suspend fun saveProgress(
+        book: Book,
+        chapterIndex: Int,
+        pageIndex: Int,
+        progress: Float,
+        locusBlockIndex: Int = Book.NO_LOCUS,
+        locusCharOffset: Int = 0,
+        locusAnchor: String = Book.ANCHOR_EXACT
+    ) {
+        library.saveProgress(
+            book, chapterIndex, pageIndex, progress,
+            locusBlockIndex, locusCharOffset, locusAnchor
+        )
+        val hasNewLocus = locusBlockIndex >= 0 || locusAnchor != Book.ANCHOR_EXACT
+        val chapterChanged = mutableState.value.currentBook?.chapterIndex != chapterIndex
         mutableState.value = mutableState.value.copy(
-            currentBook = mutableState.value.currentBook?.copy(
-                chapterIndex = chapterIndex,
-                pageIndex = pageIndex,
-                progress = progress
-            )
+            currentBook = mutableState.value.currentBook?.let { current ->
+                current.copy(
+                    chapterIndex = chapterIndex,
+                    pageIndex = pageIndex,
+                    progress = progress,
+                    // 与仓库层同一规则：没取到锚点时不要用「没有」覆盖已有锚点
+                    locusBlockIndex = if (hasNewLocus || chapterChanged) locusBlockIndex else current.locusBlockIndex,
+                    locusCharOffset = if (hasNewLocus || chapterChanged) locusCharOffset else current.locusCharOffset,
+                    locusAnchor = if (hasNewLocus || chapterChanged) locusAnchor else current.locusAnchor
+                )
+            }
         )
     }
 

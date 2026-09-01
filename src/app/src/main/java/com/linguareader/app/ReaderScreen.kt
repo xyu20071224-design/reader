@@ -226,6 +226,7 @@ internal fun ReaderScreen(
     val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
     val ttsForThisBook = ttsState.bookId == book.id
     var ttsPositionReportJob by remember { mutableStateOf<Job?>(null) }
+    var locusRefreshJob by remember { mutableStateOf<Job?>(null) }
     // 阅读位置（章节/页码/滚动/待落盘快照）与弹层编排都抽成了不依赖 Android 的
     // 状态机：迁移规则和它们的回归测试在 reader/ReaderScreenState.kt 与
     // ReaderScreenStateTest.kt，这里只负责把事件转成迁移、把结果画出来。
@@ -234,7 +235,10 @@ internal fun ReaderScreen(
             ReaderPosition.forBook(
                 chapter = book.chapterIndex,
                 page = book.pageIndex,
-                chapterCount = book.chapters.size
+                chapterCount = book.chapters.size,
+                locusBlock = book.locusBlockIndex,
+                locusOffset = book.locusCharOffset,
+                locusAnchor = book.locusAnchor
             )
         )
     }
@@ -293,7 +297,10 @@ internal fun ReaderScreen(
         val save = position.saveRequest(book.chapters.size) ?: return
         position = position.markSaved()
         scope.launch {
-            viewModel.saveProgress(book, save.chapter, save.page, save.progress)
+            viewModel.saveProgress(
+                book, save.chapter, save.page, save.progress,
+                save.locusBlock, save.locusOffset, save.locusAnchor
+            )
         }
     }
 
@@ -302,7 +309,10 @@ internal fun ReaderScreen(
         position = position.markSaved()
         scope.launch {
             if (save != null) {
-                viewModel.saveProgress(book, save.chapter, save.page, save.progress)
+                viewModel.saveProgress(
+                    book, save.chapter, save.page, save.progress,
+                    save.locusBlock, save.locusOffset, save.locusAnchor
+                )
             }
             onClose()
         }
@@ -345,6 +355,23 @@ internal fun ReaderScreen(
             fromEnd = direction < 0,
             keepScrollMode = keepScrollMode
         )
+    }
+
+    /**
+     * 取一次语义锚点写回状态。
+     *
+     * 锚点要问 WebView（一次 JS 求值 + 块内二分），所以走去抖：翻页、重排、
+     * 滚动都会触发，但只在安静 250ms 后取一次。落盘仍由 800ms 的节流轮询做，
+     * 它读的就是这里写进 position 的锚点，因此保存路径依然是同步的。
+     */
+    fun refreshLocusDelayed() {
+        locusRefreshJob?.cancel()
+        locusRefreshJob = scope.launch {
+            delay(250)
+            controller.readLocus { blockIndex, charOffset ->
+                position = position.withLocus(blockIndex, charOffset)
+            }
+        }
     }
 
     fun reportTtsPositionDelayed() {
@@ -466,6 +493,9 @@ internal fun ReaderScreen(
             EpubPage(
                 chapterFile = File(book.extractedDir, book.chapters[position.chapter].relativePath),
                 initialPage = position.restorePage,
+                initialLocusBlock = position.locusBlock,
+                initialLocusOffset = position.locusOffset,
+                initialLocusAnchor = position.locusAnchor,
                 initialScrollMode = position.scrollMode,
                 initialScrollRatio = position.scrollRatio,
                 initialScrollPageCount = position.scrollPageCount.coerceAtLeast(1),
@@ -483,6 +513,9 @@ internal fun ReaderScreen(
                     .testTag(UiTags.READER_PAGE),
                 onReady = { page, count ->
                     position = position.onReady(page, count)
+                    // 落位后立刻取一次锚点：老书（没有锚点）在这里完成迁移，
+                    // 新书则把「重排后的真实位置」写回，供下次还原。
+                    refreshLocusDelayed()
                     TtsPlaybackController.onReaderChapterLoaded(book.id, position.chapter)
                     controller.setChoosingStart(overlays.choosingStart)
                     if (ttsForThisBook && ttsState.chapterIndex == position.chapter) {
@@ -491,6 +524,7 @@ internal fun ReaderScreen(
                 },
                 onPageChanged = { page, count ->
                     position = position.onPageChanged(page, count)
+                    refreshLocusDelayed()
                     // A manual page turn scrolls the highlight away with the
                     // text; clear it here so no stale block lingers on the new
                     // page before the next sentence re-applies it.

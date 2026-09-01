@@ -62,6 +62,54 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun `saving without a locus keeps the one already on disk`() = runBlocking {
+        // 800ms 节流轮询可能在锚点还没取回来时就落盘。此时传的是「没有锚点」，
+        // 绝不能把盘上已有的有效锚点覆盖成 -1 —— 那等于把位置真相删掉，
+        // 下次打开又退回按页码还原（旋转/改字号必漂移）。
+        File(baseBook().extractedDir).mkdirs()
+        writeBook(baseBook().copy(locusBlockIndex = 12, locusCharOffset = 34))
+        val repo = repository()
+
+        repo.saveProgress(baseBook(), chapterIndex = 0, pageIndex = 5, progress = .3f)
+
+        val saved = repo.loadBooks().first { it.id == "book-lib" }
+        assertEquals(12, saved.locusBlockIndex)
+        assertEquals(34, saved.locusCharOffset)
+        assertEquals(5, saved.pageIndex)
+    }
+
+    @Test
+    fun `a new locus replaces the old one`() = runBlocking {
+        File(baseBook().extractedDir).mkdirs()
+        writeBook(baseBook().copy(locusBlockIndex = 12, locusCharOffset = 34))
+        val repo = repository()
+
+        repo.saveProgress(
+            baseBook(), chapterIndex = 0, pageIndex = 5, progress = .3f,
+            locusBlockIndex = 41, locusCharOffset = 128
+        )
+
+        val saved = repo.loadBooks().first { it.id == "book-lib" }
+        assertEquals(41, saved.locusBlockIndex)
+        assertEquals(128, saved.locusCharOffset)
+    }
+
+    @Test
+    fun `changing chapter accepts a locus reset instead of keeping the old chapter anchor`() = runBlocking {
+        // 换章的一瞬间锚点会先变成 chapter-start/end 再落到具体块。若沿用
+        // 「没有锚点就保留旧值」的规则，就会拿上一章的块下标去定位新章。
+        File(baseBook().extractedDir).mkdirs()
+        writeBook(baseBook().copy(chapterIndex = 0, locusBlockIndex = 12, locusCharOffset = 34))
+        val repo = repository()
+
+        repo.saveProgress(baseBook(), chapterIndex = 1, pageIndex = 0, progress = .5f)
+
+        val saved = repo.loadBooks().first { it.id == "book-lib" }
+        assertEquals(1, saved.chapterIndex)
+        assertEquals(Book.NO_LOCUS, saved.locusBlockIndex)
+    }
+
+    @Test
     fun `translation write keeps progress made during the long job`() = runBlocking {
         val book = baseBook()
         writeBook(book)

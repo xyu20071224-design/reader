@@ -29,6 +29,16 @@ internal data class ReaderPosition(
     val scrollRatio: Float,
     /** 滚动模式下的等效页数，至少 1。 */
     val scrollPageCount: Int,
+    /**
+     * 位置的语义锚点（章内块下标）。**这才是位置真相**——[page] 随字号/旋转/
+     * 分栏变化，同一个页码在不同排版下指着不同的文字。-1 = 本章还没取到锚点，
+     * 此时落盘沿用 [savedPage]（迁移期兜底，见方案 §5）。
+     */
+    val locusBlock: Int = NO_LOCUS,
+    /** 锚点块内的归一化字符偏移。 */
+    val locusOffset: Int = 0,
+    /** 语义锚：exact / chapter-start / chapter-end。末页不再用哨兵页码表达。 */
+    val locusAnchor: String = ANCHOR_EXACT,
     /** 待落盘的页码快照（与 [page] 分开：保存走节流，不能读到中途值）。 */
     val savedPage: Int,
     /** 待落盘的页数快照。 */
@@ -96,7 +106,11 @@ internal data class ReaderPosition(
         val stayScrolled = keepScrollMode && scrollMode
         return ReaderPosition(
             chapter = index,
+            // 迁移期两条路并存：JS 有锚点就按锚点落位，没有才看这个哨兵页码。
             restorePage = if (fromEnd) ReaderScripts.LAST_PAGE else 0,
+            locusBlock = NO_LOCUS,
+            locusOffset = 0,
+            locusAnchor = if (fromEnd) ANCHOR_CHAPTER_END else ANCHOR_CHAPTER_START,
             page = 0,
             pageCount = 1,
             scrollMode = stayScrolled,
@@ -133,15 +147,55 @@ internal data class ReaderPosition(
         if (!dirty) return null
         val inChapter = if (savedCount <= 1) 0f else savedPage.toFloat() / (savedCount - 1)
         val progress = if (chapterCount <= 0) 0f else (chapter + inChapter) / chapterCount.toFloat()
-        return ReaderProgressSave(chapter = chapter, page = savedPage, progress = progress)
+        return ReaderProgressSave(
+            chapter = chapter,
+            page = savedPage,
+            progress = progress,
+            locusBlock = locusBlock,
+            locusOffset = locusOffset,
+            locusAnchor = locusAnchor
+        )
     }
+
+    /**
+     * JS 回报的语义锚点。取锚点是异步的（要问一次 WebView），所以它单独进来，
+     * 不跟着页码回调走；拿到就置脏，让下一轮节流把它落盘。
+     */
+    fun withLocus(blockIndex: Int, charOffset: Int): ReaderPosition =
+        if (blockIndex < 0 || (blockIndex == locusBlock && charOffset == locusOffset && locusAnchor == ANCHOR_EXACT)) {
+            this
+        } else {
+            copy(
+                locusBlock = blockIndex,
+                locusOffset = charOffset,
+                locusAnchor = ANCHOR_EXACT,
+                dirty = true
+            )
+        }
 
     /** 落盘已交出去：清脏标记。取快照与清标记分开，避免节流轮询里重复写同一份。 */
     fun markSaved(): ReaderPosition = if (dirty) copy(dirty = false) else this
 
     companion object {
-        /** 打开一本书时的初始位置（章节/页码来自书库记录）。 */
-        fun forBook(chapter: Int, page: Int, chapterCount: Int): ReaderPosition {
+        /** [locusBlock] 的「尚无锚点」取值，与 Book.NO_LOCUS 同义。 */
+        const val NO_LOCUS = -1
+        const val ANCHOR_EXACT = "exact"
+        const val ANCHOR_CHAPTER_START = "chapter-start"
+        const val ANCHOR_CHAPTER_END = "chapter-end"
+
+        /**
+         * 打开一本书时的初始位置。锚点优先，页码是迁移期兜底：老书还没有锚点
+         * （[locusBlock] < 0 且 anchor = exact）时才靠 [page] 落位，落位后
+         * ReaderScreen 会立刻取一次锚点写回，一次打开完成迁移。
+         */
+        fun forBook(
+            chapter: Int,
+            page: Int,
+            chapterCount: Int,
+            locusBlock: Int = NO_LOCUS,
+            locusOffset: Int = 0,
+            locusAnchor: String = ANCHOR_EXACT
+        ): ReaderPosition {
             // chapterCount 为 0 时 coerceIn(0, -1) 会抛，兜一层；页码沿用书库记录不夹。
             val safeChapter = chapter.coerceIn(0, (chapterCount - 1).coerceAtLeast(0))
             return ReaderPosition(
@@ -152,6 +206,9 @@ internal data class ReaderPosition(
                 scrollMode = false,
                 scrollRatio = 0f,
                 scrollPageCount = 1,
+                locusBlock = locusBlock,
+                locusOffset = locusOffset,
+                locusAnchor = locusAnchor,
                 savedPage = page,
                 savedCount = 1,
                 dirty = false
@@ -160,11 +217,14 @@ internal data class ReaderPosition(
     }
 }
 
-/** 一次进度落盘请求（章节 + 页码 + 全书进度）。 */
+/** 一次进度落盘请求（章节 + 语义锚点 + 页码 + 全书进度）。 */
 internal data class ReaderProgressSave(
     val chapter: Int,
     val page: Int,
-    val progress: Float
+    val progress: Float,
+    val locusBlock: Int = ReaderPosition.NO_LOCUS,
+    val locusOffset: Int = 0,
+    val locusAnchor: String = ReaderPosition.ANCHOR_EXACT
 )
 
 /** 返回键要做的事。顺序由 [ReaderOverlays.onBack] 决定，不由调用点的 when 决定。 */
