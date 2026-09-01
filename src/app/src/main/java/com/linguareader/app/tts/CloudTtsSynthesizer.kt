@@ -81,6 +81,16 @@ class CloudTtsSynthesizer(
     /** 缓存路径的唯一知情者（见 TtsAudioCache 的类注释：这条路径以前被写了两遍）。 */
     private val cache = TtsAudioCache(appContext)
 
+    /**
+     * 引擎身份，进缓存键。快照即可：换引擎/换服务器会走 ACTION_RECONFIGURE，
+     * 那条路会重建合成器（见 TtsPlaybackService 的 engine by lazy 与 :196-202）。
+     * 复用 VoiceLibraryLoader.engineKey，别再造第二套「引擎身份」的定义。
+     */
+    private val engineTag: String by lazy {
+        runCatching { VoiceLibraryLoader.engineKey(CloudTtsSettings.load(appContext)) }
+            .getOrDefault("unknown")
+    }
+
     @Volatile
     private var shutdown = false
 
@@ -387,7 +397,7 @@ class CloudTtsSynthesizer(
         chapterIndex: Int,
         sentenceIndex: Int,
         voice: String
-    ): File = cache.fileFor(bookId, chapterIndex, sentenceIndex, voice)
+    ): File = cache.fileFor(bookId, chapterIndex, sentenceIndex, voice, engineTag)
 
     private fun parseUtteranceId(id: String): Triple<String, Int, Int>? {
         // 引擎生成的 utteranceId 是 4 段 "bookId:chapter:sentence:attempt"

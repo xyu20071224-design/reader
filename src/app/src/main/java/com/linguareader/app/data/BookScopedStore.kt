@@ -49,9 +49,37 @@ interface BookScopedStore {
     }
 }
 
+/** 一处存储的实际占用。存储页面显示的是它，不是配额那个魔法数字。 */
+data class StoreUsage(
+    val storeId: String,
+    val bytes: Long
+)
+
+/**
+ * 一次存储体检的结果：各处占用 + 孤儿清单。
+ *
+ * 孤儿 = 磁盘上有、书库里没有的数据。**只报不删** —— 清理由用户按下去。
+ */
+data class StorageReport(
+    val usages: List<StoreUsage>,
+    val orphans: List<BookDataOrphan>
+) {
+    val totalBytes: Long get() = usages.sumOf { it.bytes }
+    val orphanBytes: Long get() = orphans.sumOf { it.bytes }
+}
+
 /** 一处孤儿数据（[storeId] 来自 [BookScopedStore.storeId]）。 */
 data class BookDataOrphan(
     val storeId: String,
     val path: File,
     val bytes: Long
 )
+/** 人类可读的字节数。占用要给人看，不是给机器看。 */
+fun formatStorageBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L * 1024L ->
+        String.format(java.util.Locale.US, "%.1f GB", bytes / 1024.0 / 1024.0 / 1024.0)
+    bytes >= 1024L * 1024L ->
+        String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0)
+    bytes >= 1024L -> String.format(java.util.Locale.US, "%.0f KB", bytes / 1024.0)
+    else -> "$bytes B"
+}

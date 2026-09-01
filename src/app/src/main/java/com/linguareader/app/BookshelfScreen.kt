@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ModalBottomSheet
@@ -122,6 +123,9 @@ internal fun BookshelfScreen(
     onCancelAiTranslation: (Book) -> Unit,
     onDismissAiTranslationPrepare: () -> Unit,
     onAiSettingsChange: (AiSettings) -> Unit,
+    /** 存储占用页面（D2.4b）：打开时扫一次盘，孤儿只报不删。 */
+    onRefreshStorage: () -> Unit = {},
+    onCleanOrphans: () -> Unit = {},
     onLoadGlossary: suspend (String) -> BookGlossary,
     onAddGlossary: suspend (String, String, String) -> BookGlossary,
     onUpdateGlossary: suspend (String, GlossaryEntry) -> BookGlossary,
@@ -158,6 +162,7 @@ internal fun BookshelfScreen(
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var showUpdateSheet by rememberSaveable { mutableStateOf(false) }
+    var showStorageSheet by rememberSaveable { mutableStateOf(false) }
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
     var rosterBook by remember { mutableStateOf<Book?>(null) }
 
@@ -196,6 +201,18 @@ internal fun BookshelfScreen(
                         )
                     },
                     actions = {
+                        // 存储占用：打开即扫盘（不在启动时扫，那会拖慢冷启动）。
+                        IconButton(onClick = {
+                            showStorageSheet = true
+                            onRefreshStorage()
+                        }) {
+                            Icon(
+                                Icons.Default.Storage,
+                                contentDescription = stringResource(R.string.storage_title),
+                                modifier = Modifier.size(20.dp),
+                                tint = InkSoft
+                            )
+                        }
                         IconButton(onClick = { showAppearanceSheet = true }) {
                             Icon(
                                 Icons.Default.Palette,
@@ -335,6 +352,16 @@ internal fun BookshelfScreen(
                 }
             }
         }
+    }
+
+    if (showStorageSheet) {
+        StorageSheet(
+            report = state.storage,
+            scanning = state.storageScanning,
+            onRescan = onRefreshStorage,
+            onCleanOrphans = onCleanOrphans,
+            onDismiss = { showStorageSheet = false }
+        )
     }
 
     if (showAppearanceSheet) {

@@ -100,6 +100,23 @@ class CloudTtsSynthesizerTest {
         }
     }
 
+    /**
+     * D2.2：缓存键必须带**引擎身份**。
+     *
+     * 同一个音色 id 在两台不同的自建服务器上是不同的声音；键里不带引擎，换服务器后
+     * 会直接播出上一台合成的音频，而命中判据只有「文件存在且非空」，照样不报错。
+     */
+    @Test
+    fun cacheKeyDistinguishesEngines() {
+        val a = TtsAudioCache.segmentFor("server:http://a.local:8000", "narrator.wav")
+        val b = TtsAudioCache.segmentFor("server:http://b.local:8000", "narrator.wav")
+        assertNotEquals(a, b, "同名音色在不同服务器上必须落到不同缓存目录")
+        // 同一引擎同一音色必须稳定命中（否则每次启动都重新合成，云 TTS 要花钱）
+        assertEquals(a, TtsAudioCache.segmentFor("server:http://a.local:8000", "narrator.wav"))
+        // 音色那半截仍然肉眼可读，方便排查
+        assertTrue(a.endsWith("~narrator.wav"), "音色段应保持无损，实际 $a")
+    }
+
     /** 当目录名会穿越或指错地方的 id 必须换成哈希，且哈希里不能再有分隔符。 */
     @Test
     fun pathUnsafeVoiceIdsFallBackToAHash() {

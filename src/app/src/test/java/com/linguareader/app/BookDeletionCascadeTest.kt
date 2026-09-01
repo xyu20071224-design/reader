@@ -205,7 +205,8 @@ class BookDeletionCascadeTest {
 
         val viewModel = AppViewModel(context)
         pump { !viewModel.state.value.loading }
-        val report = viewModel.auditOrphans()
+        val scan = viewModel.scanStorage()
+        val report = scan.orphans
 
         val paths = report.map { it.path.name }.toSet()
         assertTrue("漏报孤儿：$paths", paths.containsAll(setOf("ghost-book", "nobody-claims-me")))
@@ -216,6 +217,11 @@ class BookDeletionCascadeTest {
         )
         // 只报不删
         assertTrue(File(context.filesDir, "books/ghost-book").exists())
+        // 顺带守住占用统计：活着的书有内容，占用必须 > 0（存储页面显示的就是它）
+        assertTrue(
+            "各处占用全为 0，存储页面会是一片空白：" + scan.usages,
+            scan.usages.any { it.bytes > 0 }
+        )
     }
 
     /** 级联改成遍历清单后最容易出的新事故是「删过头」，这条守住边界。 */

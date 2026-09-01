@@ -25,6 +25,9 @@ import com.linguareader.app.translation.TranslationMemoryRepository
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.BookDataOrphan
 import com.linguareader.app.data.BookScopedStore
+import com.linguareader.app.data.StorageReport
+import com.linguareader.app.data.formatStorageBytes
+import com.linguareader.app.data.StoreUsage
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.DictionaryLookupResult
 import com.linguareader.app.data.DictionaryRepository
@@ -111,7 +114,10 @@ data class AppUiState(
     /** 非空时显示「AI 生成译本」确认框（术语已备齐、规模已估算）。 */
     val aiTranslationPrepare: AiTranslationPrepare? = null,
     /** 自动更新（GitHub Release 检查/下载）的流程状态。 */
-    val update: AppUpdateUiState = AppUpdateUiState()
+    val update: AppUpdateUiState = AppUpdateUiState(),
+    /** 存储体检结果；null = 还没扫过（扫盘只在用户打开存储页面时跑）。 */
+    val storage: StorageReport? = null,
+    val storageScanning: Boolean = false
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -328,12 +334,50 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * 孤儿）。所以这里只产出报告，清理入口留给 D2.4 的「存储占用」页面，由用户
      * 按下去。启动时也不跑 —— 扫盘要 IO，会拖慢冷启动。
      */
-    internal suspend fun auditOrphans(): List<BookDataOrphan> = withContext(Dispatchers.IO) {
+    internal suspend fun scanStorage(): StorageReport = withContext(Dispatchers.IO) {
         val books = library.loadBooks()
-        bookDataStores.flatMap { store ->
+        val usages = bookDataStores.map { store ->
+            StoreUsage(store.storeId, store.storageRoots().sumOf { sizeOf(it) })
+        }
+        val orphans = bookDataStores.flatMap { store ->
             runCatching { store.orphans(books) }.getOrDefault(emptyList()).map { file ->
                 BookDataOrphan(storeId = store.storeId, path = file, bytes = sizeOf(file))
             }
+        }
+        StorageReport(usages = usages, orphans = orphans)
+    }
+
+    /** 体检一次并写进 UI 状态；扫盘要 IO，只在用户打开存储页面时跑。 */
+    fun refreshStorageReport() {
+        viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(storageScanning = true)
+            val report = runCatching { scanStorage() }.getOrNull()
+            mutableState.value = mutableState.value.copy(
+                storageScanning = false,
+                storage = report
+            )
+        }
+    }
+
+    /**
+     * 清理孤儿数据。**只删对账报出来的那些路径**，不重新推断 ——
+     * 推断与删除之间隔着用户的一次点击，中间可能已经导入了新书。
+     */
+    fun deleteOrphans() {
+        val targets = mutableState.value.storage?.orphans.orEmpty()
+        if (targets.isEmpty()) return
+        viewModelScope.launch {
+            val freed = withContext(Dispatchers.IO) {
+                targets.sumOf { orphan ->
+                    val size = orphan.bytes
+                    if (runCatching { orphan.path.deleteRecursively() }.getOrDefault(false)) size else 0L
+                }
+            }
+            mutableState.value = mutableState.value.copy(
+                notice = string(R.string.storage_orphans_cleared, formatStorageBytes(freed)),
+                noticeTone = StatusTone.SUCCESS
+            )
+            refreshStorageReport()
         }
     }
 

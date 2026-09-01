@@ -366,6 +366,26 @@
     <string name="tts_cache_hint">超过上限时按「最后写入时间」从旧到新淘汰，正在听的那一章不动。选「不限」适合出门前把整本缓存下来。</string>
     <string name="tts_cache_clear">清空音频缓存</string>
     <string name="tts_cache_cleared">已清空 %1$s，下次播放会重新合成</string>
+    <!-- 存储占用 -->
+    <string name="storage_title">存储占用</string>
+    <string name="storage_scanning">正在统计…</string>
+    <string name="storage_total">应用数据合计 %1$s</string>
+    <string name="storage_rescan">重新统计</string>
+    <string name="storage_orphans_title">无人认领的数据</string>
+    <string name="storage_orphans_none">没有发现无人认领的数据</string>
+    <string name="storage_orphans_found">%1$d 项，共 %2$s</string>
+    <string name="storage_orphans_hint">来自已删除或重新导入过的书（重新导入会换 id）。只列不删，按下面的按钮才会清理。</string>
+    <string name="storage_orphans_clean">清理这些数据</string>
+    <string name="storage_orphans_cleared">已清理 %1$s</string>
+    <string name="storage_store_books">书籍正文与进度</string>
+    <string name="storage_store_vocabulary">生词本</string>
+    <string name="storage_store_book_context">AI 语境档案</string>
+    <string name="storage_store_glossary">术语表</string>
+    <string name="storage_store_speaker_tags">说话人标注</string>
+    <string name="storage_store_translations">译本与对照档案</string>
+    <string name="storage_store_ai_translations">AI 翻译检查点</string>
+    <string name="storage_store_tts_cache">音频缓存</string>
+    <string name="storage_store_voice_maps">角色音色映射</string>
     <string name="tts_saved">已保存</string>
     <plurals name="tts_system_voices_loaded">
         <item quantity="other">已获取 %1$d 个系统音色</item>

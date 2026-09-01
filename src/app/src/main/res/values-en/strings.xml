@@ -371,6 +371,26 @@
     <string name="tts_cache_hint">Over the limit, the least recently written chapters go first; the chapter you are listening to is never evicted. Pick Unlimited when caching a whole book before going offline.</string>
     <string name="tts_cache_clear">Clear audio cache</string>
     <string name="tts_cache_cleared">Freed %1$s; audio will be synthesised again next time</string>
+    <!-- Storage usage -->
+    <string name="storage_title">Storage</string>
+    <string name="storage_scanning">Measuring…</string>
+    <string name="storage_total">App data total: %1$s</string>
+    <string name="storage_rescan">Rescan</string>
+    <string name="storage_orphans_title">Unclaimed data</string>
+    <string name="storage_orphans_none">No unclaimed data found</string>
+    <string name="storage_orphans_found">%1$d items, %2$s</string>
+    <string name="storage_orphans_hint">Left over from deleted or re-imported books (re-importing changes the id). Listed only — nothing is removed until you tap below.</string>
+    <string name="storage_orphans_clean">Clean up</string>
+    <string name="storage_orphans_cleared">Freed %1$s</string>
+    <string name="storage_store_books">Book content and progress</string>
+    <string name="storage_store_vocabulary">Saved words</string>
+    <string name="storage_store_book_context">AI context profiles</string>
+    <string name="storage_store_glossary">Glossaries</string>
+    <string name="storage_store_speaker_tags">Speaker tags</string>
+    <string name="storage_store_translations">Translations and alignment</string>
+    <string name="storage_store_ai_translations">AI translation checkpoints</string>
+    <string name="storage_store_tts_cache">Audio cache</string>
+    <string name="storage_store_voice_maps">Character voice maps</string>
     <string name="tts_saved">Saved</string>
     <plurals name="tts_system_voices_loaded">
         <item quantity="one">Fetched %1$d system voice</item>

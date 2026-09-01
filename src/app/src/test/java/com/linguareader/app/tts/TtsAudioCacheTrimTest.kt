@@ -25,9 +25,12 @@ class TtsAudioCacheTrimTest {
     private val context: Application = ApplicationProvider.getApplicationContext()
     private val cache = TtsAudioCache(context)
 
+    /** 引擎身份：本组用例只关心淘汰，固定一个即可。 */
+    private val ENGINE = "server:http://localhost:8000"
+
     /** 写一个淘汰单元：<book>/<chapter>/<voice>/ 下若干句，并指定最后修改时间。 */
     private fun seed(bookId: String, chapter: Int, voice: String, bytes: Int, modifiedAt: Long) {
-        val file = cache.fileFor(bookId, chapter, 0, voice)
+        val file = cache.fileFor(bookId, chapter, 0, voice, ENGINE)
         file.parentFile?.mkdirs()
         file.writeBytes(ByteArray(bytes))
         file.setLastModified(modifiedAt)
@@ -55,9 +58,9 @@ class TtsAudioCacheTrimTest {
         assertEquals(400L, freed)
         assertEquals(800L, cache.totalBytes())
         // 最旧的那个单元被清掉，其余原样
-        assertFalse(cache.fileFor("b1", 0, 0, "v").exists())
-        assertTrue(cache.fileFor("b1", 1, 0, "v").exists())
-        assertTrue(cache.fileFor("b2", 0, 0, "v").exists())
+        assertFalse(cache.fileFor("b1", 0, 0, "v", ENGINE).exists())
+        assertTrue(cache.fileFor("b1", 1, 0, "v", ENGINE).exists())
+        assertTrue(cache.fileFor("b2", 0, 0, "v", ENGINE).exists())
     }
 
     /** 正在听的东西被删掉会当场触发重新合成 —— 云 TTS 那是花钱的。 */
@@ -68,8 +71,8 @@ class TtsAudioCacheTrimTest {
 
         cache.trimTo(600L, protectBookId = "playing", protectChapterIndex = 3)
 
-        assertTrue(cache.fileFor("playing", 3, 0, "v").exists())
-        assertFalse(cache.fileFor("other", 0, 0, "v").exists())
+        assertTrue(cache.fileFor("playing", 3, 0, "v", ENGINE).exists())
+        assertFalse(cache.fileFor("other", 0, 0, "v", ENGINE).exists())
     }
 
     /** 用户可以选「不限」——离线听书是核心场景，硬上限会伤到「出门前缓存整本」。 */
@@ -79,7 +82,7 @@ class TtsAudioCacheTrimTest {
 
         assertEquals(0L, cache.trimTo(0L))
         assertEquals(0L, cache.trimTo(-1L))
-        assertTrue(cache.fileFor("b1", 0, 0, "v").exists())
+        assertTrue(cache.fileFor("b1", 0, 0, "v", ENGINE).exists())
     }
 
     /** 目录名不合规（章号不是数字）时跳过，不猜、也不误删。 */
@@ -100,6 +103,6 @@ class TtsAudioCacheTrimTest {
     fun deletingABookStillClearsItsWholeCache() = kotlinx.coroutines.runBlocking<Unit> {
         seed("gone", 0, "v", 100, modifiedAt = 1_000L)
         cache.deleteBookData(book("gone"))
-        assertFalse(cache.fileFor("gone", 0, 0, "v").exists())
+        assertFalse(cache.fileFor("gone", 0, 0, "v", ENGINE).exists())
     }
 }

@@ -134,6 +134,8 @@ private fun LinguaReaderApp(
                 onCancelAiTranslation = viewModel::cancelAiTranslation,
                 onDismissAiTranslationPrepare = viewModel::dismissAiTranslationPrepare,
                 onAiSettingsChange = viewModel::setAiSettings,
+                onRefreshStorage = viewModel::refreshStorageReport,
+                onCleanOrphans = viewModel::deleteOrphans,
                 onLoadGlossary = viewModel::glossary,
                 onAddGlossary = viewModel::addGlossaryEntry,
                 onUpdateGlossary = viewModel::updateGlossaryEntry,

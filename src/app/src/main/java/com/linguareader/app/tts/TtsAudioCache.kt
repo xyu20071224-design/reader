@@ -114,9 +114,24 @@ class TtsAudioCache(context: Context) : BookScopedStore {
         return freed
     }
 
-    /** 某句话的缓存文件（不保证存在）。 */
-    fun fileFor(bookId: String, chapterIndex: Int, sentenceIndex: Int, voice: String): File =
-        File(root, "$bookId/$chapterIndex/${voiceSegment(voice)}/$sentenceIndex.mp3")
+    /**
+     * 某句话的缓存文件（不保证存在）。
+     *
+     * [engineTag] 是**引擎身份**（见 VoiceLibraryLoader.engineKey）：同一个音色 id 在
+     * 两台不同的自建服务器上是**不同的声音**，不把它算进键，换服务器后会直接播出
+     * 上一台的音频。键里带上它之后，旧引擎的目录自然不再命中，交给配额淘汰或
+     * 「清空音频缓存」回收。
+     */
+    fun fileFor(
+        bookId: String,
+        chapterIndex: Int,
+        sentenceIndex: Int,
+        voice: String,
+        engineTag: String
+    ): File = File(
+        root,
+        "$bookId/$chapterIndex/${segmentFor(engineTag, voice)}/$sentenceIndex.mp3"
+    )
 
     companion object {
         const val DIR_NAME = "tts_cache"
@@ -138,14 +153,26 @@ class TtsAudioCache(context: Context) : BookScopedStore {
          * 这里**没有**引擎维度：同一个音色 id 在两台不同服务器上可能是不同的声音，
          * 那条要等缓存清理入口就绪后一起改（改键会作废存量缓存，见方案 D2.2）。
          */
+        /**
+         * 淘汰单元的目录名 = 引擎哈希 + 音色段。
+         *
+         * 引擎那半截一律哈希：它可能是 `server:http://…` 这种带路径分隔符的串。
+         * 音色那半截沿用 [voiceSegment] 的「无损优先」策略，方便肉眼排查。
+         */
+        fun segmentFor(engineTag: String, voice: String): String =
+            "e" + sha256Hex(engineTag).take(8) + "~" + voiceSegment(voice)
+
+        private fun sha256Hex(value: String): String =
+            MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+
         fun voiceSegment(voice: String): String {
             val unusable = voice.isEmpty() ||
                 voice == "." ||
                 voice == ".." ||
                 voice.any { it == '/' || it == '\\' || it == '\u0000' }
             if (!unusable) return voice
-            val digest = MessageDigest.getInstance("SHA-256").digest(voice.toByteArray())
-            return "h-" + digest.joinToString("") { "%02x".format(it) }.take(16)
+            return "h-" + sha256Hex(voice).take(16)
         }
     }
 }
