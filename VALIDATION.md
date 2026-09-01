@@ -1,3 +1,18 @@
+## 2026-09-01 听书跟随「用户接管窗口 + 回到朗读处」真机验收（PKB110 / Android 16 / ColorOS）
+
+- 包：`com.linguareader.app.verify`（1.5.1-verify，versionCode 11，含 commit `d186373`），测试书《The Lantern Library (Verify 12ch)》（id `8712e2f68447c3460f34`）。分工：用户看屏幕验交互，agent 用 `uiautomator dump` + `run-as cat metadata.json` 验后端状态。
+- **按钮存在性**：听书条出现 `content-desc='回到朗读处'` 的可点节点（在「下一句」与「设置起点」之间），仅当 `highlightBlockIndex >= 0` 时渲染。✅
+- **按下跳回朗读处且不拽动引擎**（暂停态隔离，排除引擎自然推进的干扰）：暂停于 `ttsSentenceIndex=21`（块 15）→ 用户往后翻 3 页到块 20（page 3）→ 按下 → 落到块 15 / page 2，`ttsSentenceIndex` 恒 21。✅ 说明落位引发的位置回报被抑制窗口（`TTS_JUMP_REPORT_SUPPRESS_MS=1500`）挡住了。
+- **接管窗口 ≈10s**（滚动模式，两次独立测量；采样分辨率受 uiautomator dump 限制约 2.5s）：
+  - 运行 A（朗读在 92%）：拖回章首 0% → 到 ~10s 仍 0% → ~14s 跳到 92%。
+  - 运行 B（朗读在 4%）：拖回 0% → t=10.4s / 12.9s 仍 0% → t=15.7s 跳到 4%。
+  - 旧行为是下一句（1–3s）就被拽回；两次均未在 <8s 内被拽回。✅
+- **按钮立刻结束窗口**（对照组）：朗读在 22% 时拖回 10% → 立刻按「回到朗读处」→ 2.4s 内跳到 24%（朗读处），远早于窗口自然到期。✅
+- **稳定性**：全程 pid `12183` 不变，crash 缓冲无本应用记录，主日志无 `FATAL`/异常；测试中途设备被旋到横屏（ROTATION_270，2374×1080）仍正常，按钮 bounds `[1732,732][1876,876]`。✅
+- 前端（用户实测）：按下后页面跳到正在朗读的段落、高亮立刻可见（不用等下一句）、朗读未被打断或跳句——均符合预期。✅
+- **本轮未解禁分页跟随**：`followRangeIntoView` 的 `if (!scrollMode) return;` 原样保留（AGENTS.md 禁区），所以分页模式下「朗读在念、页面不动」仍是预期现象，「回到朗读处」正是该场景的手动补偿。播放中手动翻页把引擎拽到该页首块首句（BUG-034）本轮未修，属 M2/T2.3 范围——测试中复现过一次（回翻 2 页后 `ttsSentenceIndex` 21→1），已确认由翻页触发而非新按钮。
+- 单测：**492 tests / 0 failures / 1 skipped**。
+
 ## 2026-09-01 M1 语义锚点真机验收（PKB110 / Android 16 / ColorOS）
 
 - 包：`com.linguareader.app.verify`（1.5.1-verify，versionCode 11），测试书《The Lantern Library (Verify 12ch)》（id `8712e2f68447c3460f34`，每段带 `[Cnn-Pnnn]` 标记）。判据以 metadata.json 的 `locusBlockIndex`/`locusCharOffset` 为主，页指示器/可见段落标记为辅（模型不看图，全靠 run-as + uiautomator dump）。
