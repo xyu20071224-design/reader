@@ -1,3 +1,20 @@
+## 2026-09-01 数据所有权第 1 刀（D1）真机验收（PKB110 / Android 16 / ColorOS）
+
+包 `com.linguareader.app.verify`（分支 `feat/book-data-ownership` @ `7496d4f`）。判据全部走 `run-as` 读盘 + `uiautomator dump` 读对话框。
+
+- **D1.4 删除对话框显示条数**：真实测试书（`vocabulary.json` 里实有 4 条该书生词）→ 对话框正文「本地书籍副本、阅读进度与该书的 **4 条生词**会一并删除，且不可恢复。」条数与盘上实际一致。✅
+- **D1.1 级联 + D1.4 生词清理 + D1.5 字段无关**（用一本 `run-as` 播种的一次性假书 `verify-cascade-01`，9 处落点全部造齐、生词加 2 条、`translationBookId` **故意留空**）：
+  - 对话框正文「…该书的 **2 条生词**…」，条数正确；
+  - 确认删除后 **9 处落点全部 GONE**（books / ai\book-context / ai\glossary / ai\speaker-tags / translation-memory / **translations\ai-…** / ai\ai-translations / tts_cache / voice_maps）；
+  - 其中 `translations/ai-verify-cascade-01` 是在 `translationBookId` 为空的情况下被清掉的 —— **D1.5「AI 译本正文清理不再依赖该字段」在真机上成立**；
+  - `vocabulary.json` 由 6 条降为 4 条，**只清掉假书的 2 条，真书的 4 条一条不动**；
+  - 真书目录与数据完好，进程 pid 不变，crash 缓冲无记录。✅
+- **过程中抓到的一个测试脚本缺陷（不是产品缺陷）**：书架是**两列网格**，第一版脚本按 y 坐标找「移除」按钮，选中了**另一本书**（对话框标题显示的是真书）。靠「确认前先核对对话框标题」这一步拦下，未误删。教训：多列布局里定位控件必须用 x 区分列，且**破坏性操作前一定要核对确认框里的对象名**。
+- **未能在本轮验证**（缺前置条件，非跳过）：
+  - **D1.8**（对齐后丢弃出版译本正文）：设备上 `files/translations` 为空、测试书无译本，需要一次真实的「加译本」导入才能端到端验；JVM 侧已有 `TranslationBodyDiscardTest` 覆盖「正文删除后查词仍命中」。
+  - **D2.3**（缓存配额与淘汰）：`files/tts_cache` 为空，云 TTS 未配置（属记忆里「待验证清单：需真实 Key」那一档）；JVM 侧有 5 条淘汰用例。
+- 单测：**510 tests / 0 failures / 1 skipped**。
+
 ## 2026-09-01 M2 第 2 刀（因果标记 + 分页跟随解禁）真机验收（PKB110 / Android 16 / ColorOS）
 
 - 包 `com.linguareader.app.verify`（1.5.1-verify），测试书 id `8712e2f68447c3460f34`。判据：`uiautomator dump` 的页码指示 + `run-as cat metadata.json`。
