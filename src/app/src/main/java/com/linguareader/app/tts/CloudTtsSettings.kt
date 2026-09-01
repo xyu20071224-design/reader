@@ -65,7 +65,15 @@ data class CloudTtsSettings(
     /** MiMo 英文预置音色。 */
     val mimoEnVoice: String = DEFAULT_MIMO_EN_VOICE,
     /** MiMo 自然语言风格指令（可选，放 user 消息；预置/复刻模型生效）。 */
-    val mimoStyleInstruction: String = ""
+    val mimoStyleInstruction: String = "",
+    /**
+     * 音频缓存上限（MB），**0 = 不限**。
+     *
+     * 缓存在 filesDir 而非 cacheDir，系统低存储回收够不着它；此前无上限、无淘汰、
+     * 无清理入口，长期听书会无界增长。保留「不限」是因为离线听书是核心场景 ——
+     * 硬上限会伤到「出门前缓存整本」的用法。
+     */
+    val cacheLimitMb: Int = DEFAULT_CACHE_LIMIT_MB
 ) {
     val enabled: Boolean get() = mode != TtsEngineMode.SYSTEM
 
@@ -81,6 +89,12 @@ data class CloudTtsSettings(
         const val DEFAULT_MIMO_MODEL = "mimo-v2.5-tts"
         const val DEFAULT_MIMO_ZH_VOICE = "mimo_default"
         const val DEFAULT_MIMO_EN_VOICE = "Mia"
+
+        /** 默认缓存上限：约 10–25 本整书缓存的量级（实测占用以「存储占用」页面为准）。 */
+        const val DEFAULT_CACHE_LIMIT_MB = 512
+
+        /** 设置页可选的上限档位；0 = 不限。 */
+        val CACHE_LIMIT_OPTIONS_MB = listOf(256, 512, 1024, 0)
         private const val PREFS = "cloud_tts_settings"
         private const val KEY_MODE = "mode"
         private const val KEY_NETWORK_AI_ENABLED = "network_ai_enabled"
@@ -100,6 +114,7 @@ data class CloudTtsSettings(
         private const val KEY_MIMO_ZH_VOICE = "mimo_zh_voice"
         private const val KEY_MIMO_EN_VOICE = "mimo_en_voice"
         private const val KEY_MIMO_STYLE = "mimo_style_instruction"
+        private const val KEY_CACHE_LIMIT_MB = "cache_limit_mb"
 
         fun load(context: Context): CloudTtsSettings {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -126,7 +141,8 @@ data class CloudTtsSettings(
                     .orEmpty().ifBlank { DEFAULT_MIMO_ZH_VOICE },
                 mimoEnVoice = prefs.getString(KEY_MIMO_EN_VOICE, DEFAULT_MIMO_EN_VOICE)
                     .orEmpty().ifBlank { DEFAULT_MIMO_EN_VOICE },
-                mimoStyleInstruction = prefs.getString(KEY_MIMO_STYLE, "").orEmpty()
+                mimoStyleInstruction = prefs.getString(KEY_MIMO_STYLE, "").orEmpty(),
+                cacheLimitMb = prefs.getInt(KEY_CACHE_LIMIT_MB, DEFAULT_CACHE_LIMIT_MB)
             )
         }
 
@@ -153,6 +169,7 @@ data class CloudTtsSettings(
                 .putString(KEY_MIMO_ZH_VOICE, settings.mimoZhVoice.ifBlank { DEFAULT_MIMO_ZH_VOICE })
                 .putString(KEY_MIMO_EN_VOICE, settings.mimoEnVoice.ifBlank { DEFAULT_MIMO_EN_VOICE })
                 .putString(KEY_MIMO_STYLE, settings.mimoStyleInstruction.trim())
+                .putInt(KEY_CACHE_LIMIT_MB, settings.cacheLimitMb.coerceAtLeast(0))
                 .apply()
         }
     }

@@ -28,6 +28,80 @@ class TtsAudioCache(context: Context) : BookScopedStore {
         File(root, book.id).deleteRecursively()
     }
 
+    /**
+     * 一个淘汰单元：`<bookId>/<chapter>/<voice>` 目录 —— 一次章节预生成为一个音色
+     * 填的就是它。按句淘汰太碎，按书淘汰又太狠（听到一半整本没了）。
+     */
+    data class Entry(
+        val dir: File,
+        val bookId: String,
+        val chapterIndex: Int,
+        val bytes: Long,
+        /**
+         * 目录内最新的文件修改时间。
+         *
+         * **这是「最近写入」不是「最近使用」**：Android 上 atime 不可靠，而播放只读
+         * 文件、不碰时间戳。所以一本很久以前缓存、天天在听的书，可能比昨天缓存却
+         * 从没播过的书更早被淘汰。缓解办法是保护「当前书当前章」（见 [trimTo]），
+         * 真要做成真 LRU 得在播放时主动 touch，那是另一件事。
+         */
+        val lastModified: Long
+    )
+
+    /** 枚举全部淘汰单元。目录名不合规（章号不是数字）的直接跳过，不猜。 */
+    fun entries(): List<Entry> = root.listFiles().orEmpty().filter { it.isDirectory }
+        .flatMap { bookDir ->
+            bookDir.listFiles().orEmpty().filter { it.isDirectory }.flatMap { chapterDir ->
+                val chapter = chapterDir.name.toIntOrNull()
+                if (chapter == null) emptyList()
+                else chapterDir.listFiles().orEmpty().filter { it.isDirectory }.map { voiceDir ->
+                    val files = voiceDir.walkBottomUp().filter { it.isFile }.toList()
+                    Entry(
+                        dir = voiceDir,
+                        bookId = bookDir.name,
+                        chapterIndex = chapter,
+                        bytes = files.sumOf { it.length() },
+                        lastModified = files.maxOfOrNull { it.lastModified() }
+                            ?: voiceDir.lastModified()
+                    )
+                }
+            }
+        }
+
+    /** 当前占用（字节）。存储占用页面与配额判断都用它。 */
+    fun totalBytes(): Long = entries().sumOf { it.bytes }
+
+    /**
+     * 淘汰到 [limitBytes] 以下，返回释放的字节数。
+     *
+     * - [limitBytes] <= 0 表示**不限**（用户可选），直接不动；
+     * - [protectBookId] / [protectChapterIndex] 指定的单元永不淘汰 —— 正在听的东西
+     *   被删掉会当场触发重新合成，云 TTS 那是要花钱的；
+     * - 淘汰顺序按 [Entry.lastModified] 从旧到新（注意那是「最近写入」，见该字段注释）。
+     */
+    fun trimTo(
+        limitBytes: Long,
+        protectBookId: String? = null,
+        protectChapterIndex: Int? = null
+    ): Long {
+        if (limitBytes <= 0) return 0L
+        val all = entries()
+        var total = all.sumOf { it.bytes }
+        if (total <= limitBytes) return 0L
+        var freed = 0L
+        for (entry in all.sortedBy { it.lastModified }) {
+            if (total <= limitBytes) break
+            val protectedEntry = protectBookId != null && entry.bookId == protectBookId &&
+                (protectChapterIndex == null || entry.chapterIndex == protectChapterIndex)
+            if (protectedEntry) continue
+            if (entry.dir.deleteRecursively()) {
+                total -= entry.bytes
+                freed += entry.bytes
+            }
+        }
+        return freed
+    }
+
     /** 某句话的缓存文件（不保证存在）。 */
     fun fileFor(bookId: String, chapterIndex: Int, sentenceIndex: Int, voice: String): File =
         File(root, "$bookId/$chapterIndex/${voiceSegment(voice)}/$sentenceIndex.mp3")

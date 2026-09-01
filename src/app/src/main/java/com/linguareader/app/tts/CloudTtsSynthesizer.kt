@@ -152,6 +152,7 @@ class CloudTtsSynthesizer(
                 }
             }
             val allOk = jobs.all { it.await() }
+            trimCache(book.id, chapter.chapterIndex)
             if (allOk && !shutdown) {
                 mainHandler.post { onComplete(true) }
             } else if (!shutdown) {
@@ -262,11 +263,33 @@ class CloudTtsSynthesizer(
                     }
                 }
             val allOk = jobs.all { it.await() }
+            // 整书缓存是最容易把配额顶穿的入口：填完立刻整理。
+            trimCache(book.id, protectChapterIndex = null)
             if (!shutdown) {
                 mainHandler.post { onComplete(allOk) }
             }
         }
         bookPrepareJob = job
+    }
+
+    /**
+     * 按用户设定的上限整理缓存（方案 D2.3）。
+     *
+     * 只在**预生成刚结束**时调用 —— 那既是占用刚变大的时刻，也是不在播放中间的
+     * 时刻。正在听的书（章）永不淘汰：删掉它会当场触发重新合成，云 TTS 是花钱的。
+     * 上限为 0（不限）时 trimTo 直接不动。
+     */
+    private fun trimCache(bookId: String, protectChapterIndex: Int?) {
+        if (shutdown) return
+        val limitMb = runCatching { CloudTtsSettings.load(appContext).cacheLimitMb }.getOrDefault(0)
+        if (limitMb <= 0) return
+        runCatching {
+            cache.trimTo(
+                limitBytes = limitMb.toLong() * 1024L * 1024L,
+                protectBookId = bookId,
+                protectChapterIndex = protectChapterIndex
+            )
+        }
     }
 
     private suspend fun waitForFileOrSynthesize(
