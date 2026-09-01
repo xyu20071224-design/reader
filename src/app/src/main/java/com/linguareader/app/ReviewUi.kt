@@ -84,11 +84,20 @@ internal fun ReviewSheet(
     onSpeak: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var index by rememberSaveable(deck) { mutableIntStateOf(0) }
-    var revealed by rememberSaveable(deck) { mutableStateOf(false) }
-    var busy by remember(deck) { mutableStateOf(false) }
-    var completedCount by rememberSaveable(deck) { mutableIntStateOf(0) }
-    var allDone by rememberSaveable(deck) { mutableStateOf(false) }
+    // BUG-032：记忆键必须是**卡组身份**，不能是卡组本身。
+    //
+    // 复习一个词会改它的 reviewLevel/nextReviewAt，上游 savedWords 随之更新，
+    // 阅读页那边的 deck 又是 `savedWords.filter { it.id in ids }` 现算出来的 ——
+    // 于是每评一张卡都会得到一个「不相等」的新列表。拿它当 rememberSaveable 的键，
+    // index/completedCount/allDone 就会当场归零：卡片翻不过去、待复习数恒定不变。
+    // 用有序 id 串当键：同一次复习会话里它不变（成员没变，只是字段变了），
+    // 换一副卡组时它才变。
+    val deckKey = remember(deck) { deck.joinToString("|") { it.id } }
+    var index by rememberSaveable(deckKey) { mutableIntStateOf(0) }
+    var revealed by rememberSaveable(deckKey) { mutableStateOf(false) }
+    var busy by remember(deckKey) { mutableStateOf(false) }
+    var completedCount by rememberSaveable(deckKey) { mutableIntStateOf(0) }
+    var allDone by rememberSaveable(deckKey) { mutableStateOf(false) }
     val word = deck[index.coerceAtMost(deck.lastIndex)]
 
     fun finish(remembered: Boolean) {

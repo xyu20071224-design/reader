@@ -1,3 +1,19 @@
+## 2026-09-02 BUG-032 复习卡索引归零修复（D3.1）真机验收（PKB110 / Android 16 / ColorOS）
+
+入口：生词本 →「复习」（verify 包，4 个待复习）。
+
+| 步骤 | 界面 | 盘上 `vocabulary.json` |
+| --- | --- | --- |
+| 打开复习 | `第 1 / 4 张` · study | — |
+| 评第一张（认识） | **`已完成 1 / 4`** · 下一张 app | study reviewLevel=1 reviewCount=1 |
+| 评第二张（认识） | **`已完成 2 / 4`** · 下一张 run through | study、app 均已复习 |
+
+修复前的表现是索引归零：评完一张又回到第 1 张、待复习数看着永远不变。
+
+根因：`ReviewSheet` 把**卡组本身**（`List<SavedWord>`）当 `rememberSaveable` 的键，而复习会改词的 `reviewLevel`/`nextReviewAt` → 上游 `savedWords` 更新 → 阅读页那边现算的 deck 变成一个「不相等」的新列表 → `index`/`completedCount`/`allDone` 全部归零。修法是键换成**卡组身份**（有序 id 串）。
+
+这与刚修完的「阅读位置」是同一个错误形状：**派生量被上游重建，把用户进度冲掉**。
+
 ## 2026-09-02 音频缓存占用与清理（D2.4a）真机验收（PKB110 / Android 16 / ColorOS）
 
 入口：阅读页 →「Aa」→ 滚到底「听书设置」→ 弹层底部「音频缓存」。
