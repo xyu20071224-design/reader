@@ -151,6 +151,7 @@ internal fun BookshelfScreen(
     // 「加译本」用独立的文件选择器：回调里要知道是给哪本英文书配的译本。
     var pendingTranslationBook by remember { mutableStateOf<Book?>(null) }
     var detachTranslationCandidate by remember { mutableStateOf<Book?>(null) }
+    var aiTranslationManageCandidate by remember { mutableStateOf<Book?>(null) }
     // 「加译本」点击后先弹来源选择（导入文件 / AI 生成），再走各自分支。
     var translationChoiceCandidate by remember { mutableStateOf<Book?>(null) }
     val translationLauncher =
@@ -328,6 +329,9 @@ internal fun BookshelfScreen(
                                     when {
                                         // 生成中：按钮变「取消生成」。
                                         book.id in state.aiTranslationProgress -> onCancelAiTranslation(book)
+                                        // AI 译本：可重新生成（检查点复用、只补失败批）也可删除。
+                                        book.hasTranslation && book.isAiTranslation ->
+                                            aiTranslationManageCandidate = book
                                         book.hasTranslation -> detachTranslationCandidate = book
                                         else -> translationChoiceCandidate = book
                                     }
@@ -441,6 +445,41 @@ internal fun BookshelfScreen(
         )
     }
 
+    // AI 译本的管理对话框：重新生成（检查点复用）或删除。
+    aiTranslationManageCandidate?.let { book ->
+        AlertDialog(
+            onDismissRequest = { aiTranslationManageCandidate = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    aiTranslationManageCandidate = null
+                    onPrepareAiTranslation(book)
+                }) { Text(stringResource(R.string.shelf_translation_manage_regenerate)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { aiTranslationManageCandidate = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+            title = { Text(stringResource(R.string.shelf_translation_manage_title)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.shelf_translation_manage_body))
+                    TextButton(onClick = {
+                        aiTranslationManageCandidate = null
+                        detachTranslationCandidate = book
+                    }) {
+                        Text(
+                            stringResource(R.string.shelf_translation_manage_remove),
+                            color = Danger
+                        )
+                    }
+                }
+            },
+            containerColor = CardSurface,
+            shape = CardShape
+        )
+    }
+
     translationChoiceCandidate?.let { book ->
         AlertDialog(
             onDismissRequest = { translationChoiceCandidate = null },
@@ -487,6 +526,7 @@ internal fun BookshelfScreen(
                         stringResource(
                             R.string.shelf_translation_ai_confirm_body,
                             prepare.book.title,
+                            state.aiSettings.providerDisplayName,
                             prepare.chapters,
                             prepare.batches,
                             prepare.glossaryTerms

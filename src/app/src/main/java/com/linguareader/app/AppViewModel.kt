@@ -696,9 +696,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 「AI 生成译本」第一步：备齐术语表（缺失时先生成语境档案并导入）、估算
      * 规模，然后停在确认框等用户点头。全程除语境档案生成本身外不出网。
+     * 已有 AI 译本的书走这里是重新生成（检查点复用，只补失败批）；
+     * 出版译本不提供重生成，但书架入口对它本来只出删除确认框，这里只是兜底。
      */
     fun prepareAiTranslation(book: Book) {
-        if (book.hasTranslation || book.id in mutableState.value.aiTranslationProgress) return
+        if (book.id in mutableState.value.aiTranslationProgress) return
+        if (book.hasTranslation && !book.isAiTranslation) return
         val settings = mutableState.value.aiSettings
         if (!settings.powerEnabled || !settings.remoteReady) {
             mutableState.value = mutableState.value.copy(

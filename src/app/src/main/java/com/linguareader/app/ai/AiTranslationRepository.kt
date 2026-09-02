@@ -121,7 +121,7 @@ class AiTranslationRepository(
             }
             paragraphs
         }
-        writeTranslationBook(book, translatedChapters)
+        writeTranslationBook(book, translatedChapters, settings.providerDisplayName)
     }
 
     /** 删除一本书的全部翻译检查点与风格说明（删书时随书清理）。 */
@@ -375,8 +375,14 @@ class AiTranslationRepository(
     /**
      * 把逐章译文写成 XHTML（每段一个 `<p>`，与英文侧叶级块 1:1，标题不进正文
      * 以免多出原文没有的段落），并构造不上书架的合成译本 [Book]。
+     * [providerName] 是发起本次翻译的生效服务商展示名，进标题与作者——
+     * 标题会经 `saveTranslation` 落到书架卡片上，别再硬编码服务商名。
      */
-    private fun writeTranslationBook(source: Book, translatedChapters: List<List<String>>): Book {
+    private fun writeTranslationBook(
+        source: Book,
+        translatedChapters: List<List<String>>,
+        providerName: String
+    ): Book {
         val dir = File(translationsDir, translationId(source.id))
         dir.deleteRecursively()
         dir.mkdirs()
@@ -391,8 +397,8 @@ class AiTranslationRepository(
         }
         return Book(
             id = translationId(source.id),
-            title = appContext.getString(R.string.translation_ai_title),
-            author = "DeepSeek",
+            title = appContext.getString(R.string.translation_ai_title, providerName),
+            author = providerName,
             extractedDir = dir.absolutePath,
             coverRelativePath = null,
             chapters = chapters,

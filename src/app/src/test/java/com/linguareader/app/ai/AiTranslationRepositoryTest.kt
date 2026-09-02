@@ -382,4 +382,33 @@ class AiTranslationRepositoryTest {
         assertNotNull(lookup)
         assertNotEquals("", result.translationBook.title)
     }
+
+    @Test
+    fun `synthetic translation title and author follow the active provider`() = runBlocking {
+        val book = makeSourceBook()
+        // 默认配置（无服务商列表）回退 DeepSeek。
+        val fallback = repository(FakeChat()).translateBook(book) { _ -> }
+        assertEquals("DeepSeek", fallback.author)
+
+        // 换生效服务商后重新生成：检查点全部复用（零出网），标题与作者跟着换。
+        AiSettingsStore(context).save(
+            AiSettings(
+                enabled = true,
+                apiKey = "key",
+                providers = listOf(
+                    AiProviderProfile(
+                        id = "p1", name = "Kimi",
+                        baseUrl = "https://example.com", apiKey = "key", model = "m1"
+                    )
+                ),
+                activeProviderId = "p1"
+            )
+        )
+        val chat = FakeChat()
+        val regen = repository(chat).translateBook(book) { _ -> }
+        assertEquals(0, chat.calls)
+        assertEquals("Kimi", regen.author)
+        // 标题以服务商名开头（zh「Kimi AI 译本」/ en「Kimi AI translation」通吃）。
+        assertTrue(regen.title.startsWith("Kimi"))
+    }
 }
