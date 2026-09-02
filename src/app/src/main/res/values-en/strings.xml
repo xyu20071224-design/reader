@@ -125,7 +125,8 @@
     <string name="shelf_translation_manage_regenerate">Regenerate</string>
     <string name="shelf_translation_manage_remove">Delete translation</string>
     <string name="shelf_translation_ai_title">Generate translation with AI</string>
-    <string name="shelf_translation_ai_confirm_body">%2$s will translate \"%1$s\" chapter by chapter and align the result automatically:\n\n· %3$d chapters, about %4$d AI requests\n· %5$d glossary terms so far — review or edit them in AI Center → Glossary first\n· Online throughout, costs API credits; a whole book can take tens of minutes. You can cancel anytime; finished progress is kept.</string>
+    <string name="shelf_translation_ai_confirm_body">%2$s will translate \"%1$s\" chapter by chapter and align the result automatically:\n\n· %3$d chapters, about %4$d AI requests\n· %5$d glossary terms so far, %6$d injected into the prompts (manual translations first; entries beyond the cap have no effect)\n· Online throughout, costs API credits; a whole book can take tens of minutes. You can cancel anytime; finished progress is kept.</string>
+    <string name="shelf_translation_ai_oversized">Note: this book has %1$d oversized paragraph(s) whose translation may exceed the model output limit; a failed paragraph keeps the original text and can be filled in by regenerating later.</string>
     <string name="shelf_translation_ai_start">Start</string>
     <string name="shelf_translation_ai_preparing">Preparing AI translation…</string>
     <string name="shelf_translation_ai_progress">AI translating %1$d%%</string>

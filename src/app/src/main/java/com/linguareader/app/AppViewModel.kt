@@ -87,6 +87,10 @@ data class AiTranslationPrepare(
     val chapters: Int,
     val batches: Int,
     val glossaryTerms: Int,
+    /** 实际注入 prompt 的术语条数（手动优先；与 glossaryTerms 的差 = 超上限截断）。 */
+    val glossaryInjected: Int,
+    /** 超长段落个数（译文可能顶到模型输出上限，确认框显式提示）。 */
+    val oversizedParagraphs: Int,
     val mode: String,
     val styleNotes: String
 )
@@ -724,10 +728,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val estimate = aiTranslationRepository.estimate(book)
                 AiTranslationPrepare(
-                    book,
-                    estimate.chapters,
-                    estimate.batches,
-                    glossary.entries.count { it.enabled },
+                    book = book,
+                    chapters = estimate.chapters,
+                    batches = estimate.batches,
+                    glossaryTerms = estimate.glossaryTerms,
+                    glossaryInjected = estimate.glossaryInjected,
+                    oversizedParagraphs = estimate.oversizedParagraphs,
                     mode = aiTranslationPrefs.getString(
                         KEY_TRANSLATION_MODE, AiTranslationRepository.MODE_STANDARD
                     ) ?: AiTranslationRepository.MODE_STANDARD,

@@ -529,9 +529,21 @@ internal fun BookshelfScreen(
                             state.aiSettings.providerDisplayName,
                             prepare.chapters,
                             prepare.batches,
-                            prepare.glossaryTerms
+                            prepare.glossaryTerms,
+                            prepare.glossaryInjected
                         )
                     )
+                    if (prepare.oversizedParagraphs > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(
+                                R.string.shelf_translation_ai_oversized,
+                                prepare.oversizedParagraphs
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSoft
+                        )
+                    }
                     Spacer(Modifier.height(10.dp))
                     Text(
                         stringResource(R.string.shelf_translation_ai_mode_label),

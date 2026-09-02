@@ -48,17 +48,33 @@ class AiTranslationRepository(
     private val mutex = Mutex()
 
     /** 确认框展示用的规模估算（全部是本地抽取，无出网）。 */
-    data class Estimate(val chapters: Int, val batches: Int, val glossaryTerms: Int)
+    data class Estimate(
+        val chapters: Int,
+        val batches: Int,
+        /** 已启用的术语条数（用户视角的术语表规模）。 */
+        val glossaryTerms: Int,
+        /** 实际会注入 prompt 的术语条数（手动优先，超出上限的不生效）。 */
+        val glossaryInjected: Int,
+        /** 超长段落个数（见 [AiBookTranslator.OVERSIZED_PARAGRAPH_CHARS]）。 */
+        val oversizedParagraphs: Int
+    )
 
     suspend fun estimate(book: Book): Estimate = withContext(Dispatchers.IO) {
         val extractor = TtsTextExtractor()
-        val batches = book.chapters.indices.sumOf { chapterIndex ->
-            AiBookTranslator.groupIntoBatches(chapterIndex, extractor.chapter(book, chapterIndex).blocks).size
+        var batches = 0
+        var oversized = 0
+        book.chapters.indices.forEach { chapterIndex ->
+            val blocks = extractor.chapter(book, chapterIndex).blocks
+            batches += AiBookTranslator.groupIntoBatches(chapterIndex, blocks).size
+            oversized += blocks.count { it.length > AiBookTranslator.OVERSIZED_PARAGRAPH_CHARS }
         }
+        val glossary = glossaryRepository.load(book.id)
         Estimate(
             chapters = book.chapters.size,
             batches = batches,
-            glossaryTerms = glossaryRepository.load(book.id).entries.count { it.enabled }
+            glossaryTerms = glossary.entries.count { it.enabled },
+            glossaryInjected = AiBookTranslator.injectedGlossaryCount(glossary.entries),
+            oversizedParagraphs = oversized
         )
     }
 

@@ -78,6 +78,26 @@ class AiBookTranslatorTest {
     }
 
     @Test
+    fun `glossary injection caps at 80 and manual entries are never crowded out`() {
+        val autos = (1..81).map { GlossaryEntry(term = "auto$it", origin = "auto") }
+        assertEquals(80, AiBookTranslator.injectedGlossaryCount(autos))
+
+        // 手动条目即使排在第 82 位也必须注入；被挤出的是排在末尾的自动条目。
+        val manualLast = autos + GlossaryEntry(term = "ManualTerm", origin = "manual")
+        assertEquals(80, AiBookTranslator.injectedGlossaryCount(manualLast))
+        val batch = TranslationBatch(0, 0, listOf(0), listOf("Hello."))
+        val prompt = AiBookTranslator.buildUserPrompt("T", "C", manualLast, null, batch)
+        assertTrue("ManualTerm" in prompt)
+        assertTrue("auto81" !in prompt)
+
+        // 禁用与空白词条不占注入名额。
+        val withNoise = manualLast +
+            GlossaryEntry(term = "Disabled", enabled = false) +
+            GlossaryEntry(term = "   ")
+        assertEquals(80, AiBookTranslator.injectedGlossaryCount(withNoise))
+    }
+
+    @Test
     fun `retry feedback is appended when provided`() {
         val batch = TranslationBatch(0, 0, listOf(0), listOf("Hello."))
         val without = AiBookTranslator.buildUserPrompt("T", "C", emptyList(), null, batch)

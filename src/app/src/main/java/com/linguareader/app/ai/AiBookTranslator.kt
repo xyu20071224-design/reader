@@ -40,6 +40,13 @@ object AiBookTranslator {
      */
     const val MAX_CONSECUTIVE_BATCH_FAILURES = 3
 
+    /**
+     * 单段超过此字符数即视为「超长段落」：其译文可能顶到模型的输出 token 上限
+     * （8192 token ≈ 2-3.5 万英文字符的译文量）。估算里显式提示用户；真命中时
+     * 该批失败按既有语义保留原文占位。不做切段翻译——句子完整性优先于修复它。
+     */
+    const val OVERSIZED_PARAGRAPH_CHARS = 15_000
+
     /** 术语表注入 prompt 的条数上限（与语境点词的 take(80) 同量级）。 */
     private const val MAX_GLOSSARY_LINES = 80
 
@@ -331,13 +338,22 @@ object AiBookTranslator {
     private fun styleLine(styleNotes: String?): String? =
         styleNotes?.trim()?.takeIf { it.isNotEmpty() }?.let { "风格说明（全书统一，必须遵守）：$it" }
 
+    /**
+     * 注入 prompt 的术语行。手动条目（origin == "manual"）永远排在最前——
+     * 超过 [MAX_GLOSSARY_LINES] 截断时被挤出去的只能是自动条目，与「手动条目
+     * 在任何合并中都不可被覆盖」的产品契约同一个优先级方向。
+     */
     private fun glossaryLines(glossary: List<GlossaryEntry>): List<String> =
         glossary.asSequence()
             .filter { it.enabled && it.term.isNotBlank() }
             .distinctBy { it.term.lowercase() }
+            .sortedByDescending { it.origin == "manual" }
             .take(MAX_GLOSSARY_LINES)
             .map { "${it.term.trim()} | ${it.translation.ifBlank { "保留原文" }} | ${it.note}" }
             .toList()
+
+    /** 实际会注入 prompt 的术语条数（与 [glossaryLines] 严格同口径，估算展示用）。 */
+    fun injectedGlossaryCount(glossary: List<GlossaryEntry>): Int = glossaryLines(glossary).size
 }
 
 /**

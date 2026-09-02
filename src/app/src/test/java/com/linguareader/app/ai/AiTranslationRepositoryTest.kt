@@ -532,4 +532,36 @@ class AiTranslationRepositoryTest {
         // 取消即时生效：第二批的第一请求即被拦下。
         assertEquals(2, chat.calls)
     }
+
+    @Test
+    fun `estimate reports oversized paragraphs and injected glossary count`() = runBlocking {
+        // 两章：第一章 = 超长段（独立成批）+ 普通段（1 批），第二章 = 普通段（1 批）。
+        val dir = File(context.filesDir, "books-src/$sourceBookId-estimate")
+        dir.deleteRecursively()
+        dir.mkdirs()
+        val longText = "x".repeat(AiBookTranslator.OVERSIZED_PARAGRAPH_CHARS + 100)
+        File(dir, "chapter_000.xhtml").writeText(
+            "<html><body><p>$longText</p><p>Short one.</p></body></html>"
+        )
+        File(dir, "chapter_001.xhtml").writeText("<html><body><p>Another.</p></body></html>")
+        val book = Book(
+            id = "$sourceBookId-estimate",
+            title = "Estimate Book",
+            author = "Author",
+            extractedDir = dir.absolutePath,
+            coverRelativePath = null,
+            chapters = listOf(
+                Chapter(title = "0", relativePath = "chapter_000.xhtml"),
+                Chapter(title = "1", relativePath = "chapter_001.xhtml")
+            ),
+            addedAt = 0L
+        )
+
+        val estimate = repository(FakeChat()).estimate(book)
+        assertEquals(1, estimate.oversizedParagraphs)
+        assertEquals(3, estimate.batches)
+        // 空术语表：规模 0，注入 0。
+        assertEquals(0, estimate.glossaryTerms)
+        assertEquals(0, estimate.glossaryInjected)
+    }
 }

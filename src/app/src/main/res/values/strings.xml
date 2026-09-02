@@ -122,7 +122,8 @@
     <string name="shelf_translation_manage_regenerate">重新生成</string>
     <string name="shelf_translation_manage_remove">删除译本</string>
     <string name="shelf_translation_ai_title">AI 生成译本</string>
-    <string name="shelf_translation_ai_confirm_body">将为《%1$s》用 %2$s 逐章翻译整本中文译文并自动对齐：\n\n· 共 %3$d 章，预计约 %4$d 次 AI 请求\n· 当前术语表 %5$d 条，可先在「AI 中心 → 术语表」审阅或补充译法\n· 全程联网并产生 API 费用；整本可能需要几十分钟，可随时取消，已完成进度会保留</string>
+    <string name="shelf_translation_ai_confirm_body">将为《%1$s》用 %2$s 逐章翻译整本中文译文并自动对齐：\n\n· 共 %3$d 章，预计约 %4$d 次 AI 请求\n· 当前术语表 %5$d 条，实际注入翻译 %6$d 条（手动译法优先；超出的不生效）\n· 全程联网并产生 API 费用；整本可能需要几十分钟，可随时取消，已完成进度会保留</string>
+    <string name="shelf_translation_ai_oversized">注意：本书有 %1$d 个超长段落，译文可能超出模型输出上限；失败的段落将保留原文，可随后重新生成补齐</string>
     <string name="shelf_translation_ai_start">开始生成</string>
     <string name="shelf_translation_ai_preparing">AI 译本准备中…</string>
     <string name="shelf_translation_ai_progress">AI 翻译中 %1$d%%</string>
