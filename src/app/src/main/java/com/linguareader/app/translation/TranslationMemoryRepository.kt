@@ -209,10 +209,13 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
             translationBookId = translation.id,
             translationTitle = translation.title,
             alignedAt = System.currentTimeMillis(),
-            pairs = TranslationAligner.align(enChapters, zhChapters),
+            pairs = TranslationAligner.align(enChapters, zhChapters, meaningIndex),
             alignerVersion = TranslationAligner.VERSION
         )
     }
+
+    /** 词义锚点查询（延迟打开 ecdict 副本，单词缓存）。 */
+    private val meaningIndex: MeaningIndex by lazy { EcdictMeaningIndex(application) }
 
     private fun save(memory: TranslationMemory) {
         memoryDir.mkdirs()
@@ -232,4 +235,62 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
     }
 
     private fun memoryFile(sourceBookId: String) = File(memoryDir, "$sourceBookId.json")
+}
+
+/**
+ * 基于 ECDICT（离线词典）的词义锚点：
+ * 英文词 → 释义中的中文短语集合。词形走 forms 表回退到 lemma；短语经
+ * [MeaningPhraseParser] 过滤（实义词性白名单 + 虚词黑名单）。
+ *
+ * 数据库复用词典的 filesDir 副本（DictionaryRepository 同一路径），只读打开；
+ * 首次打开时若副本不存在则从 assets 拷贝（与词典逻辑一致）。
+ */
+internal class EcdictMeaningIndex(private val application: Application) : MeaningIndex {
+
+    private val cache = HashMap<String, Set<String>>()
+
+    private val db: android.database.sqlite.SQLiteDatabase by lazy {
+        val databaseDir = File(application.filesDir, "dictionary").apply { mkdirs() }
+        val target = File(databaseDir, "ecdict-v2.sqlite")
+        if (!target.exists() || target.length() == 0L) {
+            val temp = File(databaseDir, "ecdict-v2.sqlite.tmp")
+            application.assets.open("dictionary/ecdict.sqlite").use { input ->
+                temp.outputStream().use { output -> input.copyTo(output) }
+            }
+            if (!temp.renameTo(target)) {
+                target.outputStream().use { output ->
+                    temp.inputStream().use { it.copyTo(output) }
+                }
+                temp.delete()
+            }
+        }
+        android.database.sqlite.SQLiteDatabase.openDatabase(
+            target.absolutePath,
+            null,
+            android.database.sqlite.SQLiteDatabase.OPEN_READONLY or
+                android.database.sqlite.SQLiteDatabase.NO_LOCALIZED_COLLATORS
+        )
+    }
+
+    override fun phrasesOf(word: String): Set<String> {
+        cache[word]?.let { return it }
+        val phrases = query(word)
+        cache[word] = phrases
+        return phrases
+    }
+
+    private fun query(word: String): Set<String> {
+        val w = word.lowercase().trim('\'', '\u2019')
+        fetchTranslation(w)?.let { return MeaningPhraseParser.parse(it) }
+        val lemma = db.rawQuery("select lemma from forms where form = ?", arrayOf(w)).use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        } ?: return emptySet()
+        fetchTranslation(lemma.lowercase())?.let { return MeaningPhraseParser.parse(it) }
+        return emptySet()
+    }
+
+    private fun fetchTranslation(word: String): String? =
+        db.rawQuery("select translation from entries where word = ?", arrayOf(word)).use { c ->
+            if (c.moveToFirst()) c.getString(0).takeIf { it.isNotBlank() } else null
+        }
 }

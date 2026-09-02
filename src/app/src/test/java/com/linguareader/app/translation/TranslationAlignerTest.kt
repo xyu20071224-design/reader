@@ -144,4 +144,35 @@ class TranslationAlignerTest {
             pairs.none { it.zhSentence.trim().startsWith("」") || it.zhSentence.trim().startsWith("』") }
         )
     }
+
+    @Test
+    fun `meaningAnchorsSteerTheDpToTheRightSentence`() {
+        // 词义锚点（用户方案）：英文词义短语在中文句里的命中数参与 pairCost。
+        // 场景：中文段 3 句、英文段 2 句（"He" 必须大写：R3 规则会把
+        // 「'…!' he cried」留成一句，锚点无从发力）。无锚时 DP 会把
+        // sorry 句配到更长的第三句（纯长度比占优）；带锚后应命中含
+        // 「對不起」的第二句。
+        val meaning = object : MeaningIndex {
+            override fun phrasesOf(word: String): Set<String> = when (word) {
+                "sorry" -> setOf("对不起", "抱歉")
+                "concern" -> setOf("关怀", "关切")
+                "cried" -> setOf("大喊", "哭泣")
+                else -> emptySet()
+            }
+        }
+        val en = listOf(listOf(
+            "'I am sorry, Frodo!' He cried, full of concern."
+        ))
+        val zh = listOf(listOf(
+            "他上前和亞拉岡說了幾句話。對不起，佛羅多！他滿懷關切地說：「今天發生了好多事。」"
+        ))
+
+        val anchoredPairs = TranslationAligner.align(en, zh, meaning)
+        val sorry = anchoredPairs.firstOrNull { it.enSentence.contains("I am sorry") }
+            ?: error("未找到 sorry 句对")
+        assertTrue(
+            "词义锚应把 sorry 句配到含「對不起」的中文句：${sorry.zhSentence}",
+            sorry.zhSentence.contains("對不起") || sorry.zhSentence.contains("对不起")
+        )
+    }
 }

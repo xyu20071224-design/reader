@@ -947,3 +947,14 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **数据层旁证（`files/vocabulary.json`）**：`study` → `surfaceForms=[]`（点的就是原型，靠 JS 规则展开命中 `studied`）；`city` → `surfaceForms=["cities"]`；点 `running` 时词典判为短语 `run through` 并记下 `surfaceForms=["running"]`。说明整词高亮是「入库表面形 + JS 词形展开」两条腿一起走。
 - **未做**：R8 release 包的真机冒烟（`feat/release-r8`）。原因是 release 没有 `signingConfig`，产物是 `app-release-unsigned.apk` 装不上，需先用 debug keystore 补签再装；合入 main 前必须补这一轮（点词/翻页/滚动/听书通知栏/PDF 导入/MiMo 音色名）。
 - **设备状态变更说明**：验证期间打开了「充电时保持唤醒」（`stay_on_while_plugged_in=3`），并临时锁过横屏（`accelerometer_rotation 0 / user_rotation 1`），结束时已还原 `accelerometer_rotation=1`；自动旋转设置回到系统默认。验证包与测试书未卸载，如需清理：`adb uninstall com.linguareader.app.verify`。
+
+## 2026-09-02 对齐器 V2「词义锚点」实现（JVM 全绿 + 整本重放，第三轮人工重测待做）
+
+- **背景**：100 样本两轮人工评估后确认剩余错配本质是「同段句序偏移」，用户拍板走词义锚定路线：像数字/拉丁锚点那样，用 ECDICT 释义把英文词义与中文译文词锚定，命中数参与 `pairCost`。实验（完整句重测）误配组 76% 零锚点、阈值 0.15 下 FP=0。
+- **实现**：`TranslationAligner.VERSION` 1→2；新 `MeaningIndex` 接口（英文词→中文释义短语集合）；`EcdictMeaningIndex`（复用词典 ecdict 副本，只读打开，单词缓存，forms 表回退 lemma）；`MeaningPhraseParser`（词性白名单 n./v./vt./vi./a./adv./adj.，虚词行整行跳过，高频虚词黑名单，行内容取 2–4 字汉字子串）；`TraditionalSimplified`（约 230 对繁→简硬编码表）。加分公式 `min(命中数,4)×0.12`，与现有锚点并列进 `pairCost`；`meaning=null` 时行为与 V1 完全一致。中文侧预计算繁简归一后的 2–4 字子串集合，DP 内层仍只做哈希查表（性能护栏守住，`TranslationAlignerBenchmarkTest` 通过）。
+- **JVM 验证**：`testDebugUnitTest` **521 个用例 0 失败 1 跳过**（新增 `MeaningPhraseParserTest` 3 个 + `TranslationAlignerTest.meaningAnchorsSteerTheDpToTheRightSentence`）。
+- **修测试时踩的两个坑**：① 旧会话用 JS `String.raw` 生成测试文件，Kotlin 里 `\n` 变成了字面反斜杠-n，分行解析没生效（测试输入自身错了）；② 该词义锚测试场景里 `'…!' he cried` 会被 R3 规则**故意**留成一句（说话人引导语归属），锚点无从发力——场景里 `he` 必须大写让英文切成两句，锚点才是决胜项。
+- **整本重放（魔戒首部曲，Robolectric 跑真 EcdictMeaningIndex 一次性工具，用完已删）**：句对 11,674 → 11,532；按（章，英文句）键对比 R3 基线：**8,538 键不变 / 1,592 键重配 / 无一例「有中文变没中文」**；平均置信度 0.829 → **0.906**。抽查重配对以改善为主（如 "Bilbo left his place and stood on a chair" 从错配句改配「比爾博離開座位……爬到椅子上」）。
+- **100 样本定位**：只有 **15/100** 条对照相对判定基线实质变化，其中 12 条原判「错」——s47/s67/s73/s76 等直接变为正确句对（f=1.0），s2/s87 等「U-漏配」类变保守（空对照）。45 条「错」原样未动，即同段句序偏移类，锚点不治本，仍留给语义路线。
+- **产物**（artifacts/，gitignored）：`realigned-v3.json`（V2 重放档案）、`alignment-eval3.csv/.html`（第三轮重测工具，15 条待用户判定）、`lotr-wordmap.json`、`eval3_compare.py`。
+- **注意**：`alignerVersion` 只写不读——已存在的设备档案不会自动重对齐，用户重新挂译本时才会用 V2。真机行为（对齐耗时是否仍在十秒级）未复测，下一次真机验收时顺带看。
