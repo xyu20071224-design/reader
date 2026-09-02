@@ -175,4 +175,132 @@ class TranslationAlignerTest {
             sorry.zhSentence.contains("對不起") || sorry.zhSentence.contains("对不起")
         )
     }
+
+    // ---------- V3：句级 1:N 合并门槛 / 兜底段句级 DP / 切句卫生 ----------
+
+    private fun mockIndex(vararg entries: Pair<String, Set<String>>) = object : MeaningIndex {
+        override fun phrasesOf(word: String): Set<String> =
+            entries.firstOrNull { it.first == word }?.second ?: emptySet()
+    }
+
+    @Test
+    fun `sentenceLevelMergeJoinsSplitTranslation`() {
+        // 译文把一个英文长句拆成两句中文：合并代价远优于 1:1，且门槛三关全过
+        // （命中≥1、尺寸达标、比局部最优 1:1 便宜 0.12 以上）→ 应产出 1:2 合并句对。
+        val meaning = mockIndex(
+            "journey" to setOf("山路"),
+            "mountains" to setOf("高山")
+        )
+        val en = listOf(listOf("The long journey across the high mountains took many days and cost many lives."))
+        val zh = listOf(listOf("漫長的山路走了好多天。", "代價是許多條人命。"))
+
+        val pairs = TranslationAligner.align(en, zh, meaning)
+        val merged = pairs.firstOrNull { it.enSentence.contains("journey") }
+            ?: error("英文句应至少产出一个句对")
+        assertTrue(
+            "长句应合并两句中文：${merged.zhSentence}",
+            merged.zhSentence.contains("山路") && merged.zhSentence.contains("人命")
+        )
+        assertTrue("合并句对应带 0.85 置信度折扣：${merged.confidence}", merged.confidence < 1f)
+    }
+
+    @Test
+    fun `mergeGateBlocksHeadingAbsorption`() {
+        // 「STRIDER」类标题（1 词）即使有锚点命中也禁合并（s66 教训）。
+        // 3 个英文段对 1 个中文段，段落级 DP 必然 2:1 合并并把标题卷进长句；
+        // 句级门槛应把它挡下：标题不得出现在任何句对里。
+        val meaning = mockIndex("enemy" to setOf("敵人"))
+        val en = listOf(
+            "STRIDER!",
+            "He that is the enemy of the ring must be strong and swift and fearsome to behold.",
+            "Night fell upon the sleeping village."
+        )
+        val zh = listOf("魔戒的敵人必須強壯敏捷令人畏懼。")
+
+        val pairs = TranslationAligner.align(listOf(en), listOf(zh), meaning)
+        assertTrue(
+            "标题不得出现在任何句对里：${pairs.map { it.enSentence }}",
+            pairs.none { it.enSentence.startsWith("STRIDER") }
+        )
+    }
+
+    @Test
+    fun `mergeGateRequiresMeaningOverlap`() {
+        // 合并哪怕在长度上占优，没有词义命中也不准合（无语义证据不合并）。
+        val meaning = mockIndex()
+        val en = listOf(listOf("Alpha beta gamma delta epsilon zeta eta theta."))
+        val zh = listOf(listOf("甲乙丙丁。", "戊己庚辛壬。"))
+
+        val pairs = TranslationAligner.align(en, zh, meaning)
+        assertTrue(
+            "无命中的合并应被拒：${pairs.map { it.zhSentence }}",
+            pairs.none { it.zhSentence.contains("甲") && it.zhSentence.contains("庚") }
+        )
+    }
+
+    @Test
+    fun `mergeGateRespectsMargin`() {
+        // 合并只比局部最优 1:1 好一点点（< 0.12）时禁止合并（s11 教训：
+        // 本来就配得好的句子会被贪婪合并抢走正确译文）。
+        val meaning = mockIndex("cats" to setOf("養貓"))
+        val en = listOf(listOf("The old man kept cats in his house."))
+        val zh = listOf(listOf("老人在小屋裡養貓。", "後來他們走了。"))
+
+        val pairs = TranslationAligner.align(en, zh, meaning)
+        assertTrue(
+            "边际不足的合并应被拒：${pairs.map { it.zhSentence }}",
+            pairs.none { it.zhSentence.contains("養貓") && it.zhSentence.contains("走了") }
+        )
+        val kept = pairs.firstOrNull { it.enSentence.contains("cats") }
+        assertTrue(
+            "原 1:1 正确配对应保留：${kept?.zhSentence}",
+            kept != null && kept.zhSentence.contains("養貓")
+        )
+    }
+
+    @Test
+    fun `skippedParagraphGetsSentenceLevelFallback`() {
+        // 段落 DP 跳过的段落（V3 起）应与最近已对齐段落跑句级兜底，
+        // 产出句级条目（置信度乘 0.55 兜底折扣）而非只有整段一锅端。
+        val meaning = mockIndex("cats" to setOf("養貓"))
+        val en = listOf(
+            "The old man kept cats in his house.",
+            "Tom gave his brother a silver coin yesterday evening. Then he walked home in the rain.",
+            "Night fell upon the sleeping village. Stars appeared above the dark hills. A cold wind blew from the mountains."
+        )
+        val zh = listOf("老人在小屋裡養貓。")
+
+        val pairs = TranslationAligner.align(listOf(en), listOf(zh), meaning)
+        val skipped = en[2]
+        val sentenceFallback = pairs.filter { it.enParagraph == skipped && it.enSentence.isNotBlank() }
+        assertTrue("被跳过段落应有句级兜底条目：${pairs.map { it.enParagraph to it.enSentence }}", sentenceFallback.isNotEmpty())
+        assertTrue(
+            "句级兜底置信度应落在折扣区间 [0.30, 0.56]：${sentenceFallback.map { it.confidence }}",
+            sentenceFallback.all { it.confidence >= 0.30f && it.confidence <= 0.56f }
+        )
+        // 段级兜底条目只在自身置信度 ≥0.30 时才落盘（本例 C 段与中文段长度比失衡，
+        // 段级置信度 ~0.27 被正确丢弃——查询侧 4/5 级反正会拒，落盘只是白占体积）。
+        assertTrue(
+            "段级兜底条目不得低于查询门槛：${pairs.filter { it.enParagraph == skipped && it.enSentence.isBlank() }.map { it.confidence }}",
+            pairs.filter { it.enParagraph == skipped && it.enSentence.isBlank() }
+                .all { it.confidence >= 0.30f }
+        )
+    }
+
+    @Test
+    fun `punctuationOnlySentencesAreDropped`() {
+        // 切句残渣「 . 」不参与对齐、不产出句对（U 层垃圾句的教训）。
+        val en = listOf(listOf("He said. . The end came quickly."))
+        val zh = listOf(listOf("他說。", "末日很快就來了。"))
+
+        val pairs = TranslationAligner.align(en, zh)
+        assertTrue(
+            "纯标点句不得出现在句对里：${pairs.map { it.enSentence }}",
+            pairs.none { it.enSentence.trim() == "." }
+        )
+        assertTrue(
+            "正常句子应保留句对：${pairs.map { it.enSentence }}",
+            pairs.any { it.enSentence.contains("The end") }
+        )
+    }
 }

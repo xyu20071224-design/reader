@@ -18,24 +18,45 @@ interface MeaningIndex {
  *  1. 章节对齐：按章节整体特征做 1:1 / 1:0 / 0:1 对齐（章节数不一致时允许跳过）。
  *  2. 段落对齐：章节内按叶级段落（与阅读器/TTS 同一选择器）做 DP，允许
  *     1:0 / 0:1 / 1:1 / 2:1 / 1:2（对应省略、合并、拆分）。
- *  3. 句子对齐：对齐段落内用 [SentenceSplitter] 分句后做小规模 DP。
+ *  3. 句子对齐：对齐段落内用 [SentenceSplitter] 分句后做小规模 DP；V3 起允许
+ *     2:1 / 1:2 合并，但必须过 [sentenceMergeAllowed] 三道门槛（语义证据 /
+ *     尺寸保护 / 边际收益）。
  *
- * 对齐代价 = 长度比偏差（英文词数 vs 中文有效字符数）− 数字/拉丁专名锚点命中率。
+ * 对齐代价 = 长度比偏差（英文词数 vs 中文有效字符数）− 数字/拉丁专名锚点命中率
+ * − 词义锚点加分（V2：ECDICT 释义短语命中）。
  * 置信度 = 1 − 归一化代价，钳制到 [MIN_CONFIDENCE, 1]。
  *
  * **性能上的硬要求**：代价函数在 O(n·m) 的 DP 内层被调用，因此它只允许做算术与
- * 哈希查表，绝不能扫描文本。所有文本特征（词数、字符数、锚点集合）都在进入 DP
- * 之前按片段预计算一次 —— 早期实现每格都对整段/整章重新跑正则并 `lowercase()`
- * 拷贝整章文本，真机上整本小说跑 5 分钟以上仍未结束（单线程 100% CPU）。
+ * 哈希查表，绝不能扫描文本。所有文本特征（词数、字符数、锚点集合、词义短语集、
+ * 中文 2–4 字子串集）都在进入 DP 之前按片段预计算一次 —— 早期实现每格都对整段/
+ * 整章重新跑正则并 `lowercase()` 拷贝整章文本，真机上整本小说跑 5 分钟以上仍未
+ * 结束（单线程 100% CPU）。
  */
 object TranslationAligner {
 
     /** 档案里把多少号对齐器写入 alignerVersion；算法/分句规则变化时必须 +1。 */
-    const val VERSION = 2
+    const val VERSION = 3
 
     /** 词义锚点每次命中的加分上限与单点权重（与「数字/拉丁锚点」同量级、略高）。 */
     private const val MEANING_MAX_HITS = 4
     private const val MEANING_HIT_SCALE = 0.12f
+
+    /**
+     * 句级 1:N 合并门槛（V3）：合并必须同时满足
+     *  ① 合并对至少有一个词义锚点命中（无语义证据不合并）；
+     *  ② 尺寸保护：英文侧词数 ≥2、中文侧字符数 ≥6（标题/超短句禁合并，
+     *     「STRIDER」被吸进邻近长句的教训）；
+     *  ③ 边际要求：合并代价要比局部最优的 1:1 拆分便宜 [SENTENCE_MERGE_MARGIN]
+     *     以上（「本来就配得好就不要合并」，否则正确配对会被合并抢走）。
+     * 无 meaning 源时 ① 恒不满足，合并自动禁用（行为保守回退）。
+     */
+    private const val SENTENCE_MERGE_MIN_EN_WORDS = 2
+    private const val SENTENCE_MERGE_MIN_ZH_CHARS = 6
+    private const val SENTENCE_MERGE_MARGIN = 0.12
+
+    /** 句级合并对的置信度折扣（类比段级 [MERGED_CONSTITUENT_SCALE]：真配对，但粒度跳）。 */
+    private const val SENTENCE_MERGE_SCALE = 0.85f
+
     const val MIN_CONFIDENCE = 0.15f
     private const val SKIP_COST = 1.2
 
@@ -98,14 +119,14 @@ object TranslationAligner {
                 if (enParagraph.isBlank() || zhParagraph.isBlank()) continue
                 for (index in paragraphPair.a) zhForEn[index] = paragraphPair.b[0]
 
-                val enSentences = SentenceSplitter.split(enParagraph).filter { it.isNotBlank() }
-                val zhSentences = splitChinese(zhParagraph)
+                val enSentences = SentenceSplitter.split(enParagraph).contentOnly()
+                val zhSentences = splitChinese(zhParagraph).contentOnly()
                 val enSentenceSpans = enSentences.map { englishSpan(it, meaning) }
                 val zhSentenceSpans = zhSentences.map { chineseSpan(it) }
 
                 val sentencePairs =
                     if (enSentences.isEmpty() || zhSentences.isEmpty()) emptyList()
-                    else alignSpans(enSentenceSpans, zhSentenceSpans, allowMerge = false)
+                    else alignSpans(enSentenceSpans, zhSentenceSpans, allowMerge = true, mergeGate = ::sentenceMergeAllowed)
 
                 if (sentencePairs.isEmpty()) {
                     // 句子级无法对齐 → 降级为段落对照。
@@ -120,6 +141,15 @@ object TranslationAligner {
                     )
                 } else {
                     for (sentencePair in sentencePairs) {
+                        val raw = confidenceOf(
+                            enSentenceSpans, sentencePair.a,
+                            zhSentenceSpans, sentencePair.b
+                        )
+                        // 合并句对（1:N）是真配对但粒度跳，置信度轻折扣。
+                        val confidence =
+                            if (sentencePair.a.size > 1 || sentencePair.b.size > 1) {
+                                (raw * SENTENCE_MERGE_SCALE).coerceIn(MIN_CONFIDENCE, 1f)
+                            } else raw
                         result += AlignedSentencePair(
                             enChapter = enIdx,
                             zhChapter = zhIdx,
@@ -127,10 +157,7 @@ object TranslationAligner {
                             zhParagraph = zhParagraph,
                             enSentence = join(enSentences, sentencePair.a),
                             zhSentence = join(zhSentences, sentencePair.b),
-                            confidence = confidenceOf(
-                                enSentenceSpans, sentencePair.a,
-                                zhSentenceSpans, sentencePair.b
-                            )
+                            confidence = confidence
                         )
                     }
                 }
@@ -164,7 +191,8 @@ object TranslationAligner {
                 zhParagraphs = zhParagraphs,
                 enSpans = enSpans,
                 zhSpans = zhSpans,
-                zhForEn = zhForEn
+                zhForEn = zhForEn,
+                meaning = meaning
             )
         }
         return result
@@ -175,9 +203,10 @@ object TranslationAligner {
     /**
      * 段落级 DP 只允许 1:1 / 2:1 / 1:2，所以英文段落数超过中文段落数两倍时，多出来的
      * 只能被跳过（实测整本魔戒有 13.3% 的段落落在这里，用户在这些段落里点词完全看不到
-     * 对照）。这里把被跳过的段落挂到**下标最近**的已对齐段落所对应的中文段落上，产出
-     * 段级对照，置信度 = 基准值 × [NEIGHBOUR_CONFIDENCE_SCALE] ÷ 距离。
-     *
+     * 对照）。这里把被跳过的段落挂到**下标最近**的已对齐段落所对应的中文段落上：
+     *  - 先跑一次句级 DP 产出句级对照（V3）：被跳过段落的句子有真实代价函数可依，
+     *    不再只有「整段一锅端」；置信度同样乘 [NEIGHBOUR_CONFIDENCE_SCALE] ÷ 距离；
+     *  - 段级条目保留（查询侧 4/5 级降级用）。
      * 低于 [TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE] 的直接不产出：查询阶段反正
      * 会拒掉，落盘只是白占体积。
      */
@@ -188,7 +217,8 @@ object TranslationAligner {
         zhParagraphs: List<String>,
         enSpans: List<Span>,
         zhSpans: List<Span>,
-        zhForEn: Map<Int, Int>
+        zhForEn: Map<Int, Int>,
+        meaning: MeaningIndex?
     ): List<AlignedSentencePair> {
         if (zhForEn.isEmpty()) return emptyList()
         val covered = zhForEn.keys.toIntArray()
@@ -205,6 +235,36 @@ object TranslationAligner {
             if (zhParagraph.isBlank()) continue
 
             val distance = abs(nearest - index).coerceAtLeast(1)
+
+            // 句级兜底（V3）：句级 DP 出来的配对仍是真代价函数的选择，只是段落对应近似。
+            val enSentences = SentenceSplitter.split(enParagraph).contentOnly()
+            val zhSentences = splitChinese(zhParagraph).contentOnly()
+            if (enSentences.isNotEmpty() && zhSentences.isNotEmpty()) {
+                val enSentenceSpans = enSentences.map { englishSpan(it, meaning) }
+                val zhSentenceSpans = zhSentences.map { chineseSpan(it) }
+                for (sentencePair in alignSpans(enSentenceSpans, zhSentenceSpans, allowMerge = false)) {
+                    val cost = pairCost(
+                        enSentenceSpans[sentencePair.a[0]],
+                        sentencePair.a.getOrNull(1)?.let { enSentenceSpans[it] },
+                        zhSentenceSpans[sentencePair.b[0]],
+                        sentencePair.b.getOrNull(1)?.let { zhSentenceSpans[it] }
+                    )
+                    val confidence = ((1.0 - cost) * NEIGHBOUR_CONFIDENCE_SCALE / distance)
+                        .coerceIn(0.0, 1.0)
+                        .toFloat()
+                    if (confidence < TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE) continue
+                    fallbacks += AlignedSentencePair(
+                        enChapter = enChapter,
+                        zhChapter = zhChapter,
+                        enParagraph = enParagraph,
+                        zhParagraph = zhParagraph,
+                        enSentence = join(enSentences, sentencePair.a),
+                        zhSentence = join(zhSentences, sentencePair.b),
+                        confidence = confidence
+                    )
+                }
+            }
+
             val base = 1.0 - pairCost(enSpans[index], null, zhSpans[zhIndex], null)
             val confidence = (base * NEIGHBOUR_CONFIDENCE_SCALE / distance)
                 .coerceIn(0.0, 1.0)
@@ -334,7 +394,9 @@ object TranslationAligner {
 
     /**
      * 用 DP 把两个片段序列单调对齐。允许 1:0 / 0:1 / 1:1，[allowMerge] 时额外允许
-     * 2:1 / 1:2。返回「已对齐的下标对」（跳过项不产出）。
+     * 2:1 / 1:2。[mergeGate] 非空时，每个合并走法还要过一道准入检查（句级 1:N 的
+     * 语义/尺寸/边际门槛；段落级合并不设门槛）。
+     * 返回「已对齐的下标对」（跳过项不产出）。
      *
      * dp 只保留最近三行（2:1 / 1:2 会回看 i−2、j−2），回溯靠每格 1 字节的走法矩阵，
      * 因此内存是 O(n·m) 字节而不是 O(n·m) 个 double + 对象。
@@ -342,7 +404,8 @@ object TranslationAligner {
     private fun alignSpans(
         a: List<Span>,
         b: List<Span>,
-        allowMerge: Boolean
+        allowMerge: Boolean,
+        mergeGate: ((Span, Span?, Span, Span?) -> Boolean)? = null
     ): List<SpanPair> {
         if (a.isEmpty() || b.isEmpty()) return emptyList()
         val n = a.size
@@ -383,14 +446,18 @@ object TranslationAligner {
                     }
                 }
                 if (allowMerge) {
-                    if (i > 1 && j > 0 && prev2[j - 1] < Double.POSITIVE_INFINITY) {
+                    if (i > 1 && j > 0 && prev2[j - 1] < Double.POSITIVE_INFINITY &&
+                        (mergeGate == null || mergeGate(a[i - 2], a[i - 1], b[j - 1], null))
+                    ) {
                         val cost = prev2[j - 1] + pairCost(a[i - 2], a[i - 1], b[j - 1], null)
                         if (cost < best) {
                             best = cost
                             move = MOVE_TWO_ONE
                         }
                     }
-                    if (i > 0 && j > 1 && prev1[j - 2] < Double.POSITIVE_INFINITY) {
+                    if (i > 0 && j > 1 && prev1[j - 2] < Double.POSITIVE_INFINITY &&
+                        (mergeGate == null || mergeGate(a[i - 1], null, b[j - 2], b[j - 1]))
+                    ) {
                         val cost = prev1[j - 2] + pairCost(a[i - 1], null, b[j - 2], b[j - 1])
                         if (cost < best) {
                             best = cost
@@ -473,6 +540,38 @@ object TranslationAligner {
     }
 
     private val ZH_CLOSING_LEADS = setOf('」', '』', '"', '\'', '）', '】')
+
+    /** 纯标点句（切句残渣「 . 」这类）不参与对齐：没有可点词，也没有对照价值。 */
+    private fun List<String>.contentOnly(): List<String> =
+        filter { it.isNotBlank() && it.any { ch -> ch.isLetterOrDigit() } }
+
+    /**
+     * 句级 1:N 合并准入检查（详见 [SENTENCE_MERGE_MARGIN] 上的说明）。
+     * 三道门槛：词义锚点命中 ≥1、尺寸保护、合并须比局部最优 1:1 便宜
+     * [SENTENCE_MERGE_MARGIN] 以上。全部是 O(1) 哈希查表与算术，守住性能护栏。
+     */
+    private fun sentenceMergeAllowed(en1: Span, en2: Span?, zh1: Span, zh2: Span?): Boolean {
+        for (en in listOfNotNull(en1, en2)) {
+            if (en.words < SENTENCE_MERGE_MIN_EN_WORDS) return false
+        }
+        for (zh in listOfNotNull(zh1, zh2)) {
+            if (zh.chars < SENTENCE_MERGE_MIN_ZH_CHARS) return false
+        }
+        if (meaningBonus(en1.meaning, en2?.meaning, zh1.meaning, zh2?.meaning) <= 0.0) return false
+        val merged = pairCost(en1, en2, zh1, zh2)
+        val local = if (en2 == null) {
+            minOf(
+                pairCost(en1, null, zh1, null),
+                pairCost(en1, null, zh2!!, null)
+            )
+        } else {
+            minOf(
+                pairCost(en1, null, zh1, null),
+                pairCost(en2, null, zh1, null)
+            )
+        }
+        return merged <= local - SENTENCE_MERGE_MARGIN
+    }
 
     // --- 代价与置信度（只做算术与哈希查表） ----------------------------------
 
