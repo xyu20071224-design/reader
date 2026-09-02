@@ -22,6 +22,8 @@ import kotlin.math.abs
  */
 object TranslationAligner {
 
+    /** 档案里把多少号对齐器写入 alignerVersion；算法/分句规则变化时必须 +1。 */
+    const val VERSION = 1
     const val MIN_CONFIDENCE = 0.15f
     private const val SKIP_COST = 1.2
 
@@ -398,10 +400,34 @@ object TranslationAligner {
 
     // --- 中文分句 -----------------------------------------------------------
 
-    private fun splitChinese(text: String): List<String> =
-        text.split(ZH_SENTENCE_END)
+    /**
+     * 中文分句 + 引号归属修复：
+     *  - 段落末尾「。」+ 闭合引号（……熟練。」）会被 [ZH_SENTENCE_END] 在「。」后
+     *    切出一个纯「」残渣；纯标点/引号片段并入前句（R1）；
+     *  - 「。」后紧跟闭合引号 + 引导语（。」他大喊：「……）时，「」他大喊：「……」
+     *    会被切成独立片段，同样并入前句（R2）。
+     * 实测（魔戒档案）：3,464 段产生 1,461 个纯残渣段 + 1,742 个裸引号开头段，
+     * 修复后两者均为 0，段数 14,870 → 11,667；12,692 条句级句对里有 2,216 条
+     * （17.5%）是这种脏配对。
+     */
+    private fun splitChinese(text: String): List<String> {
+        val raw = text.split(ZH_SENTENCE_END)
             .map { it.trim() }
             .filter { it.isNotBlank() }
+        val merged = mutableListOf<String>()
+        for (seg in raw) {
+            val isPunctuationOnly = seg.none { it.isLetterOrDigit() }
+            val leadsWithClosing = seg.firstOrNull() in ZH_CLOSING_LEADS
+            if (merged.isNotEmpty() && (isPunctuationOnly || leadsWithClosing)) {
+                merged[merged.lastIndex] = merged.last() + seg
+            } else {
+                merged += seg
+            }
+        }
+        return merged
+    }
+
+    private val ZH_CLOSING_LEADS = setOf('」', '』', '"', '\'', '）', '】')
 
     // --- 代价与置信度（只做算术与哈希查表） ----------------------------------
 

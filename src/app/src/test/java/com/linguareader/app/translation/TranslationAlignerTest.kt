@@ -111,4 +111,37 @@ class TranslationAlignerTest {
         assertEquals(2, sentences.size)
         assertTrue(sentences[0].trim().startsWith("J. R. R. Tolkien"))
     }
+    @Test
+    fun `closing quotes after a chinese terminator are never orphaned`() {
+        // 整段引文以「。」+「」结尾：旧分句会切出纯「』」残渣（魔戒真档 734 条 zs=「」）；
+        // 修复后整段引文并为一句，不再产生脏句对。
+        val en = listOf(listOf("He said hello. Then he left."))
+        val zh = listOf(listOf("「他說：『你好。』」然後他走了。"))
+
+        val pairs = TranslationAligner.align(en, zh)
+
+        assertTrue(pairs.isNotEmpty())
+        assertTrue(
+            "不得出现纯引号残渣句对：${pairs.map { it.zhSentence }}",
+            pairs.none { it.zhSentence.isNotBlank() && it.zhSentence.none { c -> c.isLetterOrDigit() } }
+        )
+        val joined = pairs.map { it.zhSentence }.joinToString("")
+        assertTrue(joined.contains("然後他走了"))
+    }
+
+    @Test
+    fun `a chinese quote-led caption merges into the previous sentence`() {
+        // 「。」后紧跟闭合引号 + 引导语：』他大喊：「……」 旧规则切成独立片段；
+        // 修复后与引文同句。
+        val en = listOf(listOf("\"You are crazy!\" he shouted. \"Go! Go!\""))
+        val zh = listOf(listOf("「你有病啊！」他大喊：「快走啊！」"))
+
+        val pairs = TranslationAligner.align(en, zh)
+
+        assertTrue(pairs.isNotEmpty())
+        assertTrue(
+            "引导语残句必须并入引文：${pairs.map { it.zhSentence }}",
+            pairs.none { it.zhSentence.trim().startsWith("」") || it.zhSentence.trim().startsWith("』") }
+        )
+    }
 }

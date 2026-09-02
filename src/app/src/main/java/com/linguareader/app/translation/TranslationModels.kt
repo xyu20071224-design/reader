@@ -81,7 +81,12 @@ data class TranslationMemory(
     val translationTitle: String,
     val alignedAt: Long,
     val pairs: List<AlignedSentencePair>,
-    val terms: List<BookTerm> = emptyList()
+    val terms: List<BookTerm> = emptyList(),
+    /**
+     * 生成该档案时对齐器版本（[TranslationAligner.VERSION]）。
+     * 旧档案没有此字段，读出即 0；重对齐后写入当前版本。
+     */
+    val alignerVersion: Int = 0
 ) {
     fun toJson(): JSONObject {
         val enParagraphs = ArrayList<String>()
@@ -120,6 +125,7 @@ data class TranslationMemory(
             .put("zhParagraphs", JSONArray(zhParagraphs as Collection<*>))
             .put("pairs", pairArray)
             .put("terms", JSONArray().apply { terms.forEach { put(it.toJson()) } })
+            .put("alignerVersion", alignerVersion)
     }
 
     companion object {
@@ -155,6 +161,7 @@ data class TranslationMemory(
                 translationTitle = json.optString("translationTitle"),
                 alignedAt = json.optLong("alignedAt"),
                 pairs = pairs,
+                alignerVersion = json.optInt("alignerVersion"),
                 terms = if (termsJson == null) emptyList()
                 else (0 until termsJson.length()).mapNotNull { index ->
                     termsJson.optJSONObject(index)?.let { BookTerm.fromJson(it) }

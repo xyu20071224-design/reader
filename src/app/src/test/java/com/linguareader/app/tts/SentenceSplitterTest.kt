@@ -75,6 +75,28 @@ class SentenceSplitterTest {
     }
 
     @Test
+    fun `keepsCaptionFragmentWithItsQuoteWhenItStartsWithLowercase`() {
+        // R3：句末标点后跟小写字母 = 说话人引导语延续，不是新句。
+        val sentences = SentenceSplitter.split(
+            "\"I am sorry, Frodo!\" he cried, full of concern. \"So much has happened this day.\""
+        )
+
+        assertEquals(2, sentences.size)
+        assertEquals("\"I am sorry, Frodo!\" he cried, full of concern.", sentences[0].trim())
+        assertEquals("\"So much has happened this day.\"", sentences[1].trim())
+    }
+
+    @Test
+    fun `splitsWhenTerminatorIsFollowedByACapitalOrAQuote`() {
+        // R3 不能误伤正常句界：句末后大写字母或新引号开句仍要切。
+        val sentences = SentenceSplitter.split(
+            "She asked, \"Is it true?\" He nodded. \"Then leave,\" she added."
+        )
+
+        assertEquals(3, sentences.size)
+    }
+
+    @Test
     fun returnsWholeTextWhenNoTerminatorExists() {
         val sentences = SentenceSplitter.split("This is one long unbroken sentence")
 

@@ -209,7 +209,8 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
             translationBookId = translation.id,
             translationTitle = translation.title,
             alignedAt = System.currentTimeMillis(),
-            pairs = TranslationAligner.align(enChapters, zhChapters)
+            pairs = TranslationAligner.align(enChapters, zhChapters),
+            alignerVersion = TranslationAligner.VERSION
         )
     }
 

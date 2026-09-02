@@ -52,7 +52,9 @@ object SentenceSplitter {
                         val next = nextNonSpace?.let { text[it] }
                         next == null || !next.isLowerCase()
                     }
-                    else -> text[end] == ' '
+                    // 句末标点后跟**小写字母** → 是说话人引导语/残句的延续，不是新句：
+                    // 'I am sorry, Frodo!' he cried, full of concern. 是一句。
+                    else -> text[end] == ' ' && !(nextNonSpace?.let { text[it].isLowerCase() } ?: false)
                 }
                 if (shouldSplit) {
                     result.add(current.toString().trim())
