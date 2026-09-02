@@ -8,6 +8,9 @@ import com.linguareader.app.data.Chapter
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.translation.TranslationMemoryRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -93,6 +96,42 @@ class AiTranslationRepositoryTest {
             AiSettingsStore(context),
             BookGlossaryRepository(context)
         ) { chat }
+
+    /** N 章书，每章一段独立文字（每章 1 批），供断路器测试凑批数。 */
+    private fun makeBatchBook(chapterCount: Int): Book {
+        val dir = File(context.filesDir, "books-src/$sourceBookId-breaker")
+        dir.deleteRecursively()
+        dir.mkdirs()
+        val chapters = (0 until chapterCount).map { index ->
+            val name = "chapter_%03d.xhtml".format(index)
+            File(dir, name).writeText(
+                "<html><body><p>Paragraph $index of the breaker book.</p></body></html>"
+            )
+            Chapter(title = "C$index", relativePath = name)
+        }
+        return Book(
+            id = "$sourceBookId-breaker",
+            title = "Breaker Book",
+            author = "Author",
+            extractedDir = dir.absolutePath,
+            coverRelativePath = null,
+            chapters = chapters,
+            addedAt = 0L
+        )
+    }
+
+    /** 与 FakeChat 同款「翻译」：从 prompt 抽编号段落，原文前加 译N：。 */
+    private fun segmentsReply(user: String): JSONObject {
+        val array = JSONArray()
+        Regex("\\[(\\d+)] (.+)").findAll(user).forEach { match ->
+            array.put(
+                JSONObject()
+                    .put("i", match.groupValues[1].toInt())
+                    .put("t", "译${match.groupValues[1]}：${match.groupValues[2]}")
+            )
+        }
+        return JSONObject().put("segments", array)
+    }
 
     /** 记录退避时长而不真的睡，单测才跑得快。 */
     private fun repository(
@@ -410,5 +449,87 @@ class AiTranslationRepositoryTest {
         assertEquals("Kimi", regen.author)
         // 标题以服务商名开头（zh「Kimi AI 译本」/ en「Kimi AI translation」通吃）。
         assertTrue(regen.title.startsWith("Kimi"))
+    }
+
+    @Test
+    fun `three consecutive failed batches abort the book`() = runBlocking {
+        val book = makeBatchBook(4)
+        val delays = mutableListOf<Long>()
+        val chat = object : AiTranslationChatClient {
+            var calls = 0
+            override suspend fun translateSegments(system: String, user: String): JSONObject {
+                calls++
+                throw AiRequestException("AI 接口返回 HTTP 401：invalid api key")
+            }
+        }
+        val failedChapters = mutableListOf<Int>()
+        assertThrows(AiTranslationAbortedException::class.java) {
+            runBlocking {
+                repository(chat, delays).translateBook(
+                    book,
+                    onBatchFailed = { batch, _ -> failedChapters += batch.chapterIndex }
+                ) { _ -> }
+            }
+        }
+        // 每批重试耗尽要 2 次请求；第 3 批失败即中止，第 4 批不再碰。
+        assertEquals(6, chat.calls)
+        assertEquals(listOf(0, 1, 2), failedChapters)
+        // 中止不落译文正文、不 attach：加译本入口保持可用，检查点（这里没有
+        // 成功批）之外的状态干净。
+        assertTrue(!File(context.filesDir, "translations/ai-${book.id}").exists())
+    }
+
+    @Test
+    fun `a successful batch resets the consecutive failure counter`() = runBlocking {
+        val book = makeBatchBook(4)
+        val delays = mutableListOf<Long>()
+        // 调用序（失败批 = 初试+带原因重试共 2 次，成功批 = 1 次）：
+        // 批 1 败败、批 2 成、批 3 成、批 4 败败 = 6 次。
+        // 成功重置计数 → 批 4 的单批失败不触发中止（按累计语义这里会误中止）。
+        val chat = object : AiTranslationChatClient {
+            var calls = 0
+            override suspend fun translateSegments(system: String, user: String): JSONObject {
+                calls++
+                if (calls <= 2 || calls in 5..6) {
+                    throw AiRequestException("AI 接口返回 HTTP 503：busy")
+                }
+                return segmentsReply(user)
+            }
+        }
+        val failedChapters = mutableListOf<Int>()
+        repository(chat, delays).translateBook(
+            book,
+            onBatchFailed = { batch, _ -> failedChapters += batch.chapterIndex }
+        ) { _ -> }
+        assertEquals(6, chat.calls)
+        assertEquals(listOf(0, 3), failedChapters)
+    }
+
+    @Test
+    fun `cancel after a paid response still stores the checkpoint`() = runBlocking {
+        val book = makeSourceBook()
+        val chat = object : AiTranslationChatClient {
+            var calls = 0
+            /** 测试侧注入的外层 launch Job：fake 直接对它 cancel/ensureActive。 */
+            var outerJob: Job? = null
+            override suspend fun translateSegments(system: String, user: String): JSONObject {
+                calls++
+                if (calls == 1) {
+                    // 模拟「响应刚到手、调用方已取消」：先取消外层 job 再正常返回译文。
+                    outerJob?.cancel()
+                } else {
+                    // 模拟真实线路：withContext(IO) 在已取消的调用方 job 上立即抛出。
+                    outerJob?.ensureActive()
+                }
+                return segmentsReply(user)
+            }
+        }
+        val job = launch { repository(chat).translateBook(book) { _ -> } }
+        chat.outerJob = job
+        job.join()
+        // 已付费的批次必须落检查点（NonCancellable），否则恢复时重复计费。
+        assertTrue(File(context.filesDir, "ai/ai-translations/$sourceBookId/0-0.json").isFile)
+        // 取消即时生效：第二批的第一请求即被拦下。
+        assertEquals(2, chat.calls)
     }
 }

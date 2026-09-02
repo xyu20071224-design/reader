@@ -137,6 +137,7 @@
     <string name="translation_ai_title">%1$s AI 译本</string>
     <string name="notice_translation_ai_started">AI 译本生成已开始：《%1$s》</string>
     <string name="notice_translation_ai_cancelled">AI 译本生成已取消，已完成进度保留，可随时重新开始续跑</string>
+    <string name="notice_translation_ai_aborted">《%1$s》连续 %2$d 批翻译失败，生成已中止。请检查服务商配置与网络；已完成批次已保留，重新生成会自动续跑</string>
     <string name="notice_translation_ai_failed">AI 译本生成失败：%1$s（已完成进度保留，可重试续跑）</string>
     <string name="notice_translation_ai_need_key">请先在「AI 中心」配置 DeepSeek API Key，再使用 AI 生成译本</string>
     <string name="reader_translation_title">译本对照</string>

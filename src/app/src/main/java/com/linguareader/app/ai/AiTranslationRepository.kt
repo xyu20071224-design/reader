@@ -8,6 +8,7 @@ import com.linguareader.app.data.Chapter
 import com.linguareader.app.data.escapeHtml
 import com.linguareader.app.tts.TtsTextExtractor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -95,6 +96,9 @@ class AiTranslationRepository(
         val totalBatches = chapterBatches.sumOf { it.size }.coerceAtLeast(1)
         var finishedBatches = 0
         var tail: String? = null
+        // 连败断路器：单批失败占位继续（不拖垮整本），但连续多批重试耗尽说明
+        // 是系统性失败（坏 Key/欠费/断网），再跑下去只会把剩余章节全烧成占位。
+        var consecutiveFailures = 0
 
         val translatedChapters = chapterBatches.mapIndexed { chapterIndex, batches ->
             val chapter = book.chapters[chapterIndex]
@@ -105,12 +109,20 @@ class AiTranslationRepository(
                         tail, batch, mode, styleNotes
                     )
                     // 只有成功的批次才更新衔接上文，免得把英文原文当「前情提要」喂回去。
+                    consecutiveFailures = 0
                     tail = done.lastOrNull() ?: tail
                     done
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (error: Throwable) {
+                    consecutiveFailures++
                     onBatchFailed?.invoke(batch, error)
+                    if (consecutiveFailures >= AiBookTranslator.MAX_CONSECUTIVE_BATCH_FAILURES) {
+                        throw AiTranslationAbortedException(
+                            "连续 ${AiBookTranslator.MAX_CONSECUTIVE_BATCH_FAILURES} 批翻译失败" +
+                                "（最后错误：${error.message}），已中止整本；已完成进度已保留"
+                        )
+                    }
                     // 用英文原文占位：段落数必须与英文侧严格 1:1，否则整章对照错位；
                     // 且 xhtmlFor 会滤掉空串，空占位会直接改变段数。
                     batch.paragraphs
@@ -353,7 +365,10 @@ class AiTranslationRepository(
         hash: String,
         translations: List<String>,
         mode: String
-    ) = withContext(Dispatchers.IO) {
+    ) = withContext(Dispatchers.IO + NonCancellable) {
+        // NonCancellable：校验通过的译文已经花了钱，取消只能拦在它到手之前，
+        // 不能把「已到手未落盘」的结果丢掉——否则恢复时该批重复计费。
+        // 真正的取消响应点在批次循环的 onProgress 等挂起点。
         mutex.withLock {
             val file = checkpointFile(dir, batch)
             file.parentFile?.mkdirs()

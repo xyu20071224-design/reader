@@ -255,6 +255,28 @@ class AiBookTranslatorTest {
     }
 
     @Test
+    fun `keep original term must survive in the same paragraph not just anywhere in the batch`() {
+        // 旧批级检查的漏洞：段 0 丢掉了 Hogwarts，但段 1 的译文碰巧含同词 → 放行。
+        // 收紧为按段校验后必须拒绝；两段都保留才通过。
+        val batch = TranslationBatch(
+            0, 0, listOf(0, 1),
+            listOf("Visit Hogwarts tower.", "Hogwarts is enormous.")
+        )
+        val keep = listOf("Hogwarts")
+        assertThrows(AiRequestException::class.java) {
+            AiBookTranslator.extractValidated(
+                segmentsJson(0 to "参观塔楼。", 1 to "Hogwarts 很大。"), batch, keep
+            )
+        }
+        assertEquals(
+            listOf("参观 Hogwarts 塔楼。", "Hogwarts 很大。"),
+            AiBookTranslator.extractValidated(
+                segmentsJson(0 to "参观 Hogwarts 塔楼。", 1 to "Hogwarts 很大。"), batch, keep
+            )
+        )
+    }
+
+    @Test
     fun `absurd length ratio fails validation`() {
         val batch = TranslationBatch(0, 0, listOf(0), listOf(("word " .repeat(100)).trim()))
         assertThrows(AiRequestException::class.java) {

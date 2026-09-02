@@ -140,6 +140,7 @@
     <string name="translation_ai_title">%1$s AI translation</string>
     <string name="notice_translation_ai_started">AI translation started: \"%1$s\"</string>
     <string name="notice_translation_ai_cancelled">AI translation cancelled. Finished progress is kept and resumes next time.</string>
+    <string name="notice_translation_ai_aborted">AI translation aborted: \"%1$s\" failed %2$d batches in a row. Check the provider configuration and network; finished batches are kept and regeneration resumes from there.</string>
     <string name="notice_translation_ai_failed">AI translation failed: %1$s (finished progress is kept, you can retry)</string>
     <string name="notice_translation_ai_need_key">Configure a DeepSeek API key in AI Center before generating a translation</string>
     <string name="reader_translation_title">Paired translation</string>

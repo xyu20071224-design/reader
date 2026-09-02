@@ -5,11 +5,13 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.linguareader.app.ai.AiBookStatus
+import com.linguareader.app.ai.AiBookTranslator
 import com.linguareader.app.ai.AiLookupOutcome
 import com.linguareader.app.ai.AiLookupRequest
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.AiSettingsStore
+import com.linguareader.app.ai.AiTranslationAbortedException
 import com.linguareader.app.ai.AiTranslationRepository
 import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.ai.BookGlossaryRepository
@@ -820,6 +822,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             } catch (cancelled: CancellationException) {
                 mutableState.value = mutableState.value.copy(
                     notice = string(R.string.notice_translation_ai_cancelled)
+                )
+            } catch (aborted: AiTranslationAbortedException) {
+                // 连败断路器（AiBookTranslator.MAX_CONSECUTIVE_BATCH_FAILURES）：
+                // 系统性失败提前止损。检查点都在，排除故障后重新生成即续跑。
+                mutableState.value = mutableState.value.copy(
+                    notice = string(
+                        R.string.notice_translation_ai_aborted,
+                        book.title,
+                        AiBookTranslator.MAX_CONSECUTIVE_BATCH_FAILURES
+                    ),
+                    noticeTone = StatusTone.DANGER
                 )
             } catch (failed: Throwable) {
                 mutableState.value = mutableState.value.copy(

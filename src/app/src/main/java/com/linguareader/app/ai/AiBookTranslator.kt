@@ -32,6 +32,14 @@ object AiBookTranslator {
     /** 每批源文字符上限。按输出端标定：约 3-4k 汉字译文，稳落在输出 token 上限内。 */
     const val MAX_CHARS_PER_BATCH = 6_000
 
+    /**
+     * 连续多少批用尽重试仍失败后中止整本翻译（系统性失败的止损）。
+     * 与历史上「单批失败中止整本」（c1097ac 修掉）不冲突：那是偶发单点失败
+     * （一个数字锚点）被放大成整本必败；这里只拦「重试耗尽 × 连续 3 批」的
+     * 系统性失败（坏 Key/欠费/断网）——继续跑只会把剩下的书全烧成英文占位。
+     */
+    const val MAX_CONSECUTIVE_BATCH_FAILURES = 3
+
     /** 术语表注入 prompt 的条数上限（与语境点词的 take(80) 同量级）。 */
     private const val MAX_GLOSSARY_LINES = 80
 
@@ -155,17 +163,18 @@ object AiBookTranslator {
                     throw AiRequestException("AI 译文丢失了数字锚点「${match.value}」")
                 }
             }
-        }
-        keepOriginalTerms.forEach { term ->
-            val trimmed = term.trim()
-            if (trimmed.length < 2) return@forEach
-            val sourceHit = batch.paragraphs.any { it.contains(trimmed, ignoreCase = true) }
-            if (!sourceHit) return@forEach
-            val translatedHit = batch.paragraphIndices
-                .map { byIndex.getValue(it) }
-                .any { it.contains(trimmed, ignoreCase = true) }
-            if (!translatedHit) {
-                throw AiRequestException("AI 译文未按术语表保留原文「$trimmed」")
+            // 「保留原文」词条按段校验：本段源文出现的词条必须在本段译文存活。
+            // 过去是批级检查（同批任意译文命中即过），一段漏翻术语、另一段碰巧
+            // 含同词就会漏检。错误消息会原样进重试 prompt，别用 [N] 方括号格式。
+            keepOriginalTerms.forEach { term ->
+                val trimmed = term.trim()
+                if (trimmed.length >= 2 && source.contains(trimmed, ignoreCase = true) &&
+                    !translated.contains(trimmed, ignoreCase = true)
+                ) {
+                    throw AiRequestException(
+                        "AI 译文未按术语表保留原文「$trimmed」（编号 ${batch.paragraphIndices[position]} 的段落）"
+                    )
+                }
             }
         }
         val sourceWords = batch.paragraphs.sumOf { it.split(Regex("\\s+")).count { w -> w.isNotBlank() } }
@@ -330,3 +339,11 @@ object AiBookTranslator {
             .map { "${it.term.trim()} | ${it.translation.ifBlank { "保留原文" }} | ${it.note}" }
             .toList()
 }
+
+/**
+ * 连续多批失败触发的整本中止信号（阈值见
+ * [AiBookTranslator.MAX_CONSECUTIVE_BATCH_FAILURES]）。检查点全部保留，
+ * 排除故障后重新生成即续跑。刻意不继承 [AiRequestException]：它不出现在
+ * 单批重试链路里，线路层与重试逻辑都不该把它当成可重试的请求错误。
+ */
+class AiTranslationAbortedException(message: String) : RuntimeException(message)
