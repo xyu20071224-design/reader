@@ -2,6 +2,7 @@ package com.linguareader.app.tts
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class SentenceSplitterTest {
     @Test
@@ -84,6 +85,25 @@ class SentenceSplitterTest {
         assertEquals(2, sentences.size)
         assertEquals("\"I am sorry, Frodo!\" he cried, full of concern.", sentences[0].trim())
         assertEquals("\"So much has happened this day.\"", sentences[1].trim())
+    }
+
+    @Test
+    fun `curlyQuoteCaptionMergesButAFreshQuoteStartsANewSentence`() {
+        // 收紧版 R3：只有闭合引号归属后才可能合并；新引号开句仍切。
+        val sentences = SentenceSplitter.split(
+            "‘I am sorry, Frodo!’ he cried, full of concern. ‘So much has happened this day.’"
+        )
+
+        assertEquals(2, sentences.size)
+        assertTrue(sentences[0].trim().startsWith("‘I am sorry"))
+        assertTrue(sentences[1].trim().startsWith("‘So much"))
+    }
+
+    @Test
+    fun `noMergeWithoutClosingQuoteAttribution`() {
+        // 无引号归属的小写延续不被合并（保守：只修引语引导语，不吞整句对话）。
+        val sentences = SentenceSplitter.split("This is odd. he said nothing.")
+        assertEquals(2, sentences.size)
     }
 
     @Test

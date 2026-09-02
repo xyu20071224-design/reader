@@ -40,10 +40,12 @@ object SentenceSplitter {
                     current.append(text[end])
                     end++
                 }
+                val closingStart = end
                 while (end < text.length && text[end] in closing) {
                     current.append(text[end])
                     end++
                 }
+                val sawClosingQuote = end > closingStart
                 val nextNonSpace = (end until text.length).firstOrNull { text[it] != ' ' }
                 val shouldSplit = when {
                     end >= text.length -> true
@@ -52,9 +54,11 @@ object SentenceSplitter {
                         val next = nextNonSpace?.let { text[it] }
                         next == null || !next.isLowerCase()
                     }
-                    // 句末标点后跟**小写字母** → 是说话人引导语/残句的延续，不是新句：
-                    // 'I am sorry, Frodo!' he cried, full of concern. 是一句。
-                    else -> text[end] == ' ' && !(nextNonSpace?.let { text[it].isLowerCase() } ?: false)
+                    // 收紧版：仅当句末标点后**有闭合引号归属**、且后面跟小写字母时，
+                    // 才是说话人引导语（'I am sorry, Frodo!' he cried... 是一句）。
+                    // 无引号归属的小写延续（正常句界）照旧切分，避免把大段对话并成一句。
+                    else -> text[end] == ' ' &&
+                        !(sawClosingQuote && (nextNonSpace?.let { text[it].isLowerCase() } ?: false))
                 }
                 if (shouldSplit) {
                     result.add(current.toString().trim())
