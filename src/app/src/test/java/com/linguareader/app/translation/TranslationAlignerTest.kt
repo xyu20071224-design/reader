@@ -309,6 +309,8 @@ class TranslationAlignerTest {
         // V4：DP 残渣句对（27 词英文 ↔「啊！」这类，置信度 <0.30）不得落盘——
         // 查询侧 1–3 级是精确命中不受门槛限制，落盘必被展示成「只翻译了其中
         // 一句」。低于门槛的句子走段落级兜底（显示整段译文）。
+        // 查询侧 1–3 级是精确命中不受门槛限制，落盘必被展示成「只翻译了其中
+        // 一句」。低于门槛的句子走段落级兜底（显示整段译文）。
         // 场景要点：中文段只有一句超短句，DP 别无选择只能配出长度比崩坏的
         // 低置信对（配对比跳过便宜），从而触发丢弃路径。
         val en = listOf(listOf(
@@ -324,6 +326,45 @@ class TranslationAlignerTest {
         // 残句被拒后应降级为段级条目（整段译文兜底，不再有句级条目）。
         assertTrue(
             "应降级为段级条目：${pairs.map { it.enSentence }}",
+            pairs.isNotEmpty() && pairs.all { it.enSentence.isBlank() }
+        )
+    }
+
+    @Test
+    fun `undersizedTranslationIsDroppedByLengthGate`() {
+        // V5 长度比硬门槛：18 词英文配 6 字中文（比 0.20 < 0.45）——置信度
+        // 0.68 能过 V4 门槛，但长度比一票否决；降级为段级条目（s78/s79 型）。
+        val en = listOf(listOf(
+            "They walked through the deep dark woods for many hours until the sun went down behind the far hills."
+        ))
+        val zh = listOf(listOf("他們走了很久。"))
+
+        val pairs = TranslationAligner.align(en, zh)
+        assertTrue(
+            "严重偏短的句对不得落盘：${pairs.map { it.enSentence to it.zhSentence }}",
+            pairs.none { it.zhSentence.isNotBlank() }
+        )
+        assertTrue(
+            "应有段级条目兜底：${pairs.map { it.enSentence }}",
+            pairs.isNotEmpty() && pairs.all { it.enSentence.isBlank() }
+        )
+    }
+
+    @Test
+    fun `oversizedTranslationIsDroppedByLengthGate`() {
+        // V5 长度比硬门槛另一侧：3 词英文配 24 字中文（比 4.7 > 2.6），
+        // 置信度 ~0.35 过了 V4 门槛，长度比否决；降级为段级条目
+        // （引句归属残影型：译文含大量本句之外的内容）。
+        val en = listOf(listOf("He nodded slowly."))
+        val zh = listOf(listOf("他點了點頭，慢慢地走向門口推開沉重的木門走進黑暗走廊。"))
+
+        val pairs = TranslationAligner.align(en, zh)
+        assertTrue(
+            "严重偏长的句对不得落盘：${pairs.map { it.enSentence to it.zhSentence }}",
+            pairs.none { it.enSentence.isNotBlank() }
+        )
+        assertTrue(
+            "应有段级条目兜底：${pairs.map { it.enSentence }}",
             pairs.isNotEmpty() && pairs.all { it.enSentence.isBlank() }
         )
     }

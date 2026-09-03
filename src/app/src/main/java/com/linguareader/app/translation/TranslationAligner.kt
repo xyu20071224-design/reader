@@ -35,7 +35,7 @@ interface MeaningIndex {
 object TranslationAligner {
 
     /** 档案里把多少号对齐器写入 alignerVersion；算法/分句规则变化时必须 +1。 */
-    const val VERSION = 4
+    const val VERSION = 5
 
     /** 词义锚点每次命中的加分上限与单点权重（与「数字/拉丁锚点」同量级、略高）。 */
     private const val MEANING_MAX_HITS = 4
@@ -56,6 +56,23 @@ object TranslationAligner {
 
     /** 句级合并对的置信度折扣（类比段级 [MERGED_CONSTITUENT_SCALE]：真配对，但粒度跳）。 */
     private const val SENTENCE_MERGE_SCALE = 0.85f
+
+    /**
+     * 句对落盘的长度比硬门槛（V5）：zh 字符数 /（en 词数 × [ZH_CHARS_PER_EN_WORD]）
+     * 落在区间外的不落盘，降级为段级条目。100 样本判定拟合：残 <0.45 的样本
+     * 判定全 bad（3/3），超 >2.6 只剩 ok2/bad（ok 集最大 2.02，留 0.6 余量）；
+     * 置信度门槛管不住它们——锚点/词义加分能把长度比崩坏的错对拉回 0.30 以上。
+     * 全书占比：残 1.6% / 超 3.0%。落盘后这些句子走段落兜底（整段译文）。
+     */
+    private const val SENTENCE_MIN_LENGTH_RATIO = 0.45
+    private const val SENTENCE_MAX_LENGTH_RATIO = 2.6
+
+    /**
+     * 合并句对（1:N）的比例上限放宽一档：中文引文常被分句规则留成不可再分的
+     * 整句（「他說：『你好。』」16 字），与两侧短英文句 2:1 合并后比例 ~2.35
+     * 属正常形态；1:1 未合并对无此理由，维持 2.6 一票否决。
+     */
+    private const val SENTENCE_MAX_MERGED_LENGTH_RATIO = 3.2
 
     const val MIN_CONFIDENCE = 0.15f
     private const val SKIP_COST = 1.2
@@ -144,6 +161,13 @@ object TranslationAligner {
                             (raw * SENTENCE_MERGE_SCALE).coerceIn(MIN_CONFIDENCE, 1f)
                         } else raw
                     if (confidence < TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE) continue
+                    // V5：长度比硬门槛——置信度被锚点/词义加分拉高、但长度比
+                    // 崩坏的错对（用户主诉「长度明显不匹配的对照」）同样不落盘。
+                    // 合并对比例天然偏高（引文整句 vs 短英文引导），上限放宽一档。
+                    val ratio = lengthRatioOf(enSentenceSpans, sentencePair.a, zhSentenceSpans, sentencePair.b)
+                    val merged = sentencePair.a.size > 1 || sentencePair.b.size > 1
+                    val maxRatio = if (merged) SENTENCE_MAX_MERGED_LENGTH_RATIO else SENTENCE_MAX_LENGTH_RATIO
+                    if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > maxRatio) continue
                     emitted += AlignedSentencePair(
                         enChapter = enIdx,
                         zhChapter = zhIdx,
@@ -261,6 +285,10 @@ object TranslationAligner {
                         .coerceIn(0.0, 1.0)
                         .toFloat()
                     if (confidence < TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE) continue
+                    // V5：兜底句对同样受长度比硬门槛约束（s78/s79 型：71 词英文
+                    // 配 13 字中文、置信度 0.35 过了门槛——长度比 0.11 一票否决）。
+                    val ratio = lengthRatioOf(enSentenceSpans, sentencePair.a, zhSentenceSpans, sentencePair.b)
+                    if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > SENTENCE_MAX_LENGTH_RATIO) continue
                     fallbacks += AlignedSentencePair(
                         enChapter = enChapter,
                         zhChapter = zhChapter,
@@ -555,8 +583,10 @@ object TranslationAligner {
 
     /**
      * 句级 1:N 合并准入检查（详见 [SENTENCE_MERGE_MARGIN] 上的说明）。
-     * 三道门槛：词义锚点命中 ≥1、尺寸保护、合并须比局部最优 1:1 便宜
-     * [SENTENCE_MERGE_MARGIN] 以上。全部是 O(1) 哈希查表与算术，守住性能护栏。
+     * 三道门槛：词义锚点命中 ≥1（无 meaning 源时退化为「局部 1:1 已无法解释
+     * 长度关系」——中文引文整句对多条短英文句时，合并是唯一说得通的走法）、
+     * 尺寸保护、合并须比局部最优 1:1 便宜 [SENTENCE_MERGE_MARGIN] 以上。
+     * 全部是 O(1) 哈希查表与算术，守住性能护栏。
      */
     private fun sentenceMergeAllowed(en1: Span, en2: Span?, zh1: Span, zh2: Span?): Boolean {
         for (en in listOfNotNull(en1, en2)) {
@@ -565,7 +595,6 @@ object TranslationAligner {
         for (zh in listOfNotNull(zh1, zh2)) {
             if (zh.chars < SENTENCE_MERGE_MIN_ZH_CHARS) return false
         }
-        if (meaningBonus(en1.meaning, en2?.meaning, zh1.meaning, zh2?.meaning) <= 0.0) return false
         val merged = pairCost(en1, en2, zh1, zh2)
         val local = if (en2 == null) {
             minOf(
@@ -578,8 +607,28 @@ object TranslationAligner {
                 pairCost(en2, null, zh1, null)
             )
         }
-        return merged <= local - SENTENCE_MERGE_MARGIN
+        if (merged <= local - SENTENCE_MERGE_MARGIN) {
+            val semanticEvidence = meaningBonus(en1.meaning, en2?.meaning, zh1.meaning, zh2?.meaning) > 0.0
+            if (semanticEvidence) return true
+            // 无词义证据（含 meaning=null 的保守回退）：仅当局部 1:1 自身已无法
+            // 解释长度关系（残或超）时放行——引文整句对多条短英文句是唯一形态。
+            val enWords = en1.words + (en2?.words ?: 0)
+            val zhChars = zh1.chars + (zh2?.chars ?: 0)
+            val mergedRatio = if (enWords == 0) 0.0 else zhChars / (enWords * ZH_CHARS_PER_EN_WORD)
+            if (mergedRatio in SENTENCE_MIN_LENGTH_RATIO..SENTENCE_MAX_MERGED_LENGTH_RATIO) {
+                val localRatio = if (en2 == null) {
+                    maxOf(ratioOf(en1.words, zh1.chars), ratioOf(en1.words, zh2!!.chars))
+                } else {
+                    maxOf(ratioOf(en1.words, zh1.chars), ratioOf(en2.words, zh1.chars))
+                }
+                return localRatio !in SENTENCE_MIN_LENGTH_RATIO..SENTENCE_MAX_LENGTH_RATIO
+            }
+        }
+        return false
     }
+
+    private fun ratioOf(enWords: Int, zhChars: Int): Double =
+        if (enWords == 0) 0.0 else zhChars / (enWords * ZH_CHARS_PER_EN_WORD)
 
     // --- 代价与置信度（只做算术与哈希查表） ----------------------------------
 
@@ -646,6 +695,20 @@ object TranslationAligner {
         }
         if (total == 0) return 0.0
         return Math.min(total, MEANING_MAX_HITS).toDouble() * MEANING_HIT_SCALE
+    }
+
+    /** 句对两端折叠后的长度比（zh 字符 / en 词 × 1.7），详见 [SENTENCE_MIN_LENGTH_RATIO]。 */
+    private fun lengthRatioOf(
+        enSpans: List<Span>,
+        a: IntArray,
+        zhSpans: List<Span>,
+        b: IntArray
+    ): Double {
+        var enWords = 0
+        for (i in a) enWords += enSpans[i].words
+        var zhChars = 0
+        for (j in b) zhChars += zhSpans[j].chars
+        return if (enWords == 0) 0.0 else zhChars / (enWords * ZH_CHARS_PER_EN_WORD)
     }
 
     private fun confidenceOf(
