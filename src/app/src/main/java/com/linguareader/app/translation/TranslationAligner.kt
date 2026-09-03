@@ -35,7 +35,7 @@ interface MeaningIndex {
 object TranslationAligner {
 
     /** 档案里把多少号对齐器写入 alignerVersion；算法/分句规则变化时必须 +1。 */
-    const val VERSION = 3
+    const val VERSION = 4
 
     /** 词义锚点每次命中的加分上限与单点权重（与「数字/拉丁锚点」同量级、略高）。 */
     private const val MEANING_MAX_HITS = 4
@@ -128,8 +128,35 @@ object TranslationAligner {
                     if (enSentences.isEmpty() || zhSentences.isEmpty()) emptyList()
                     else alignSpans(enSentenceSpans, zhSentenceSpans, allowMerge = true, mergeGate = ::sentenceMergeAllowed)
 
-                if (sentencePairs.isEmpty()) {
-                    // 句子级无法对齐 → 降级为段落对照。
+                // V4：低置信句对是 DP 残渣（实测整本魔戒 2% 的句子精确命中这类对：
+                // 27 词英文配上「啊！」、70 词配上 16 字）。查询侧 1–3 级是文本精确
+                // 命中、不受置信度门槛限制，落盘必被原样展示成「只翻译了其中一句」。
+                // 宁可不产，不可错配：低于门槛的句对不落盘，让这些句子走段落级兜底。
+                val emitted = mutableListOf<AlignedSentencePair>()
+                for (sentencePair in sentencePairs) {
+                    val raw = confidenceOf(
+                        enSentenceSpans, sentencePair.a,
+                        zhSentenceSpans, sentencePair.b
+                    )
+                    // 合并句对（1:N）是真配对但粒度跳，置信度轻折扣。
+                    val confidence =
+                        if (sentencePair.a.size > 1 || sentencePair.b.size > 1) {
+                            (raw * SENTENCE_MERGE_SCALE).coerceIn(MIN_CONFIDENCE, 1f)
+                        } else raw
+                    if (confidence < TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE) continue
+                    emitted += AlignedSentencePair(
+                        enChapter = enIdx,
+                        zhChapter = zhIdx,
+                        enParagraph = enParagraph,
+                        zhParagraph = zhParagraph,
+                        enSentence = join(enSentences, sentencePair.a),
+                        zhSentence = join(zhSentences, sentencePair.b),
+                        confidence = confidence
+                    )
+                }
+
+                if (emitted.isEmpty()) {
+                    // 句子级无法对齐（或全部低于置信门槛）→ 降级为段落对照。
                     result += AlignedSentencePair(
                         enChapter = enIdx,
                         zhChapter = zhIdx,
@@ -140,26 +167,7 @@ object TranslationAligner {
                         confidence = confidenceOf(enSpans, paragraphPair.a, zhSpans, paragraphPair.b)
                     )
                 } else {
-                    for (sentencePair in sentencePairs) {
-                        val raw = confidenceOf(
-                            enSentenceSpans, sentencePair.a,
-                            zhSentenceSpans, sentencePair.b
-                        )
-                        // 合并句对（1:N）是真配对但粒度跳，置信度轻折扣。
-                        val confidence =
-                            if (sentencePair.a.size > 1 || sentencePair.b.size > 1) {
-                                (raw * SENTENCE_MERGE_SCALE).coerceIn(MIN_CONFIDENCE, 1f)
-                            } else raw
-                        result += AlignedSentencePair(
-                            enChapter = enIdx,
-                            zhChapter = zhIdx,
-                            enParagraph = enParagraph,
-                            zhParagraph = zhParagraph,
-                            enSentence = join(enSentences, sentencePair.a),
-                            zhSentence = join(zhSentences, sentencePair.b),
-                            confidence = confidence
-                        )
-                    }
+                    result += emitted
                 }
 
                 // 2:1 合并时存下来的 enParagraph 是两段拼起来的文本，用户点其中一段时

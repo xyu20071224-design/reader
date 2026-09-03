@@ -303,4 +303,28 @@ class TranslationAlignerTest {
             pairs.any { it.enSentence.contains("The end") }
         )
     }
+
+    @Test
+    fun `lowConfidenceSentencePairsAreNotPersisted`() {
+        // V4：DP 残渣句对（27 词英文 ↔「啊！」这类，置信度 <0.30）不得落盘——
+        // 查询侧 1–3 级是精确命中不受门槛限制，落盘必被展示成「只翻译了其中
+        // 一句」。低于门槛的句子走段落级兜底（显示整段译文）。
+        // 场景要点：中文段只有一句超短句，DP 别无选择只能配出长度比崩坏的
+        // 低置信对（配对比跳过便宜），从而触发丢弃路径。
+        val en = listOf(listOf(
+            "For the Elves, I fear, it will prove at best a truce, in which both sides will weary and repent of their vain hopes."
+        ))
+        val zh = listOf(listOf("啊！"))
+
+        val pairs = TranslationAligner.align(en, zh)
+        assertTrue(
+            "低置信句对不得落盘：${pairs.map { it.enSentence to it.zhSentence }}",
+            pairs.none { it.zhSentence == "啊！" }
+        )
+        // 残句被拒后应降级为段级条目（整段译文兜底，不再有句级条目）。
+        assertTrue(
+            "应降级为段级条目：${pairs.map { it.enSentence }}",
+            pairs.isNotEmpty() && pairs.all { it.enSentence.isBlank() }
+        )
+    }
 }

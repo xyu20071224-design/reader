@@ -90,6 +90,19 @@ class TranslationMemoryIndexTest {
     }
 
     @Test
+    fun `paragraph fallback shows the whole paragraph translation`() {
+        // L5 兜底命中的可能是句对条目（同段落），但展示必须是完整 zhParagraph：
+        // 段落对不上的前提下，单条句对面临的是错位句，「只翻译了其中一句」
+        // 比整段更误导。
+        val result = index.lookup(0, "Unknown sentence.", "He was late. Then he ran.")
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.PARAGRAPH, result!!.matchLevel)
+        assertEquals(zhParagraph, result.chinese)
+        assertEquals(zhParagraph, result.chineseParagraph)
+    }
+
+    @Test
     fun `unknown chapter or unknown text returns null`() {
         assertNull(index.lookup(99, "He was late.", paragraph))
         assertNull(index.lookup(0, "Utterly unrelated wording.", "Utterly unrelated paragraph."))

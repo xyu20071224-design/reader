@@ -85,10 +85,24 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
                 ?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
         }
 
-        // 5) 兜底：对应段落
+        // 5) 兜底：对应段落。这是推断性匹配，粒度只到段——即使命中的是句对
+        // 条目，也展示完整 zhParagraph：兜底就是「这段的译文大致是这些」，
+        // 单条句对在段落对不上的前提下面临的是错位句，残句比整段更误导
+        // （「长句只翻译了其中一句」的主诉之一就是这里）。
         entries.firstOrNull { it.paragraph == nParagraph }
             ?.takeIf { it.pair.confidence >= TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE }
-            ?.let { return toResult(it, TranslationMatchLevel.PARAGRAPH) }
+            ?.let {
+                return TranslationLookupResult(
+                    translationTitle = memory.translationTitle,
+                    english = it.pair.enSentence.ifBlank { it.pair.enParagraph },
+                    chinese = it.pair.zhParagraph,
+                    chineseParagraph = it.pair.zhParagraph,
+                    matchLevel = TranslationMatchLevel.PARAGRAPH,
+                    confidence = it.pair.confidence,
+                    pairIndex = it.pairIndex,
+                    englishParagraph = it.pair.enParagraph
+                )
+            }
 
         return null
     }
