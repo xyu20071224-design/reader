@@ -4,14 +4,14 @@
 
 ## ⚠️ 三个最容易踩的前提
 
-1. **Gradle 根在 `src/`，不是仓库根。** 所有 gradle 命令都要在 `C:\work\reader\src` 下执行。仓库根没有 `gradlew`。
+1. **Gradle 根在 `src/`，不是仓库根。** 所有 gradle 命令都要在 `D:\reader\src` 下执行。仓库根没有 `gradlew`。
 2. **开发机是 Windows / PowerShell。** 用 `.\gradlew.bat`；`cd` 不跨命令保留，用工具的 `workdir` 参数。
 3. **`readest-src/`、`Readest/` 不是本项目代码。** 它们是另一个开源阅读器 Readest 的源码与安装目录，仅作参考（已在 `.gitignore`）。改动本项目时绝不要动它们，也不要把它们的结论当作本项目事实。
 
 ## 常用命令
 
 ```powershell
-# 工作目录：C:\work\reader\src
+# 工作目录：D:\reader\src
 .\gradlew.bat assembleDebug            # 构建调试 APK
 .\gradlew.bat installDebug             # 安装到已连接设备/模拟器
 .\gradlew.bat testDebugUnitTest        # JVM 单元测试（Robolectric，快，改逻辑必跑）
@@ -38,7 +38,7 @@
 
 - **仓库配置阿里云镜像优先**（`src/settings.gradle.kts`），因为上游仓库在部分网络下 403/reset。加依赖时别把镜像顺序改掉。
 - `src/gradle.properties` 开了 `android.overridePathCheck=true`（路径含中文时 AGP 会报错）。
-- **仓库搬过家**：原路径 `C:\工作文件夹\reader`，现在是 `C:\work\reader`。`tts-voice-studio/studio.py` 与 `scripts/cut_first_3s.py` 里仍硬编码旧路径，直接跑会失败（详见 `.agents/memory/local-tools-and-assets.md`）。上面那条 `overridePathCheck` 也是旧中文路径留下的。
+- **仓库搬过家（两次）**：`C:\工作文件夹\reader` → `C:\work\reader` →（2026-09-03）`D:\reader`。搬迁已核对：工作树与 HEAD 零差异、单测在新位置全绿；`src/local.properties` 与 `.agents/` 记忆里的路径已同步订正，历史快照里的 `C:\work\reader` 只出现在 git 历史里。`tts-voice-studio/studio.py` 与 `scripts/cut_first_3s.py` 里仍硬编码**最旧**中文路径，直接跑会失败（详见 `.agents/memory/local-tools-and-assets.md`）。上面那条 `overridePathCheck` 也是旧中文路径留下的。
 - `minSdk = 23`：写代码别用未做兼容处理的高版本 API。
 
 ## 目录布局
