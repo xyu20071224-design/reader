@@ -1,3 +1,19 @@
+## 2026-09-03 仓库搬迁 D:\reader（目录去嵌套 + 全链路路径修复，提交 df20374）
+
+**背景**：`D:\reader` 下嵌套两个 git 仓库——外层是 2026-09-01 的旧快照（`feat/refactor`，所有分支末端经 `merge-base` 核实已包含于 main，无独有工作），内层 `reader/` 是活跃仓库（clone 自 origin）。用户确认外层为旧备份可删；25 个跟踪文件（tts-server/tts-voice-studio/验证截图）系误移外层所致，已 `git checkout` 恢复；误移的不入库资产（`tts-server/models` 397 MB onnx 模型）已挪回。
+
+**搬迁路径**（顶层目录被会话工具进程占用，`rm -rf` 报 Device or resource busy，改清内容不移目录）：内层内容逐项移入清空后的 `D:\reader`，`toolchain/`（JDK+SDK+gradle-home+robolectric，5.6 GB，已 gitignore）同盘 rename 归位，全程瞬间完成无拷贝。
+
+**路径修复四处**（搬迁后首轮 `testDebugUnitTest` 因第 ③ 处失败 21 个测试类，修复后全绿）：
+1. `src/local.properties`（gitignore）`sdk.dir` → `D:\reader\toolchain\android-sdk`；
+2. `toolchain/gradle-home/init.d/robolectric-offline.gradle`（不入库 init 脚本）`robolectric.dependency.dir` / `java.io.tmpdir` → D 盘——**这是首轮 21 类报 `Path is not a file: C:\work\reader\toolchain\robolectric\...jar` 的根因**，且 `.agents` 记忆明示该脚本「不入库、自动生效」，搬仓库清单里容易漏；
+3. AGENTS.md 搬家史订正为三次链条（`C:\工作文件夹\reader` → `C:\work\reader` → `D:\reader`）；`.agents/memory` 七个文件的路径引用同步订正（本身 gitignore，仅本地生效）；
+4. `build.ps1` 因 `$PSScriptRoot` 自解析设计无需改动（教训：搬迁脚本自解析是正解，硬编码绝对路径是债）。
+
+**验证**：`git status` 与 HEAD 零差异（除 9 个既定不入库的工作总结文档）；`testDebugUnitTest` **538 用例 0 失败 0 错误 1 跳过**（benchmark 素材缺失的预期跳过），与 2026-09-03 当日基线一致；`git push origin main` 成功（`fb323b1..df20374`，含 V5 收口提交一并补推）。
+
+**遗留提示**：`tts-voice-studio/studio.py`、`scripts/cut_first_3s.py` 仍硬编码最旧的 `C:\工作文件夹\reader` 中文路径（历史已知，跑前需改）；git 仓库级 `http.proxy=127.0.0.1:7890` 已失效（本机当前直连可达 GitHub），本次推送用 `-c http.proxy=` 临时旁路，未改配置——若常直连可考虑移除该配置。
+
 ## 2026-09-03 AI 整本翻译管线加固五件套真机验收（PKB110 / Android 16 / ColorOS，提交 ba46859 + 349644e + 0dcb719）
 
 **范围**：断路器中止、确认框新文案（服务商名/术语注入/批数估算）、出版译本守卫路由、中止后状态复位。**不出网零费用**：伪服务商 TestGW 指向 `http://127.0.0.1:9`（端口 9 = 连接拒绝，模拟系统性失败），`run-as` 直写 `shared_prefs/ai_settings.xml`（明文 Key 走解密回退路径生效）。构建方式：`git worktree` 检出 `0dcb719` 干净构建 `-PverifyBuild` debug 包（避开工作树未提交的对齐器改动），覆盖安装旧 release verify 包（数据保留、恢复 run-as 取证）。
