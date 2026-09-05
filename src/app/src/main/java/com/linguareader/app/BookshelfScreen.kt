@@ -855,6 +855,8 @@ private fun BookCard(
             maxLines = 1
         )
         if (aiEnabled) {
+            // AiBookStatus 已迁入 :shared：跨模块属性不做智能转换，先捕获局部量。
+            val statusError = aiStatus?.error
             val statusLabel = when {
                 aiStatus == null -> stringResource(R.string.shelf_ai_pending)
                 aiStatus.generating -> stringResource(R.string.shelf_ai_generating)
@@ -862,7 +864,7 @@ private fun BookCard(
                 // 诊断交给设置里的「测试连接」）。
                 aiStatus.degraded -> ""
                 aiStatus.ready -> stringResource(R.string.shelf_ai_ready)
-                aiStatus.error != null -> stringResource(R.string.shelf_ai_error, aiStatus.error)
+                statusError != null -> stringResource(R.string.shelf_ai_error, statusError)
                 else -> stringResource(R.string.shelf_ai_failed)
             }
             if (statusLabel.isNotBlank()) {

@@ -18,6 +18,9 @@ dependencies {
     // 两端拿到的版本都与现状一致，:shared 不引入任何新的运行时版本钉死。
     compileOnly("org.json:json:20240303")
     compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    // M2 刀3：ai 包的 ChapterTextExtractor 用 jsoup 清理 HTML——纯 JVM 库，
+    // Android 侧由 :app 已有的 jsoup 提供运行时，桌面壳后续自行声明 runtime。
+    compileOnly("org.jsoup:jsoup:1.18.3")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.10")
@@ -25,6 +28,7 @@ dependencies {
     // 测试期才需要（DictionaryRepositoryTest 用 runBlocking 跑 suspend lookup）：
     // 运行时仍保持 compileOnly 不进 APK，与上面两条「不新增运行时依赖」规则不冲突。
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    testImplementation("org.jsoup:jsoup:1.18.3")
     // 注意：不要在这里加 kotlin-stdlib —— KGP 会自动添加与插件同版本的 stdlib。
 }
 
