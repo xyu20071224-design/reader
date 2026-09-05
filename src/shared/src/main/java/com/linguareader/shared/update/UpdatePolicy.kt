@@ -1,4 +1,4 @@
-package com.linguareader.app.update
+package com.linguareader.shared.update
 
 /**
  * 纯逻辑：判断远端 Release 是否比当前安装版本新。

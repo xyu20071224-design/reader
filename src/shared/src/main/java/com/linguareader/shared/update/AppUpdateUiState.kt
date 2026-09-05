@@ -1,4 +1,4 @@
-package com.linguareader.app.update
+package com.linguareader.shared.update
 
 import java.io.File
 

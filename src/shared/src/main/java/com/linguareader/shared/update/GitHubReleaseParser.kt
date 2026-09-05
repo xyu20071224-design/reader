@@ -1,4 +1,4 @@
-package com.linguareader.app.update
+package com.linguareader.shared.update
 
 import org.json.JSONObject
 

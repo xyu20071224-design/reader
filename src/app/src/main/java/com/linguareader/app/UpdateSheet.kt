@@ -45,8 +45,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.Lifecycle
 import com.linguareader.app.BuildConfig
 import com.linguareader.app.update.ApkInstaller
-import com.linguareader.app.update.AppUpdatePhase
-import com.linguareader.app.update.AppUpdateUiState
+import com.linguareader.shared.update.AppUpdatePhase
+import com.linguareader.shared.update.AppUpdateUiState
 
 /** Release 页地址（与 GitHubUpdateChecker 的 repo 对应），浏览器跳转用。 */
 private const val RELEASE_PAGE_BASE = "https://github.com/xyu20071224-design/reader/releases/tag/"

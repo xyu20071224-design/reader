@@ -23,3 +23,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "LinguaReader"
 include(":app")
+// 跨端共享的纯 Kotlin/JVM 库（桌面迁移 M1 起，见根目录 迁移方案-桌面Windows版.md）
+include(":shared")

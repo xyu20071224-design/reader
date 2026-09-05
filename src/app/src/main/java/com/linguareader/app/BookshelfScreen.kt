@@ -85,7 +85,7 @@ import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
-import com.linguareader.app.update.AppUpdateUiState
+import com.linguareader.shared.update.AppUpdateUiState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

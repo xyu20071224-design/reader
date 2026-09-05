@@ -34,7 +34,16 @@ jobs:
           cache: gradle
 
       - name: 运行单元测试
-        run: ./gradlew testDebugUnitTest --stacktrace
+        # :app 的 JVM 单测 + :shared 的纯逻辑单测一起跑（桌面迁移 M1 起，见根目录 迁移方案-桌面Windows版.md）
+        run: ./gradlew testDebugUnitTest :shared:test --stacktrace
+
+      # :shared 存在的唯一意义是「零 Android 依赖」，这条红线由 CI 机械执法（src/shared/README.md 规则 1）
+      - name: :shared 纯净性检查
+        run: |
+          if grep -rE '^import (android|androidx)\.' shared/src/main; then
+            echo "::error :::shared 不得 import android.*/androidx.*（见 src/shared/README.md 规则 1）"
+            exit 1
+          fi
 
   lint:
     name: Android Lint

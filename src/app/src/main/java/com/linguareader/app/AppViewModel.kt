@@ -48,10 +48,10 @@ import com.linguareader.app.data.VocabularyRepository
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.tts.MultiVoiceSupport
 import com.linguareader.app.tts.TtsAudioCache
-import com.linguareader.app.update.AppUpdatePhase
 import com.linguareader.app.update.AppUpdateRepository
-import com.linguareader.app.update.AppUpdateUiState
 import com.linguareader.app.update.UpdateCheckOutcome
+import com.linguareader.shared.update.AppUpdatePhase
+import com.linguareader.shared.update.AppUpdateUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

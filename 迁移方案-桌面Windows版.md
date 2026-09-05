@@ -66,15 +66,15 @@
 ### 3.1 目标布局
 
 ```
-src/                          ← Gradle 根上移一层到 src/，成为【唯一的根】
+src/                          ← Gradle 根（【本来就在这】，M1 已核实，无需上移）
 ├── settings.gradle.kts       （rootProject.name = "LinguaReader"；include :app / :shared / :desktopApp）
 ├── build.gradle.kts
 ├── gradle.properties         ← android.overridePathCheck 等原样留在根
 ├── gradlew / gradlew.bat / gradle/wrapper
-├── shared/                   ← 新模块，KMP（androidTarget + jvm("desktop")）
-│   └── src/{commonMain, androidMain, desktopMain, commonTest}
-├── app/                      ← Android：保持【纯 Android library 模块】，不碰 Compose Multiplatform 插件
-└── desktopApp/               ← 桌面：main() + 窗口/托盘/JCEF 宿主 + 平台 actual 装配
+├── shared/                   ← 【M1 已建】纯 kotlin("jvm") 库（KMP 与 Compose Multiplatform 推到 M4 再评估）
+│   └── src/{main,test}/java/com/linguareader/shared/<域>/
+├── app/                      ← Android：保持【纯 Android 模块】，不碰 Compose Multiplatform 插件
+└── desktopApp/               ← 桌面（M2 建）：main() + 窗口/托盘/JCEF 宿主 + 平台装配
 ```
 
 仓库根（`src/` 之外）只留**工具与文档**：`tts-server/`、`tts-voice-studio/`、`scripts/`、`toolchain/`、`bug收集/`、`.agents/`、各方案文档。不再往根上挂 Gradle 工程。
@@ -91,12 +91,12 @@ src/                          ← Gradle 根上移一层到 src/，成为【唯�
 
 | 层 | 归属 | 理由 |
 | --- | --- | --- |
-| 算法（DP 对齐、SPS、语境分析、词形还原、句切分、`TtsPlaybackEngine`、规则标注器、更新解析、复习调度、CSV） | `:shared` commonMain | 零 Android 依赖，实测 54/100 文件无 `import android.*` |
-| 数据层（书库/生词本/进度/设置仓库、EPUB/TXT/FB2 解析） | `:shared` commonMain + expect 接口 | 只认 `AppContext` 一个面（§4） |
-| UI 组件（书架/生词本/复习/设置的 Composable） | `:shared` commonMain | material3 跨端可用；实测 import 全在 `foundation/material3/ui/runtime/material` 五个包内 |
-| 阅读器正文渲染 | **不共享**（各端 `expect`，两套 `actual`） | Android WebView vs 桌面 JCEF，宿主语义不可混（决策 1 = 路线 B） |
+| 算法（DP 对齐、SPS、语境分析、词形还原、句切分、`TtsPlaybackEngine`、规则标注器、更新解析、复习调度、CSV） | `:shared`（纯 JVM 库，`src/main`） | 零 Android 依赖，实测 54/100 文件无 `import android.*`；**但被 `R.string` 绑住的模型除外，见 §3.5.1** |
+| 数据层（书库/生词本/进度/设置仓库、EPUB/TXT/FB2 解析） | `:shared` + 自造 `AppContext` 接口 | 只认一个平台面（§4）；M1 未动 |
+| UI 组件（书架/生词本/复习/设置的 Composable） | 二期再迁入 `:shared` | material3 跨端可用，但要等 KMP/Compose Multiplatform 引入（M4 前）；实测 import 全在 `foundation/material3/ui/runtime/material` 五个包内 |
+| 阅读器正文渲染 | **不共享**（两端各一套实现，共用 `ReaderScripts` 文本） | Android WebView vs 桌面 JCEF，宿主语义不可混（决策 1 = 路线 B） |
 | 听书 Service / 托盘 | 不共享 | 平台生命周期完全不同 |
-| `strings.xml`（zh/en 双语，559+11 × 2） | Android 保留；桌面用 KMP `MR` 资源体系，**内容一次性搬迁** | 别指望 Android 资源系统跑在桌面上 |
+| `strings.xml`（zh/en 双语，559+11 × 2） | Android 保留；桌面届时用 KMP `MR` 资源体系，**内容一次性搬迁** | 别指望 Android 资源系统跑在桌面上 |
 
 ### 3.4 为什么弃用「旁挂」而选「单 root」
 
@@ -107,16 +107,42 @@ src/                          ← Gradle 根上移一层到 src/，成为【唯�
 | CI | 两条 workflow 两套缓存 | 一条 workflow 同时跑 `:app` 与 `:shared` 的 JVM 测试 ✓ |
 | 风险 | 低，但代价是长期双份 | 需要一次 Gradle 结构调整（§3.5），有明确验证闸门 ✓ |
 
-### 3.5 结构调整的落地步骤（风险集中在这一步，逐条验）
+### 3.5 结构调整的落地步骤（M1 实际执行记录）
 
-1. **先加后移**：新建 `src/shared/`、`src/desktopApp/` 与三个 `include`，此阶段 `:shared` 空壳。**闸门：`.\gradlew.bat help` 通过。**
-2. **根上移**：把 `settings.gradle.kts` / `build.gradle.kts` / `gradle.properties` / wrapper 提到 `src/`，`app/` 降为子模块。**闸门：`assembleDebug` + `testDebugUnitTest` 全绿，APK 与基线同 size 量级。**
-3. **按包抽 `:shared`**：一次只移一个包，Android 编译 + 既有 JVM 单测（`src/app/src/test` 的 66 文件，其中 47 个纯 JVM）立即回归。移动 = 移文件 + 改包名，**不改语义**。
-4. 全程不开并行会话碰 `src/`（AGENTS.md 的会话纪律）；开工前 `git fetch`。
+> **初稿订正**：原计划「把根上移到 `src/`」是**伪命题** —— `settings.gradle.kts` / `build.gradle.kts` / `gradle.properties` / wrapper 本来就在 `src/`，`:app` 也本来就是它的子模块；实际只需在既有根上 `include(":shared")`。§3.6 随此作废。
 
-### 3.6 副作用：`toolchain/build.ps1` 必须同步改
+1. ✅ **建模块**：`src/shared/` 为 **`kotlin("jvm")` 纯库（不是 KMP）**；`include(":shared")`、根 `build.gradle.kts` 加 `org.jetbrains.kotlin.jvm` 2.1.10 `apply false`、`:app` 加 `api(project(":shared"))`。不选 KMP 的理由：M1 抽取物零 Android 依赖，一个 target 就够，不必提前背 Compose Multiplatform + native 产物的成本（实测本地 Gradle 缓存连 KMP 插件 marker 都没有）。
+2. ✅ **抽第一刀（最干净的闭环）**：`app/update/` 的 4 个纯文件 → `com.linguareader.shared.update`（`git mv` 保历史），随迁 2 个测试文件共 8 用例；`AppUpdateRepository` / `AppUpdateSettings` / `ApkInstaller` 因依赖 `Context` / `BuildConfig` / `FileProvider` 留在 `:app`。
+3. ✅ **回归全绿**：`:shared:test` 8 通过；`:app:testDebugUnitTest` **530 通过 / 0 失败 / 1 跳过**（530 + 8 = 基线 538，**一条未丢**）；`:app:assembleDebug` 出包 54.44 MB。**测试总数守恒**是「移动 ≠ 改语义」最硬的证据，后续每刀都按此核对。
+4. ⬜ **`:desktopApp` 尚未建** —— 推迟到 M2 有真东西可跑再建，不维护空模块。
+5. ⬜ **按包继续抽 `:shared`**：一次只移一个包，Android 编译 + 既有 JVM 单测立即回归。移动 = 移文件 + 改包名，**不改语义**。全程不开并行会话碰 `src/`；开工前 `git fetch`。
 
-第 17 行硬编码 `Set-Location (Join-Path (Split-Path $root -Parent) "src")`。§3.5 第 2 步之后 gradle 根变成 `src/`，此脚本要改成指向 `src`；`-PverifyBuild`、JDK 路径（`jdk\jdk-17.0.20.1+1`）不动。**这一步别忘，否则桌面 CI 与本地构建双断。**
+### 3.5.1 M1 撞上的第一个真问题：`R.string` 渗进了本该共享的模型
+
+原计划 M1 一并抽出 `data` 包与 `TtsPlaybackEngine`，**主动止步** —— 实测发现跨端模型被 Android 资源系统绑住：
+
+- `data/ContextAnalyzer.kt:6-11`：`enum class PartOfSpeech(@StringRes val labelRes: Int)` 直接引用 `R.string.pos_noun` 等 5 个 id；
+- `data/Models.kt:231,252`（`ReaderTheme`、`ReaderFont`）、`data/ReviewMode.kt:19,105`（复习预设与节奏）同样带 `labelRes`；
+- 消费方：`ReaderScreen.kt:1077,1092,1123,1345`、`ReviewUi.kt:420` 走 `stringResource(...labelRes)`；`ModelsTest.kt:165,175` 还断言 `labelRes != 0` 且各枚举互不相同。
+
+`:shared` 拿不到 `:app` 的 `R` 类（`android.nonTransitiveRClass=true` + 依赖方向单向），所以这批文件**当下搬不动**。已抽的 `update` 包不受影响（它本就纯）。这是需要拍板的设计岔口，见 §5.1 决策 4；我没有擅自重构这 5 个枚举。
+
+### 3.5.2 依赖纪律：`:shared` 为什么全用 `compileOnly`
+
+`org.json` 与 `kotlinx-coroutines-core` 在 `:shared` 里写成 **`compileOnly`**：Android 侧 `org.json` 由 `android.jar` 平台提供、coroutines 由 lifecycle 传递带入；若用 `implementation`，`org.json` 会进 APK 并与 `android.jar` **撞重复类（dex 报错）**。桌面壳各自声明自己那份 runtime 版本。好处是 `:shared` 的 POM 不带传递依赖，不把版本钉死在 Android 正在用的那份上。
+
+### 3.5.3 门禁补齐（防止「测试悄悄掉出门禁」）
+
+`testDebugUnitTest` 不编译 `:shared`，搬走的 8 个用例等于**从 CI 门禁里静默消失**。已在 `.github/workflows/ci.yml` 补两处：
+
+- 单测步骤改为 `./gradlew testDebugUnitTest :shared:test`；
+- 新增 **`:shared` 纯净性检查**：`grep -rE '^import (android|androidx)\.' shared/src/main` 命中即红。「`:shared` 零 Android 依赖」是它存在的全部理由，这种红线必须机械执法，不能只写在文档里靠自觉。
+
+本地跑法：`.\toolchain\build.ps1 :shared:test`（现有脚本零改动，加任务名即可）。
+
+### 3.6 （作废）~~`toolchain/build.ps1` 必须同步改~~
+
+初稿担心根上移后脚本第 17 行硬编码的 `src` 路径要改。实测根未动，**该脚本零改动**，`:shared` 在同一根下直接构建通过（`.\toolchain\build.ps1 :shared:build`）。曾另立过 `toolchain/build-desktop.ps1`，确认多余，已删除。
 
 ### 3.7 版本与发布策略
 
@@ -124,14 +150,16 @@ src/                          ← Gradle 根上移一层到 src/，成为【唯�
 - 桌面版在 SPEC 里作为独立产品轨道登记（F-16x 段），不塞进现有 F-1xx 的"已实现"清单——两端功能集从此会分叉，必须显式记账。
 - `readest-src/`、`Readest/`、`silkweaver/` 一律不动，也不作为任何决策依据。
 
-## 4. 逐模块替换清单（expect/actual 映射）
+## 4. 逐模块替换清单（接口 + 两端装配）
+
+> 措辞订正（M1 后）：`:shared` 现在是纯 JVM 库、单一 target，所以这里的机制是「**接口/参数下沉到 `:shared`，Android 与桌面各自传入自己的实现**」，不是 Kotlin `expect`/`actual`（那要等 M4 上 KMP 才用得上）。下表语义不变。
 
 | 能力 | Android 现状 | 桌面 actual | 备注 |
 | --- | --- | --- | --- |
 | 应用上下文 | `Context` 参数贯穿 39 文件 | 自造 `AppContext` interface：`filesDir`、`cacheDir`、`prefs(name)`、`base64`、`platform` | **第一阶段先做这个**，所有数据/网络文件只认这一个面 |
 | 设置存储 | `SharedPreferences` | Properties/JSON 文件（照 data-persistence 记忆：项目本无 DataStore，实现简单） | 数据迁移见 §7 |
 | 文件访问 | SAF Uri（`ContentResolver` 仅 6 文件） | `java.nio.file` + `FileDialogProvider`（Compose Multiplatform 1.12+ 自带原生文件对话框） | 拖拽导入（Windows 拖 .epub 进窗口）是桌面加分项 |
-| 离线词典 | `SQLiteDatabase.openDatabase(READONLY, NO_LOCALIZED_COLLATORS)` | `net.zettabridge:sqlite-jdbc`（只读 URI `?mode=ro`） | SQL 与 `ecdict.sqlite` 资源原样复用；**注意 NO_LOCALIZED_COLLATORS 意味着现行为即裸 BINARY 比较**，桌面端大小写语义反而等价；唯一要验的是 unicode 正则（`DictionaryRepository` 的 `[\\p{L}']` 仅 Android 侧使用，桌面按代码点等价处理） |
+| 离线词典 | `SQLiteDatabase.openDatabase(READONLY, NO_LOCALIZED_COLLATORS)`（`DictionaryRepository.openDatabase()`：先把 58 MB assets 拷到 `filesDir/dictionary/ecdict-v2.sqlite` 再打开） | `org.xerial:sqlite-jdbc`（只读 URI `?mode=ro`） | SQL 与 `ecdict.sqlite` 资源原样复用；**注意 NO_LOCALIZED_COLLATORS 意味着现行为即裸 BINARY 比较**，桌面端大小写语义反而等价；另外「拷 assets 再打开」这段是 Android 特有，桌面直接指向安装目录里的文件即可（`DictionaryRepository` 的 `openDatabase` 是 M1 之后第一处必须做接口下沉的地方）。实测该类的 SQL 只用 `rawQuery` + `cursor.getString`，与 JDBC 一一对应 |
 | PDF | `pdfbox-android` | `org.apache.pdfbox:pdfbox`（标准 JVM 版） | `PdfBookImporter` 的三级分章降级逻辑不变 |
 | HTTP | `HttpURLConnection`（8 文件） | **原样复用** | 纯 JVM 可用；TLS 1.2+ 桌面天然满足 |
 | JSON | `org.json` | `org.json:json` 依赖 | 纯 JVM 可用 |
@@ -177,11 +205,12 @@ src/                          ← Gradle 根上移一层到 src/，成为【唯�
 | --- | --- | --- |
 | JCEF 体积/崩溃恢复 | 中 | 决策 1 已权衡；启动失败降级为"书架+生词本+复习+听书可用，阅读页提示" |
 | JVM MP3/AAC 解码踩坑 | 中 | §5.2；先实测云引擎返回格式，必要时只支持 WAV/MP3 |
-| 抽 `coreShared` 时无意改语义拖垮 Android | 高 | 每次移动必须：Android assembleDebug + 47 个 JVM 单测 + CI 全绿；**一次只移一个包** |
+| 抽 `:shared` 时无意改语义拖垮 Android | 高 | ✅ **M1 已建立机制并跑通一次**：每次移动必须 `:app:assembleDebug` + `:app:testDebugUnitTest` + `:shared:test` 全绿，并核对**测试总数守恒**（M1 实测 530+8=538 与基线一致）；一次只移一个包；CI 已补 `:shared:test` 与纯净性 grep |
+| **`R.string` 绑住共享模型**（M1 新发现） | 中 | 5 个枚举（`PartOfSpeech`/`ReaderTheme`/`ReaderFont`/`ReviewMode`/`ReviewPace`）带 `labelRes`，挡住 `data` 包抽取。需拍板决策 4（§5.1）；未决前 M1 只能抽本就零资源的文件 |
+| 工作区脏（本会话外还有 14 项在途） | 低 | 本会话只提交自己碰的文件；剩余仍待用户收口 |
 | 两套 `pdfbox-android`/JVM PDFBox 行为差异 | 低 | 用同一批 PDF 样本双端 diff 提取文本 |
 | 桌面键盘/鼠标交互是新设计，"手势肌肉记忆"回退 | 中 | 快捷键表尽早贴 README；翻页/选词交互单独做一轮走查 |
 | 双端功能漂移（Android 修 bug 桌面没修） | 中 | core 单测共享；bug收集/ 的文档注明涉及端；桌面版明确"功能快照"节奏，不承诺同步发布 |
-| 工作区当前脏（14 个未提交条目） | 低 | M0 先收口 |
 
 ## 9. 里程碑（建议 5 个阶段，M0 先行）
 

@@ -2,6 +2,9 @@ package com.linguareader.app.update
 
 import android.content.Context
 import com.linguareader.app.BuildConfig
+import com.linguareader.shared.update.AppUpdateInfo
+import com.linguareader.shared.update.GitHubUpdateChecker
+import com.linguareader.shared.update.UpdatePolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
