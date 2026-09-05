@@ -1075,3 +1075,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **守恒**：`:app` 366 + `:shared` 181 = **547**（VocabularyTest 7 条此消彼长），全绿；assembleDebug / androidTest 编译 / :desktopApp:build 通过。
 - **并行会话冲突处置（重要过程记录）**：本刀验证期间发现**另一个会话在同一工作树开发「手动 AI 翻译」功能**（ManualTranslationIo.kt + 测试 + AppViewModel/tts tagger/strings 等约 16 个文件的在途改动，其中 ManualTranslationIoTest 有单 `!` 语法错误挡住 :shared 测试编译）。处置：用 pathspec stash 把它的全部在途文件临时隔离 → 在「HEAD + 本刀」的干净树上跑全门禁 → 提交推送（提交只含本刀 7 个文件）→ 从 stash 逐文件还原它的现场（含我修的 `!!` 两字符语法修复，未提交它的任何文件）。**它恢复后的工作树仍编译不过（它自己的功能未完成）——那是它的在途状态，不是本刀回归**。
 - **教训**：并行会话下 `git add src/` 会把别人的在途文件卷进提交；本刀起提交一律用显式路径。
+
+## 2026-09-06 桌面迁移 M2 刀5：DesktopAppContext 平台面落地，:shared 数据层桌面端到端冒烟跑通
+
+- **背景**：并行会话仍在工作树开发「手动 AI 翻译」（其 WIP 测试仍挡 :shared 测试编译），本刀按零重叠轨道推进——只动 `src/desktopApp/`，门禁用 `:desktopApp:build + :desktopApp:test`（不经过 :shared 测试编译）。
+- **实现（`1f315b5`）**：`DesktopAppContext` 实现 `AppContext`（`filesDir` 透传；`prefs(name)` 落 `<filesDir>/prefs/<name>.json`，`JsonPreferencesStore` 写穿持久、读容错、temp+rename 原子写——语义对齐 Android 侧 `SharedPreferencesStore`）；desktopApp 的 org.json 从 runtimeOnly 升 implementation（本模块自用编译期，叶子模块无撞类风险）。
+- **端到端冒烟（M2 验收证据）**：`DesktopContextProbe` 实测——prefs 往返跨实例持久；`VocabularyRepository`（:shared 刀4 迁入的核心）在桌面 save→load→review→csv→deleteBookData 全链路真实落盘；实测文件布局 `prefs/review_settings.json` + `vocabulary.json`。**:shared 数据层首次在桌面完整跑通，跑法 `.	oolchainuild.ps1 :desktopApp:run "-PmainClass=com.linguareader.desktop.DesktopContextProbeKt"`。**
+- **单测**：desktopApp 首次有自己的 JVM 测试（3 条：roundtrip/坏文件容错/文件布局）。门禁 `:desktopApp:build` `:desktopApp:test` 全绿。
