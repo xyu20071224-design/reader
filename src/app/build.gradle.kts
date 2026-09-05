@@ -108,6 +108,8 @@ dependencies {
     testImplementation("com.tom-roush:pdfbox-android:2.0.27.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
+    // 桌面迁移 M1：词典 SQL 双引擎对账用（DictionarySqlParityTest，不进 APK）
+    testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
 
     androidTestImplementation(platform("androidx.compose:compose-bom:2025.05.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")

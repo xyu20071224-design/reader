@@ -1032,3 +1032,14 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **用户确认 V5 修复质量通过**（第 6 轮修正口径卡片，`alignment-eval6-fixed.html`，12 条对照卡：V4→V5 句对级前后对比，句对自身英文全文 + 自身比例）。
 - **教训（评估工具口径）**：上一版 eval6 卡片被用户质疑「看不出修复」——查证确认为工具缺陷：①比例分母用了「样本切片 vs 展示句」而非句对自身（33 词合并句对 0.94 被渲染成 6.24 的假超长）；②对照基线选了第 4 轮（V4），V5 的全书门槛效果（302→0 残缺清零）大部分落在样本之外；③1:N 合并句对的卡片只展示中文整块、不展示英文全文，「首句已翻对+后续译文连排」被误读为异常。**后续评估卡片必须显示句对自身英文全文与自身比例，跨版本对照基线取紧邻上一版**。
 - V1–V5 全链路至此收口：句对自身异常比例已清零（设计放行的 19 条引文合并形态除外）；待办仅剩展示层两项（P2 邻接兜底错位改「无对照」、评估集 `.` 残渣 5 条剔除）与真机 attach 耗时复测。
+
+## 2026-09-05 桌面迁移 M1：:shared 抽出与词典 SQL 双引擎对账（JVM 门禁）
+
+- **范围**：桌面（Windows）版迁移第一阶段（方案 `迁移方案-桌面Windows版.md` §3.5），纯构建/结构与平台替换验证，不碰任何运行时行为、不需要真机。
+- **:shared 抽取**：新建 `src/shared`（`kotlin("jvm")` 单 target 库，`:app` 以 `api(project(":shared"))` 消费），`git mv` 把 `app/update` 的 4 个纯文件（`GitHubReleaseParser`/`UpdatePolicy`/`AppUpdateUiState`/`GitHubUpdateChecker`）与 2 个测试迁入 `com.linguareader.shared.update`，只改包名。**测试总数守恒**：`:app:testDebugUnitTest` 530 + `:shared:test` 8 = 基线 538，一条没丢。`:app:assembleDebug` 出包 54.44 MB。
+- **词典 SQL 对账（本次最有价值的产出）**：新增 `:app` 的 `DictionarySqlParityTest`（Robolectric），**同一份 58 MB `ecdict.sqlite`** 同时用 Android `SQLiteDatabase` 与桌面计划的 `org.xerial:sqlite-jdbc` 打开，逐字照抄 `DictionaryRepository` 的两条 SQL 比对有序结果集（词形还原的 `ORDER BY CASE`/`length()`、`\n` 字面量、LIKE/GROUP BY/`||`、大小写）。4 测全绿。**证伪并订正了方案 §4 的事实断言**：词典大小写不敏感**不是**来自「NO_LOCALIZED_COLLATORS = 裸 BINARY」，而是 `build_dictionary.py` 在 word/form/lemma 三列声明的 `COLLATE NOCASE`（schema 级，两引擎同样尊重 schema，等价性反而更强）。
+- **驱动坑（已写进方案与探针注释）**：`jdbc:sqlite:<盘符路径>?mode=ro` 的 URI 查询串 sqlite-jdbc **不解析**（Windows 下整串被当文件名报错），只读必须走连接属性 `open_mode=1`。`:desktopApp` 的 `DictionaryProbe` 独立跑通，实测 `entries` 表 770,611 行。
+- **门禁补齐**：`.github/workflows/ci.yml` 单测步骤改为 `testDebugUnitTest :shared:test`，并新增 `:shared` 纯净性 grep（禁止 `import android.*`/`androidx.*`），防止抽出去的测试静默掉出 CI、也机械执法 `:shared` 的存在前提。
+- **M1 拦路问题（未决，非缺陷）**：`data` 包与 `TtsPlaybackEngine` **暂缓抽取**——`PartOfSpeech`/`ReaderTheme`/`ReaderFont`/`ReviewMode`/`ReviewPace` 五个枚举把 `R.string.labelRes` 编进了本该共享的模型，`:shared` 拿不到 `:app` 的 `R`。需拍板方案 §5.1 决策 4 后再动，本次未擅自重构。
+- **本地构建注意（踩坑记录）**：Gradle 守护进程会继承并持有重定向的 stdout 句柄——构建失败退出后外层 shell 仍等不到"所有写端关闭"，表现为**任务早已 BUILD FAILED、作业却挂钟一小时**。诊断别只看作业状态，先看日志尾部与 `build/test-results`；跑单测用 `--no-daemon`（本仓库规模冷启 ~17s，代价可接受）。
+- **JVM 合计**：`:app:testDebugUnitTest` **534 通过 / 0 失败 / 1 跳过**（含新增 4 条对账）；`:shared:test` 8 通过；`:desktopApp:build` 与 `:desktopApp:run`（探针）通过。

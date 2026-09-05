@@ -114,8 +114,9 @@ src/                          ← Gradle 根（【本来就在这】，M1 已核
 1. ✅ **建模块**：`src/shared/` 为 **`kotlin("jvm")` 纯库（不是 KMP）**；`include(":shared")`、根 `build.gradle.kts` 加 `org.jetbrains.kotlin.jvm` 2.1.10 `apply false`、`:app` 加 `api(project(":shared"))`。不选 KMP 的理由：M1 抽取物零 Android 依赖，一个 target 就够，不必提前背 Compose Multiplatform + native 产物的成本（实测本地 Gradle 缓存连 KMP 插件 marker 都没有）。
 2. ✅ **抽第一刀（最干净的闭环）**：`app/update/` 的 4 个纯文件 → `com.linguareader.shared.update`（`git mv` 保历史），随迁 2 个测试文件共 8 用例；`AppUpdateRepository` / `AppUpdateSettings` / `ApkInstaller` 因依赖 `Context` / `BuildConfig` / `FileProvider` 留在 `:app`。
 3. ✅ **回归全绿**：`:shared:test` 8 通过；`:app:testDebugUnitTest` **530 通过 / 0 失败 / 1 跳过**（530 + 8 = 基线 538，**一条未丢**）；`:app:assembleDebug` 出包 54.44 MB。**测试总数守恒**是「移动 ≠ 改语义」最硬的证据，后续每刀都按此核对。
-4. ⬜ **`:desktopApp` 尚未建** —— 推迟到 M2 有真东西可跑再建，不维护空模块。
-5. ⬜ **按包继续抽 `:shared`**：一次只移一个包，Android 编译 + 既有 JVM 单测立即回归。移动 = 移文件 + 改包名，**不改语义**。全程不开并行会话碰 `src/`；开工前 `git fetch`。
+4. ✅ **`:desktopApp` 已建**（比原计划提前半步）：纯 JVM 壳 + `application` 插件；M1 只装一个词典只读冒烟探针 `DictionaryProbe`（跑法 `.\toolchain\build.ps1 :desktopApp:run`，实测 entries 770,611 行、词形还原/短语命中正常），M2 起承接 Compose 桌面 UI。
+5. ✅ **词典 SQL 双引擎对账**：`:app` 新增 `DictionarySqlParityTest`（Robolectric，同一份 58 MB 词典、`SQLiteDatabase` 与 `sqlite-jdbc` 并读、逐字照抄两条生产 SQL + LIKE/GROUP BY/`||`/大小写，**4 测全绿**）。借此**证伪并订正了 §4 的「裸 BINARY」断言**（真相是 schema 级 `COLLATE NOCASE`），并实测发现 `?mode=ro` URI 形式 sqlite-jdbc 不解析（只读走 `open_mode` 属性）。详见 §4 词典行与 `VALIDATION.md` 2026-09-05 条目。
+6. ⬜ **按包继续抽 `:shared`**：一次只移一个包，Android 编译 + 既有 JVM 单测立即回归。移动 = 移文件 + 改包名，**不改语义**。全程不开并行会话碰 `src/`；开工前 `git fetch`。
 
 ### 3.5.1 M1 撞上的第一个真问题：`R.string` 渗进了本该共享的模型
 
@@ -159,7 +160,7 @@ src/                          ← Gradle 根（【本来就在这】，M1 已核
 | 应用上下文 | `Context` 参数贯穿 39 文件 | 自造 `AppContext` interface：`filesDir`、`cacheDir`、`prefs(name)`、`base64`、`platform` | **第一阶段先做这个**，所有数据/网络文件只认这一个面 |
 | 设置存储 | `SharedPreferences` | Properties/JSON 文件（照 data-persistence 记忆：项目本无 DataStore，实现简单） | 数据迁移见 §7 |
 | 文件访问 | SAF Uri（`ContentResolver` 仅 6 文件） | `java.nio.file` + `FileDialogProvider`（Compose Multiplatform 1.12+ 自带原生文件对话框） | 拖拽导入（Windows 拖 .epub 进窗口）是桌面加分项 |
-| 离线词典 | `SQLiteDatabase.openDatabase(READONLY, NO_LOCALIZED_COLLATORS)`（`DictionaryRepository.openDatabase()`：先把 58 MB assets 拷到 `filesDir/dictionary/ecdict-v2.sqlite` 再打开） | `org.xerial:sqlite-jdbc`（只读 URI `?mode=ro`） | SQL 与 `ecdict.sqlite` 资源原样复用；**注意 NO_LOCALIZED_COLLATORS 意味着现行为即裸 BINARY 比较**，桌面端大小写语义反而等价；另外「拷 assets 再打开」这段是 Android 特有，桌面直接指向安装目录里的文件即可（`DictionaryRepository` 的 `openDatabase` 是 M1 之后第一处必须做接口下沉的地方）。实测该类的 SQL 只用 `rawQuery` + `cursor.getString`，与 JDBC 一一对应 |
+| 离线词典 | `SQLiteDatabase.openDatabase(READONLY, NO_LOCALIZED_COLLATORS)`（`DictionaryRepository.openDatabase()`：先把 58 MB assets 拷到 `filesDir/dictionary/ecdict-v2.sqlite` 再打开） | `org.xerial:sqlite-jdbc:3.46.1.3`（只读用连接属性 `open_mode=1`） | **M1 已实测对账**（`:app` 的 `DictionarySqlParityTest`：同一份文件双引擎打开、逐字照抄 `DictionaryRepository` 两条 SQL、含 `\n` 字面量与 LIKE/GROUP BY/`||`，4 测全绿；`:desktopApp` 探针独立跑通）。两处订正：**① 初稿说"NO_LOCALIZED_COLLATORS = 裸 BINARY 比较"错了**——`src/scripts/build_dictionary.py` 在 word/form/lemma 三列声明了 `COLLATE NOCASE`，大小写不敏感是 schema 自带行为，两端等价性反而更强（两引擎同样尊重 schema）；**② `jdbc:sqlite:<盘符路径>?mode=ro` 的 URI 形式驱动不解析**（整串当文件名，Windows 报错），只读要走 `open_mode` 属性。`openDatabase` 的"拷 assets"段是 Android 特有，桌面直接指向安装目录文件（M2 做接口下沉）|
 | PDF | `pdfbox-android` | `org.apache.pdfbox:pdfbox`（标准 JVM 版） | `PdfBookImporter` 的三级分章降级逻辑不变 |
 | HTTP | `HttpURLConnection`（8 文件） | **原样复用** | 纯 JVM 可用；TLS 1.2+ 桌面天然满足 |
 | JSON | `org.json` | `org.json:json` 依赖 | 纯 JVM 可用 |
