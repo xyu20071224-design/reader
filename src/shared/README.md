@@ -40,5 +40,8 @@
 - `com.linguareader.shared.data.ReviewMode.kt` — `ReviewMode` / `ReviewPace` / `ReviewReminders`（原 `app/data/ReviewMode.kt`；`SharedPreferences` 依赖改为 `PreferencesStore` 参数，持久化键名不变）。随迁测试 11 个（`ReviewModeTest`）。
 - `com.linguareader.shared.data.ReviewScheduler.kt` — 艾宾浩斯复习调度纯逻辑（原在 `app/data/VocabularyRepository.kt` 顶部的 object）。
 - `com.linguareader.shared.data.DictionaryDb.kt` + `DictionaryRepository.kt` — `DictionaryDatabase` 接口 + `DictionarySql` 两条 SQL 常量（唯一真相）+ 查词主流程（词形还原/词组窗口/核心词/启发式/缓存）。Android 侧 `app/data/DictionaryRepository.kt` 变同名 facade（assets 落盘 + `SQLiteDatabase` 实现）；`DictionarySqlParityTest` 与桌面 sqlite-jdbc 实现共用常量。新增假驱动测试 5 个（`DictionaryRepositoryTest`）。
+- `com.linguareader.shared.translation` — `TranslationAligner` / `WordAligner` / `TranslationMemoryIndex`（含 `TranslationMemorySearch`）/ `MeaningPhraseParser` / `TraditionalSimplified` / `TranslationModels`（F-128 对齐全套，M2 刀3）。随迁测试 6 个。
+- `com.linguareader.shared.ai` — `AiModels` / `AiTranslator` / `AiTranslators` / `AiBookTranslator` / `AnthropicCompat` / `GeminiCompat` / `OpenAiCompat` / `JsonChatTranslator` / `ChapterTextExtractor`（jsoup compileOnly）/ `LocalGlossaryTranslator` / `SentenceTranslator`（M2 刀3）。**留守 `:app`**：`ModelDiscovery`（`probeKeyUsable` 等 internal 函数被 `AiProviderSettings` 消费）与 5 个 Context/SharedPreferences 仓库。随迁测试 11 个。
+- `com.linguareader.shared.tts.SentenceSplitter` — 中英混排分句纯逻辑（`TranslationAligner` 也消费它；`app/tts` 留同名 val 兼容）。随迁测试 1 个。
 
-**M2 下一刀目标**：`translation/`、`ai/` 包（大体零 Android 依赖，较顺）；再往后是 `LibraryRepository`/`VocabularyRepository` 一类（要 `AppContext` 扩 `filesDir` 成员）与 TTS 状态机簇。
+**M2 下一刀目标**：`LibraryRepository`/`VocabularyRepository`/`BookScopedStore` 一类（JSON 文件存储，要 `AppContext` 扩 `filesDir` 成员）；TTS 状态机簇放最后。兼容层现有四份（`SharedDataCompat`/`AiCompat`/`TranslationCompat`/`SentenceSplitterCompat`），全量替换旧 import 后一并删除。

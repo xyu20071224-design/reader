@@ -1059,3 +1059,12 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **刀2（`9e18868`）**：新增 `DictionaryDb.kt`（`DictionaryDatabase` 接口 + `DictionarySql` 常量——lemma/entry 两条 SQL 收敛为唯一真相）与 `com.linguareader.shared.data.DictionaryRepository`（查词主流程：词形还原/词组窗口/核心词判定/启发式词干/256 条 LRU 缓存，逐字平移）。`:app` 的 `DictionaryRepository` 变同名 facade，只保留平台侧两件事：assets 词典落盘 + `SQLiteDatabase` 接口实现；`TranslationMemoryRepository` 等既有消费方零改动。`DictionarySqlParityTest` 的内联 SQL 改引 `DictionarySql` 常量（对账对象从「抄写」升级为「同一真相」）。新增 `:shared` 假驱动查词测试 5 条（词形还原/词组核心/词组非核心回落/启发式/未知词）。**`:app` 503 不变 + `:shared` 44（39+5）= 547**。
 - **门禁**：`:app:assembleDebug`、`:app:testDebugUnitTest`、`:app:compileDebugAndroidTestKotlin`、`:shared:test`、`:desktopApp:build` 全绿（`--no-daemon`）。
 - **未做/待查**：真机抽查仍未做（复习节奏面板与查词面板的标签显示，M2 收口时统一真机过一遍）；`PreferencesStore` 目前只有 string 两操作（ReviewMode 只用得到这个），`ReviewReminderScheduler` 的 int 计数器仍是 Android 原生 prefs——int/bool 操作等有第二个消费点再上收。
+
+## 2026-09-06 桌面迁移 M2 刀3：translation/ai 纯逻辑与 SentenceSplitter 入 :shared
+
+- **迁移（`8653a73`）**：36 个文件 `git mv` 进 :shared——translation 包 6 个纯文件（F-128 对齐全套）+ ai 包 11 个纯文件（AiModels/AiTranslator/AiTranslators/AiBookTranslator/Anthropic/Gemini/OpenAi/JsonChat/ChapterTextExtractor/LocalGlossary/SentenceTranslator）+ tts/SentenceSplitter，随迁 18 个纯 JVM 测试（130 条用例）。git rename 识别率 99%，语义零漂移。
+- **留守 :app 的两类（有意决策）**：① `ModelDiscovery.kt`——`probeKeyUsable`/`listingUrl` 等 internal 顶层函数被留守的 `AiProviderSettings` 消费，迁到 :shared 后 internal 跨模块不可见，连同 `ModelDiscoveryTest` 留原地；② `BookContextFallbackTest`——测的是 `BookContextRepository.kt`（留守）里的 internal 扩展 `buildContextProfile`/`lookupWithContextFallback`，门禁第一跑就抓住它误入 :shared 编译失败，已搬回 :app。
+- **兼容层**：新增 `AiCompat`/`TranslationCompat`/`SentenceSplitterCompat`（typealias + object 同名 val，与 SharedDataCompat 同一机制），留守消费方（AppViewModel/ReaderScreen/BookshelfScreen/GlossaryEditor/AiDrawerSheet/AiProviderSettings 等 13 个文件 + 4 个留守测试）import 零改动。桌面侧消费时四份兼容层一并删除。
+- **依赖变化**：:shared 补 `compileOnly("org.jsoup:jsoup:1.18.3")`（ChapterTextExtractor 清 HTML，纯 JVM；Android 运行时由 :app 已有 jsoup 提供），照 org.json 的防撞模式。
+- **已知跨模块坑再现**：AiBookStatus 进 :shared 后 BookshelfScreen 的 `aiStatus.error` 智能转换失败，捕获局部量修复（每刀必踩规则，README 已记）。
+- **门禁**：:app 373 + :shared 174 = **547 守恒**（130 条随迁），failures 0；assembleDebug / compileDebugAndroidTestKotlin / :desktopApp:build 全绿。
