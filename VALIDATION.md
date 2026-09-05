@@ -1089,3 +1089,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **实现（`cec36d9`）**：desktopApp 套 `org.jetbrains.kotlin.plugin.compose`（根已有 2.1.10 声明）+ `org.jetbrains.compose`；依赖 `compose.desktop.currentOs`（只拉 Windows 运行时）+ `compose.material3`。UI = NavigationRail 三屏：**复习**（到期词卡片、显示释义、记住了/再学一次；调度全走 :shared 的 ReviewScheduler/ReviewPace，prefs 键与 Android 完全互通）；**生词本**（列表 + CSV 导出 JFileChooser，csv 生成与 Android 同源）；**设置**（复习节奏三选一，写同一 review_settings 键）。数据目录 `-Dlr.home` 优先，默认 `%APPDATA%/LinguaReader/home`。
 - **验证**：`:desktopApp:build` `:desktopApp:test` 全绿；真机启动窗口 45s 无异常（Skia peer 正常初始化）。**UI 视觉与交互待用户真机体验**——本轮只有启动级验证。
 - **坑（记入 known-pitfalls 待写）**：Kotlin 块注释可嵌套——KDoc 里写 `prefs/*.json` 的 `/*` 会让注释永远不闭合，EOF 报 "Unclosed comment"，与 Java 直觉相反。
+
+## 2026-09-06 桌面迁移 M2 刀7：导入器核心与书库核心入 :shared（File 级 API）
+
+- **迁移（`3517c46`）**：`com.linguareader.shared.importer` 新包——`ImportSupport`（sha256/baseName）+ TXT/EPUB/FB2 三个导入器核心（构造器收 booksDir、import 收 File，源文件生命周期归调用方：Android facade 传临时拷贝并自删，桌面传原文件）+ `BookImporter` 扩展名分发；`LibraryRepository` 核心入 :shared（AppContext 化、booksDir 公开、`registerImportedBook` 登记口），`:app` 同名 facade 只留 SAF 导入。Fb2 封面 android.util.Base64→java.util.Base64（MimeDecoder）。PDF 留 :app（pdfbox-android 与标准 PDFBox 包名不同族，桌面闭环不需要）。
+- **守恒**：随迁 TextImporterTest(4)+Fb2ImporterTest(2)，:app 362 / :shared 196 / :desktopApp 3 全零失败（总数与上轮的差额含并行会话在途测试文件的版本漂移，移动的 6 条全部在列）。
+- **⚠️ 混入披露**：`3517c46` 里不慎带入了并行会话当时已暂存的 6 个文件（SentenceSplitter 增强：多点省略号/两级缩写/maxSentenceLength 参数贯通 + 测试与 tts tagger 签名适配）。该内容与刀7 同树通过全门禁、功能自洽；其会话仍在同一工作树继续开发——**两个会话并发提交的风险已实际发生**，强烈建议人工裁决会话归属。
+- **坑**：Kotlin `try/catch/finally` 结构性删行时极易错删 catch 闭合括号（本轮连踩三处，编译错误形态是 private 函数变 local function）。
