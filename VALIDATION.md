@@ -1119,3 +1119,4 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **单测**：TranslationMemoryIndexTest +4（意译场景释义找回升级 SENTENCE / 多候选按综合分排序 / 释义词所在句对置信度不足不找回 / 重叠找回优先于释义找回）。
 - **门禁**：`:shared:test`（translation 全部）+ `:app:testDebugUnitTest` 全量全绿。跑门禁时并行会话的 tts 迁移在途改动挡住 :shared 编译，按既定流程 pathspec stash 隔离 → 干净树跑门禁 → stash apply 还原（逐文件核对在途状态无损）；期间 stash pop 输出与实际状态矛盾（报 drop 但未还原），改用 apply+核对+drop 处置。
 - **坑**：索引回调是普通 lambda（保持共享层零协程依赖），仓库侧词典查询是 suspend——在 `Dispatchers.IO` 工作线程上 `runBlocking` 桥接（该路径每词至多触发一次，只阻塞工作线程不阻塞外层协程）。
+- **⚠️ 混入披露与处置（发生即记录）**：本条目提交（`0e5ffc0`）不慎卷入并行会话已暂存的 3 个 tts 迁移文件（TtsPlaybackEngine/State/TtsPlaybackEngineTest 入 :shared，1556 行）——stash apply 把它们的暂存态还原进索引，显式路径 `git add` 挡不住「已在暂存区」的文件。该提交使 main 短暂编译不过（其引用的 BookTtsPreparer 尚不存在）；紧随其后用 `git rm --cached` 回退提交移除这 3 个文件（磁盘保留、其会话在途状态无损），CI 以回退后的树为准。**教训（比刀7 的「git add src/」更隐蔽）：与并行会话共用工作树时，提交前必须 `git diff --cached --stat` 审查暂存区全量，而不能只看自己 add 的路径。**
