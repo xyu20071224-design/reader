@@ -13,7 +13,9 @@ package com.linguareader.shared.translation
  *  2. 段落候选内的精确句子（句子级）
  *  3. 句子重叠（同一段落内、英文句互相包含）→ 句子级
  *  4. 句子级模糊（同章内相似度达阈值的句子）→ 句子级
- *  5. 兜底：对应段落（段落级）
+ *  5. 兜底：对应段落；段内先做一次句级找回（相似度达
+ *     [TranslationMemorySearch.PARAGRAPH_RECOVERY_MIN_SIMILARITY]）→ 句子级，
+ *     找不回才降为段落级
  *
  * 第 4、5 级是推断出来的匹配，要求置信度不低于
  * [TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE]；1–3 级是文本精确命中，
@@ -85,12 +87,38 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
                 ?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
         }
 
-        // 5) 兜底：对应段落。这是推断性匹配，粒度只到段——即使命中的是句对
-        // 条目，也展示完整 zhParagraph：兜底就是「这段的译文大致是这些」，
-        // 单条句对在段落对不上的前提下面临的是错位句，残句比整段更误导
-        // （「长句只翻译了其中一句」的主诉之一就是这里）。
-        entries.firstOrNull { it.paragraph == nParagraph }
-            ?.takeIf { it.pair.confidence >= TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE }
+        // 5) 兜底：对应段落。段落精确命中说明点击句确实在这段里，先做一次
+        // 段内句级找回：段落兜底原本一刀切展示整段，但段内往往能找到与点击句
+        // 重叠最高的那条句对，找回后升级为句子级，词级高亮与句级重翻随之可用。
+        // 门槛低于第 4 级（章内盲扫必须严），因为段落已经精确命中、候选被约束
+        // 在本段之内；且找回条件是「与点击句本身相似」，V4 那种「错位残句」
+        // （按位置取段内第一条）不会复发。找不回才降为整段展示。
+        val paragraphEntries = entries.filter { it.paragraph == nParagraph }
+        if (paragraphEntries.isNotEmpty() && nSentence.isNotBlank()) {
+            val queryTokens = TranslationMemorySearch.tokenSet(nSentence)
+            var bestEntry: Entry? = null
+            var bestSimilarity = 0.0
+            for (entry in paragraphEntries) {
+                if (entry.sentence.isBlank()) continue
+                val similarity = TranslationMemorySearch.similarity(
+                    queryTokens,
+                    TranslationMemorySearch.tokenSet(entry.sentence)
+                )
+                if (similarity > bestSimilarity) {
+                    bestSimilarity = similarity
+                    bestEntry = entry
+                }
+            }
+            bestEntry?.takeIf {
+                bestSimilarity >= TranslationMemorySearch.PARAGRAPH_RECOVERY_MIN_SIMILARITY &&
+                    it.pair.confidence >= TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE
+            }?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
+        }
+        // 5b) 段落级展示。即使命中的是句对条目，也展示完整 zhParagraph：兜底
+        // 就是「这段的译文大致是这些」，单条句对在句级找回都失败的前提下面临
+        // 的是错位句，残句比整段更误导（「长句只翻译了其中一句」的主诉之一
+        // 就是这里）。
+        paragraphEntries.firstOrNull { it.pair.confidence >= TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE }
             ?.let {
                 return TranslationLookupResult(
                     translationTitle = memory.translationTitle,
@@ -155,6 +183,17 @@ object TranslationMemorySearch {
 
     /** 句子级模糊匹配的最低相似度；低于阈值宁可走段落兜底也不误配。 */
     const val FUZZY_MIN_SIMILARITY = 0.85
+
+    /**
+     * 段落兜底内「段内句级找回」的最低相似度。
+     *
+     * 比第 4 级（0.85）宽松是有意的：走到这里时英文段落已**精确**命中，候选句
+     * 被约束在本段之内，误配面远小于章内盲扫；而第 4 级同阈值扫描过全章都没
+     * 命中，用同阈值在段内重扫是纯冗余。0.60 是首刀值——点击句与本段某句
+     * token 重叠过半即认为找到了对应句，错配最坏也就是展示邻句译文（段落
+     * 上下文仍在「整句对照」展开里），比一刀切整段更有用。
+     */
+    const val PARAGRAPH_RECOVERY_MIN_SIMILARITY = 0.60
 
     private val WHITESPACE = Regex("\\s+")
     private val PUNCTUATION = Regex("[.,!?;:，。！？；：…、·•]+")

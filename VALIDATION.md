@@ -1103,3 +1103,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **桌面词典引擎**：`DesktopDictionaryDatabase`（sqlite-jdbc）实现 :shared `DictionaryDatabase`，SQL 引用 `DictionarySql` 唯一真相（M1 双引擎对账兑现到桌面运行时）；词典解析：`-Dlr.dict` → 数据目录 dictionary/ → 开发仓库 assets。
 - **UI**：书架（JFileChooser 导入/列表/删除/打开，走刀7 :shared 导入核心）+ 阅读屏（章切换、SentenceSplitter 切句定位、buildAnnotatedString+pointerInput 点词）。启动级验证通过；**视觉与点词交互待真机体验**。
 - **剩余主线**：TTS 状态机簇抽取（与并行会话的 tts 改动正面相撞，暂缓）→ M3 听书 → M4 JCEF 阅读器 → M5 打包。
+
+## 2026-09-06 对照查询：段落兜底内做段内句级找回，段落级命中也能出词级高亮
+
+- **动机**：点词对照里段落级（L5 兜底）命中一刀切展示整段、永无词级高亮，是词级高亮覆盖面的最大缺口。而走到 L5 的点击句其实就在该段里，段内往往存在对应句对。
+- **实现**：`TranslationMemoryIndex.lookup` 第 5 级改为先在已精确命中的段内做句级找回——与点击句 token Dice ≥ 新常量 `PARAGRAPH_RECOVERY_MIN_SIMILARITY`(0.60) 且 pair 置信度 ≥ 0.30 的句对升级为 SENTENCE（词级高亮、句级重翻随之可用）；找不回才降为原来的整段展示。阈值必须低于第 4 级的 0.85 才有增量（第 4 级已同法盲扫过全章，段内同阈值重扫是纯冗余）。找回条件是「与点击句本身相似」而非 V4 之前的「按位置取段内第一条」，错位残句不会复发；段落上下文在「整句对照」展开里始终可见（V4「长句只翻译了其中一句」的主诉不复活）。`TranslationMemoryRepository` 无需改动（SENTENCE 才做词级对齐的门槛自然放行找回结果）。
+- **单测**：TranslationMemoryIndexTest +2（段内找回升级 SENTENCE 且 pairIndex/段落上下文不变；段内最像句对置信度低于门槛时不找回、降整段）。**坑**：找回测试的点击句若包含存储句子串（如「He was late that morning.」⊃「he was late」）会被既有第 3 级「句子包含」截走，测不到新逻辑——须用打断语序的句子（「He was, that morning, late.」）。
+- **门禁**：`:shared:test`（TranslationMemoryIndexTest 15 条）+ `:app:testDebugUnitTest` 全量全绿。真实图书上的命中率/准确度变化待用户真机点词体感（词级高亮主观准确度本就是「未验证」项）。

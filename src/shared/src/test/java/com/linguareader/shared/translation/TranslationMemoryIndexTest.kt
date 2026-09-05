@@ -85,6 +85,50 @@ class TranslationMemoryIndexTest {
     }
 
     @Test
+    fun `paragraph fallback recovers a similar sentence inside the paragraph`() {
+        // 与「He was late.」token 重叠 0.75：低于第 4 级章内阈值 0.85，但在段内
+        // 找回阈值 0.60 之上；特意把语序打断（不含任何存储句的子串），确保走的是
+        // 段落兜底内的句级找回而不是第 3 级「句子包含」。找回后升级句子级，
+        // 词级高亮与句级重翻随之可用，段落仍在上下文里。
+        val result = index.lookup(0, "He was, that morning, late.", paragraph)
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.SENTENCE, result!!.matchLevel)
+        assertEquals("他迟到了。", result.chinese)
+        assertEquals(0, result.pairIndex)
+        assertEquals(paragraph, result.englishParagraph)
+        assertEquals(zhParagraph, result.chineseParagraph)
+    }
+
+    @Test
+    fun `paragraph recovery respects the confidence floor`() {
+        // 段内最像的句对自身置信度低于门槛时不找回（宁可整段，不可错标残句），
+        // 降级到段落级展示同段高置信句对的完整段落。
+        val lowConfidenceFirst = TranslationMemory(
+            sourceBookId = "s",
+            sourceTitle = "Source",
+            translationBookId = "z",
+            translationTitle = "译本",
+            alignedAt = 0L,
+            pairs = listOf(
+                AlignedSentencePair(
+                    0, 0, paragraph, zhParagraph, "He was late.", "他迟到了。", 0.25f
+                ),
+                AlignedSentencePair(
+                    0, 0, paragraph, zhParagraph, "Then he ran.", "然后他跑了起来。", 0.9f
+                )
+            )
+        )
+
+        val result = TranslationMemoryIndex(lowConfidenceFirst)
+            .lookup(0, "He was, that morning, late.", paragraph)
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.PARAGRAPH, result!!.matchLevel)
+        assertEquals(zhParagraph, result.chinese)
+    }
+
+    @Test
     fun `paragraph fallback below the confidence floor returns null`() {
         assertNull(index.lookup(4, "Whatever.", "Low confidence paragraph."))
     }
