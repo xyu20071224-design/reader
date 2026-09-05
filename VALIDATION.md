@@ -1110,3 +1110,12 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **实现**：`TranslationMemoryIndex.lookup` 第 5 级改为先在已精确命中的段内做句级找回——与点击句 token Dice ≥ 新常量 `PARAGRAPH_RECOVERY_MIN_SIMILARITY`(0.60) 且 pair 置信度 ≥ 0.30 的句对升级为 SENTENCE（词级高亮、句级重翻随之可用）；找不回才降为原来的整段展示。阈值必须低于第 4 级的 0.85 才有增量（第 4 级已同法盲扫过全章，段内同阈值重扫是纯冗余）。找回条件是「与点击句本身相似」而非 V4 之前的「按位置取段内第一条」，错位残句不会复发；段落上下文在「整句对照」展开里始终可见（V4「长句只翻译了其中一句」的主诉不复活）。`TranslationMemoryRepository` 无需改动（SENTENCE 才做词级对齐的门槛自然放行找回结果）。
 - **单测**：TranslationMemoryIndexTest +2（段内找回升级 SENTENCE 且 pairIndex/段落上下文不变；段内最像句对置信度低于门槛时不找回、降整段）。**坑**：找回测试的点击句若包含存储句子串（如「He was late that morning.」⊃「he was late」）会被既有第 3 级「句子包含」截走，测不到新逻辑——须用打断语序的句子（「He was, that morning, late.」）。
 - **门禁**：`:shared:test`（TranslationMemoryIndexTest 15 条）+ `:app:testDebugUnitTest` 全量全绿。真实图书上的命中率/准确度变化待用户真机点词体感（词级高亮主观准确度本就是「未验证」项）。
+
+## 2026-09-06 对照查询（二）：段落兜底内加释义找回，意译句也能升级句子级
+
+- **动机**：token 重叠找回（上一条目）救不了意译——"He said quietly"→「他低声道」字面零重叠；但被点词的 ECDICT 释义词就出现在中译句里。用户方案：按「单词的意思」在段内定位对照句，多候选项按可行度排序。
+- **实现**：`TranslationMemoryIndex.lookup` 第 5 级改为两级找回——①token 重叠（强证据，≥0.60）优先；②**释义找回**（弱证据）：调用方经新参数 `enWord`/`enWordOffset`/`senseCandidates: () -> List<String>` 惰性提供词典候选（lambda 只在段内且重叠失败时被调，L1–4 热点路径不付词典 IO），索引对段内每条句对跑 `WordAligner.align`，词级置信度 ≥ `PARAGRAPH_RECOVERY_MIN_SENSE_CONFIDENCE`(0.70) 者为候选，按「词级置信度 + 重叠×0.2」综合取最高。0.70 的实际作用是排除相对位置明显错位的命中（WordAligner DICTIONARY 置信度下限 0.65，位置惩罚封顶 0.35），常用词的义项噪声真正的防线是：段落已精确命中 + pair 置信度门槛 + 重叠优先 + 段落上下文可见。
+- **边界（有意不做）**：不放大全章——段落未命中（L5→null）的句子不用释义词反查全章，V2 实测误配句对 24% 也有锚点命中，锚点单独当判据太弱。
+- **单测**：TranslationMemoryIndexTest +4（意译场景释义找回升级 SENTENCE / 多候选按综合分排序 / 释义词所在句对置信度不足不找回 / 重叠找回优先于释义找回）。
+- **门禁**：`:shared:test`（translation 全部）+ `:app:testDebugUnitTest` 全量全绿。跑门禁时并行会话的 tts 迁移在途改动挡住 :shared 编译，按既定流程 pathspec stash 隔离 → 干净树跑门禁 → stash apply 还原（逐文件核对在途状态无损）；期间 stash pop 输出与实际状态矛盾（报 drop 但未还原），改用 apply+核对+drop 处置。
+- **坑**：索引回调是普通 lambda（保持共享层零协程依赖），仓库侧词典查询是 suspend——在 `Dispatchers.IO` 工作线程上 `runBlocking` 桥接（该路径每词至多触发一次，只阻塞工作线程不阻塞外层协程）。

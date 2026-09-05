@@ -13,9 +13,10 @@ package com.linguareader.shared.translation
  *  2. 段落候选内的精确句子（句子级）
  *  3. 句子重叠（同一段落内、英文句互相包含）→ 句子级
  *  4. 句子级模糊（同章内相似度达阈值的句子）→ 句子级
- *  5. 兜底：对应段落；段内先做一次句级找回（相似度达
- *     [TranslationMemorySearch.PARAGRAPH_RECOVERY_MIN_SIMILARITY]）→ 句子级，
- *     找不回才降为段落级
+ *  5. 兜底：对应段落；段内先做句级找回（token 重叠达
+ *     [TranslationMemorySearch.PARAGRAPH_RECOVERY_MIN_SIMILARITY]，或释义词
+ *     命中达 [TranslationMemorySearch.PARAGRAPH_RECOVERY_MIN_SENSE_CONFIDENCE]，
+ *     重叠优先）→ 句子级，找不回才降为段落级
  *
  * 第 4、5 级是推断出来的匹配，要求置信度不低于
  * [TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE]；1–3 级是文本精确命中，
@@ -40,7 +41,14 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
     /** 该章有多少条句对（0 表示这一章没有对齐结果）。 */
     fun chapterPairCount(chapterIndex: Int): Int = byChapter[chapterIndex]?.size ?: 0
 
-    fun lookup(chapterIndex: Int, sentence: String, paragraph: String): TranslationLookupResult? {
+    fun lookup(
+        chapterIndex: Int,
+        sentence: String,
+        paragraph: String,
+        enWord: String = "",
+        enWordOffset: Int = -1,
+        senseCandidates: () -> List<String> = { emptyList() }
+    ): TranslationLookupResult? {
         val entries = byChapter[chapterIndex] ?: return null
         if (entries.isEmpty()) return null
 
@@ -87,15 +95,19 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
                 ?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
         }
 
-        // 5) 兜底：对应段落。段落精确命中说明点击句确实在这段里，先做一次
+        // 5) 兜底：对应段落。段落精确命中说明点击句确实在这段里，先做两级
         // 段内句级找回：段落兜底原本一刀切展示整段，但段内往往能找到与点击句
-        // 重叠最高的那条句对，找回后升级为句子级，词级高亮与句级重翻随之可用。
-        // 门槛低于第 4 级（章内盲扫必须严），因为段落已经精确命中、候选被约束
-        // 在本段之内；且找回条件是「与点击句本身相似」，V4 那种「错位残句」
-        // （按位置取段内第一条）不会复发。找不回才降为整段展示。
+        // 对应的那条句对，找回后升级为句子级，词级高亮与句级重翻随之可用。
+        // 找回条件都是「与点击句本身对应」而非 V4 那种「按位置取段内第一条」，
+        // 错位残句不会复发。找不回才降为整段展示。
         val paragraphEntries = entries.filter { it.paragraph == nParagraph }
         if (paragraphEntries.isNotEmpty() && nSentence.isNotBlank()) {
             val queryTokens = TranslationMemorySearch.tokenSet(nSentence)
+
+            // 5a) token 重叠找回（强证据，优先）：与点击句 Dice ≥ 阈值。
+            // 门槛低于第 4 级（章内盲扫必须严），因为段落已精确命中、候选被
+            // 约束在本段之内；而第 4 级同阈值扫描过全章都没命中，用同阈值在
+            // 段内重扫是纯冗余。
             var bestEntry: Entry? = null
             var bestSimilarity = 0.0
             for (entry in paragraphEntries) {
@@ -113,11 +125,46 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
                 bestSimilarity >= TranslationMemorySearch.PARAGRAPH_RECOVERY_MIN_SIMILARITY &&
                     it.pair.confidence >= TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE
             }?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
+
+            // 5b) 释义找回（弱证据，兜在重叠之后）：意译句 token 对不上，但被点
+            // 单词的释义词（ECDICT 义项中文候选）出现在某条中译句里。候选生成
+            // 交给调用方按需提供（词典查询有 IO 成本，L1–4 命中不该付这笔钱），
+            // 这里只负责定位与排序：多个候选按「释义词匹配置信度（已含中英
+            // 相对位置一致性）+ 重叠度微弱加成」综合取最高。
+            val candidates = senseCandidates()
+            if (enWord.isNotBlank() && candidates.isNotEmpty()) {
+                var bestSense: Entry? = null
+                var bestSenseScore = -1.0
+                for (entry in paragraphEntries) {
+                    if (entry.sentence.isBlank()) continue
+                    if (entry.pair.confidence < TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE) continue
+                    val alignment = WordAligner.align(
+                        enWord = enWord,
+                        enSentence = sentence,
+                        zhSentence = entry.pair.zhSentence,
+                        candidates = candidates,
+                        enOffset = enWordOffset
+                    ) ?: continue
+                    if (alignment.confidence < TranslationMemorySearch.PARAGRAPH_RECOVERY_MIN_SENSE_CONFIDENCE) {
+                        continue
+                    }
+                    val overlap = TranslationMemorySearch.similarity(
+                        queryTokens,
+                        TranslationMemorySearch.tokenSet(entry.sentence)
+                    )
+                    val score = alignment.confidence + overlap * 0.2
+                    if (score > bestSenseScore) {
+                        bestSenseScore = score
+                        bestSense = entry
+                    }
+                }
+                bestSense?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
+            }
         }
-        // 5b) 段落级展示。即使命中的是句对条目，也展示完整 zhParagraph：兜底
-        // 就是「这段的译文大致是这些」，单条句对在句级找回都失败的前提下面临
-        // 的是错位句，残句比整段更误导（「长句只翻译了其中一句」的主诉之一
-        // 就是这里）。
+        // 5c) 段落级展示。即使命中的是句对条目，也展示完整 zhParagraph：兜底
+        // 就是「这段的译文大致是这些」，单条句对在两级句级找回都失败的前提
+        // 下面临的是错位句，残句比整段更误导（「长句只翻译了其中一句」的
+        // 主诉之一就是这里）。
         paragraphEntries.firstOrNull { it.pair.confidence >= TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE }
             ?.let {
                 return TranslationLookupResult(
@@ -195,6 +242,17 @@ object TranslationMemorySearch {
      */
     const val PARAGRAPH_RECOVERY_MIN_SIMILARITY = 0.60
 
+    /**
+     * 段落兜底内「释义找回」的最低词级置信度（[WordAligner.align] 的置信度）。
+     *
+     * WordAligner 的 DICTIONARY 置信度下限是 0.65（位置惩罚封顶 0.35），所以
+     * 0.70 实际排除的是「释义词在中文句里的相对位置与英文词明显错位」的命中
+     * （|Δpos| > 0.857）——释义词本身出现几乎总是能过 0.65，这道门槛挡不住
+     * 常用词的义项噪声，真正的防错标靠三点：段落已精确命中（候选被约束在本
+     * 段内）、pair 自身置信度门槛、以及重叠证据优先于释义证据。
+     */
+    const val PARAGRAPH_RECOVERY_MIN_SENSE_CONFIDENCE = 0.70f
+
     private val WHITESPACE = Regex("\\s+")
     private val PUNCTUATION = Regex("[.,!?;:，。！？；：…、·•]+")
     private val NON_TOKEN = Regex("[^a-z0-9']+")
@@ -204,9 +262,14 @@ object TranslationMemorySearch {
         memory: TranslationMemory,
         chapterIndex: Int,
         sentence: String,
-        paragraph: String
+        paragraph: String,
+        enWord: String = "",
+        enWordOffset: Int = -1,
+        senseCandidates: () -> List<String> = { emptyList() }
     ): TranslationLookupResult? =
-        TranslationMemoryIndex(memory).lookup(chapterIndex, sentence, paragraph)
+        TranslationMemoryIndex(memory).lookup(
+            chapterIndex, sentence, paragraph, enWord, enWordOffset, senseCandidates
+        )
 
     fun normalize(s: String): String = s.trim()
         .replace(WHITESPACE, " ")

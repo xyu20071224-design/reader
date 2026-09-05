@@ -129,6 +129,118 @@ class TranslationMemoryIndexTest {
     }
 
     @Test
+    fun `paragraph recovery by word sense finds the sentence when tokens drift`() {
+        // 意译场景：点击句与段内任何英文句 token 重叠都远低于 0.60，重叠找回
+        // 失败；但被点词 softly 的释义词「低声」出现在第一句中译里 → 释义找回
+        // 升级句子级。段落上下文保持不变。
+        val memory = TranslationMemory(
+            sourceBookId = "s",
+            sourceTitle = "Source",
+            translationBookId = "z",
+            translationTitle = "译本",
+            alignedAt = 0L,
+            pairs = listOf(
+                AlignedSentencePair(
+                    0, 0, "He murmured softly. Then he ran.", "他低声道。然后他跑了起来。",
+                    "He murmured softly.", "他低声道。", 0.9f
+                ),
+                AlignedSentencePair(
+                    0, 0, "He murmured softly. Then he ran.", "他低声道。然后他跑了起来。",
+                    "Then he ran.", "然后他跑了起来。", 0.85f
+                )
+            )
+        )
+
+        val result = TranslationMemoryIndex(memory)
+            .lookup(0, "He spoke in a low voice.", "He murmured softly. Then he ran.", enWord = "softly") {
+                listOf("低声", "轻声")
+            }
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.SENTENCE, result!!.matchLevel)
+        assertEquals("他低声道。", result.chinese)
+        assertEquals(0, result.pairIndex)
+        assertEquals("他低声道。然后他跑了起来。", result.chineseParagraph)
+    }
+
+    @Test
+    fun `sense recovery ranks multiple candidates by confidence and overlap`() {
+        // 两句中译都含释义词（低声 / 轻声）：第一句词级置信度更高（位置更接近
+        // 英文词的相对位置），综合分胜出。
+        val memory = TranslationMemory(
+            sourceBookId = "s",
+            sourceTitle = "Source",
+            translationBookId = "z",
+            translationTitle = "译本",
+            alignedAt = 0L,
+            pairs = listOf(
+                AlignedSentencePair(
+                    0, 0, "He murmured softly. Then he ran quietly.", "他低声道。然后他轻声跑开了。",
+                    "He murmured softly.", "他低声道。", 0.9f
+                ),
+                AlignedSentencePair(
+                    0, 0, "He murmured softly. Then he ran quietly.", "他低声道。然后他轻声跑开了。",
+                    "Then he ran quietly.", "然后他轻声跑开了。", 0.85f
+                )
+            )
+        )
+
+        val result = TranslationMemoryIndex(memory)
+            .lookup(0, "He spoke in a low voice.", "He murmured softly. Then he ran quietly.", enWord = "softly") {
+                listOf("低声", "轻声")
+            }
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.SENTENCE, result!!.matchLevel)
+        assertEquals("他低声道。", result.chinese)
+    }
+
+    @Test
+    fun `sense recovery skips pairs below the confidence floor`() {
+        // 段内最像（含释义词）的句对自身置信度不足 → 不找回，降级到段落级。
+        val memory = TranslationMemory(
+            sourceBookId = "s",
+            sourceTitle = "Source",
+            translationBookId = "z",
+            translationTitle = "译本",
+            alignedAt = 0L,
+            pairs = listOf(
+                AlignedSentencePair(
+                    0, 0, "He murmured softly. Then he ran.", "他低声道。然后他跑了起来。",
+                    "He murmured softly.", "他低声道。", 0.25f
+                ),
+                AlignedSentencePair(
+                    0, 0, "He murmured softly. Then he ran.", "他低声道。然后他跑了起来。",
+                    "Then he ran.", "然后他跑了起来。", 0.9f
+                )
+            )
+        )
+
+        val result = TranslationMemoryIndex(memory)
+            .lookup(0, "He spoke in a low voice.", "He murmured softly. Then he ran.", enWord = "softly") {
+                listOf("低声")
+            }
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.PARAGRAPH, result!!.matchLevel)
+        assertEquals("他低声道。然后他跑了起来。", result.chinese)
+    }
+
+    @Test
+    fun `overlap recovery takes precedence over sense recovery`() {
+        // 点击句与第一句 token 重叠 0.75（重叠找回可达），同时释义词「跑」只在
+        // 第二句中译里：强证据优先，必须走重叠找回而不是释义找回。
+        val result = index.lookup(
+            0, "He was, that morning, late.", paragraph, enWord = "late"
+        ) { listOf("跑") }
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.SENTENCE, result!!.matchLevel)
+        assertEquals("他迟到了。", result.chinese)
+        assertEquals(0, result.pairIndex)
+    }
+
+    @Test
     fun `paragraph fallback below the confidence floor returns null`() {
         assertNull(index.lookup(4, "Whatever.", "Low confidence paragraph."))
     }

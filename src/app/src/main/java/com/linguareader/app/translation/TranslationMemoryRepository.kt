@@ -9,6 +9,7 @@ import com.linguareader.app.data.DictionaryRepository
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.tts.TtsTextExtractor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -125,8 +126,19 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
         lookup: WordLookup
     ): TranslationLookupResult? = withContext(Dispatchers.IO) {
         val index = index(book.id) ?: return@withContext null
-        val result = index.lookup(chapterIndex, lookup.sentence, lookup.paragraph)
-            ?: return@withContext null
+        val result = index.lookup(
+            chapterIndex,
+            lookup.sentence,
+            lookup.paragraph,
+            enWord = lookup.word,
+            enWordOffset = lookup.sentenceOffset
+        ) {
+            // 惰性提供：只有走到段落兜底且重叠找回失败时索引才会调用，L1–4
+            // 命中的热点路径不付词典查询的 IO 成本。索引回调是普通 lambda
+            // （保持共享层零协程依赖），而词典查询是 suspend——本 lambda 只在
+            // Dispatchers.IO 工作线程上被调用，runBlocking 只阻塞该工作线程。
+            runBlocking { dictionarySenses(lookup.word) }
+        } ?: return@withContext null
         // 只有句子级命中才做词级定位；段落级命中宁可不高亮，避免错标。
         if (result.matchLevel != TranslationMatchLevel.SENTENCE) return@withContext result
         val alignment = WordAligner.align(
