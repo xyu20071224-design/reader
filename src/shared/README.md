@@ -43,5 +43,6 @@
 - `com.linguareader.shared.translation` — `TranslationAligner` / `WordAligner` / `TranslationMemoryIndex`（含 `TranslationMemorySearch`）/ `MeaningPhraseParser` / `TraditionalSimplified` / `TranslationModels`（F-128 对齐全套，M2 刀3）。随迁测试 6 个。
 - `com.linguareader.shared.ai` — `AiModels` / `AiTranslator` / `AiTranslators` / `AiBookTranslator` / `AnthropicCompat` / `GeminiCompat` / `OpenAiCompat` / `JsonChatTranslator` / `ChapterTextExtractor`（jsoup compileOnly）/ `LocalGlossaryTranslator` / `SentenceTranslator`（M2 刀3）。**留守 `:app`**：`ModelDiscovery`（`probeKeyUsable` 等 internal 函数被 `AiProviderSettings` 消费）与 5 个 Context/SharedPreferences 仓库。随迁测试 11 个。
 - `com.linguareader.shared.tts.SentenceSplitter` — 中英混排分句纯逻辑（`TranslationAligner` 也消费它；`app/tts` 留同名 val 兼容）。随迁测试 1 个。
+- `com.linguareader.shared.data.BookScopedStore.kt` + `VocabularyRepository.kt` — 删除级联契约（9 个实现方的所有权接口）与生词本仓库核心（M2 刀4；构造器收 `AppContext`，`AppContext` 增加 `filesDir` 成员；`:app` 同名 facade 只留 SAF 导出）。随迁测试 1 个文件（VocabularyTest，7 条）。
 
-**M2 下一刀目标**：`LibraryRepository`/`VocabularyRepository`/`BookScopedStore` 一类（JSON 文件存储，要 `AppContext` 扩 `filesDir` 成员）；TTS 状态机簇放最后。兼容层现有四份（`SharedDataCompat`/`AiCompat`/`TranslationCompat`/`SentenceSplitterCompat`），全量替换旧 import 后一并删除。
+**M2 下一刀目标**：`LibraryRepository` + 导入器（`BookImporter` 的 SAF/Uri 面要与桌面文件对话框一起设计）→ TTS 状态机簇（放最后）。兼容层现有四份（SharedDataCompat/AiCompat/TranslationCompat/SentenceSplitterCompat），全量替换旧 import 后一并删除。兼容层现有四份（`SharedDataCompat`/`AiCompat`/`TranslationCompat`/`SentenceSplitterCompat`），全量替换旧 import 后一并删除。

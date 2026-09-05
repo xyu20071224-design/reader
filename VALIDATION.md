@@ -1068,3 +1068,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **依赖变化**：:shared 补 `compileOnly("org.jsoup:jsoup:1.18.3")`（ChapterTextExtractor 清 HTML，纯 JVM；Android 运行时由 :app 已有 jsoup 提供），照 org.json 的防撞模式。
 - **已知跨模块坑再现**：AiBookStatus 进 :shared 后 BookshelfScreen 的 `aiStatus.error` 智能转换失败，捕获局部量修复（每刀必踩规则，README 已记）。
 - **门禁**：:app 373 + :shared 174 = **547 守恒**（130 条随迁），failures 0；assembleDebug / compileDebugAndroidTestKotlin / :desktopApp:build 全绿。
+
+## 2026-09-06 桌面迁移 M2 刀4：AppContext 扩 filesDir，BookScopedStore 契约与 VocabularyRepository 核心入 :shared
+
+- **迁移（`7fe2ce8`）**：`BookScopedStore.kt`（删除级联契约 + StoreUsage/StorageReport/BookDataOrphan/formatStorageBytes，本就零 Android 依赖）整体迁入 :shared，typealias + 同名委托函数兜底 9 个实现方与 3 个 UI 消费方；`VocabularyRepository` 增删改查/复习调度/csv 迁入 :shared——**构造器改收 `AppContext`**（`AppContext` 增加 `filesDir: File` 成员，Android 侧新增 `AndroidAppContext` 实现），`:app` 留同名 facade 只保留 SAF 导出（contentResolver）；`VocabularyTest` 随迁 7 条。
+- **守恒**：`:app` 366 + `:shared` 181 = **547**（VocabularyTest 7 条此消彼长），全绿；assembleDebug / androidTest 编译 / :desktopApp:build 通过。
+- **并行会话冲突处置（重要过程记录）**：本刀验证期间发现**另一个会话在同一工作树开发「手动 AI 翻译」功能**（ManualTranslationIo.kt + 测试 + AppViewModel/tts tagger/strings 等约 16 个文件的在途改动，其中 ManualTranslationIoTest 有单 `!` 语法错误挡住 :shared 测试编译）。处置：用 pathspec stash 把它的全部在途文件临时隔离 → 在「HEAD + 本刀」的干净树上跑全门禁 → 提交推送（提交只含本刀 7 个文件）→ 从 stash 逐文件还原它的现场（含我修的 `!!` 两字符语法修复，未提交它的任何文件）。**它恢复后的工作树仍编译不过（它自己的功能未完成）——那是它的在途状态，不是本刀回归**。
+- **教训**：并行会话下 `git add src/` 会把别人的在途文件卷进提交；本刀起提交一律用显式路径。
