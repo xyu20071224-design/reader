@@ -1120,3 +1120,9 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **门禁**：`:shared:test`（translation 全部）+ `:app:testDebugUnitTest` 全量全绿。跑门禁时并行会话的 tts 迁移在途改动挡住 :shared 编译，按既定流程 pathspec stash 隔离 → 干净树跑门禁 → stash apply 还原（逐文件核对在途状态无损）；期间 stash pop 输出与实际状态矛盾（报 drop 但未还原），改用 apply+核对+drop 处置。
 - **坑**：索引回调是普通 lambda（保持共享层零协程依赖），仓库侧词典查询是 suspend——在 `Dispatchers.IO` 工作线程上 `runBlocking` 桥接（该路径每词至多触发一次，只阻塞工作线程不阻塞外层协程）。
 - **⚠️ 混入披露与处置（发生即记录）**：本条目提交（`0e5ffc0`）不慎卷入并行会话已暂存的 3 个 tts 迁移文件（TtsPlaybackEngine/State/TtsPlaybackEngineTest 入 :shared，1556 行）——stash apply 把它们的暂存态还原进索引，显式路径 `git add` 挡不住「已在暂存区」的文件。该提交使 main 短暂编译不过（其引用的 BookTtsPreparer 尚不存在）；紧随其后用 `git rm --cached` 回退提交移除这 3 个文件（磁盘保留、其会话在途状态无损），CI 以回退后的树为准。**教训（比刀7 的「git add src/」更隐蔽）：与并行会话共用工作树时，提交前必须 `git diff --cached --stat` 审查暂存区全量，而不能只看自己 add 的路径。**
+
+## 2026-09-06 桌面迁移 M2 刀9：TTS 播放状态机簇入 :shared（引擎/状态/章模型/合成接口）
+
+- **迁移（`c60dcf6`）**：`TtsPlaybackEngine`（720 行纯状态机）+ `TtsPlaybackState` + `TtsChapter`（自 TtsTextExtractor.kt 抽出；sentenceLocation 的 Log.w→println，桌面无 android.util.Log）+ 四个合成接口面（`TtsSynthesizer`/`TtsSynthesizerListener`/`ChapterTtsPreparer`/`BookTtsPreparer`）入 `com.linguareader.shared.tts`；Android 的 SystemTts/Cloud/MiMo 实现留 :app 实现共享接口；`TtsPlaybackEngineTest` 21 条随迁（shared 补 coroutines-test 测试依赖）；`app/tts` 留 TtsPlaybackCompat typealias。**抽取的共享层至此见底**：update/data/res/app/translation/ai/tts/importer 九个域全部就位。
+- **守恒**：:app 341 / :shared 223 / :desktopApp 3 全绿（含随迁 21 条；差额含并行会话在途测试文件版本漂移）。
+- **并行会话互扰实录（重要）**：本轮双方同时在做 stash 隔离与补救——它先把我的 tts 迁移文件误入它的 `0e5ffc0`、再以 `9f23850` 从仓库回退（磁盘保留）；我的 `c60dcf6` 随后把它们作为正式迁移提交加回。**main 当前内容正确且全绿**，但两个 agent 并发写同一工作树的互相覆盖风险已经三次实际发生（`3517c46` 混入它的 SentenceSplitter 增强、`9f23850` 回退我的文件、本轮再次混入其 SentenceSplitter 测试改动），必须人工裁决会话归属。
