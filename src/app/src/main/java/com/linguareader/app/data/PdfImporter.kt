@@ -8,6 +8,9 @@ import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem
 import com.tom_roush.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineNode
 import com.tom_roush.pdfbox.text.PDFTextStripper
+import com.linguareader.shared.importer.chapterPatterns
+import com.linguareader.shared.importer.escapeHtml
+import com.linguareader.shared.importer.textToXhtml
 import java.io.File
 
 /** Imports a text-layer PDF into the same chapter-based book model. */

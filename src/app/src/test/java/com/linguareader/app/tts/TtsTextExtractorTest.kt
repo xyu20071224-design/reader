@@ -195,6 +195,33 @@ class TtsTextExtractorTest {
         assertEquals(listOf("Inner beta."), chapter.blocks)
     }
 
+    @Test
+    fun overlongBlockIsHardSplitAndSpeakersStayParallel() {
+        // 长度护栏：无终止符的超长块（诗歌/pre/TXT 无空行整段）被切成
+        // ≤300 字符的块；说话人标签必须与句子列表保持平行，高亮定位每个
+        // 句子都必须找得到。
+        val longText = ("no terminator here just words flowing on and on ").repeat(12).trim()
+        val book = bookWith(
+            """
+            <html><body>
+              <p>$longText</p>
+              <p>Short tail.</p>
+            </body></html>
+            """.trimIndent()
+        )
+
+        val chapter = TtsTextExtractor().chapter(book, 0)
+
+        assertTrue(chapter.sentences.size > 1, "long block should be hard-split")
+        chapter.sentences.forEach { sentence ->
+            assertTrue(sentence.length <= 300, "sentence too long: ${sentence.take(40)}…")
+        }
+        assertEquals(chapter.sentenceCount, chapter.speakers.size)
+        repeat(chapter.sentenceCount) { index ->
+            assertTrue(chapter.sentenceLocation(index) != null, "location null for sentence $index")
+        }
+    }
+
     private fun bookWith(html: String): Book {
         val dir = File.createTempFile("tts-chapter", "").let {
             it.delete()

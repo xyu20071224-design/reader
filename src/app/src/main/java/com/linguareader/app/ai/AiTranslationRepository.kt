@@ -5,7 +5,7 @@ import android.content.Context
 import com.linguareader.app.R
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.Chapter
-import com.linguareader.app.data.escapeHtml
+import com.linguareader.shared.importer.escapeHtml
 import com.linguareader.app.tts.TtsTextExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable

@@ -80,10 +80,12 @@ object SpeakerRuleTagger {
 
     /**
      * Tags every sentence of [blocks] (leaf blocks, whitespace-normalised as
-     * produced by `TtsTextExtractor`). The returned list is parallel to
-     * `blocks.flatMap { SentenceSplitter.split(it) }`.
+     * produced by `TtsTextExtractor`). [maxSentenceLength] must match the one
+     * `TtsChapter` used for its own split, so the returned list stays parallel
+     * to `blocks.flatMap { SentenceSplitter.split(it, maxSentenceLength) }`.
      */
-    fun tag(blocks: List<String>): List<String> = index(blocks).ruleSpeakers
+    fun tag(blocks: List<String>, maxSentenceLength: Int = Int.MAX_VALUE): List<String> =
+        index(blocks, maxSentenceLength).ruleSpeakers
 
     /**
      * Full rule-layer analysis: the per-sentence slots (paragraph + quote
@@ -91,13 +93,13 @@ object SpeakerRuleTagger {
      * result projected onto speakers only; the M2 LLM layer needs the slots to
      * align its per-quote answer with the sentence list.
      */
-    fun index(blocks: List<String>): SpeakerQuoteIndex {
+    fun index(blocks: List<String>, maxSentenceLength: Int = Int.MAX_VALUE): SpeakerQuoteIndex {
         val slots = mutableListOf<SpeakerSlot>()
         val quotesByParagraph = mutableListOf<List<String>>()
         var inQuote = false
         for ((paragraph, block) in blocks.withIndex()) {
             val text = normalizeQuotes(block)
-            val sentences = SentenceSplitter.split(text)
+            val sentences = SentenceSplitter.split(text, maxSentenceLength)
             val ranges = sentenceRanges(text, sentences)
             val quotes = quoteSpans(text, inQuote).also { inQuote = it.second }
             val spans = quotes.first

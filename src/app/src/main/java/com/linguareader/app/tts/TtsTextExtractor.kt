@@ -1,5 +1,6 @@
 package com.linguareader.app.tts
 
+import android.util.Log
 import com.linguareader.app.data.Book
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -22,7 +23,8 @@ data class TtsChapter(
      *  Empty means every sentence is "narrator" (pre-M1 caches, no tagger). */
     val speakers: List<String> = emptyList()
 ) {
-    private val sentencesByBlock: List<List<String>> = blocks.map { SentenceSplitter.split(it) }
+    private val sentencesByBlock: List<List<String>> =
+        blocks.map { SentenceSplitter.split(it, SentenceSplitter.TTS_MAX_SENTENCE_CHARS) }
 
     val sentences: List<String> get() = sentencesByBlock.flatten()
 
@@ -40,6 +42,10 @@ data class TtsChapter(
      */
     fun withSpeakers(speakers: List<String>): TtsChapter =
         if (speakers.size == sentenceCount) copy(speakers = speakers) else this
+
+    companion object {
+        private const val TAG = "TtsChapter"
+    }
 
     /** Flat sentence index for a tapped position inside one block. */
     fun sentenceIndexAt(blockText: String, blockOffset: Int): Int? {
@@ -84,7 +90,18 @@ data class TtsChapter(
                     // iteration makes every non-first sentence return null.
                     val sentence = blockSentences[i]
                     val found = blocks[blockIndex].indexOf(sentence, cursor)
-                    if (found < 0) return null
+                    if (found < 0) {
+                        // 静默 null 会让高亮无声消失，这里至少留一条排查线索。
+                        // 常见成因：分句输出与块文本的归一化契约被打破
+                        // （split 内部做了新的字符级改写，或块归一化方式漂移）。
+                        Log.w(
+                            TAG,
+                            "sentence $i not found in block $blockIndex; " +
+                                "highlight skipped. block=\"${blocks[blockIndex].take(80)}\" " +
+                                "sentence=\"${sentence.take(60)}\""
+                        )
+                        return null
+                    }
                     if (i == remaining) return Triple(blockIndex, found, sentence.length)
                     cursor = found + sentence.length
                 }
@@ -134,7 +151,7 @@ class TtsTextExtractor {
         val blocks = leafBlocks(document)
             .map { it.text().replace(Regex("\\s+"), " ").trim() }
             .filter { it.isNotBlank() }
-        val speakers = SpeakerRuleTagger.tag(blocks)
+        val speakers = SpeakerRuleTagger.tag(blocks, SentenceSplitter.TTS_MAX_SENTENCE_CHARS)
         return TtsChapter(safeIndex, chapter.title, blocks, speakers).also { cache[key] = it }
     }
 

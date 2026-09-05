@@ -1,4 +1,4 @@
-package com.linguareader.app.data
+package com.linguareader.shared.importer
 
 import java.io.File
 import java.nio.charset.Charset

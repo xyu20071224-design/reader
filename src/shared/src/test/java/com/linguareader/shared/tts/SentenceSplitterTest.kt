@@ -128,4 +128,82 @@ class SentenceSplitterTest {
         assertEquals(emptyList<String>(), SentenceSplitter.split("   "))
         assertEquals(emptyList<String>(), SentenceSplitter.split(""))
     }
+
+    @Test
+    fun `threeDotEllipsisBehavesLikeUnicodeEllipsis`() {
+        // 刀1：三个 ASCII 句点此前走普通句界分支，`…` 却看小写延续——
+        // 同一种省略号两种命运。现在两者统一：小写延续合并，大写/句末照切。
+        assertEquals(listOf("Wait... what?"), SentenceSplitter.split("Wait... what?"))
+        assertEquals(2, SentenceSplitter.split("He paused... Then he left.").size)
+        assertEquals(1, SentenceSplitter.split("Wait… what?").size)
+    }
+
+    @Test
+    fun `titleAbbreviationsNeverEndASentence`() {
+        val sentences = SentenceSplitter.split(
+            "He met Dr. Watson near St. James's Park. Gen. Ross joined them."
+        )
+        assertEquals(2, sentences.size)
+        assertEquals("He met Dr. Watson near St. James's Park.", sentences[0])
+    }
+
+    @Test
+    fun `sentenceFinalAbbreviationSplitsBeforeCapitalisedWord`() {
+        // 刀2：etc./Inc. 这类可以结束句子的缩写，后面跟大写词视为真句界。
+        val sentences = SentenceSplitter.split("They sell tools, etc. The shop closes at five.")
+        assertEquals(2, sentences.size)
+        assertEquals("They sell tools, etc.", sentences[0])
+    }
+
+    @Test
+    fun `sentenceFinalAbbreviationStaysBeforeLowercaseOrDigits`() {
+        assertEquals(1, SentenceSplitter.split("Read pp. 12 and pp. 13 for details.").size)
+        assertEquals(1, SentenceSplitter.split("The firm Acme Inc. was founded here.").size)
+    }
+
+    @Test
+    fun `splitsWhenEnglishTerminatorIsDirectlyFollowedByCjk`() {
+        // 刀4：混排文本里英文终止符后无空格直接接中文字符（said.她走了）也要切。
+        assertEquals(listOf("He said!", "她哭了。"), SentenceSplitter.split("He said!她哭了。"))
+        assertEquals(2, SentenceSplitter.split("She answered.她走了").size)
+    }
+
+    @Test
+    fun `hardSplitsOverlongSentencesAtWordBoundariesWhenCapped`() {
+        val long = "word ".repeat(40).trim() // 200 字符，无终止符
+        val chunks = SentenceSplitter.split(long, maxSentenceLength = 60)
+
+        assertTrue(chunks.size > 1)
+        chunks.forEach { chunk -> assertTrue(chunk.length <= 60, "chunk too long: $chunk") }
+        assertEquals(long, chunks.joinToString(" "))
+        // 不带上限时保持原样（译本对齐线依赖这一点）。
+        assertEquals(listOf(long), SentenceSplitter.split(long))
+    }
+
+    @Test
+    fun `everySentenceIsFoundInOrderInsideTheNormalisedText`() {
+        // 高亮契约：TtsChapter.sentenceLocation 靠 cursor indexOf 在归一化块里
+        // 反查每个句子，任何 split 输出若不是原文的有序子串就会静默丢高亮。
+        val samples = listOf(
+            "He said \"Hello.\" 然后他走了。",
+            "She asked, \"Is it true?\" He nodded. \"Then leave,\" she added.",
+            "Really!! I can't believe it. Wait… what?",
+            "He works for the U.S. government. Next year he retires.",
+            "J. R. R. Tolkien wrote it. Mr. Baggins lived in No. 3. Then he left.",
+            "He said!她哭了。她 answered.再来一句？",
+            "\"I am sorry, Frodo!\" he cried, full of concern. \"So much has happened this day.\""
+        )
+        samples.forEach { sample ->
+            val text = sample.replace(Regex("\\s+"), " ").trim()
+            var cursor = 0
+            SentenceSplitter.split(text).forEach { sentence ->
+                val found = text.indexOf(sentence, cursor)
+                assertTrue(
+                    found >= 0,
+                    "sentence \"$sentence\" not found in order inside \"$text\""
+                )
+                cursor = found + sentence.length
+            }
+        }
+    }
 }

@@ -135,7 +135,9 @@ class SpeakerLlmTagger(
         blocks: List<String>,
         roster: SpeakerRoster
     ): SpeakerTagResult {
-        val index = SpeakerRuleTagger.index(blocks)
+        // Same cap as TtsChapter's own split: the rule tags must stay parallel
+        // to the chapter's sentence list even when long sentences get hard-split.
+        val index = SpeakerRuleTagger.index(blocks, SentenceSplitter.TTS_MAX_SENTENCE_CHARS)
         val rule = index.ruleSpeakers
         // Nothing to attribute: no sentences, no quotes, or no roster to
         // validate against (the book profile has not produced characters yet).
