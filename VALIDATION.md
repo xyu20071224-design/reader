@@ -1126,3 +1126,9 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **迁移（`c60dcf6`）**：`TtsPlaybackEngine`（720 行纯状态机）+ `TtsPlaybackState` + `TtsChapter`（自 TtsTextExtractor.kt 抽出；sentenceLocation 的 Log.w→println，桌面无 android.util.Log）+ 四个合成接口面（`TtsSynthesizer`/`TtsSynthesizerListener`/`ChapterTtsPreparer`/`BookTtsPreparer`）入 `com.linguareader.shared.tts`；Android 的 SystemTts/Cloud/MiMo 实现留 :app 实现共享接口；`TtsPlaybackEngineTest` 21 条随迁（shared 补 coroutines-test 测试依赖）；`app/tts` 留 TtsPlaybackCompat typealias。**抽取的共享层至此见底**：update/data/res/app/translation/ai/tts/importer 九个域全部就位。
 - **守恒**：:app 341 / :shared 223 / :desktopApp 3 全绿（含随迁 21 条；差额含并行会话在途测试文件版本漂移）。
 - **并行会话互扰实录（重要）**：本轮双方同时在做 stash 隔离与补救——它先把我的 tts 迁移文件误入它的 `0e5ffc0`、再以 `9f23850` 从仓库回退（磁盘保留）；我的 `c60dcf6` 随后把它们作为正式迁移提交加回。**main 当前内容正确且全绿**，但两个 agent 并发写同一工作树的互相覆盖风险已经三次实际发生（`3517c46` 混入它的 SentenceSplitter 增强、`9f23850` 回退我的文件、本轮再次混入其 SentenceSplitter 测试改动），必须人工裁决会话归属。
+
+## 2026-09-06 桌面迁移 M3：云 TTS 听书 MVP（桌面）
+
+- **实现（`0378f6b`）**：`DesktopCloudTtsSynthesizer` 实现 :shared `TtsSynthesizer`（刀9 的接口面兑现）——自建 OpenAI 兼容契约（POST /v1/audio/speech + Bearer + 恒发 response_format=mp3，契约以 tts-server-stack 记忆为准）；MP3 经 `mp3spi` SPI 解码 16bit PCM，javax.sound.sampled 直放（JVM 无内置 MP3 解码，靠 SPI）。听书屏：服务端/Token/音色设置（prefs 持久化，语义对齐 Android `CloudTtsSettings`）+ 选书 + 播放/暂停/句跳/停止 + 当句卡片；播放状态机 = :shared `TtsPlaybackEngine`（dispatcher=Default；chapterLoader 用 ChapterTextExtractor 取章节纯文本、整章单块——块序契约是 Android WebView 高亮专用，桌面无阅读器不需要）。
+- **范围与留白**：桌面不做系统 TTS（拍板决策 3）兑现为唯一云后端路径；语速不改播放速度（MVP 每句自然语速）、整书缓存靠不实现 BookTtsPreparer 由引擎自动隐藏；词级高亮需 M4 阅读器。**真实出声需用户启动 tts-server（Kokoro:8000 / IndexTTS:8001）后填地址体验**——本轮只有启动级验证。
+- **并行会话收尾**：其已停止，translation「释义找回」在途改动（3 文件）停止前已可编译，留在工作树未提交（0 失败基线上不影响门禁）；其归属由用户决定提交或丢弃。
