@@ -1,5 +1,7 @@
 plugins {
     id("org.jetbrains.kotlin.jvm")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.compose")
     application
 }
 
@@ -15,6 +17,10 @@ kotlin {
 dependencies {
     implementation(project(":shared"))
 
+    // Compose Desktop UI（M2 起）：currentOs 只拉 Windows 运行时，别换成 universal。
+    implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
+
     // :shared 里的 org.json / coroutines 是 compileOnly（Android 侧由平台与 lifecycle 提供），
     // 桌面没有 android.jar，所以运行时得由本模块补齐 —— 版本与 :app 在用的一致。
     // 刀5 起 DesktopAppContext 自己也编译期用 org.json（叶子模块，无撞类风险），升为 implementation。
@@ -29,10 +35,10 @@ dependencies {
 }
 
 application {
-    // 默认 M1 词典探针；切换冒烟目标用 -PmainClass=...，
-    // 如 -PmainClass=com.linguareader.desktop.DesktopContextProbeKt（M2 数据平台面探针）。
+    // M2 起默认入口是桌面 UI 主程序；探针用 -PmainClass=... 切换，
+    // 如 -PmainClass=com.linguareader.desktop.DesktopContextProbeKt（数据平台面冒烟）。
     mainClass.set(
         providers.gradleProperty("mainClass")
-            .orElse("com.linguareader.desktop.DictionaryProbeKt")
+            .orElse("com.linguareader.desktop.LinguaReaderAppKt")
     )
 }
