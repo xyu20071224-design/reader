@@ -1082,3 +1082,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **实现（`1f315b5`）**：`DesktopAppContext` 实现 `AppContext`（`filesDir` 透传；`prefs(name)` 落 `<filesDir>/prefs/<name>.json`，`JsonPreferencesStore` 写穿持久、读容错、temp+rename 原子写——语义对齐 Android 侧 `SharedPreferencesStore`）；desktopApp 的 org.json 从 runtimeOnly 升 implementation（本模块自用编译期，叶子模块无撞类风险）。
 - **端到端冒烟（M2 验收证据）**：`DesktopContextProbe` 实测——prefs 往返跨实例持久；`VocabularyRepository`（:shared 刀4 迁入的核心）在桌面 save→load→review→csv→deleteBookData 全链路真实落盘；实测文件布局 `prefs/review_settings.json` + `vocabulary.json`。**:shared 数据层首次在桌面完整跑通，跑法 `.	oolchainuild.ps1 :desktopApp:run "-PmainClass=com.linguareader.desktop.DesktopContextProbeKt"`。**
 - **单测**：desktopApp 首次有自己的 JVM 测试（3 条：roundtrip/坏文件容错/文件布局）。门禁 `:desktopApp:build` `:desktopApp:test` 全绿。
+
+## 2026-09-06 桌面迁移 M2 刀6：Compose Desktop 壳上线，生词本/复习/设置三屏可跑
+
+- **版本决策（偏离方案的实测依据）**：方案 §5.1 写 CMP 1.12.x，但实测 **CMP 1.12 与 1.11 都要求 Kotlin Gradle Plugin 2.2.0+**（插件 apply 时直接报错），项目钉在 2.1.10。二分实测落点 **CMP 1.9.3**（第一个接受 KGP 2.1.10 的版本）。Kotlin 升 2.2 时再升 CMP，勿单独动。
+- **实现（`cec36d9`）**：desktopApp 套 `org.jetbrains.kotlin.plugin.compose`（根已有 2.1.10 声明）+ `org.jetbrains.compose`；依赖 `compose.desktop.currentOs`（只拉 Windows 运行时）+ `compose.material3`。UI = NavigationRail 三屏：**复习**（到期词卡片、显示释义、记住了/再学一次；调度全走 :shared 的 ReviewScheduler/ReviewPace，prefs 键与 Android 完全互通）；**生词本**（列表 + CSV 导出 JFileChooser，csv 生成与 Android 同源）；**设置**（复习节奏三选一，写同一 review_settings 键）。数据目录 `-Dlr.home` 优先，默认 `%APPDATA%/LinguaReader/home`。
+- **验证**：`:desktopApp:build` `:desktopApp:test` 全绿；真机启动窗口 45s 无异常（Skia peer 正常初始化）。**UI 视觉与交互待用户真机体验**——本轮只有启动级验证。
+- **坑（记入 known-pitfalls 待写）**：Kotlin 块注释可嵌套——KDoc 里写 `prefs/*.json` 的 `/*` 会让注释永远不闭合，EOF 报 "Unclosed comment"，与 Java 直觉相反。
