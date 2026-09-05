@@ -1096,3 +1096,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **守恒**：随迁 TextImporterTest(4)+Fb2ImporterTest(2)，:app 362 / :shared 196 / :desktopApp 3 全零失败（总数与上轮的差额含并行会话在途测试文件的版本漂移，移动的 6 条全部在列）。
 - **⚠️ 混入披露**：`3517c46` 里不慎带入了并行会话当时已暂存的 6 个文件（SentenceSplitter 增强：多点省略号/两级缩写/maxSentenceLength 参数贯通 + 测试与 tts tagger 签名适配）。该内容与刀7 同树通过全门禁、功能自洽；其会话仍在同一工作树继续开发——**两个会话并发提交的风险已实际发生**，强烈建议人工裁决会话归属。
 - **坑**：Kotlin `try/catch/finally` 结构性删行时极易错删 catch 闭合括号（本轮连踩三处，编译错误形态是 private 函数变 local function）。
+
+## 2026-09-06 桌面迁移 M2 刀8：书架/阅读/查词/收藏闭环 UI，桌面词典引擎
+
+- **M2 验收线首次闭环**：`7b4ef90`——桌面端可完成「导入 TXT/EPUB/FB2 → 阅读（纯文本渲染）→ 点词查词 → 收藏 → 复习」。无 WebView（JCEF 阅读器归 M4），正文渲染是纯文本层，但查词/收藏/复习链路与 Android **完全同源**（:shared 的 DictionaryRepository/ContextAnalyzer/VocabularyRepository）。
+- **桌面词典引擎**：`DesktopDictionaryDatabase`（sqlite-jdbc）实现 :shared `DictionaryDatabase`，SQL 引用 `DictionarySql` 唯一真相（M1 双引擎对账兑现到桌面运行时）；词典解析：`-Dlr.dict` → 数据目录 dictionary/ → 开发仓库 assets。
+- **UI**：书架（JFileChooser 导入/列表/删除/打开，走刀7 :shared 导入核心）+ 阅读屏（章切换、SentenceSplitter 切句定位、buildAnnotatedString+pointerInput 点词）。启动级验证通过；**视觉与点词交互待真机体验**。
+- **剩余主线**：TTS 状态机簇抽取（与并行会话的 tts 改动正面相撞，暂缓）→ M3 听书 → M4 JCEF 阅读器 → M5 打包。
