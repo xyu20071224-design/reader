@@ -1,4 +1,4 @@
-package com.linguareader.app.data
+package com.linguareader.shared.data
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -162,7 +162,7 @@ class ModelsTest {
         val fonts = ReaderFont.entries
 
         fonts.forEach { font ->
-            assertTrue(font.labelRes != 0, "${font.name} labelRes must be set")
+            assertTrue(font.labelRes.name.isNotBlank(), "${font.name} labelRes must be set")
             assertTrue(font.css.isNotBlank(), "${font.name} css must not be blank")
         }
         assertEquals(

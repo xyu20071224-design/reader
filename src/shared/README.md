@@ -21,6 +21,20 @@
 
 `com.linguareader.shared.<域>`（如 `com.linguareader.shared.update`）。刻意**不**复用 `com.linguareader.app.*`：那是 Android 的 applicationId/namespace，与桌面无关。
 
+旧包路径 `com.linguareader.app.data.*` 的类型由 `src/app/.../data/SharedDataCompat.kt` 的 typealias 兜底，既有 import 零改动；**新代码请直接 import 新包**，M2 全量替换后删掉那个兼容文件。
+
+## 资源间接层（决策 4）
+
+共享模型需要携带「用户可见名称」的引用时，用 `com.linguareader.shared.res.SharedString` 符号，**不碰 `R`**（`:shared` 拿不到 `:app` 生成的 `R`）。Android 侧在 `src/app/src/main/java/com/linguareader/app/res/AndroidStrings.kt` 提供穷举 `when` 的 `resolve(): Int`，UI 用法 `stringResource(theme.labelRes.resolve())`。`:shared` 新增符号时两端映射都会被编译器强制补全，不会留下运行时才炸的资源空洞。桌面侧（M2+）另建对端映射。
+
+## 跨模块的编译器差异（搬入时必踩，已知）
+
+类型一旦进了 `:shared`，`:app` 侧就**不再对它的属性做智能转换**（跨模块 public 属性）。例：`if (entry?.matchedPhrase != null) { use(entry.matchedPhrase) }` 会报 "Smart cast is impossible"，改成先 `val x = entry?.matchedPhrase` 捕获局部量再判空即可，语义不变。
+
 ## 已搬入
 
 - `com.linguareader.shared.update` — `GitHubReleaseParser` / `UpdatePolicy` / `AppUpdateUiState` / `GitHubUpdateChecker`（原 `app/update/` 的四个纯文件；`AppUpdateRepository`、`AppUpdateSettings`、`ApkInstaller` 因依赖 `Context`/`BuildConfig`/`FileProvider` 留在 `:app`）。随迁测试 8 个（`GitHubReleaseParserTest` / `UpdatePolicyTest`）。
+- `com.linguareader.shared.data` — `Models.kt`（`Book`/`Chapter`/`SavedWord`/`WordLookup`/`ReaderPreferences`/`ReaderTheme`/`ReaderFont`）+ `ContextAnalyzer.kt`（`PartOfSpeech` 与分词/短语窗口/义项排序全套）。`labelRes` 从 `@StringRes Int` 改为 `SharedString`。随迁测试 20 个（`ModelsTest` / `ContextAnalyzerTest`）。
+- `com.linguareader.shared.res` — `SharedString` 枚举（词性 5 + 主题 7 + 字体 5）。
+
+**下一刀的拦路石**：`ReviewMode.kt` 另带 `SharedPreferences` 依赖，要先落 `AppContext`/prefs 抽象（方案 §4）；`DictionaryRepository.kt` 需要 sqlite 驱动抽象；`translation/` 与 `ai/` 包大多零 Android 依赖，是较顺的后续目标。

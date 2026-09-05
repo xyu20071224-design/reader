@@ -111,6 +111,7 @@ import com.linguareader.app.reader.ReaderOverlays
 import com.linguareader.app.reader.ReaderPosition
 import com.linguareader.app.reader.ReaderScripts
 import com.linguareader.app.reader.SentenceTranslationCache
+import com.linguareader.app.res.resolve
 import com.linguareader.app.translation.TranslationLookupResult
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.tts.TtsPlaybackController
@@ -1074,7 +1075,7 @@ private fun SettingsSheet(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            stringResource(theme.labelRes),
+                            stringResource(theme.labelRes.resolve()),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (selected) Accent else InkSoft,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
@@ -1089,7 +1090,7 @@ private fun SettingsSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ReaderFont.entries.forEach { font ->
-                    val fontLabel = stringResource(font.labelRes)
+                    val fontLabel = stringResource(font.labelRes.resolve())
                     TextButton(onClick = { onChange(preferences.copy(fontFamily = font)) }) {
                         Text(
                             if (font == preferences.fontFamily) {
@@ -1301,12 +1302,15 @@ private fun LookupSheet(
                     )
                 }
             }
-            if (entry?.matchedPhrase != null) {
+            // matchedPhrase 现在是跨模块（:shared）属性，Kotlin 不对其做智能转换，
+            // 先捕获到局部量（语义与原来的 entry.matchedPhrase 完全一致）。
+            val matchedPhrase = entry?.matchedPhrase
+            if (matchedPhrase != null) {
                 Text(
                     if (isPhraseView) {
-                        stringResource(R.string.reader_phrase_view, entry.matchedPhrase)
+                        stringResource(R.string.reader_phrase_view, matchedPhrase)
                     } else {
-                        stringResource(R.string.reader_phrase_first, entry.matchedPhrase)
+                        stringResource(R.string.reader_phrase_first, matchedPhrase)
                     },
                     style = MaterialTheme.typography.labelLarge,
                     color = Accent
@@ -1342,7 +1346,7 @@ private fun LookupSheet(
                 Text(
                     stringResource(
                         R.string.reader_pos_inferred,
-                        stringResource(entry.inferredPartOfSpeech.labelRes)
+                        stringResource(entry.inferredPartOfSpeech.labelRes.resolve())
                     ),
                     style = MaterialTheme.typography.labelMedium,
                     color = Ink.copy(alpha = .56f)

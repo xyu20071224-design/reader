@@ -120,13 +120,18 @@ src/                          ← Gradle 根（【本来就在这】，M1 已核
 
 ### 3.5.1 M1 撞上的第一个真问题：`R.string` 渗进了本该共享的模型
 
-原计划 M1 一并抽出 `data` 包与 `TtsPlaybackEngine`，**主动止步** —— 实测发现跨端模型被 Android 资源系统绑住：
+原计划在 M1 一并抽出 `data` 包与 `TtsPlaybackEngine`，曾**主动止步** —— 跨端模型被 Android 资源系统绑住：`PartOfSpeech`（`ContextAnalyzer.kt`）、`ReaderTheme`/`ReaderFont`（`Models.kt`）、`ReviewMode`/`ReviewPace`（`ReviewMode.kt`）把 `@StringRes val labelRes: Int` 编进了枚举，`:shared` 拿不到 `:app` 的 `R`。
 
-- `data/ContextAnalyzer.kt:6-11`：`enum class PartOfSpeech(@StringRes val labelRes: Int)` 直接引用 `R.string.pos_noun` 等 5 个 id；
-- `data/Models.kt:231,252`（`ReaderTheme`、`ReaderFont`）、`data/ReviewMode.kt:19,105`（复习预设与节奏）同样带 `labelRes`；
-- 消费方：`ReaderScreen.kt:1077,1092,1123,1345`、`ReviewUi.kt:420` 走 `stringResource(...labelRes)`；`ModelsTest.kt:165,175` 还断言 `labelRes != 0` 且各枚举互不相同。
+**✅ 已解（2026-09-05，用户拍板决策 4 = 资源 id 间接层）**：
 
-`:shared` 拿不到 `:app` 的 `R` 类（`android.nonTransitiveRClass=true` + 依赖方向单向），所以这批文件**当下搬不动**。已抽的 `update` 包不受影响（它本就纯）。这是需要拍板的设计岔口，见 §5.1 决策 4；我没有擅自重构这 5 个枚举。
+- 新增 `com.linguareader.shared.res.SharedString` 枚举（词性 5 + 主题 7 + 字体 5，共 17 个符号），共享模型携带**符号**而非资源 id；
+- Android 侧 `com.linguareader.app.res.AndroidStrings.kt` 提供穷举 `when` 的 `SharedString.resolve(): Int` → `R.string.*`。`:shared` 加符号、这里不补就编译失败，杜绝运行时资源空洞；桌面侧（M2+）另建对端映射；
+- `Models.kt` + `ContextAnalyzer.kt`（含 `Book`/`Chapter`/`SavedWord`/`WordLookup`/`ReaderPreferences`/`ReaderTheme`/`ReaderFont`/`PartOfSpeech`/`ContextAnalyzer`，**被 105 个文件引用的基础层**）已迁入 `com.linguareader.shared.data`，随迁 `ModelsTest`+`ContextAnalyzerTest` 共 20 条用例；
+- 旧包路径 `com.linguareader.app.data.*` 用 `SharedDataCompat.kt` 的 **typealias 兜底**，既有 45 个 import 文件零改动（`ContextAnalyzer` object 用同名 val 兜底）；UI 消费点仅 `ReaderScreen.kt` 3 处改为 `labelRes.resolve()`（另 3 处 labelRes 消费是 `:app` 本地类型：`ReviewUi`/`ReaderScreen:1123`/`ShelfAppearanceSheet`，未动）；`ModelsTest` 的 `labelRes != 0` 断言相应改为枚举非退化断言。
+- **实测踩到一条跨模块硬规则**：类型进 `:shared` 后，`:app` 不再对其属性做智能转换（`ReaderScreen.kt` 的 `entry.matchedPhrase` 编译报错），捕获局部量即可——写进了 `src/shared/README.md`，后续每一刀都会再撞上。
+- **剩余拦路石已缩小**：`ReviewMode.kt` 不是被 `R` 挡住，而是被 `SharedPreferences` 挡住（要先落 `AppContext`/prefs 抽象）；`DictionaryRepository.kt` 需要 sqlite 驱动抽象。`translation/`、`ai/` 包大体零 Android 依赖，是较顺的后续目标。
+
+**回归**：`:app:testDebugUnitTest` 514 + `:shared:test` 28 = **542**，与上一刀 534+8 完全守恒；`:app:assembleDebug` 通过。
 
 ### 3.5.2 依赖纪律：`:shared` 为什么全用 `compileOnly`
 
@@ -179,13 +184,14 @@ src/                          ← Gradle 根（【本来就在这】，M1 已核
 3. **`SystemTtsVoice`（系统引擎后端）**：默认**不实现**——桌面用户配自建服务器或 MiMo 的门槛远低于 Android 用户找系统语音。列为可选增强（设置里灰置"暂不支持"即可），不阻塞主线。
 4. **打包与更新**：`jpackage`（app-image，内嵌 JRE）+ GitHub Actions 出 zip；不做安装器、不做代码签名（个人项目成本考虑，写进 README 的已知限制）。
 
-### 5.1 三个决策（2026-09-04 已全部拍板）
+### 5.1 决策清单（4 项均已拍板）
 
 | # | 选项 | 结论 |
 | --- | --- | --- |
 | 1 | 渲染：**A 纯 Compose 自绘** / **B 内嵌 JCEF** | ✅ **B**。点词取句契约（归一化坐标、`TTS_BLOCK_SELECTOR` 与 `TtsTextExtractor` 等价性）是本项目最脆弱的跨模块资产，保留 WebView 语义 = 1472 行 JS 和既有回归经验原样生效。A 降为二期评估。 |
 | 2 | 工程形态：单仓多模块 / 新仓库 / 桌面替代 Android | ✅ **单仓共用一个 Gradle root（`src/`），`:shared` + `:app` + `:desktopApp` 三模块，Android 版保留**（2026-09-04 从"旁挂"修订而来，理由见 §3.4） |
 | 3 | 系统 TTS 后端：做 / 不做 | ✅ **默认不做**，保留自建 + MiMo 两个云后端，离线降级路径改为"纯阅读 + 查词"（系统引擎缺失不影响任何其它功能） |
+| 4 | `R.string` 渗入共享模型：剥出 labelRes（映射放 UI 层）/ **资源 id 间接层** / 暂不抽 data | ✅ **资源 id 间接层**（2026-09-05 拍板并落地，见 §3.5.1：`SharedString` 符号 + 各端穷举 `resolve` 映射 + typealias 兼容旧 import）。`ReviewMode` 一类仍受 `SharedPreferences` 约束的，归 M2 的 `AppContext` 抽象解决 |
 
 ## 6. 渲染决策展开（路线 B 已选定）
 

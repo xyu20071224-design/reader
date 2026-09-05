@@ -1,7 +1,6 @@
-package com.linguareader.app.data
+package com.linguareader.shared.data
 
-import androidx.annotation.StringRes
-import com.linguareader.app.R
+import com.linguareader.shared.res.SharedString
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -221,14 +220,16 @@ data class ReaderPreferences(
 )
 
 /**
- * 阅读主题。显示名走资源（labelRes）；颜色仍以 hex 存储并经 ReaderScripts.preferenceScript
+ * 阅读主题。显示名走资源间接层（[labelRes] 是 [SharedString] 符号，决策 4；
+ * 平台侧经 resolve() 映射到各自资源表，Android 见 app/res/AndroidStrings.kt）；
+ * 颜色仍以 hex 存储并经 ReaderScripts.preferenceScript
  * 注入为 CSS 变量。除正文底/字色外还携带「标记类」变体：生词下划线、链接装饰、选区与
  * TTS 高亮的浅色值在夜间(#171717)底上对比不足（#8D5535 约 2.97:1，卡在 3:1 门槛下，
  * 真机人工判「费劲」辨认），深色主题换提亮变体（#C98A5E 约 6.2:1，与外壳
  * DarkLinguaPalette.accent 同源，保持色相只提亮度）。
  */
 enum class ReaderTheme(
-    @StringRes val labelRes: Int,
+    val labelRes: SharedString,
     val background: String,
     val foreground: String,
     /** 生词点状下划线（.lr-saved-word 的 text-decoration-color）。 */
@@ -240,19 +241,19 @@ enum class ReaderTheme(
     /** TTS 整句高亮底（半透明棕）。 */
     val highlightWash: String
 ) {
-    PAPER(R.string.reader_theme_paper, "#F7F3EA", "#27231F", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    WHITE(R.string.reader_theme_white, "#FFFFFF", "#181818", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    SEPIA(R.string.reader_theme_sepia, "#E9DFC7", "#352F26", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    GREEN(R.string.reader_theme_green, "#CCE8CF", "#243329", "#8D5535", "#9b6b43", "rgba(184,132,83,.26)", "rgba(184,132,83,.30)"),
-    MORANDI(R.string.reader_theme_morandi, "#E2D8D2", "#3A3330", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    DARK(R.string.reader_theme_dark, "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)"),
-    AMOLED(R.string.reader_theme_amoled, "#000000", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)")
+    PAPER(SharedString.THEME_PAPER, "#F7F3EA", "#27231F", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    WHITE(SharedString.THEME_WHITE, "#FFFFFF", "#181818", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    SEPIA(SharedString.THEME_SEPIA, "#E9DFC7", "#352F26", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    GREEN(SharedString.THEME_GREEN, "#CCE8CF", "#243329", "#8D5535", "#9b6b43", "rgba(184,132,83,.26)", "rgba(184,132,83,.30)"),
+    MORANDI(SharedString.THEME_MORANDI, "#E2D8D2", "#3A3330", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    DARK(SharedString.THEME_DARK, "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)"),
+    AMOLED(SharedString.THEME_AMOLED, "#000000", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)")
 }
 
-enum class ReaderFont(@StringRes val labelRes: Int, val css: String) {
-    SERIF(R.string.reader_font_serif, "Georgia, 'Times New Roman', serif"),
-    SANS(R.string.reader_font_sans, "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
-    MONO(R.string.reader_font_mono, "'Droid Sans Mono', 'Courier New', monospace"),
-    CONDENSED(R.string.reader_font_condensed, "'Roboto Condensed', 'sans-serif-condensed', 'Arial Narrow', sans-serif"),
-    CURSIVE(R.string.reader_font_cursive, "'Dancing Script', 'Segoe Script', cursive")
+enum class ReaderFont(val labelRes: SharedString, val css: String) {
+    SERIF(SharedString.FONT_SERIF, "Georgia, 'Times New Roman', serif"),
+    SANS(SharedString.FONT_SANS, "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"),
+    MONO(SharedString.FONT_MONO, "'Droid Sans Mono', 'Courier New', monospace"),
+    CONDENSED(SharedString.FONT_CONDENSED, "'Roboto Condensed', 'sans-serif-condensed', 'Arial Narrow', sans-serif"),
+    CURSIVE(SharedString.FONT_CURSIVE, "'Dancing Script', 'Segoe Script', cursive")
 }

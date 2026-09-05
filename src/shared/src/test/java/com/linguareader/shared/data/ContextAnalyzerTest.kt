@@ -1,4 +1,4 @@
-package com.linguareader.app.data
+package com.linguareader.shared.data
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

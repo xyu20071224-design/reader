@@ -1043,3 +1043,12 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **M1 拦路问题（未决，非缺陷）**：`data` 包与 `TtsPlaybackEngine` **暂缓抽取**——`PartOfSpeech`/`ReaderTheme`/`ReaderFont`/`ReviewMode`/`ReviewPace` 五个枚举把 `R.string.labelRes` 编进了本该共享的模型，`:shared` 拿不到 `:app` 的 `R`。需拍板方案 §5.1 决策 4 后再动，本次未擅自重构。
 - **本地构建注意（踩坑记录）**：Gradle 守护进程会继承并持有重定向的 stdout 句柄——构建失败退出后外层 shell 仍等不到"所有写端关闭"，表现为**任务早已 BUILD FAILED、作业却挂钟一小时**。诊断别只看作业状态，先看日志尾部与 `build/test-results`；跑单测用 `--no-daemon`（本仓库规模冷启 ~17s，代价可接受）。
 - **JVM 合计**：`:app:testDebugUnitTest` **534 通过 / 0 失败 / 1 跳过**（含新增 4 条对账）；`:shared:test` 8 通过；`:desktopApp:build` 与 `:desktopApp:run`（探针）通过。
+
+## 2026-09-05 桌面迁移 M1（续）：决策 4 落地——SharedString 资源间接层，Models/ContextAnalyzer 进 :shared
+
+- **背景**：上一节记录的 M1 拦路问题（5 个枚举把 `@StringRes labelRes` 编进共享模型）。用户拍板走「`:shared` 资源 id 间接层」路线。
+- **实现**：新增 `com.linguareader.shared.res.SharedString`（17 符号：词性 5 + 主题 7 + 字体 5）；Android 侧 `app/res/AndroidStrings.kt` 提供**穷举 when** 的 `resolve(): Int` → `R.string.*`（`:shared` 加符号不补映射即编译失败）。`Models.kt` + `ContextAnalyzer.kt` 迁入 `com.linguareader.shared.data`，`labelRes: Int` → `labelRes: SharedString`；`SharedDataCompat.kt` 用 typealias 兜住旧包路径，**既有 45 个 import 文件零改动**；UI 消费点仅 `ReaderScreen.kt` 3 处改 `labelRes.resolve()`。`ModelsTest` 的 `labelRes != 0` 断言相应改为符号非退化断言。
+- **跨模块新坑（已记入 src/shared/README.md）**：类型进 `:shared` 后 `:app` 不再对其属性做智能转换，`entry.matchedPhrase` 判空后直用会报 "Smart cast is impossible"，须捕获局部量。
+- **语义零漂移证明（本轮硬证据）**：git 把 Models/ContextAnalyzer 记成全新文件，rename 对比失效；改用 `git show HEAD:<旧路径>` 逐文件 diff——**全部差异只有 package 行、import 行、5+12 个 labelRes 枚举项的 R→SharedString 替换、1 段注释**，hex/rgba 颜色值与 JSON 键逐字符一致。typealias 与同名单例 val 兼容层编译通过本身即等价性证据（45 个消费方 + 66 个测试无一改动仍全绿）。
+- **回归**：`:app:testDebugUnitTest` **514 / 0 失败 / 1 跳过** + `:shared:test` **28** = **542**，与上一刀 534+8 完全守恒；`:app:assembleDebug`、`:app:assembleRelease`（R8 全链路，33.34 MB，无 :shared 相关告警）、`:app:compileDebugAndroidTestKotlin` 全绿。
+- **剩余**：`ReviewMode.kt` 待 `AppContext`/prefs 抽象（被 `SharedPreferences` 而非 `R` 挡住）；`DictionaryRepository` 待 sqlite 驱动抽象；真机抽查阅读页主题/字体/词性标签的显示（资源问接层理论零行为差，但按验证纪律 WebView/UI 要真机确认）。

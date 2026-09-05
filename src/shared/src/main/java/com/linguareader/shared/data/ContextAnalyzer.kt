@@ -1,14 +1,13 @@
-package com.linguareader.app.data
+package com.linguareader.shared.data
 
-import androidx.annotation.StringRes
-import com.linguareader.app.R
+import com.linguareader.shared.res.SharedString
 
-enum class PartOfSpeech(@StringRes val labelRes: Int) {
-    NOUN(R.string.pos_noun),
-    VERB(R.string.pos_verb),
-    ADJECTIVE(R.string.pos_adjective),
-    ADVERB(R.string.pos_adverb),
-    UNKNOWN(R.string.pos_unknown)
+enum class PartOfSpeech(val labelRes: SharedString) {
+    NOUN(SharedString.POS_NOUN),
+    VERB(SharedString.POS_VERB),
+    ADJECTIVE(SharedString.POS_ADJECTIVE),
+    ADVERB(SharedString.POS_ADVERB),
+    UNKNOWN(SharedString.POS_UNKNOWN)
 }
 
 data class ContextToken(
