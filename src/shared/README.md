@@ -35,6 +35,10 @@
 
 - `com.linguareader.shared.update` — `GitHubReleaseParser` / `UpdatePolicy` / `AppUpdateUiState` / `GitHubUpdateChecker`（原 `app/update/` 的四个纯文件；`AppUpdateRepository`、`AppUpdateSettings`、`ApkInstaller` 因依赖 `Context`/`BuildConfig`/`FileProvider` 留在 `:app`）。随迁测试 8 个（`GitHubReleaseParserTest` / `UpdatePolicyTest`）。
 - `com.linguareader.shared.data` — `Models.kt`（`Book`/`Chapter`/`SavedWord`/`WordLookup`/`ReaderPreferences`/`ReaderTheme`/`ReaderFont`）+ `ContextAnalyzer.kt`（`PartOfSpeech` 与分词/短语窗口/义项排序全套）。`labelRes` 从 `@StringRes Int` 改为 `SharedString`。随迁测试 20 个（`ModelsTest` / `ContextAnalyzerTest`）。
-- `com.linguareader.shared.res` — `SharedString` 枚举（词性 5 + 主题 7 + 字体 5）。
+- `com.linguareader.shared.res` — `SharedString` 枚举（词性 5 + 主题 7 + 字体 5 + 复习节奏 7 = 24 符号）。
+- `com.linguareader.shared.app` — `AppContext`（M2 起，当前仅 `prefs(name)`，按消费逐成员扩展）+ `PreferencesStore`（`getString`/`putString` 最小面）。Android 侧适配器：`app/data/AndroidPreferences.kt` 的 `SharedPreferencesStore` + `SharedPreferences.asPreferencesStore()`。
+- `com.linguareader.shared.data.ReviewMode.kt` — `ReviewMode` / `ReviewPace` / `ReviewReminders`（原 `app/data/ReviewMode.kt`；`SharedPreferences` 依赖改为 `PreferencesStore` 参数，持久化键名不变）。随迁测试 11 个（`ReviewModeTest`）。
+- `com.linguareader.shared.data.ReviewScheduler.kt` — 艾宾浩斯复习调度纯逻辑（原在 `app/data/VocabularyRepository.kt` 顶部的 object）。
+- `com.linguareader.shared.data.DictionaryDb.kt` + `DictionaryRepository.kt` — `DictionaryDatabase` 接口 + `DictionarySql` 两条 SQL 常量（唯一真相）+ 查词主流程（词形还原/词组窗口/核心词/启发式/缓存）。Android 侧 `app/data/DictionaryRepository.kt` 变同名 facade（assets 落盘 + `SQLiteDatabase` 实现）；`DictionarySqlParityTest` 与桌面 sqlite-jdbc 实现共用常量。新增假驱动测试 5 个（`DictionaryRepositoryTest`）。
 
-**下一刀的拦路石**：`ReviewMode.kt` 另带 `SharedPreferences` 依赖，要先落 `AppContext`/prefs 抽象（方案 §4）；`DictionaryRepository.kt` 需要 sqlite 驱动抽象；`translation/` 与 `ai/` 包大多零 Android 依赖，是较顺的后续目标。
+**M2 下一刀目标**：`translation/`、`ai/` 包（大体零 Android 依赖，较顺）；再往后是 `LibraryRepository`/`VocabularyRepository` 一类（要 `AppContext` 扩 `filesDir` 成员）与 TTS 状态机簇。

@@ -129,7 +129,7 @@ src/                          ← Gradle 根（【本来就在这】，M1 已核
 - `Models.kt` + `ContextAnalyzer.kt`（含 `Book`/`Chapter`/`SavedWord`/`WordLookup`/`ReaderPreferences`/`ReaderTheme`/`ReaderFont`/`PartOfSpeech`/`ContextAnalyzer`，**被 105 个文件引用的基础层**）已迁入 `com.linguareader.shared.data`，随迁 `ModelsTest`+`ContextAnalyzerTest` 共 20 条用例；
 - 旧包路径 `com.linguareader.app.data.*` 用 `SharedDataCompat.kt` 的 **typealias 兜底**，既有 45 个 import 文件零改动（`ContextAnalyzer` object 用同名 val 兜底）；UI 消费点仅 `ReaderScreen.kt` 3 处改为 `labelRes.resolve()`（另 3 处 labelRes 消费是 `:app` 本地类型：`ReviewUi`/`ReaderScreen:1123`/`ShelfAppearanceSheet`，未动）；`ModelsTest` 的 `labelRes != 0` 断言相应改为枚举非退化断言。
 - **实测踩到一条跨模块硬规则**：类型进 `:shared` 后，`:app` 不再对其属性做智能转换（`ReaderScreen.kt` 的 `entry.matchedPhrase` 编译报错），捕获局部量即可——写进了 `src/shared/README.md`，后续每一刀都会再撞上。
-- **剩余拦路石已缩小**：`ReviewMode.kt` 不是被 `R` 挡住，而是被 `SharedPreferences` 挡住（要先落 `AppContext`/prefs 抽象）；`DictionaryRepository.kt` 需要 sqlite 驱动抽象。`translation/`、`ai/` 包大体零 Android 依赖，是较顺的后续目标。
+- **剩余拦路石已全部解掉（2026-09-06 M2 刀1/刀2）**：`AppContext`/`PreferencesStore` 抽象落地（prefs 最小面，Android 侧 `SharedPreferencesStore` 适配），`ReviewMode`/`ReviewPace`/`ReviewReminders`/`ReviewScheduler` 随迁入 ：shared（测试守恒 503+39=542）；`DictionaryDatabase` 接口 + `DictionarySql` 常量落地，`DictionaryRepository` 查词主流程入 ：shared（`:app` 同名 facade，测试 503+44=547）。`translation/`、`ai/` 包大体零 Android 依赖，是较顺的后续目标。
 
 **回归**：`:app:testDebugUnitTest` 514 + `:shared:test` 28 = **542**，与上一刀 534+8 完全守恒；`:app:assembleDebug` 通过。
 
@@ -162,10 +162,10 @@ src/                          ← Gradle 根（【本来就在这】，M1 已核
 
 | 能力 | Android 现状 | 桌面 actual | 备注 |
 | --- | --- | --- | --- |
-| 应用上下文 | `Context` 参数贯穿 39 文件 | 自造 `AppContext` interface：`filesDir`、`cacheDir`、`prefs(name)`、`base64`、`platform` | **第一阶段先做这个**，所有数据/网络文件只认这一个面 |
+| 应用上下文 | `Context` 参数贯穿 39 文件 | 自造 `AppContext` interface：`filesDir`、`cacheDir`、`prefs(name)`、`base64`、`platform` | **第一阶段先做这个**，所有数据/网络文件只认这一个面。**M2 刀1 已落地起步**：`AppContext`+`PreferencesStore`（prefs 最小面，Android 适配器 `SharedPreferencesStore`）解掉了 ReviewMode 簇的 SharedPreferences；`filesDir` 等成员按刀的实际消费逐个上收，不预置 |
 | 设置存储 | `SharedPreferences` | Properties/JSON 文件（照 data-persistence 记忆：项目本无 DataStore，实现简单） | 数据迁移见 §7 |
 | 文件访问 | SAF Uri（`ContentResolver` 仅 6 文件） | `java.nio.file` + `FileDialogProvider`（Compose Multiplatform 1.12+ 自带原生文件对话框） | 拖拽导入（Windows 拖 .epub 进窗口）是桌面加分项 |
-| 离线词典 | `SQLiteDatabase.openDatabase(READONLY, NO_LOCALIZED_COLLATORS)`（`DictionaryRepository.openDatabase()`：先把 58 MB assets 拷到 `filesDir/dictionary/ecdict-v2.sqlite` 再打开） | `org.xerial:sqlite-jdbc:3.46.1.3`（只读用连接属性 `open_mode=1`） | **M1 已实测对账**（`:app` 的 `DictionarySqlParityTest`：同一份文件双引擎打开、逐字照抄 `DictionaryRepository` 两条 SQL、含 `\n` 字面量与 LIKE/GROUP BY/`||`，4 测全绿；`:desktopApp` 探针独立跑通）。两处订正：**① 初稿说"NO_LOCALIZED_COLLATORS = 裸 BINARY 比较"错了**——`src/scripts/build_dictionary.py` 在 word/form/lemma 三列声明了 `COLLATE NOCASE`，大小写不敏感是 schema 自带行为，两端等价性反而更强（两引擎同样尊重 schema）；**② `jdbc:sqlite:<盘符路径>?mode=ro` 的 URI 形式驱动不解析**（整串当文件名，Windows 报错），只读要走 `open_mode` 属性。`openDatabase` 的"拷 assets"段是 Android 特有，桌面直接指向安装目录文件（M2 做接口下沉）|
+| 离线词典 | `SQLiteDatabase.openDatabase(READONLY, NO_LOCALIZED_COLLATORS)`（`DictionaryRepository.openDatabase()`：先把 58 MB assets 拷到 `filesDir/dictionary/ecdict-v2.sqlite` 再打开） | `org.xerial:sqlite-jdbc:3.46.1.3`（只读用连接属性 `open_mode=1`） | **M1 已实测对账**（`:app` 的 `DictionarySqlParityTest`：同一份文件双引擎打开、逐字照抄 `DictionaryRepository` 两条 SQL、含 `\n` 字面量与 LIKE/GROUP BY/`||`，4 测全绿；`:desktopApp` 探针独立跑通）。两处订正：**① 初稿说"NO_LOCALIZED_COLLATORS = 裸 BINARY 比较"错了**——`src/scripts/build_dictionary.py` 在 word/form/lemma 三列声明了 `COLLATE NOCASE`，大小写不敏感是 schema 自带行为，两端等价性反而更强（两引擎同样尊重 schema）；**② `jdbc:sqlite:<盘符路径>?mode=ro` 的 URI 形式驱动不解析**（整串当文件名，Windows 报错），只读要走 `open_mode` 属性。`openDatabase` 的"拷 assets"段是 Android 特有，桌面直接指向安装目录文件。**M2 刀2 已接口下沉**：`DictionaryDatabase` 接口 + `DictionarySql` 常量（唯一真相）进 ：shared，`:app` 留同名 facade（assets 落盘 + SQLiteDatabase 实现），查词主流程与对账测试共用常量 |
 | PDF | `pdfbox-android` | `org.apache.pdfbox:pdfbox`（标准 JVM 版） | `PdfBookImporter` 的三级分章降级逻辑不变 |
 | HTTP | `HttpURLConnection`（8 文件） | **原样复用** | 纯 JVM 可用；TLS 1.2+ 桌面天然满足 |
 | JSON | `org.json` | `org.json:json` 依赖 | 纯 JVM 可用 |
@@ -191,7 +191,7 @@ src/                          ← Gradle 根（【本来就在这】，M1 已核
 | 1 | 渲染：**A 纯 Compose 自绘** / **B 内嵌 JCEF** | ✅ **B**。点词取句契约（归一化坐标、`TTS_BLOCK_SELECTOR` 与 `TtsTextExtractor` 等价性）是本项目最脆弱的跨模块资产，保留 WebView 语义 = 1472 行 JS 和既有回归经验原样生效。A 降为二期评估。 |
 | 2 | 工程形态：单仓多模块 / 新仓库 / 桌面替代 Android | ✅ **单仓共用一个 Gradle root（`src/`），`:shared` + `:app` + `:desktopApp` 三模块，Android 版保留**（2026-09-04 从"旁挂"修订而来，理由见 §3.4） |
 | 3 | 系统 TTS 后端：做 / 不做 | ✅ **默认不做**，保留自建 + MiMo 两个云后端，离线降级路径改为"纯阅读 + 查词"（系统引擎缺失不影响任何其它功能） |
-| 4 | `R.string` 渗入共享模型：剥出 labelRes（映射放 UI 层）/ **资源 id 间接层** / 暂不抽 data | ✅ **资源 id 间接层**（2026-09-05 拍板并落地，见 §3.5.1：`SharedString` 符号 + 各端穷举 `resolve` 映射 + typealias 兼容旧 import）。`ReviewMode` 一类仍受 `SharedPreferences` 约束的，归 M2 的 `AppContext` 抽象解决 |
+| 4 | `R.string` 渗入共享模型：剥出 labelRes（映射放 UI 层）/ **资源 id 间接层** / 暂不抽 data | ✅ **资源 id 间接层**（2026-09-05 拍板并落地，见 §3.5.1：`SharedString` 符号 + 各端穷举 `resolve` 映射 + typealias 兼容旧 import）。`ReviewMode` 簇的 `SharedPreferences` 约束已由 M2 刀1 的 `AppContext`/`PreferencesStore` 抽象解掉（2026-09-06） |
 
 ## 6. 渲染决策展开（路线 B 已选定）
 
