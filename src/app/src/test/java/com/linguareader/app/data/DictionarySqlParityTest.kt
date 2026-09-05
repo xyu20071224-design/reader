@@ -11,6 +11,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import com.linguareader.shared.data.DictionarySql
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
@@ -63,32 +64,18 @@ class DictionarySqlParityTest {
         dbPath = "jdbc:sqlite:${target.absolutePath}"
     }
 
-    // ——— 与 DictionaryRepository 逐字一致的两条 SQL ———
+    // ——— :shared DictionarySql 常量（唯一真相，两引擎与共享仓库共用，不允许私有改写） ———
 
     private fun androidLemmas(form: String): List<String> =
         androidDb.rawQuery(
-            """
-            SELECT f.lemma
-            FROM forms f
-            JOIN entries e ON e.word = f.lemma
-            WHERE f.form = ?
-            ORDER BY CASE WHEN f.lemma = ? THEN 1 ELSE 0 END, length(f.lemma)
-            LIMIT 4
-            """.trimIndent(),
+            DictionarySql.LEMMA_CANDIDATES,
             arrayOf(form, form)
         ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
 
     private fun jdbcLemmas(form: String): List<String> =
         connection().use { conn ->
             conn.prepareStatement(
-                """
-                SELECT f.lemma
-                FROM forms f
-                JOIN entries e ON e.word = f.lemma
-                WHERE f.form = ?
-                ORDER BY CASE WHEN f.lemma = ? THEN 1 ELSE 0 END, length(f.lemma)
-                LIMIT 4
-                """.trimIndent()
+                DictionarySql.LEMMA_CANDIDATES
             ).use { ps ->
                 ps.setString(1, form); ps.setString(2, form)
                 ps.executeQuery().use { c -> buildList { while (c.next()) add(c.getString(1)) } }
@@ -97,14 +84,14 @@ class DictionarySqlParityTest {
 
     private fun androidEntry(word: String): List<String?>? =
         androidDb.rawQuery(
-            "SELECT word, phonetic, translation, definition FROM entries WHERE word = ? LIMIT 1",
+            DictionarySql.ENTRY,
             arrayOf(word)
         ).use { c -> if (!c.moveToNext()) null else (0 until c.columnCount).map { c.getString(it) } }
 
     private fun jdbcEntry(word: String): List<String?>? =
         connection().use { conn ->
             conn.prepareStatement(
-                "SELECT word, phonetic, translation, definition FROM entries WHERE word = ? LIMIT 1"
+                DictionarySql.ENTRY
             ).use { ps ->
                 ps.setString(1, word)
                 ps.executeQuery().use { c ->

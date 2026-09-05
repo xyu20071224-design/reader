@@ -22,6 +22,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.10")
     testImplementation("org.json:json:20240303")
+    // 测试期才需要（DictionaryRepositoryTest 用 runBlocking 跑 suspend lookup）：
+    // 运行时仍保持 compileOnly 不进 APK，与上面两条「不新增运行时依赖」规则不冲突。
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     // 注意：不要在这里加 kotlin-stdlib —— KGP 会自动添加与插件同版本的 stdlib。
 }
 
