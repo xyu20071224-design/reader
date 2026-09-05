@@ -1,6 +1,6 @@
-package com.linguareader.app.tts
+package com.linguareader.shared.tts
 
-import com.linguareader.app.data.Book
+import com.linguareader.shared.data.Book
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler

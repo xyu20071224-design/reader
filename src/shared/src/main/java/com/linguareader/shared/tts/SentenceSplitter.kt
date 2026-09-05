@@ -145,9 +145,14 @@ object SentenceSplitter {
             protected += match.range.last
         }
         sentenceFinalAbbreviation.findAll(text).forEach { match ->
-            val after = (match.range.last + 1 until text.length)
-                .firstOrNull { text[it] != ' ' }
-                ?.let { text[it] }
+            // 句点后可能紧跟闭合引号/括号（"No." Then he left.）——真正的
+            // 「下一个词」在闭合串之后，必须越过它再看，否则保护会吞掉
+            // 引语结束后的真句界，发言和旁白被并成一句只能用同一个声音读。
+            var cursor = match.range.last + 1
+            while (cursor < text.length && (text[cursor] == ' ' || text[cursor] in closing)) {
+                cursor++
+            }
+            val after = text.getOrNull(cursor)
             if (after == null || !after.isUpperCase()) {
                 protected += match.range.last
             }

@@ -1,4 +1,4 @@
-package com.linguareader.app.tts
+package com.linguareader.shared.tts
 
 /** UI-visible state of the book player. */
 data class TtsPlaybackState(

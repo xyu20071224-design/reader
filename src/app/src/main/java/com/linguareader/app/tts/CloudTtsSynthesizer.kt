@@ -26,36 +26,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * Optional hook for synthesizers that can pre-generate a whole chapter.
  * The system TTS engine does not implement this; the cloud engines do.
  */
-interface ChapterTtsPreparer {
-    fun prepareChapter(
-        book: Book,
-        chapter: TtsChapter,
-        onProgress: (prepared: Int, total: Int) -> Unit,
-        onComplete: (success: Boolean) -> Unit
-    )
-}
 
 /**
  * Optional hook for synthesizers that can pre-generate the whole book (F-151
  * "全书缓存"). The system TTS engine does not implement this; the cloud
  * engines do. Progress is reported across the entire book, not per chapter.
  */
-interface BookTtsPreparer {
-    /**
-     * Whether whole-book pre-generation is enabled for this synthesizer.
-     * Default true; slow engines (IndexTTS via OpenAI-compatible backend)
-     * report false after the capability probe so the UI hides the button.
-     */
-    val supportsWholeBookCache: Boolean get() = true
-
-    fun prepareBook(
-        book: Book,
-        chapterCount: Int,
-        chapterProvider: suspend (Int) -> TtsChapter,
-        onProgress: (done: Int, total: Int) -> Unit,
-        onComplete: (success: Boolean) -> Unit
-    )
-}
 
 /**
  * Cloud synthesizer (F-151).

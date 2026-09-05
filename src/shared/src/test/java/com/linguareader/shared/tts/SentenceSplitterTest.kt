@@ -156,6 +156,26 @@ class SentenceSplitterTest {
     }
 
     @Test
+    fun `abbreviatedQuoteDoesNotSwallowFollowingNarration`() {
+        // 发言/旁白分离回归："No." 的句点后紧跟闭合引号，保护判定必须越过
+        // 闭合串再看——否则引语和后面的旁白并成一句，只能用同一个声音读。
+        val sentences = SentenceSplitter.split("He said, \"No.\" Then he left.")
+        assertEquals(2, sentences.size)
+        assertEquals("He said, \"No.\"", sentences[0])
+        assertEquals("Then he left.", sentences[1])
+    }
+
+    @Test
+    fun `sentenceFinalAbbreviationInsideQuoteKeepsAttributionMerged`() {
+        // 同一规则的另一面：引语内的缩写句点 + 闭合引号 + 小写引导语，
+        // 仍要合并为一句（说话人归属不能被切开）。
+        assertEquals(
+            listOf("\"Bring ropes, nails, etc.\" he said."),
+            SentenceSplitter.split("\"Bring ropes, nails, etc.\" he said.")
+        )
+    }
+
+    @Test
     fun `sentenceFinalAbbreviationStaysBeforeLowercaseOrDigits`() {
         assertEquals(1, SentenceSplitter.split("Read pp. 12 and pp. 13 for details.").size)
         assertEquals(1, SentenceSplitter.split("The firm Acme Inc. was founded here.").size)

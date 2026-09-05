@@ -9,40 +9,6 @@ import android.speech.tts.Voice
 import java.util.Locale
 
 /**
- * Text-to-speech backend used by the book player.
- *
- * The player only talks to this interface. Today the implementation is the
- * Android system TTS engine; a cloud TTS (OpenAI TTS etc.) can later be
- * plugged in through [TtsSynthesizerFactory] without touching the queue,
- * progress or UI layers.
- */
-interface TtsSynthesizer {
-    val isReady: Boolean
-
-    /** Queue [text] for synthesis; [utteranceId] is echoed back by callbacks.
-     *  [voice] optionally overrides the engine's default voice per utterance
-     *  (multi-voice M1: narrator / dialogue); null keeps the configured one. */
-    fun speak(text: String, rate: Float, utteranceId: String, voice: String? = null)
-
-    fun stop()
-
-    fun shutdown()
-}
-
-interface TtsSynthesizerListener {
-    fun onReady()
-    fun onInitFailed(status: Int)
-    fun onStart(utteranceId: String)
-    fun onDone(utteranceId: String)
-    fun onError(utteranceId: String)
-
-    /** Fired after an async backend capability probe (e.g. slow-engine
-     *  detection for 全书缓存) finished; the engine re-evaluates what the UI
-     *  may offer. Default no-op. */
-    fun onCapabilitiesChanged() {}
-}
-
-/**
  * Android system TTS implementation, with per-utterance language detection
  * and optional per-language voices picked by the user.
  */
