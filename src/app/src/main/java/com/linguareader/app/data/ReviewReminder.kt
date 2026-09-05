@@ -122,8 +122,8 @@ object ReviewReminderScheduler {
 class ReviewReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val prefs = context.getSharedPreferences("review_settings", Context.MODE_PRIVATE)
-        val pace = ReviewPace.fromPreferences(prefs)
-        val reminders = ReviewReminders.fromPreferences(prefs)
+        val pace = ReviewPace.fromPreferences(prefs.asPreferencesStore())
+        val reminders = ReviewReminders.fromPreferences(prefs.asPreferencesStore())
         val now = System.currentTimeMillis()
         val words = runCatching {
             runBlocking { VocabularyRepository(context).load() }

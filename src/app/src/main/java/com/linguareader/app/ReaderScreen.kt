@@ -1121,7 +1121,7 @@ private fun SettingsSheet(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    "${stringResource(reviewPace.labelRes)} ›",
+                    "${stringResource(reviewPace.labelRes.resolve())} ›",
                     color = Accent,
                     style = MaterialTheme.typography.labelLarge
                 )

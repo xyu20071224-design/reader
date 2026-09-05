@@ -1,8 +1,7 @@
-package com.linguareader.app.data
+package com.linguareader.shared.data
 
-import android.content.SharedPreferences
-import androidx.annotation.StringRes
-import com.linguareader.app.R
+import com.linguareader.shared.app.PreferencesStore
+import com.linguareader.shared.res.SharedString
 import org.json.JSONObject
 import kotlin.math.exp
 import kotlin.math.ln
@@ -16,8 +15,8 @@ import kotlin.math.roundToInt
 enum class ReviewMode(
     /** 持久化与历史兼容用的文字名；界面显示请用 [labelRes]。 */
     val label: String,
-    @StringRes val labelRes: Int,
-    @StringRes val descriptionRes: Int,
+    val labelRes: SharedString,
+    val descriptionRes: SharedString,
     val firstDelayMillis: Long,
     val intervalMultiplier: Double,
     val minIntervalMillis: Long,
@@ -27,8 +26,8 @@ enum class ReviewMode(
 ) {
     IMMERSIVE(
         label = "沉浸阅读",
-        labelRes = R.string.review_mode_immersive,
-        descriptionRes = R.string.review_mode_immersive_desc,
+        labelRes = SharedString.REVIEW_MODE_IMMERSIVE,
+        descriptionRes = SharedString.REVIEW_MODE_IMMERSIVE_DESC,
         firstDelayMillis = 2 * 60 * 60 * 1_000L,
         intervalMultiplier = 1.5,
         minIntervalMillis = 30 * 60 * 1_000L,
@@ -38,8 +37,8 @@ enum class ReviewMode(
     ),
     GENTLE(
         label = "温和节奏",
-        labelRes = R.string.review_mode_gentle,
-        descriptionRes = R.string.review_mode_gentle_desc,
+        labelRes = SharedString.REVIEW_MODE_GENTLE,
+        descriptionRes = SharedString.REVIEW_MODE_GENTLE_DESC,
         firstDelayMillis = 30 * 60 * 1_000L,
         intervalMultiplier = 1.0,
         minIntervalMillis = 30 * 60 * 1_000L,
@@ -49,8 +48,8 @@ enum class ReviewMode(
     ),
     DILIGENT(
         label = "勤学模式",
-        labelRes = R.string.review_mode_diligent,
-        descriptionRes = R.string.review_mode_diligent_desc,
+        labelRes = SharedString.REVIEW_MODE_DILIGENT,
+        descriptionRes = SharedString.REVIEW_MODE_DILIGENT_DESC,
         firstDelayMillis = 5 * 60 * 1_000L,
         intervalMultiplier = 0.75,
         minIntervalMillis = 30 * 60 * 1_000L,
@@ -102,7 +101,7 @@ enum class ReviewMode(
 data class ReviewPace(
     /** 持久化字段（自定义节奏的 JSON 里保存）；界面显示请用 [labelRes]。 */
     val label: String,
-    @StringRes val labelRes: Int = R.string.review_pace_custom,
+    val labelRes: SharedString = SharedString.REVIEW_PACE_CUSTOM,
     val firstDelayMillis: Long,
     val intervalMultiplier: Double,
     val minIntervalMillis: Long,
@@ -159,10 +158,10 @@ data class ReviewPace(
         }.getOrNull()
 
         /** Loads whichever pace is currently persisted (preset or custom). */
-        fun fromPreferences(prefs: SharedPreferences): ReviewPace {
-            val name = prefs.getString(ReviewMode.PREFERENCE_KEY, null)
+        fun fromPreferences(store: PreferencesStore): ReviewPace {
+            val name = store.getString(ReviewMode.PREFERENCE_KEY)
             if (name == CUSTOM_NAME) {
-                return fromJson(prefs.getString(STORAGE_KEY, null)) ?: defaultCustom()
+                return fromJson(store.getString(STORAGE_KEY)) ?: defaultCustom()
             }
             return runCatching { ReviewMode.valueOf(name ?: "") }
                 .getOrDefault(ReviewMode.DEFAULT)
@@ -225,15 +224,15 @@ data class ReviewReminders(
         }.getOrDefault(DEFAULT)
 
         fun fromPreferences(
-            prefs: SharedPreferences,
+            store: PreferencesStore,
             fallback: ReviewReminders = DEFAULT
         ): ReviewReminders {
-            val raw = prefs.getString(STORAGE_KEY, null)
+            val raw = store.getString(STORAGE_KEY)
             return if (raw == null) fallback else fromJson(raw)
         }
 
-        fun write(prefs: SharedPreferences, reminders: ReviewReminders) {
-            prefs.edit().putString(STORAGE_KEY, reminders.toJson()).apply()
+        fun write(store: PreferencesStore, reminders: ReviewReminders) {
+            store.putString(STORAGE_KEY, reminders.toJson())
         }
     }
 }

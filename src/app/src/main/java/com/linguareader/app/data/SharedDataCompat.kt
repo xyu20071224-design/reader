@@ -26,6 +26,12 @@ typealias PhraseWindow = com.linguareader.shared.data.PhraseWindow
 typealias DictionarySense = com.linguareader.shared.data.DictionarySense
 typealias ContextualDictionaryEntry = com.linguareader.shared.data.ContextualDictionaryEntry
 typealias DictionaryLookupResult = com.linguareader.shared.data.DictionaryLookupResult
+typealias ReviewMode = com.linguareader.shared.data.ReviewMode
+typealias ReviewPace = com.linguareader.shared.data.ReviewPace
+typealias ReviewReminders = com.linguareader.shared.data.ReviewReminders
 
 /** object 不能 typealias，用同名单例 val 兼容 `ContextAnalyzer.tokenize(...)` 这类调用。 */
 val ContextAnalyzer: com.linguareader.shared.data.ContextAnalyzer = SharedContextAnalyzer
+
+/** 同上：object 不能 typealias，用同名单例 val 兼容旧包路径的 `ReviewScheduler` 调用。 */
+val ReviewScheduler: com.linguareader.shared.data.ReviewScheduler = com.linguareader.shared.data.ReviewScheduler

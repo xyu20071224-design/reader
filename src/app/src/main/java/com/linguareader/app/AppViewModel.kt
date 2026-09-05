@@ -35,6 +35,7 @@ import com.linguareader.app.data.DictionaryLookupResult
 import com.linguareader.app.data.DictionaryRepository
 import com.linguareader.app.data.Greeting
 import com.linguareader.app.data.LaunchPromptPolicy
+import com.linguareader.app.data.asPreferencesStore
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
@@ -194,7 +195,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val custom = ReviewPace.fromJson(reviewPrefs.getString(ReviewPace.STORAGE_KEY, null))
             ?: ReviewPace.defaultCustom()
         val reminders = ReviewReminders.fromPreferences(
-            reviewPrefs,
+            reviewPrefs.asPreferencesStore(),
             fallback = preset?.defaultReminders() ?: ReviewReminders.DEFAULT
         )
         val versionCode = BuildConfig.VERSION_CODE
@@ -506,7 +507,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setReminders(reminders: ReviewReminders) {
-        ReviewReminders.write(reviewPrefs, reminders)
+        ReviewReminders.write(reviewPrefs.asPreferencesStore(), reminders)
         mutableState.value = mutableState.value.copy(reminders = reminders)
         rescheduleReviewReminders()
     }

@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.R
+import com.linguareader.app.res.resolve
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
@@ -417,7 +418,7 @@ internal fun ReviewSettingsSheet(
                         Column(Modifier.padding(start = 6.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    stringResource(presetMode.labelRes),
+                                    stringResource(presetMode.labelRes.resolve()),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -432,7 +433,7 @@ internal fun ReviewSettingsSheet(
                             }
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                stringResource(presetMode.descriptionRes),
+                                stringResource(presetMode.descriptionRes.resolve()),
                                 color = InkSoft,
                                 style = MaterialTheme.typography.bodySmall
                             )

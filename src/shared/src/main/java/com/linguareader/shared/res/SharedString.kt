@@ -34,5 +34,14 @@ enum class SharedString {
     FONT_SANS,
     FONT_MONO,
     FONT_CONDENSED,
-    FONT_CURSIVE
+    FONT_CURSIVE,
+
+    // 复习节奏显示名（ReviewMode/ReviewPace，原 R.string.review_mode_* / review_pace_custom）
+    REVIEW_MODE_IMMERSIVE,
+    REVIEW_MODE_IMMERSIVE_DESC,
+    REVIEW_MODE_GENTLE,
+    REVIEW_MODE_GENTLE_DESC,
+    REVIEW_MODE_DILIGENT,
+    REVIEW_MODE_DILIGENT_DESC,
+    REVIEW_PACE_CUSTOM
 }

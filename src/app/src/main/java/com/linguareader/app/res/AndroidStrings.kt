@@ -29,4 +29,11 @@ fun SharedString.resolve(): Int = when (this) {
     SharedString.FONT_MONO -> R.string.reader_font_mono
     SharedString.FONT_CONDENSED -> R.string.reader_font_condensed
     SharedString.FONT_CURSIVE -> R.string.reader_font_cursive
+    SharedString.REVIEW_MODE_IMMERSIVE -> R.string.review_mode_immersive
+    SharedString.REVIEW_MODE_IMMERSIVE_DESC -> R.string.review_mode_immersive_desc
+    SharedString.REVIEW_MODE_GENTLE -> R.string.review_mode_gentle
+    SharedString.REVIEW_MODE_GENTLE_DESC -> R.string.review_mode_gentle_desc
+    SharedString.REVIEW_MODE_DILIGENT -> R.string.review_mode_diligent
+    SharedString.REVIEW_MODE_DILIGENT_DESC -> R.string.review_mode_diligent_desc
+    SharedString.REVIEW_PACE_CUSTOM -> R.string.review_pace_custom
 }

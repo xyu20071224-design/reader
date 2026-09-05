@@ -31,13 +31,13 @@ class BootRescheduleReceiver : BroadcastReceiver() {
             try {
                 val words = VocabularyRepository(appContext).load()
                 val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                val pace = ReviewPace.fromPreferences(prefs)
+                val pace = ReviewPace.fromPreferences(prefs.asPreferencesStore())
                 // 提醒开关缺省时按当前预设的经典组合兜底，与 AppViewModel.init 一致。
                 val presetName = prefs.getString(ReviewMode.PREFERENCE_KEY, null)
                 val preset = if (presetName == ReviewPace.CUSTOM_NAME) null
                 else runCatching { ReviewMode.valueOf(presetName ?: "") }.getOrNull()
                 val reminders = ReviewReminders.fromPreferences(
-                    prefs,
+                    prefs.asPreferencesStore(),
                     fallback = preset?.defaultReminders() ?: ReviewReminders.DEFAULT
                 )
                 ReviewReminderScheduler.schedule(appContext, words, pace, reminders.notifications)

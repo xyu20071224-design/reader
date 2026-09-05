@@ -32,7 +32,7 @@ class ReviewReminderInstrumentedTest {
         context.getSharedPreferences("review_notifications", Context.MODE_PRIVATE)
             .edit().clear().apply()
         settings.edit().putString(ReviewMode.PREFERENCE_KEY, ReviewMode.DILIGENT.name).apply()
-        ReviewReminders.write(settings, ReviewReminders(notifications = true))
+        ReviewReminders.write(settings.asPreferencesStore(), ReviewReminders(notifications = true))
         val grant = InstrumentationRegistry.getInstrumentation().uiAutomation
             .executeShellCommand("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
         val grantOutput = java.io.FileInputStream(grant.fileDescriptor).bufferedReader().readText()
@@ -65,7 +65,7 @@ class ReviewReminderInstrumentedTest {
             .getString(ReviewMode.PREFERENCE_KEY, null)
         assertTrue("mode=$modeName", modeName == ReviewMode.DILIGENT.name)
         val reminders = ReviewReminders.fromPreferences(
-            context.getSharedPreferences("review_settings", Context.MODE_PRIVATE)
+            context.getSharedPreferences("review_settings", Context.MODE_PRIVATE).asPreferencesStore()
         )
         assertTrue("notifications=${reminders.notifications}", reminders.notifications)
         // Some OEMs (PKB110 among them) silently ignore `pm grant` for
@@ -111,7 +111,7 @@ class ReviewReminderInstrumentedTest {
         seedDueWord()
         val settings = context.getSharedPreferences("review_settings", Context.MODE_PRIVATE)
         settings.edit().putString(ReviewMode.PREFERENCE_KEY, ReviewMode.DILIGENT.name).apply()
-        ReviewReminders.write(settings, ReviewReminders(notifications = false))
+        ReviewReminders.write(settings.asPreferencesStore(), ReviewReminders(notifications = false))
 
         fireReceiver()
 
