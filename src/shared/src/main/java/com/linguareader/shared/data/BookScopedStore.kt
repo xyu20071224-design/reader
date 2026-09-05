@@ -1,4 +1,4 @@
-package com.linguareader.app.data
+package com.linguareader.shared.data
 
 import java.io.File
 

@@ -29,9 +29,16 @@ typealias DictionaryLookupResult = com.linguareader.shared.data.DictionaryLookup
 typealias ReviewMode = com.linguareader.shared.data.ReviewMode
 typealias ReviewPace = com.linguareader.shared.data.ReviewPace
 typealias ReviewReminders = com.linguareader.shared.data.ReviewReminders
+typealias BookScopedStore = com.linguareader.shared.data.BookScopedStore
+typealias StoreUsage = com.linguareader.shared.data.StoreUsage
+typealias StorageReport = com.linguareader.shared.data.StorageReport
+typealias BookDataOrphan = com.linguareader.shared.data.BookDataOrphan
 
 /** object 不能 typealias，用同名单例 val 兼容 `ContextAnalyzer.tokenize(...)` 这类调用。 */
 val ContextAnalyzer: com.linguareader.shared.data.ContextAnalyzer = SharedContextAnalyzer
 
 /** 同上：object 不能 typealias，用同名单例 val 兼容旧包路径的 `ReviewScheduler` 调用。 */
 val ReviewScheduler: com.linguareader.shared.data.ReviewScheduler = com.linguareader.shared.data.ReviewScheduler
+
+/** 顶层函数不能 typealias，用同名委托兜底旧包路径调用。 */
+fun formatStorageBytes(bytes: Long): String = com.linguareader.shared.data.formatStorageBytes(bytes)
