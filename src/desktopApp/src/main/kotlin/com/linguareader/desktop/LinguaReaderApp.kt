@@ -25,6 +25,8 @@ import com.linguareader.shared.app.AppContext
 import com.linguareader.shared.data.Book
 import com.linguareader.shared.data.DictionaryDatabase
 import com.linguareader.shared.data.LibraryRepository
+import com.linguareader.shared.tts.TtsPlaybackEngine
+import com.linguareader.shared.tts.TtsPlaybackState
 import com.linguareader.shared.data.VocabularyRepository
 import java.io.File
 
@@ -45,6 +47,8 @@ fun main() {
     val context: AppContext = DesktopAppContext(home)
     val vocabulary = VocabularyRepository(context)
     val library = LibraryRepository(context)
+    val ttsState = mutableStateOf(TtsPlaybackState())
+    val engine = createDesktopTtsEngine(context, library) { ttsState.value = it }
     // 词典找不到时不阻塞书架/复习：阅读屏给提示，查词不可用。
     val dictionary: DictionaryDatabase? = DesktopDictionaryDatabase.resolve(home)?.let {
         runCatching { DesktopDictionaryDatabase.open(it) }.getOrNull()
@@ -53,7 +57,7 @@ fun main() {
     application {
         Window(onCloseRequest = ::exitApplication, title = "语境阅读 · 桌面版") {
             LinguaReaderTheme {
-                AppScaffold(context, vocabulary, library, dictionary, home)
+                AppScaffold(context, vocabulary, library, engine, ttsState, dictionary, home)
             }
         }
     }
@@ -62,6 +66,7 @@ fun main() {
 private enum class Pane(val label: String) {
     Library("书架"),
     Review("复习"),
+    Listening("听书"),
     Vocabulary("生词本"),
     Settings("设置")
 }
@@ -80,6 +85,8 @@ fun AppScaffold(
     context: AppContext,
     vocabulary: VocabularyRepository,
     library: LibraryRepository,
+    engine: TtsPlaybackEngine,
+    ttsState: androidx.compose.runtime.MutableState<TtsPlaybackState>,
     dictionary: DictionaryDatabase?,
     home: File
 ) {
@@ -114,6 +121,7 @@ fun AppScaffold(
                     when (pane) {
                         Pane.Library -> LibraryPane(library) { reading = it }
                         Pane.Review -> ReviewPane(vocabulary, reviewPrefs)
+                        Pane.Listening -> ListeningPane(context, library, engine, ttsState)
                         Pane.Vocabulary -> VocabularyPane(vocabulary)
                         Pane.Settings -> SettingsPane(reviewPrefs, home)
                     }

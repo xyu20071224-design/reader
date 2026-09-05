@@ -27,6 +27,9 @@ dependencies {
     implementation("org.json:json:20240303")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
 
+    // 桌面听书：JVM 无内置 MP3 解码，mp3spi（JavaZoom）提供 SPI，javax.sound 直接吃 MP3。
+    implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4")
+
     // 词典/译本记忆的只读驱动（M1 验证目标）
     implementation("org.xerial:sqlite-jdbc:3.46.1.3")
 
