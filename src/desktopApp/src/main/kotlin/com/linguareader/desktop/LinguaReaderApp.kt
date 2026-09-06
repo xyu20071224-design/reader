@@ -97,13 +97,25 @@ fun AppScaffold(
     Scaffold { padding ->
         if (reading != null) {
             Surface(Modifier.fillMaxSize().padding(padding)) {
-                ReadingPane(
-                    book = reading!!,
-                    dictionary = dictionary,
-                    vocabulary = vocabulary,
-                    reviewPrefs = reviewPrefs,
-                    onBack = { reading = null; pane = Pane.Library }
-                )
+                if (DesktopCefRuntime.available) {
+                    DesktopReaderPane(
+                        book = reading!!,
+                        home = home,
+                        dictionary = dictionary,
+                        vocabulary = vocabulary,
+                        reviewPrefs = reviewPrefs,
+                        library = library,
+                        onBack = { reading = null; pane = Pane.Library }
+                    )
+                } else {
+                    ReadingPane(
+                        book = reading!!,
+                        dictionary = dictionary,
+                        vocabulary = vocabulary,
+                        reviewPrefs = reviewPrefs,
+                        onBack = { reading = null; pane = Pane.Library }
+                    )
+                }
             }
         } else {
             Row(Modifier.fillMaxSize().padding(padding)) {

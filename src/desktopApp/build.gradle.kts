@@ -30,6 +30,9 @@ dependencies {
     // 桌面听书：JVM 无内置 MP3 解码，mp3spi（JavaZoom）提供 SPI，javax.sound 直接吃 MP3。
     implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4")
 
+    // 桌面阅读器（M4，路线 B）：jcefmaven 引导 CEF/Chromium，运行时按需下载浏览器内核。
+    implementation("me.friwi:jcefmaven:146.0.10")
+
     // 词典/译本记忆的只读驱动（M1 验证目标）
     implementation("org.xerial:sqlite-jdbc:3.46.1.3")
 

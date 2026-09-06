@@ -1,15 +1,15 @@
 package com.linguareader.app.tts
 
-import android.util.Log
-import com.linguareader.app.data.Book
+import com.linguareader.shared.data.Book
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
-/** TtsChapter 真相已迁入 :shared（桌面迁移 M2 刀9）；此处 typealias 兜住同包引用。 */
+/** TtsChapter 真相在 :shared（刀9）；本文件经此别名继续同包使用。 */
 typealias TtsChapter = com.linguareader.shared.tts.TtsChapter
+
 
 /**
  * Extracts TTS chapters from the same HTML files the reader paginates.

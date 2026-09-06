@@ -1,6 +1,6 @@
-package com.linguareader.app.reader
+package com.linguareader.shared.reader
 
-import com.linguareader.app.data.ReaderPreferences
+import com.linguareader.shared.data.ReaderPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 
