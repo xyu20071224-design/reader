@@ -88,6 +88,21 @@ class SpeakerRuleTaggerTest {
     }
 
     @Test
+    fun indefinitePronounsAreNotCharacterNames() {
+        // "Everybody said" 若被当成角色名，音色分配器会为一个不存在的
+        // "Everybody" 建条目并持久化一个音色，污染整本书的音色表。
+        // 前署名与后署名两条路径都要拦下，退回未署名 dialogue。
+        assertEquals(
+            listOf("dialogue"),
+            speakersOf("Everybody said, \"Run!\"")
+        )
+        assertEquals(
+            listOf("dialogue"),
+            speakersOf("\"Who's there?\" asked Somebody.")
+        )
+    }
+
+    @Test
     fun backAttributionPicksSpeakerName() {
         assertEquals(
             listOf("Gandalf"),

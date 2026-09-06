@@ -77,8 +77,18 @@ object SpeakerRuleTagger {
 
     private const val ATTRIBUTION_WINDOW = 80
 
-    /** Capitalised pronouns are never speaker names. */
-    private val pronoun = Regex("\\b(?:He|She|It|I|You|We|They)\\b")
+    /**
+     * Pronouns are never speaker names. Only the capitalised subjective forms
+     * (He/She/It/I/You/We/They) can be captured by the attribution regexes;
+     * indefinite pronouns (Everybody said, "…") would otherwise become a
+     * bogus character that the voice assigner maps and persists a voice for.
+     * (`No one` is unreachable here: two-word captures require both words
+     * capitalised, so it never reaches this filter.)
+     */
+    private val pronoun = Regex(
+        "\\b(?:He|She|It|I|You|We|They|" +
+            "Everyone|Everybody|Somebody|Someone|Anybody|Anyone|Nobody)\\b"
+    )
 
     /**
      * Tags every sentence of [blocks] (leaf blocks, whitespace-normalised as
