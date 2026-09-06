@@ -18,7 +18,7 @@
 
 ```powershell
 # 在 IndexTTS 安装目录下（依赖已装好）
-$env:INDEX_VOICES_DIR = "C:\work\reader\tts-server\voices"   # 克隆音色目录
+$env:INDEX_VOICES_DIR = "C:\Users\nagisa\work\reader\tts-server\voices"   # 克隆音色目录
 $env:INDEX_TOKEN      = ""                                       # 暴露公网时必须设置
 .\.venv\Scripts\python.exe .\indextts_server.py
 ```

@@ -60,10 +60,10 @@ BACKENDS = {
         "desc": "轻量 · CPU 实时合成 · 103 个音色（中/英）",
         "base": "http://127.0.0.1:8000",
         "port": 8000,
-        "cwd": r"C:\工作文件夹\reader\tts-server",
+        "cwd": r"C:\Users\nagisa\work\reader\tts-server",
         "command": [
-            r"C:\工作文件夹\reader\tts-server\.venv\Scripts\python.exe",
-            r"C:\工作文件夹\reader\tts-server\server.py",
+            r"C:\Users\nagisa\work\reader\tts-server\.venv\Scripts\python.exe",
+            r"C:\Users\nagisa\work\reader\tts-server\server.py",
         ],
         "env": {},
         # 发起启动后，最多等待这么多秒才判定为失败（CPU 服务几秒即就绪）

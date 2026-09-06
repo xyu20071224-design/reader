@@ -4,7 +4,7 @@ import sys
 from pydub import AudioSegment
 
 # 路径配置
-FFMPEG_DIR = r"C:\工作文件夹\reader\artifacts\ffmpeg\ffmpeg-9.0.1-essentials_build\bin"
+FFMPEG_DIR = r"C:\Users\nagisa\work\reader\artifacts\ffmpeg\ffmpeg-9.0.1-essentials_build\bin"
 os.environ["PATH"] = FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
 
 # 显式指定 ffmpeg 路径（保险起见）
@@ -18,8 +18,8 @@ else:
 
 SRC = r"C:\music\网易云下载\中原麻衣 - ボーナストラック (初回特典).mp3"
 DUR = 3000  # 毫秒 = 3 秒
-OUT_WAV = r"C:\工作文件夹\reader\artifacts\first_3s.wav"
-OUT_MP3 = r"C:\工作文件夹\reader\artifacts\first_3s.mp3"
+OUT_WAV = r"C:\Users\nagisa\work\reader\artifacts\first_3s.wav"
+OUT_MP3 = r"C:\Users\nagisa\work\reader\artifacts\first_3s.mp3"
 
 # 确保输出目录存在
 os.makedirs(os.path.dirname(OUT_WAV), exist_ok=True)

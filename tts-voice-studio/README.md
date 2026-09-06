@@ -24,7 +24,7 @@
 
 | 服务 | 端口 | 说明 | 引擎 |
 |------|------|------|------|
-| **Kokoro**（轻量，CPU） | 8000 | 103 个音色，中/英文，秒级就绪 | `C:\工作文件夹\reader\tts-server\server.py` |
+| **Kokoro**（轻量，CPU） | 8000 | 103 个音色，中/英文，秒级就绪 | `C:\Users\nagisa\work\reader\tts-server\server.py` |
 | **IndexTTS 2.5**（高质量，GPU） | 8001 | 克隆音色 `voice_01~voice_12`（无 voice_10）+ emo 音色，启动加载约 15~35 秒 | `...\index-tts-2.5.0\indextts_server.py` |
 
 > 两个后端都是 OpenAI 兼容服务：`GET /voices` 与 `POST /v1/audio/speech`。
@@ -39,7 +39,7 @@
 
 ## 快速开始
 
-1. 双击 `start_studio.bat`（会用 `C:\工作文件夹\reader\tts-server\.venv\Scripts\python.exe` 运行 `studio.py`）。
+1. 双击 `start_studio.bat`（会用 `C:\Users\nagisa\work\reader\tts-server\.venv\Scripts\python.exe` 运行 `studio.py`）。
 2. 浏览器打开 <http://127.0.0.1:8002>（局域网其他设备访问 <http://192.168.1.9:8002>）。
 3. 在页面上点「全部启动」或单个后端的「启动」：
    - Kokoro 几秒就绪；
