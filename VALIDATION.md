@@ -1132,3 +1132,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **实现（`0378f6b`）**：`DesktopCloudTtsSynthesizer` 实现 :shared `TtsSynthesizer`（刀9 的接口面兑现）——自建 OpenAI 兼容契约（POST /v1/audio/speech + Bearer + 恒发 response_format=mp3，契约以 tts-server-stack 记忆为准）；MP3 经 `mp3spi` SPI 解码 16bit PCM，javax.sound.sampled 直放（JVM 无内置 MP3 解码，靠 SPI）。听书屏：服务端/Token/音色设置（prefs 持久化，语义对齐 Android `CloudTtsSettings`）+ 选书 + 播放/暂停/句跳/停止 + 当句卡片；播放状态机 = :shared `TtsPlaybackEngine`（dispatcher=Default；chapterLoader 用 ChapterTextExtractor 取章节纯文本、整章单块——块序契约是 Android WebView 高亮专用，桌面无阅读器不需要）。
 - **范围与留白**：桌面不做系统 TTS（拍板决策 3）兑现为唯一云后端路径；语速不改播放速度（MVP 每句自然语速）、整书缓存靠不实现 BookTtsPreparer 由引擎自动隐藏；词级高亮需 M4 阅读器。**真实出声需用户启动 tts-server（Kokoro:8000 / IndexTTS:8001）后填地址体验**——本轮只有启动级验证。
 - **并行会话收尾**：其已停止，translation「释义找回」在途改动（3 文件）停止前已可编译，留在工作树未提交（0 失败基线上不影响门禁）；其归属由用户决定提交或丢弃。
+
+## 2026-09-06 收尾：并行会话工作提交 + 搬迁遗留清零
+
+- **`f721f4e`**：提交并行会话停止前的最终意志——回退其最后两笔功能（段落兜底的段内句级找回/释义找回，第 5 级降回纯段落级，`lookup` 去掉 senseCandidates 参数），随回退精简 6 条测试；补分句器缩写-引语-旁白回归测试 1 条；清掉 TtsPlaybackEngineTest 旧路径残留。
+- **`5cc93ed`**：AGENTS.md / scripts / tts README / studio.py 内三次搬迁（工作文件夹→D:eader→当前）的旧路径全部订正为 `C:Users
+agisaworkeader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此干净。
+- **终态**：门禁 341+217+3 全绿；桌面版六件事（导入/阅读/查词/收藏/复习/听书）全部成立；工作树仅剩用户自留的方案文档与 .zcode 本地目录。
