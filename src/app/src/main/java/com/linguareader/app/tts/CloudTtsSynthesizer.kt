@@ -113,7 +113,7 @@ class CloudTtsSynthesizer(
         preparedChapterKey = key
         chapterFailed = false
         prepareJob?.cancel()
-        val total = chapter.sentences.size
+        val total = chapter.utterances.size
         if (total == 0) {
             mainHandler.post { onComplete(true) }
             return
@@ -122,13 +122,13 @@ class CloudTtsSynthesizer(
             val semaphore = Semaphore(3)
             val failed = AtomicBoolean(false)
             val completed = AtomicInteger(0)
-            val jobs = chapter.sentences.indices.map { index ->
+            val jobs = chapter.utterances.map { utterance ->
                 async {
                     semaphore.withPermit {
                         if (failed.get() || shutdown) {
                             false
                         } else {
-                            val ok = generateOne(book, chapter, index)
+                            val ok = generateOne(book, chapter, utterance)
                             if (!ok) failed.set(true)
                             val done = completed.incrementAndGet()
                             mainHandler.post { onProgress(done, total) }
@@ -154,9 +154,8 @@ class CloudTtsSynthesizer(
             mainHandler.post { listener.onError(utteranceId) }
             return
         }
-        val (bookId, chapterIndex, sentenceIndex) = parsed
         val effectiveVoice = voice?.takeIf { it.isNotBlank() } ?: backend.voiceFor(text)
-        val file = cacheFile(bookId, chapterIndex, sentenceIndex, effectiveVoice)
+        val file = cacheFile(parsed.bookId, parsed.chapterIndex, parsed.sentenceIndex, parsed.segmentIndex, effectiveVoice)
         stopped = false
         scope.launch {
             val ready = waitForFileOrSynthesize(file, text, effectiveVoice)
@@ -181,11 +180,10 @@ class CloudTtsSynthesizer(
         mainHandler.post { releaseCurrentPlayer() }
     }
 
-    private suspend fun generateOne(book: Book, chapter: TtsChapter, index: Int): Boolean {
-        val text = chapter.sentences[index]
-        val voice = voiceForSpeaker(chapter.speakerAt(index), text)?.takeIf { it.isNotBlank() }
-            ?: backend.voiceFor(text)
-        val file = cacheFile(book.id, chapter.chapterIndex, index, voice)
+    private suspend fun generateOne(book: Book, chapter: TtsChapter, utterance: TtsUtterance): Boolean {
+        val voice = voiceForSpeaker(utterance.speaker, utterance.text)?.takeIf { it.isNotBlank() }
+            ?: backend.voiceFor(utterance.text)
+        val file = cacheFile(book.id, chapter.chapterIndex, utterance.sentenceIndex, utterance.segmentIndex, voice)
         if (file.exists() && file.length() > 0) return true
         val key = file.absolutePath
         if (inflightFiles.putIfAbsent(key, true) != null) {
@@ -195,7 +193,7 @@ class CloudTtsSynthesizer(
             return file.exists() && file.length() > 0
         }
         try {
-            return backend.synthesize(text, voice, file).isSuccess
+            return backend.synthesize(utterance.text, voice, file).isSuccess
         } finally {
             inflightFiles.remove(key)
         }
@@ -223,7 +221,7 @@ class CloudTtsSynthesizer(
                 }
                 chapters.add(loaded)
             }
-            val total = chapters.sumOf { it.sentences.size }
+            val total = chapters.sumOf { it.utterances.size }
             if (total == 0) {
                 mainHandler.post { onComplete(true) }
                 return@launch
@@ -232,14 +230,14 @@ class CloudTtsSynthesizer(
             val failed = AtomicBoolean(false)
             val completed = AtomicInteger(0)
             val jobs = chapters
-                .flatMap { chapter -> chapter.sentences.indices.map { sentenceIndex -> chapter to sentenceIndex } }
-                .map { (chapter, sentenceIndex) ->
+                .flatMap { chapter -> chapter.utterances.map { utterance -> chapter to utterance } }
+                .map { (chapter, utterance) ->
                     async {
                         semaphore.withPermit {
                             if (failed.get() || shutdown) {
                                 false
                             } else {
-                                val ok = generateOne(book, chapter, sentenceIndex)
+                                val ok = generateOne(book, chapter, utterance)
                                 if (!ok) failed.set(true)
                                 val done = completed.incrementAndGet()
                                 mainHandler.post { onProgress(done, total) }
@@ -372,18 +370,27 @@ class CloudTtsSynthesizer(
         bookId: String,
         chapterIndex: Int,
         sentenceIndex: Int,
+        segmentIndex: Int,
         voice: String
-    ): File = cache.fileFor(bookId, chapterIndex, sentenceIndex, voice, engineTag)
+    ): File = cache.fileFor(bookId, chapterIndex, sentenceIndex, segmentIndex, voice, engineTag)
 
-    private fun parseUtteranceId(id: String): Triple<String, Int, Int>? {
-        // 引擎生成的 utteranceId 是 4 段 "bookId:chapter:sentence:attempt"
-        // （见 TtsPlaybackEngine.utteranceIdFor）；末段 attempt 仅用于去重，
-        // 解析时忽略它，只取前 3 段。
+    /** utteranceId 的可定位坐标（缓存路径需要；attempt 只用于去重不参与）。 */
+    private data class UtteranceRef(
+        val bookId: String,
+        val chapterIndex: Int,
+        val sentenceIndex: Int,
+        val segmentIndex: Int
+    )
+
+    private fun parseUtteranceId(id: String): UtteranceRef? {
+        // 引擎生成的 utteranceId 是 5 段 "bookId:chapter:sentence:segment:attempt"
+        // （见 TtsPlaybackEngine.utteranceIdFor）；末段 attempt 仅用于去重。
         val parts = id.split(":")
-        if (parts.size < 3) return null
+        if (parts.size < 5) return null
         val chapter = parts[1].toIntOrNull() ?: return null
         val sentence = parts[2].toIntOrNull() ?: return null
-        return Triple(parts[0], chapter, sentence)
+        val segment = parts[3].toIntOrNull() ?: return null
+        return UtteranceRef(parts[0], chapter, sentence, segment)
     }
 
 }

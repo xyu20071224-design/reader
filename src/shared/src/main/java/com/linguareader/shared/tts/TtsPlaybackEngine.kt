@@ -75,6 +75,9 @@ class TtsPlaybackEngine(
     private var chapter: TtsChapter? = null
     private var chapterIndex = 0
     private var sentenceIndex = 0
+    /** 句内朗读片段序号（发言/旁白分离）：进度/跳句仍以句为单位，片段只是
+     *  句内细分——一句话拆成旁白段+引语段时逐段换声。句推进时归零。 */
+    private var segmentIndex = 0
     private var speechRate = 1f
     private var playing = false
     private var lastLoadedChapter: Int? = null
@@ -114,7 +117,7 @@ class TtsPlaybackEngine(
 
     // ── Playback control ──────────────────────────────────────────────────
 
-    fun startPlayback(newBook: Book, requestedChapter: Int, requestedSentence: Int) {
+    fun startPlayback(newBook: Book, requestedChapter: Int, requestedSentence: Int, requestedSegment: Int = 0) {
         val switchedBook = book?.id != newBook.id
         navigationVersion++
         fallbackActive = false
@@ -127,6 +130,7 @@ class TtsPlaybackEngine(
         chapter = null
         chapterIndex = requestedChapter.coerceIn(0, newBook.chapters.lastIndex.coerceAtLeast(0))
         sentenceIndex = requestedSentence.coerceAtLeast(0)
+        segmentIndex = requestedSegment.coerceAtLeast(0)
         preparedChapterKey = null
         lastLoadedChapter = readerLoadedChapterFor(newBook.id)
         playing = true
@@ -163,6 +167,7 @@ class TtsPlaybackEngine(
         } else {
             0
         }
+        segmentIndex = 0
         preparedChapterKey = null
         lastLoadedChapter = readerLoadedChapterFor(newBook.id)
         playing = false
@@ -203,6 +208,7 @@ class TtsPlaybackEngine(
         playing = true
         synthesizer?.stop()
         sentenceIndex++
+        segmentIndex = 0
         loadAndSpeakCurrent()
     }
 
@@ -212,7 +218,9 @@ class TtsPlaybackEngine(
         playing = true
         synthesizer?.stop()
         if (sentenceIndex > 0) {
+            // 回退到上一句的**句首**（听书的自然语义），不是上一片段。
             sentenceIndex--
+            segmentIndex = 0
             loadAndSpeakCurrent()
         } else if (chapterIndex > 0) {
             // BUG-007/015: walk backwards to the previous non-blank sentence.
@@ -232,6 +240,7 @@ class TtsPlaybackEngine(
                     if (lastSpoken >= 0) {
                         chapterIndex = target
                         sentenceIndex = lastSpoken
+                        segmentIndex = 0
                         lastLoadedChapter = null
                         loadAndSpeakCurrent()
                         return@launch
@@ -241,6 +250,7 @@ class TtsPlaybackEngine(
                         // the very beginning instead of looping forever.
                         chapterIndex = 0
                         sentenceIndex = 0
+                        segmentIndex = 0
                         lastLoadedChapter = null
                         loadAndSpeakCurrent()
                         return@launch
@@ -311,6 +321,7 @@ class TtsPlaybackEngine(
         chapter = null
         chapterIndex = 0
         sentenceIndex = 0
+        segmentIndex = 0
         preparedChapterKey = null
         lastLoadedChapter = null
         requestedChapter = null
@@ -378,6 +389,8 @@ class TtsPlaybackEngine(
             // pending speak is tied to this chapter *instance*; swapping it
             // would drop that sentence, so let the next load pick the tags up.
             if (waitingForChapter()) return@launch
+            // 片段划分只依赖引号区间（与 speakers 无关），换标签不改变片段数，
+            // 正在播放句的 segmentIndex 保持有效。
             chapter = loaded.withSpeakers(speakers)
         }
     }
@@ -428,6 +441,7 @@ class TtsPlaybackEngine(
         chapterReadyDeferred = null
         chapterIndex = selectedChapter.coerceIn(0, book?.chapters?.lastIndex?.coerceAtLeast(0) ?: 0)
         sentenceIndex = 0
+        segmentIndex = 0
         preparedChapterKey = null
         lastLoadedChapter = null
         chapter = null
@@ -456,7 +470,10 @@ class TtsPlaybackEngine(
         // Keep progress on the last sentence actually spoken instead of the
         // out-of-range index used to detect the end of the queue.
         val lastSpoken = (chapter?.sentenceCount ?: 0) - 1
-        if (lastSpoken >= 0) sentenceIndex = lastSpoken
+        if (lastSpoken >= 0) {
+            sentenceIndex = lastSpoken
+            segmentIndex = 0
+        }
         stop()
     }
 
@@ -499,6 +516,7 @@ class TtsPlaybackEngine(
                 }
                 chapterIndex++
                 sentenceIndex = 0
+                segmentIndex = 0
                 loadAndSpeakCurrent()
                 return@launch
             }
@@ -535,9 +553,9 @@ class TtsPlaybackEngine(
             loadAndSpeakCurrent()
             return
         }
-        val text = currentChapter.sentences[sentenceIndex]
-        if (text.isBlank()) {
+        if (currentChapter.sentences[sentenceIndex].isBlank()) {
             sentenceIndex++
+            segmentIndex = 0
             loadAndSpeakCurrent()
             return
         }
@@ -564,43 +582,53 @@ class TtsPlaybackEngine(
                 }
                 chapterReadyDeferred = null
                 when {
-                    loaded == chapterIndex && playing -> speakNow(text)
+                    loaded == chapterIndex && playing -> speakNow()
                     loaded != chapterIndex && loaded != null && playing -> {
                         lastLoadedChapter = loaded
                         loadAndSpeakCurrent()
                     }
                     else -> {
                         lastLoadedChapter = chapterIndex
-                        if (playing) speakNow(text)
+                        if (playing) speakNow()
                     }
                 }
             }
         } else {
-            speakNow(text)
+            speakNow()
         }
     }
 
-    private fun speakNow(text: String) {
+    /** 朗读当前句的当前**片段**（发言/旁白分离：一句话逐段换声）。 */
+    private fun speakNow() {
         val currentBook = book ?: return
+        val currentChapter = chapter ?: return
+        val segments = currentChapter.segmentsOf(sentenceIndex)
+        if (segmentIndex !in segments.indices) segmentIndex = 0
+        val utterance = segments.getOrNull(segmentIndex) ?: run {
+            // 防御：该句没有任何片段（不应发生）——跳到下一句。
+            sentenceIndex++
+            segmentIndex = 0
+            loadAndSpeakCurrent()
+            return
+        }
         val attempt = ++speakAttempt
-        val utteranceId = utteranceIdFor(chapterIndex, sentenceIndex, attempt)
-        val location = chapter?.sentenceLocation(sentenceIndex)
+        val utteranceId = utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, attempt)
         updateState {
             it.copy(
                 bookId = currentBook.id,
                 chapterIndex = chapterIndex,
                 sentenceIndex = sentenceIndex,
-                sentenceCount = chapter?.sentenceCount ?: it.sentenceCount,
-                currentSentence = text,
-                highlightBlockIndex = location?.first ?: -1,
-                highlightOffset = location?.second ?: 0,
-                highlightLength = location?.third ?: 0,
+                sentenceCount = currentChapter.sentenceCount,
+                currentSentence = currentChapter.sentences[sentenceIndex],
+                highlightBlockIndex = utterance.blockIndex,
+                highlightOffset = utterance.offset,
+                highlightLength = utterance.length,
                 isPlaying = true
             )
         }
         scheduleProgressSave()
-        val voice = chapter?.speakerAt(sentenceIndex)?.let { voiceForSpeaker(it, text) }
-        synthesizer?.speak(text, speechRate, utteranceId, voice)
+        val voice = voiceForSpeaker(utterance.speaker, utterance.text)
+        synthesizer?.speak(utterance.text, speechRate, utteranceId, voice)
     }
 
     private fun fallbackToSystemTts() {
@@ -657,7 +685,7 @@ class TtsPlaybackEngine(
 
     private fun handleUtteranceStart(utteranceId: String) {
         if (!playing) return
-        if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt)) {
+        if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, speakAttempt)) {
             // Only a successful start clears the error streak.
             consecutiveErrors = 0
             updateState { it.copy(isPlaying = true) }
@@ -665,20 +693,35 @@ class TtsPlaybackEngine(
     }
 
     private fun handleUtteranceDone(utteranceId: String) {
-        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt) || !playing) return
-        sentenceIndex++
-        loadAndSpeakCurrent()
+        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, speakAttempt) || !playing) return
+        // 句内还有片段（旁白段→引语段）就继续；片段读完推进到下一句。
+        val segmentCount = chapter?.segmentsOf(sentenceIndex)?.size ?: 0
+        if (segmentIndex + 1 < segmentCount) {
+            segmentIndex++
+            speakNow()
+        } else {
+            sentenceIndex++
+            segmentIndex = 0
+            loadAndSpeakCurrent()
+        }
     }
 
     private fun handleUtteranceError(utteranceId: String) {
-        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, speakAttempt) || !playing) return
+        if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, speakAttempt) || !playing) return
         consecutiveErrors++
         if (consecutiveErrors >= 25) {
             pause()
             return
         }
-        sentenceIndex++
-        loadAndSpeakCurrent()
+        val segmentCount = chapter?.segmentsOf(sentenceIndex)?.size ?: 0
+        if (segmentIndex + 1 < segmentCount) {
+            segmentIndex++
+            speakNow()
+        } else {
+            sentenceIndex++
+            segmentIndex = 0
+            loadAndSpeakCurrent()
+        }
     }
 
     private fun waitingForChapter(): Boolean = chapterReadyDeferred != null
@@ -714,7 +757,7 @@ class TtsPlaybackEngine(
         onState(state)
     }
 
-    private fun utteranceIdFor(chapter: Int, sentence: Int, attempt: Int): String =
-        (book?.id.orEmpty()) + ":" + chapter + ":" + sentence + ":" + attempt
+    private fun utteranceIdFor(chapter: Int, sentence: Int, segment: Int, attempt: Int): String =
+        (book?.id.orEmpty()) + ":" + chapter + ":" + sentence + ":" + segment + ":" + attempt
 }
 

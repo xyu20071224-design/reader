@@ -11,6 +11,7 @@ package com.linguareader.app.tts
 
 typealias TtsPlaybackEngine = com.linguareader.shared.tts.TtsPlaybackEngine
 typealias TtsPlaybackState = com.linguareader.shared.tts.TtsPlaybackState
+typealias TtsUtterance = com.linguareader.shared.tts.TtsUtterance
 typealias TtsSynthesizer = com.linguareader.shared.tts.TtsSynthesizer
 typealias TtsSynthesizerListener = com.linguareader.shared.tts.TtsSynthesizerListener
 typealias ChapterTtsPreparer = com.linguareader.shared.tts.ChapterTtsPreparer

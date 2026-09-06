@@ -40,6 +40,127 @@ data class TtsChapter(
         private const val TAG = "TtsChapter"
     }
 
+    // ── 朗读片段（句内发言/旁白分离） ─────────────────────────────────────
+
+    /** 每块的「字符是否在引语内」标记（QuoteSpans 坐标 = 原块文本坐标）。 */
+    private val blockQuoteFlags: List<BooleanArray> by lazy {
+        QuoteSpans.spans(blocks).mapIndexed { index, spans ->
+            val flags = BooleanArray(blocks[index].length)
+            spans.forEach { span -> for (i in span) if (i in flags.indices) flags[i] = true }
+            flags
+        }
+    }
+
+    /**
+     * 全章朗读片段：合成与高亮的实际单位。纯旁白/纯引语句 1:1；引语嵌在句中
+     * 的句子拆成 narrator / speaker 多段。由 [speakers] 派生——withSpeakers 的
+     * copy 会生成新实例，懒属性随之重算。
+     */
+    val utterances: List<TtsUtterance> by lazy { buildUtterances() }
+
+    private val utterancesBySentence: Map<Int, List<TtsUtterance>> by lazy {
+        utterances.groupBy { it.sentenceIndex }
+    }
+
+    /** [sentenceIndex] 句的片段列表（按文档序；多数句恰为 1 段）。 */
+    fun segmentsOf(sentenceIndex: Int): List<TtsUtterance> =
+        utterancesBySentence[sentenceIndex].orEmpty()
+
+    /** 点按处的 (句， 片段)；落在句间空白时退回句首段（与 sentenceIndexAt 同口径）。 */
+    fun utteranceAt(blockText: String, blockOffset: Int): Pair<Int, Int>? {
+        val (blockIndex, offsetInBlock) = locateBlock(blockText, blockOffset) ?: return null
+        val offset = offsetInBlock.coerceIn(0, blocks[blockIndex].length)
+        utterances.firstOrNull {
+            it.blockIndex == blockIndex && offset >= it.offset && offset < it.offset + it.length
+        }?.let { return it.sentenceIndex to it.segmentIndex }
+        return sentenceIndexAt(blockText, blockOffset)?.let { it to 0 }
+    }
+
+    private fun buildUtterances(): List<TtsUtterance> {
+        val result = mutableListOf<TtsUtterance>()
+        var sentenceBase = 0
+        for (blockIndex in blocks.indices) {
+            val block = blocks[blockIndex]
+            val flags = blockQuoteFlags[blockIndex]
+            var cursor = 0
+            sentencesByBlock[blockIndex].forEachIndexed { inside, sentence ->
+                val sIndex = sentenceBase + inside
+                val speaker = speakerAt(sIndex)
+                val start = block.indexOf(sentence, cursor)
+                val pieces = if (start < 0) {
+                    // 定位失败（归一化契约被打破）：整句单段，高亮跳过但朗读照常。
+                    listOf(TtsUtterance(sIndex, 0, 1, speaker, sentence, -1, -1))
+                } else {
+                    cursor = start + sentence.length
+                    mergeSameSpeaker(
+                        block,
+                        segmentRuns(block, blockIndex, flags, start, start + sentence.length, sIndex, speaker)
+                    )
+                }
+                val count = pieces.size
+                pieces.forEachIndexed { seg, piece ->
+                    result += if (count == 1) piece else piece.copy(segmentIndex = seg, segmentCount = count)
+                }
+            }
+            sentenceBase += sentencesByBlock[blockIndex].size
+        }
+        return result
+    }
+
+    /** 把 [from, until) 按引语标记切成极大连续段（旁白/引语天然交替）。
+     *  段边缘空白随坐标一起裁掉：保证 substring(offset, offset+length) == text。 */
+    private fun segmentRuns(
+        block: String,
+        blockIndex: Int,
+        flags: BooleanArray,
+        from: Int,
+        until: Int,
+        sentenceIndex: Int,
+        sentenceSpeaker: String
+    ): List<TtsUtterance> {
+        val pieces = mutableListOf<TtsUtterance>()
+        var i = from
+        while (i < until) {
+            val inQuote = flags[i]
+            var j = i
+            while (j < until && flags[j] == inQuote) j++
+            var start = i
+            var end = j
+            while (start < end && block[start] == ' ') start++
+            while (end > start && block[end - 1] == ' ') end--
+            if (end > start) {
+                pieces += TtsUtterance(
+                    sentenceIndex = sentenceIndex,
+                    segmentIndex = 0,
+                    segmentCount = 1,
+                    speaker = if (inQuote) sentenceSpeaker else TtsUtterance.NARRATOR,
+                    text = block.substring(start, end),
+                    blockIndex = blockIndex,
+                    offset = start
+                )
+            }
+            i = j
+        }
+        return pieces
+    }
+
+    /** 无标签章节里整句都是 narrator 时，引语段与旁白段同声部——合并省请求。
+     *  合并文本取块内连续子串（区间相邻），保持「offset 处 substring == text」。 */
+    private fun mergeSameSpeaker(block: String, pieces: List<TtsUtterance>): List<TtsUtterance> {
+        if (pieces.size < 2) return pieces
+        val out = mutableListOf<TtsUtterance>()
+        for (piece in pieces) {
+            val last = out.lastOrNull()
+            if (last != null && last.speaker == piece.speaker) {
+                val merged = block.substring(last.offset, piece.offset + piece.length).trim()
+                out[out.lastIndex] = last.copy(text = merged)
+            } else {
+                out += piece
+            }
+        }
+        return out
+    }
+
     /** Flat sentence index for a tapped position inside one block. */
     fun sentenceIndexAt(blockText: String, blockOffset: Int): Int? {
         val (blockIndex, offsetInBlock) = locateBlock(blockText, blockOffset) ?: return null

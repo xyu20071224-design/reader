@@ -147,7 +147,7 @@ class TtsPlaybackEngineTest {
         assertEquals(1, fake.spoken.size)
         assertEquals("Hello.", fake.spoken[0].text)
         assertEquals(1f, fake.spoken[0].rate)
-        assertEquals("b1:0:0:1", fake.spoken[0].utteranceId)
+        assertEquals("b1:0:0:0:1", fake.spoken[0].utteranceId)
         assertEquals("Hello.", h.state.currentSentence)
         assertTrue(h.state.isPlaying)
         assertEquals(0, h.state.highlightBlockIndex)
@@ -187,8 +187,8 @@ class TtsPlaybackEngineTest {
 
         h.engine.applySpeakerTags("b1", 0, listOf("narrator", "Gandalf"))
         testScheduler.advanceUntilIdle()
-        fake.emitStart("b1:0:0:1")
-        fake.emitDone("b1:0:0:1")
+        fake.emitStart("b1:0:0:0:1")
+        fake.emitDone("b1:0:0:0:1")
         testScheduler.advanceUntilIdle()
 
         assertEquals(2, fake.spoken.size)
@@ -245,11 +245,61 @@ class TtsPlaybackEngineTest {
 
         assertEquals(1, fake.spoken.size)
         assertEquals("af_maple", fake.spoken[0].voice)
-        fake.emitStart("b1:0:0:1")
-        fake.emitDone("b1:0:0:1")
+        fake.emitStart("b1:0:0:0:1")
+        fake.emitDone("b1:0:0:0:1")
         testScheduler.advanceUntilIdle()
         assertEquals(2, fake.spoken.size)
         assertEquals("af_sol", fake.spoken[1].voice)
+        h.engine.shutdown()
+    }
+
+    @Test
+    fun advancesSegmentsWithinSentenceBeforeMovingToNextSentence() = runTest {
+        // 发言/旁白分离：引语嵌在句中的句子拆成旁白段+引语段，逐段换声；
+        // 句号（进度保存/说话人标签的单位）在片段读完前保持不动。
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val loaded = TtsChapter(
+            0, "Ch0",
+            blocks = listOf("Gandalf said, \"Fly, you fools.\"", "Next one."),
+            speakers = listOf("Gandalf", "narrator")
+        )
+        val h = Harness(
+            dispatcher = dispatcher,
+            factory = { l -> FakeTtsSynthesizer(l) },
+            isSystem = { it is FakeTtsSynthesizer },
+            chapters = { _, _ -> loaded },
+            voiceForSpeaker = { speaker, _ -> "v_$speaker" }
+        )
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+        val fake = h.synthesizer as FakeTtsSynthesizer
+
+        // 第 1 段：旁白。
+        assertEquals(1, fake.spoken.size)
+        assertEquals("Gandalf said,", fake.spoken[0].text)
+        assertEquals("v_narrator", fake.spoken[0].voice)
+        assertEquals("b1:0:0:0:1", fake.spoken[0].utteranceId)
+        assertEquals(0, h.state.highlightOffset)
+        assertEquals("Gandalf said,".length, h.state.highlightLength)
+
+        fake.emitDone(fake.spoken.last().utteranceId)
+        testScheduler.advanceUntilIdle()
+
+        // 第 2 段：引语，句号不动，高亮缩到引语区间。
+        assertEquals(2, fake.spoken.size)
+        assertEquals("\"Fly, you fools.\"", fake.spoken[1].text)
+        assertEquals("v_Gandalf", fake.spoken[1].voice)
+        assertEquals(0, h.state.sentenceIndex)
+        assertEquals(14, h.state.highlightOffset)
+        assertEquals("\"Fly, you fools.\"".length, h.state.highlightLength)
+
+        fake.emitDone(fake.spoken.last().utteranceId)
+        testScheduler.advanceUntilIdle()
+
+        // 片段读完才推进到下一句。
+        assertEquals(3, fake.spoken.size)
+        assertEquals("Next one.", fake.spoken[2].text)
+        assertEquals(1, h.state.sentenceIndex)
         h.engine.shutdown()
     }
 

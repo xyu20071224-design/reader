@@ -1,5 +1,7 @@
 package com.linguareader.app.tts
 
+import com.linguareader.shared.tts.QuoteSpans
+
 /**
  * Rule-based speaker tagger (PLAN-MULTI-VOICE §4.1, M1 scope).
  *
@@ -96,13 +98,14 @@ object SpeakerRuleTagger {
     fun index(blocks: List<String>, maxSentenceLength: Int = Int.MAX_VALUE): SpeakerQuoteIndex {
         val slots = mutableListOf<SpeakerSlot>()
         val quotesByParagraph = mutableListOf<List<String>>()
-        var inQuote = false
+        // 引号区间统一走 shared 的 QuoteSpans（与 TtsChapter 片段化同一条口径，
+        // 避免两处扫描漂移）；坐标是原块文本坐标（normalizeQuotes 等长替换）。
+        val blockSpans = QuoteSpans.spans(blocks)
         for ((paragraph, block) in blocks.withIndex()) {
-            val text = normalizeQuotes(block)
+            val text = QuoteSpans.normalizeQuotes(block)
             val sentences = SentenceSplitter.split(text, maxSentenceLength)
             val ranges = sentenceRanges(text, sentences)
-            val quotes = quoteSpans(text, inQuote).also { inQuote = it.second }
-            val spans = quotes.first
+            val spans = blockSpans[paragraph]
             quotesByParagraph += spans.map { span ->
                 text.substring(span.first, span.last + 1).trim('"', ' ')
             }
@@ -120,21 +123,6 @@ object SpeakerRuleTagger {
         return SpeakerQuoteIndex(slots, quotesByParagraph)
     }
 
-    private fun normalizeQuotes(block: String): String {
-        // Curly single and double quotes all collapse onto the ASCII double
-        // quote; ASCII apostrophes are deliberately left alone.
-        val out = StringBuilder(block.length)
-        for (char in block) {
-            out.append(
-                when (char) {
-                    '‘', '’', '“', '”' -> '"'
-                    else -> char
-                }
-            )
-        }
-        return out.toString()
-    }
-
     /** Character ranges of the split sentences inside [text], via cursor search. */
     private fun sentenceRanges(text: String, sentences: List<String>): List<IntRange> {
         val ranges = mutableListOf<IntRange>()
@@ -146,35 +134,6 @@ object SpeakerRuleTagger {
             cursor = found + sentence.length
         }
         return ranges
-    }
-
-    /**
-     * Quote spans as inclusive ranges of the `"` characters, honouring a
-     * carry-over [inQuote] state from the previous block. Returns the spans
-     * and the new carry-over state.
-     */
-    private fun quoteSpans(text: String, inQuote: Boolean): Pair<List<IntRange>, Boolean> {
-        val spans = mutableListOf<IntRange>()
-        // A carried-over quote starts the block already inside the quote,
-        // so the span opens at the very beginning of the text.
-        var open = if (inQuote) 0 else -1
-        var state = inQuote
-        for ((index, char) in text.withIndex()) {
-            if (char != '"') continue
-            if (!state) {
-                open = index
-                state = true
-            } else {
-                spans += open..index
-                state = false
-            }
-        }
-        if (state && open >= 0) {
-            // Unclosed at end of block: the span runs to the end of the text
-            // and the carry-over lets the next block start inside a quote.
-            spans += open..text.lastIndex
-        }
-        return spans to state
     }
 
     /** Attribution for the sentence containing [span]; null when unknown. */

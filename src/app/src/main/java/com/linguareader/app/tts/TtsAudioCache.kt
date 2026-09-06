@@ -117,6 +117,10 @@ class TtsAudioCache(context: Context) : BookScopedStore {
     /**
      * 某句话的缓存文件（不保证存在）。
      *
+     * [segmentIndex] 是句内朗读片段序号（发言/旁白分离）：一句话拆成旁白段+
+     * 引语段后逐段缓存，键必须含片段，否则同句两段互相覆盖。2026-09-06 加片段
+     * 维度时键从 `5.mp3` 改为 `s5-0.mp3`，存量缓存一次性作废（重新合成）。
+     *
      * [engineTag] 是**引擎身份**（见 VoiceLibraryLoader.engineKey）：同一个音色 id 在
      * 两台不同的自建服务器上是**不同的声音**，不把它算进键，换服务器后会直接播出
      * 上一台的音频。键里带上它之后，旧引擎的目录自然不再命中，交给配额淘汰或
@@ -126,11 +130,12 @@ class TtsAudioCache(context: Context) : BookScopedStore {
         bookId: String,
         chapterIndex: Int,
         sentenceIndex: Int,
+        segmentIndex: Int,
         voice: String,
         engineTag: String
     ): File = File(
         root,
-        "$bookId/$chapterIndex/${segmentFor(engineTag, voice)}/$sentenceIndex.mp3"
+        "$bookId/$chapterIndex/${segmentFor(engineTag, voice)}/s$sentenceIndex-$segmentIndex.mp3"
     )
 
     companion object {

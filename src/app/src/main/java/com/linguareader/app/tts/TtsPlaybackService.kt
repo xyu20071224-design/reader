@@ -358,8 +358,9 @@ class TtsPlaybackService : Service() {
             blockText.isNotEmpty() -> scope.launch {
                 val chapter = withContext(Dispatchers.IO) { extractor.chapter(newBook, requestedChapter) }
                 if (generation != playGeneration) return@launch
-                val index = chapter.sentenceIndexAt(blockText, blockOffset) ?: 0
-                engine.startPlayback(newBook, requestedChapter, index)
+                // 点到句内的引语/旁白片段就从那一声部起读；落在句间空白退回句首。
+                val (index, segment) = chapter.utteranceAt(blockText, blockOffset) ?: (0 to 0)
+                engine.startPlayback(newBook, requestedChapter, index, segment)
             }
 
             // 没带起点（如点到空块）时从章首起播，纯防御兜底。
