@@ -1139,3 +1139,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 - **`5cc93ed`**：AGENTS.md / scripts / tts README / studio.py 内三次搬迁（工作文件夹→D:eader→当前）的旧路径全部订正为 `C:Users
 agisaworkeader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此干净。
 - **终态**：门禁 341+217+3 全绿；桌面版六件事（导入/阅读/查词/收藏/复习/听书）全部成立；工作树仅剩用户自留的方案文档与 .zcode 本地目录。
+
+## 2026-09-06 桌面迁移 M4/M5：JCEF 阅读器（路线 B）+ 打包落地
+
+- **M4a（`3152eed`）**：`ReaderScripts`（1545 行注入 JS + 点词坐标契约）迁入 `com.linguareader.shared.reader`（零 Android 依赖，实测纯净）；EpubPage/ReaderController（Android WebView 宿主）经同名 val 零改动。`TtsTextExtractor` 与 `ReaderScriptsTest` 因依赖 SpeakerRuleTagger 链留守 :app（ReaderScripts 对其只是注释引用，无代码依赖）。
+- **M4b（同提交）**：`DesktopCefRuntime`（jcefmaven 146.0.10 引导 CEF，运行时按需下载内核到 `<home>/jcef-cache`，失败降级）+ `DesktopReaderPane`（SwingPanel 承载 JCEF；`window.ReaderBridge` shim 经 CefMessageRouter 转发 onWord/onPageChanged/onChapterRequested——与 Android `@JavascriptInterface` 方法名/参数一一对应）：点词→语境查词→收藏、翻章、进度落盘接通。AppScaffold 按 CEF 可用性自动降级纯文本阅读。
+- **M4 已知留白（记入 M4 验收清单）**：TTS 句高亮跟随未接（需 ReaderBridge 高亮回调与听书引擎联动）、preferenceScript 主题同步未接（阅读设置面板）、jcefmaven 内核下载走 GitHub（离线首跑阅读屏会降级）。
+- **M5（`7c17a88`）**：run/package 统一收口 `compose.desktop.application`（与 application 插件 run 任务名冲突，二选一）；`-PmainClass` 探针切换改配置期读取；`packageAppImage` 产物实测 `LinguaReader.exe`（136MB，含 JBR）可启动；MSI/EXE 安装器需 WiX（未装，二期）。**坑**：jpackage @args 文件按系统码表（GBK）解码，元数据含中文报 Input length = 1——元数据一律 ASCII。
