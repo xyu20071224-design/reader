@@ -29,7 +29,7 @@
 | --- | --- |
 | applicationId / namespace | `com.linguareader.app` |
 | compileSdk / targetSdk / minSdk | 35 / 35 / **23** |
-| versionCode / versionName | 12 / 1.6.0 |
+| versionCode / versionName | 14 / 1.6.2 |
 | JDK / jvmTarget | 17 |
 | AGP / Kotlin / Gradle | 8.9.1 / 2.1.10 / 8.11.1 |
 | Compose BOM | 2025.05.01 |
