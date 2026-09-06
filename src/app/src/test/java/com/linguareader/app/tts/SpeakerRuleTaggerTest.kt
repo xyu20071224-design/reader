@@ -129,6 +129,16 @@ class SpeakerRuleTaggerTest {
     }
 
     @Test
+    fun abbreviatedQuoteThenNarrationSeparates() {
+        // 分句器回归的端到端面："No." 的缩写保护不能吞掉引语后的句界，
+        // 否则旁白 "Then he left." 会被读成对话的声音。
+        assertEquals(
+            listOf("dialogue", "narrator"),
+            speakersOf("He said, \"No.\" Then he left.")
+        )
+    }
+
+    @Test
     fun speakersParallelToSentencesAcrossBlocks() {
         val speakers = speakersOf(
             "One. Two!",
