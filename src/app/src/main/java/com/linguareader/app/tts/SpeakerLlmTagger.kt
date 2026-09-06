@@ -29,6 +29,12 @@ class SpeakerRoster private constructor(
         if (cleaned.equals(SpeakerRuleTagger.NARRATOR, ignoreCase = true)) {
             return SpeakerRuleTagger.NARRATOR
         }
+        // 未署名对话：LLM 拿不准时按 prompt 写 dialogue，与规则层的
+        // 未署名标签同值，直接放行（否则它会被拒绝并回退到同一条标签，
+        // 行为一致但提示词与校验两头说法不符合）。
+        if (cleaned.equals(SpeakerRuleTagger.DIALOGUE, ignoreCase = true)) {
+            return SpeakerRuleTagger.DIALOGUE
+        }
         return canonicalByAlias[cleaned.lowercase()]
     }
 
@@ -185,7 +191,9 @@ class SpeakerLlmTagger(
                 "JSON 结构：{\"paragraphs\":[{\"p\":段索引,\"speaker\":\"整段旁白/独白的说话人\"," +
                 "\"quotes\":[{\"q\":引文序号,\"speaker\":\"角色名\",\"confidence\":0.0到1.0}]}]}。" +
                 "speaker 只能取用户给出的角色表中的名字，或 narrator（旁白、间接引语、心理活动、歌谣）。" +
-                "拿不准时写 narrator 并给出较低 confidence，绝不要编造角色名或输出未给出的段索引。"
+                "代词（he/she/it 等）必须结合上文与场景并从角色表中消解出具体角色名；" +
+                "原文没有引导语且无法唯一确定时，引文 speaker 写 dialogue（未署名对话），不要编造角色名。" +
+                "拿不准时降低 confidence，绝不要编造角色名或输出未给出的段索引。"
 
         /**
          * Paragraph windows to request, each at most [maxChars] characters and
@@ -284,10 +292,12 @@ class SpeakerLlmTagger(
                 if (ordinal != null) {
                     quoteSpeakers[slot.paragraph to ordinal]
                         ?: paragraphSpeakers[slot.paragraph]
-                            ?.takeIf { it != SpeakerRuleTagger.NARRATOR }
+                            ?.takeIf { it != SpeakerRuleTagger.NARRATOR && it != SpeakerRuleTagger.DIALOGUE }
                         ?: slot.ruleSpeaker
                 } else {
-                    paragraphSpeakers[slot.paragraph] ?: slot.ruleSpeaker
+                    paragraphSpeakers[slot.paragraph]
+                        ?.takeIf { it != SpeakerRuleTagger.DIALOGUE }
+                        ?: slot.ruleSpeaker
                 }
             }
         }

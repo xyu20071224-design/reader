@@ -96,6 +96,35 @@ class SpeakerLlmTaggerTest {
     }
 
     @Test
+    fun dialogueIsAcceptedForAnUnattributableQuote() {
+        // 提示词让模型「拿不准时写 dialogue」；它必须能通过校验放行，
+        // 与规则层的未署名标签同值，而不是被拒绝后绕一圈回退。
+        val index = SpeakerRuleTagger.index(blocks)
+        val speakers = SpeakerLlmTagger.applyTags(
+            index,
+            answer("{\"paragraphs\":[{\"p\":0,\"quotes\":[{\"q\":0,\"speaker\":\"dialogue\",\"confidence\":0.7}]}]}"),
+            roster
+        )
+        assertEquals("dialogue", speakers[0])
+        assertEquals("dialogue", roster.canonical("dialogue"))
+    }
+
+    @Test
+    fun paragraphLevelDialogueDoesNotSilenceNarration() {
+        // 段落级 speaker 语义是「整段旁白/独白的说话人」；若模型误把它写成
+        // dialogue（未署名对话），绝不能应用到该段的旁白句上——否则整段
+        // 旁白都会变成对话声。引文级 dialogue 才放行。
+        val index = SpeakerRuleTagger.index(blocks)
+        val speakers = SpeakerLlmTagger.applyTags(
+            index,
+            answer("{\"paragraphs\":[{\"p\":1,\"speaker\":\"dialogue\"}]}"),
+            roster
+        )
+        // p1 是纯旁白句；段落级 dialogue 被忽略，旁白保留规则层的 narrator。
+        assertEquals("narrator", speakers[2])
+    }
+
+    @Test
     fun lowConfidenceAnswerIsDropped() {
         val index = SpeakerRuleTagger.index(blocks)
         val speakers = SpeakerLlmTagger.applyTags(
