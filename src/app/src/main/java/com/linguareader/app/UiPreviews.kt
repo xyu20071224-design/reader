@@ -9,6 +9,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.linguareader.app.data.ReaderTheme
 import com.linguareader.app.tts.TtsPlaybackState
 
 /**
@@ -39,16 +40,16 @@ private val PreviewListeningState = TtsPlaybackState(
     sentenceCount = 84,
     currentSentence = "The lantern library keeps every lamp lit until dawn.",
     isPlaying = true,
-    speechRate = 1.15f,
-    canCacheBook = true
+    speechRate = 1.15f
 )
 
-@Preview(name = "听书条 · 日间", showBackground = true, widthDp = 380)
+@Preview(name = "听书条 · 纸张", showBackground = true, widthDp = 380)
 @Composable
-private fun ListeningBarLightPreview() {
+private fun ListeningBarPaperPreview() {
     PreviewScaffold {
         ListeningBar(
             state = PreviewListeningState,
+            theme = ReaderTheme.PAPER,
             onToggle = {},
             onPrevious = {},
             onNext = {},
@@ -64,6 +65,7 @@ private fun ListeningBarDarkPreview() {
     PreviewScaffold(dark = true) {
         ListeningBar(
             state = PreviewListeningState,
+            theme = ReaderTheme.DARK,
             onToggle = {},
             onPrevious = {},
             onNext = {},
@@ -73,18 +75,54 @@ private fun ListeningBarDarkPreview() {
     }
 }
 
-/** 全书缓存进行态：进度条与「缓存中」文案的排版最容易在窄屏上挤坏。 */
-@Preview(name = "听书条 · 全书缓存中", showBackground = true, widthDp = 320)
+/**
+ * 窄屏 + 滑动模式：控制行要同时容下「上一句/播放/下一句/分页/停止/更多」，
+ * 这是宽度最紧的组合（此前正是多一个键就把末尾的「停止」顶出屏幕）。
+ */
+@Preview(name = "听书条 · 窄屏滑动模式", showBackground = true, widthDp = 320)
 @Composable
-private fun ListeningBarCachingPreview() {
+private fun ListeningBarNarrowScrollingPreview() {
     PreviewScaffold {
         ListeningBar(
-            state = PreviewListeningState.copy(
-                isPlaying = false,
-                isCachingBook = true,
-                cachedSentences = 213,
-                cachedTotal = 940
-            ),
+            state = PreviewListeningState,
+            theme = ReaderTheme.SEPIA,
+            onToggle = {},
+            onPrevious = {},
+            onNext = {},
+            onStop = {},
+            onRateChange = {},
+            onExitScrollMode = {}
+        )
+    }
+}
+
+/** 离屏提示：整行占宽，控制行不再被它撑开。 */
+@Preview(name = "听书条 · 朗读离屏", showBackground = true, widthDp = 360)
+@Composable
+private fun ListeningBarOffscreenPreview() {
+    PreviewScaffold {
+        ListeningBar(
+            state = PreviewListeningState.copy(highlightBlockIndex = 12),
+            theme = ReaderTheme.GREEN,
+            speakingOffscreen = true,
+            onToggle = {},
+            onPrevious = {},
+            onNext = {},
+            onStop = {},
+            onRateChange = {},
+            onBackToSpeaking = {}
+        )
+    }
+}
+
+/** 护眼绿主题：验证听书条配色跟随阅读主题（此前恒为米白/夜间两套）。 */
+@Preview(name = "听书条 · 护眼绿", showBackground = true, widthDp = 380)
+@Composable
+private fun ListeningBarGreenThemePreview() {
+    PreviewScaffold {
+        ListeningBar(
+            state = PreviewListeningState,
+            theme = ReaderTheme.GREEN,
             onToggle = {},
             onPrevious = {},
             onNext = {},

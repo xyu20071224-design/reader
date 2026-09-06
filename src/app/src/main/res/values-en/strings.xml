@@ -161,7 +161,6 @@
     <string name="reader_translation_miss">No pairing for this sentence (its paragraph or chapter was not aligned)</string>
 
     <!-- Listening player bar -->
-    <string name="player_cache_progress"> Caching book %1$d%%</string>
     <string name="player_previous">Previous sentence</string>
     <string name="player_pause">Pause</string>
     <string name="player_play">Play</string>
@@ -170,12 +169,13 @@
     <string name="player_preparing">Preparing…</string>
     <string name="player_paused">Paused</string>
     <string name="player_set_start">Set start point</string>
-    <string name="player_cache_book">Cache whole book audio</string>
     <string name="player_speed">Speed</string>
     <string name="player_speed_value">Speed %1$s</string>
     <string name="player_speed_hint">0.5×–2.0×; tap the page to start from that sentence</string>
     <string name="player_stop">Stop listening</string>
     <string name="player_back_to_speaking">Back to narration</string>
+    <string name="player_offscreen_hint">Narration has scrolled out of view</string>
+    <string name="player_more">More</string>
 
     <!-- Multi-voice -->
     <!-- Common (shared across modules) -->

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
@@ -209,8 +210,19 @@ internal fun ReaderScreen(
     var chromeBottomPx by remember {
         mutableFloatStateOf(ReaderScripts.DEFAULT_CHROME_BOTTOM_PX.toFloat())
     }
+    // 听书条实测高度（px）。它与底部翻页栏**重叠**而非堆叠（听书时底栏隐藏），
+    // 所以预留量取两者较大值而非相加。此前听书条从未参与测量，正文末行被它盖住
+    // （BUG-033）。
+    var listeningBarPx by remember { mutableFloatStateOf(0f) }
     val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
     val ttsForThisBook = ttsState.bookId == book.id
+    // 交给 WebView 的底部预留量：听书时以听书条为准，但听书条首帧还没测到时
+    // （listeningBarPx 仍为 0）先沿用底栏高度，避免正文先跳一下再回落。
+    val reservedBottomPx = if (ttsForThisBook) {
+        maxOf(chromeBottomPx, listeningBarPx)
+    } else {
+        chromeBottomPx
+    }
     // 朗读句已跑出视口（用户接管期间不硬翻页，改在听书条上点亮「回到朗读处」）。
     var speakingOffscreen by remember { mutableStateOf(false) }
 
@@ -497,7 +509,7 @@ internal fun ReaderScreen(
                     emptyList()
                 },
                 chromeTopPx = chromeTopPx.roundToInt(),
-                chromeBottomPx = chromeBottomPx.roundToInt(),
+                chromeBottomPx = reservedBottomPx.roundToInt(),
                 controller = controller,
                 modifier = Modifier
                     .fillMaxSize()
@@ -637,77 +649,83 @@ internal fun ReaderScreen(
         val prevPageLabel = stringResource(R.string.reader_prev_page)
         val nextPageLabel = stringResource(R.string.reader_next_page)
         val pageIndicatorLabel = stringResource(R.string.reader_page_indicator)
-        Row(
-            Modifier.align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .onSizeChanged { size ->
-                    if (size.height > 0) chromeBottomPx = size.height / density
-                }
-                .background(Color(android.graphics.Color.parseColor(preferences.theme.background)).copy(alpha = .94f))
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(horizontal = 18.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = controller::previousPage,
-                modifier = Modifier.semantics {
-                    contentDescription = prevPageLabel
-                }
+        if (!ttsForThisBook) {
+            Row(
+                Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    // 听书时整行移出组合，让位给盖在同一位置的听书条（不用 alpha=0：
+                    // 那会留下看不见却能点中的幽灵控件，见 known-pitfalls 第 22 条）。
+                    // 移出后 chromeBottomPx 保留最后一次实测值，正好作为听书条消失后
+                    // 的回落基准，不会退回 70px 默认值。
+                    .onSizeChanged { size ->
+                        if (size.height > 0) chromeBottomPx = size.height / density
+                    }
+                    .background(Color(android.graphics.Color.parseColor(preferences.theme.background)).copy(alpha = .94f))
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(horizontal = 18.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                    contentDescription = null,
-                    tint = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
-                )
-            }
-            if (position.scrollMode) {
-                Text(
-                    stringResource(
-                        R.string.reader_scroll_progress,
-                        position.chapter + 1,
-                        book.chapters.size,
-                        (position.scrollRatio * 100).roundToInt()
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
-                    modifier = Modifier
-                        .semantics { contentDescription = pageIndicatorLabel }
-                        .clickable { overlays = overlays.copy(pageJump = true) }
-                )
-                TextButton(onClick = controller::exitScrollMode) {
-                    Text(
-                        stringResource(R.string.reader_pagination),
-                        color = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
+                IconButton(
+                    onClick = controller::previousPage,
+                    modifier = Modifier.semantics {
+                        contentDescription = prevPageLabel
+                    }
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = null,
+                        tint = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
                     )
                 }
-            } else {
-                Text(
-                    stringResource(
-                        R.string.reader_pages_label,
-                        position.chapter + 1,
-                        book.chapters.size,
-                        position.page + 1,
-                        position.pageCount
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
-                    modifier = Modifier
-                        .semantics { contentDescription = pageIndicatorLabel }
-                        .clickable { overlays = overlays.copy(pageJump = true) }
-                )
-            }
-            IconButton(
-                onClick = controller::nextPage,
-                modifier = Modifier.semantics {
-                    contentDescription = nextPageLabel
+                if (position.scrollMode) {
+                    Text(
+                        stringResource(
+                            R.string.reader_scroll_progress,
+                            position.chapter + 1,
+                            book.chapters.size,
+                            (position.scrollRatio * 100).roundToInt()
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
+                        modifier = Modifier
+                            .semantics { contentDescription = pageIndicatorLabel }
+                            .clickable { overlays = overlays.copy(pageJump = true) }
+                    )
+                    TextButton(onClick = controller::exitScrollMode) {
+                        Text(
+                            stringResource(R.string.reader_pagination),
+                            color = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
+                        )
+                    }
+                } else {
+                    Text(
+                        stringResource(
+                            R.string.reader_pages_label,
+                            position.chapter + 1,
+                            book.chapters.size,
+                            position.page + 1,
+                            position.pageCount
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
+                        modifier = Modifier
+                            .semantics { contentDescription = pageIndicatorLabel }
+                            .clickable { overlays = overlays.copy(pageJump = true) }
+                    )
                 }
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
-                )
+                IconButton(
+                    onClick = controller::nextPage,
+                    modifier = Modifier.semantics {
+                        contentDescription = nextPageLabel
+                    }
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
+                    )
+                }
             }
         }
 
@@ -717,22 +735,33 @@ internal fun ReaderScreen(
         ) {
             ListeningBar(
                 state = ttsState,
+                theme = preferences.theme,
                 modifier = Modifier
-                    .padding(bottom = 62.dp)
+                    // 沉到屏幕底缘：与底栏同一位置（听书时底栏已移出组合）。
+                    // 导航栏 inset 由条自身补，避免被系统导航条盖住。
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .onSizeChanged { size ->
+                        if (size.height > 0) listeningBarPx = size.height / density
+                    }
                     .testTag(UiTags.READER_LISTENING_BAR),
                 onToggle = { TtsPlaybackController.toggle(context) },
                 onPrevious = { TtsPlaybackController.previous(context) },
                 onNext = { TtsPlaybackController.next(context) },
                 onStop = { TtsPlaybackController.stop(context) },
                 onRateChange = { TtsPlaybackController.setRate(context, it) },
-                onCacheBook = { TtsPlaybackController.cacheWholeBook(context) },
                 choosingStart = overlays.choosingStart,
                 onChooseStart = {
                     overlays = overlays.copy(choosingStart = !overlays.choosingStart)
                     controller.setChoosingStart(overlays.choosingStart)
                 },
                 speakingOffscreen = speakingOffscreen && ttsState.isPlaying,
-                onBackToSpeaking = { backToSpeaking() }
+                onBackToSpeaking = { backToSpeaking() },
+                // 滑动模式的唯一出口：听书时底栏已隐藏，出口必须跟着搬过来。
+                onExitScrollMode = if (position.scrollMode) {
+                    { controller.exitScrollMode() }
+                } else {
+                    null
+                }
             )
         }
 
@@ -742,7 +771,8 @@ internal fun ReaderScreen(
         ) {
             Column(
                 Modifier
-                    .padding(bottom = 62.dp)
+                    // 听书时听书条占着底缘，横幅要抬到它上面；否则两者叠在一起。
+                    .padding(bottom = if (ttsForThisBook) maxOf(chromeBottomPx, listeningBarPx).dp else chromeBottomPx.dp)
                     .testTag(UiTags.REVIEW_PROMPT_BANNER)
             ) {
                 ReviewPromptBanner(
@@ -1040,9 +1070,13 @@ private fun SettingsSheet(
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.reader_theme_label), color = InkSoft)
             Spacer(Modifier.height(8.dp))
-            Row(
+            // FlowRow：7 个主题一行放不下（7×48 + 6×18 = 444dp，而面板左右各留
+            // 24dp 后只有约 312dp），普通 Row 会把溢出部分压成堆叠的文字。换行后
+            // 全部选项可见——主题是「选一次就很少动」的设置，可发现性优先于省高度。
+            FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(18.dp),
-                verticalAlignment = Alignment.Top
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                itemVerticalAlignment = Alignment.Top
             ) {
                 ReaderTheme.entries.forEach { theme ->
                     val selected = theme == preferences.theme
