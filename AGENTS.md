@@ -21,6 +21,8 @@
 .\gradlew.bat assembleDebug -PverifyBuild
 ```
 
+⚠️ **发 Release / 给用户装的 APK 必须走 `toolchain/build.ps1` 构建**（或等价地把 `USERPROFILE`/`-Duser.home` 重定向到 `toolchain/guser`）。debug 包默认用 `user.home` 下的 debug.keystore 签名：走 build.ps1 签的是 `toolchain/guser/.android/debug.keystore`，绕过它直接 `gradlew` 会签成真实用户密钥库——两个签名的包互相拒绝覆盖安装（2026-09-06 v1.6.2 首次发版就踩了：Release 资产传了错误签名的 APK，用户装不上）。
+
 自建 TTS 服务端见 `.agents/memory/tts-server-stack.md`。
 
 ## 构建事实（`src/app/build.gradle.kts`、`src/build.gradle.kts`）
