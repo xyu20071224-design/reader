@@ -339,21 +339,26 @@ object AiBookTranslator {
         styleNotes?.trim()?.takeIf { it.isNotEmpty() }?.let { "风格说明（全书统一，必须遵守）：$it" }
 
     /**
-     * 注入 prompt 的术语行。手动条目（origin == "manual"）永远排在最前——
+     * 实际会注入 prompt 的术语条（手动条目 origin == "manual" 永远排在最前——
      * 超过 [MAX_GLOSSARY_LINES] 截断时被挤出去的只能是自动条目，与「手动条目
-     * 在任何合并中都不可被覆盖」的产品契约同一个优先级方向。
+     * 在任何合并中都不可被覆盖」的产品契约同一个优先级方向）。公开给手动翻译
+     * 任务导出复用，保证任务文件与在线 prompt 的术语口径严格一致。
      */
-    private fun glossaryLines(glossary: List<GlossaryEntry>): List<String> =
+    fun injectedGlossary(glossary: List<GlossaryEntry>): List<GlossaryEntry> =
         glossary.asSequence()
             .filter { it.enabled && it.term.isNotBlank() }
             .distinctBy { it.term.lowercase() }
             .sortedByDescending { it.origin == "manual" }
             .take(MAX_GLOSSARY_LINES)
-            .map { "${it.term.trim()} | ${it.translation.ifBlank { "保留原文" }} | ${it.note}" }
             .toList()
 
+    private fun glossaryLines(glossary: List<GlossaryEntry>): List<String> =
+        injectedGlossary(glossary).map {
+            "${it.term.trim()} | ${it.translation.ifBlank { "保留原文" }} | ${it.note}"
+        }
+
     /** 实际会注入 prompt 的术语条数（与 [glossaryLines] 严格同口径，估算展示用）。 */
-    fun injectedGlossaryCount(glossary: List<GlossaryEntry>): Int = glossaryLines(glossary).size
+    fun injectedGlossaryCount(glossary: List<GlossaryEntry>): Int = injectedGlossary(glossary).size
 }
 
 /**

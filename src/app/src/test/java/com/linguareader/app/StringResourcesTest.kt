@@ -32,6 +32,14 @@ class StringResourcesTest {
             context.resources.getQuantityString(R.plurals.shelf_delete_body_words, 3, 3)
         )
         assertEquals("1 本书", context.resources.getQuantityString(R.plurals.shelf_book_count, 1, 1))
+        // 手动 AI 全书翻译：导出任务文件 / 导入结果文件
+        assertEquals("手动 AI 翻译…", context.getString(R.string.shelf_translation_choice_manual))
+        assertEquals("手动 AI 译本", context.getString(R.string.translation_manual_title))
+        assertEquals("导入翻译结果", context.getString(R.string.shelf_translation_manage_import))
+        assertEquals(
+            "全部 12 批译文已就绪，开始生成译本对照…",
+            context.getString(R.string.notice_translation_manual_imported_done, 12)
+        )
     }
 
     @Test
@@ -51,6 +59,14 @@ class StringResourcesTest {
             context.resources.getQuantityString(R.plurals.shelf_delete_body_words, 1, 1)
         )
         assertEquals("5 words", context.resources.getQuantityString(R.plurals.shelf_word_count, 5, 5))
+        // Manual AI whole-book translation: task file export / result file import
+        assertEquals("Manual AI translation…", context.getString(R.string.shelf_translation_choice_manual))
+        assertEquals("Manual AI translation", context.getString(R.string.translation_manual_title))
+        assertEquals("Import translation results", context.getString(R.string.shelf_translation_manage_import))
+        assertEquals(
+            "All 12 batches ready — generating the translation…",
+            context.getString(R.string.notice_translation_manual_imported_done, 12)
+        )
     }
 
     @Test

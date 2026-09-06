@@ -96,6 +96,29 @@ data class AiTranslationPrepare(
     val styleNotes: String
 )
 
+/**
+ * 「手动 AI 翻译」对话框数据：全书批次覆盖进度 + 风格说明。与在线确认框
+ * 不同的是不要求配置 API Key——手动路径的全部出网都发生在应用之外。
+ */
+data class ManualTranslationPrepare(
+    val book: Book,
+    val batches: Int,
+    /** 已有有效译文（历史在线批次 + 已导入的手动批次）的批次数。 */
+    val coveredBatches: Int,
+    val styleNotes: String
+)
+
+/** 任务文件已构建完毕、等用户在 SAF 面板里选保存位置。 */
+data class PendingManualExport(
+    val bookId: String,
+    /** SAF 面板的建议文件名。 */
+    val fileName: String,
+    /** 任务文件 JSON 全文。 */
+    val content: String,
+    /** 导出完成通知里报批次数用。 */
+    val batches: Int
+)
+
 data class AppUiState(
     val books: List<Book> = emptyList(),
     val currentBook: Book? = null,
@@ -120,6 +143,12 @@ data class AppUiState(
     val aiTranslationProgress: Map<String, AiTranslationProgress> = emptyMap(),
     /** 非空时显示「AI 生成译本」确认框（术语已备齐、规模已估算）。 */
     val aiTranslationPrepare: AiTranslationPrepare? = null,
+    /** 非空时显示「手动 AI 翻译」对话框（覆盖进度与风格说明已加载）。 */
+    val manualTranslationPrepare: ManualTranslationPrepare? = null,
+    /** 手动任务文件已构建、等用户选保存位置；写入由导出面板回调接手。 */
+    val pendingManualExport: PendingManualExport? = null,
+    /** 最近一次手动导入的逐条拒绝原因；非空时弹详情对话框。 */
+    val manualImportRejected: List<String>? = null,
     /** 自动更新（GitHub Release 检查/下载）的流程状态。 */
     val update: AppUpdateUiState = AppUpdateUiState(),
     /** 存储体检结果；null = 还没扫过（扫盘只在用户打开存储页面时跑）。 */
@@ -150,6 +179,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
     /** AI 整本翻译的在跑任务，按书 id 取消用。 */
     private val aiTranslationJobs = mutableMapOf<String, Job>()
+    /** 已取走、等 SAF 写入回调的手动任务文件（takeManualExport 与 writeManualExport 之间）。 */
+    private var manualExportInFlight: PendingManualExport? = null
     /** 整本翻译的「记住上次选择」：翻译模式（标准/精译）。 */
     private val aiTranslationPrefs = getApplication<Application>().getSharedPreferences(
         "ai_translation", android.content.Context.MODE_PRIVATE
@@ -861,6 +892,276 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 取消在跑的整本翻译；已完成批次的检查点保留，下次直接续跑。 */
     fun cancelAiTranslation(book: Book) {
         aiTranslationJobs.remove(book.id)?.cancel()
+    }
+
+    // --- 手动 AI 全书翻译（导出任务文件 / 导入外部 agent 结果） -----------------
+
+    /**
+     * 「手动 AI 翻译」对话框数据：覆盖进度 + 风格说明，全部本地读取，不出网。
+     * 与 [prepareAiTranslation] 的关键差异：不检查 API Key、不自动生成语境
+     * 档案——手动路径的用户可能根本没配 Key，术语表用已有的即可。
+     * 准备阶段登记进 [aiTranslationJobs]，书卡上的「取消生成」真有效。
+     */
+    fun prepareManualTranslation(book: Book) {
+        if (book.id in mutableState.value.aiTranslationProgress) return
+        if (book.hasTranslation && !book.isAiTranslation) return
+        aiTranslationJobs[book.id] = viewModelScope.launch {
+            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, preparing = true))
+            try {
+                val coverage = aiTranslationRepository.manualCoverage(book)
+                if (coverage.totalBatches == 0) {
+                    // 抽不出任何段落的书（如无文字层的扫描 PDF）没有可翻译的东西，
+                    // 直接说明，别让用户困在「已收 0/0 批」里永远无法完成。
+                    mutableState.value = mutableState.value.copy(
+                        notice = string(R.string.notice_translation_manual_empty)
+                    )
+                    return@launch
+                }
+                mutableState.value = mutableState.value.copy(
+                    manualTranslationPrepare = ManualTranslationPrepare(
+                        book = book,
+                        batches = coverage.totalBatches,
+                        coveredBatches = coverage.coveredBatches,
+                        styleNotes = aiTranslationRepository.loadStyle(book.id).orEmpty()
+                    )
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failed: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(
+                        R.string.notice_translation_ai_failed,
+                        failed.message ?: string(R.string.message_ai_context_failed)
+                    ),
+                    noticeTone = StatusTone.DANGER
+                )
+            } finally {
+                aiTranslationJobs.remove(book.id)
+                mutableState.value = mutableState.value.copy(
+                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
+                )
+            }
+        }
+    }
+
+    fun dismissManualTranslationPrepare() {
+        if (mutableState.value.manualTranslationPrepare != null) {
+            mutableState.value = mutableState.value.copy(manualTranslationPrepare = null)
+        }
+    }
+
+    fun clearManualImportRejected() {
+        if (mutableState.value.manualImportRejected != null) {
+            mutableState.value = mutableState.value.copy(manualImportRejected = null)
+        }
+    }
+
+    /**
+     * 构建任务文件文本（全书抽取，大书要几秒），就绪后置 [PendingManualExport]
+     * 让界面弹 SAF 保存面板。风格说明顺手保存，与在线路径同一存储位。
+     * 构建阶段登记进 [aiTranslationJobs]，书卡上的「取消生成」真有效。
+     */
+    fun buildManualExport(book: Book, styleNotes: String) {
+        dismissManualTranslationPrepare()
+        if (book.id in mutableState.value.aiTranslationProgress) return
+        aiTranslationJobs[book.id] = viewModelScope.launch {
+            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, preparing = true))
+            try {
+                aiTranslationRepository.saveStyle(book.id, styleNotes)
+                val task = aiTranslationRepository.buildManualTask(book, styleNotes.trim().ifBlank { null })
+                mutableState.value = mutableState.value.copy(
+                    pendingManualExport = PendingManualExport(
+                        bookId = book.id,
+                        fileName = "${book.title}-manual-translation.json"
+                            .replace(Regex("[\\\\/:*?\"<>|]"), "_"),
+                        content = task.toString(),
+                        batches = task.optJSONArray("batches")?.length() ?: 0
+                    )
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failed: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(
+                        R.string.notice_translation_manual_export_failed,
+                        failed.message ?: string(R.string.message_ai_context_failed)
+                    ),
+                    noticeTone = StatusTone.DANGER
+                )
+            } finally {
+                aiTranslationJobs.remove(book.id)
+                mutableState.value = mutableState.value.copy(
+                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
+                )
+            }
+        }
+    }
+
+    /**
+     * 界面弹保存面板前取走任务文件：状态即刻置空，旋转屏幕重建组合后
+     * [AppUiState.pendingManualExport] 已不在，LaunchedEffect 不会重放出
+     * 第二个面板。内容暂存 [manualExportInFlight] 供写入回调使用。
+     */
+    fun takeManualExport(): PendingManualExport? {
+        val pending = mutableState.value.pendingManualExport ?: return null
+        mutableState.value = mutableState.value.copy(pendingManualExport = null)
+        manualExportInFlight = pending
+        return pending
+    }
+
+    /** SAF 保存面板的回调：把构建好的任务文件写进用户选的位置。 */
+    fun writeManualExport(uri: Uri) {
+        val pending = manualExportInFlight ?: return
+        manualExportInFlight = null
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "w")
+                        ?.bufferedWriter()
+                        ?.use { it.write(pending.content) }
+                        ?: error("无法打开导出文件")
+                }
+            }.onSuccess {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(R.string.notice_translation_manual_exported, pending.batches)
+                )
+            }.onFailure {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(
+                        R.string.notice_translation_manual_export_failed,
+                        it.message ?: string(R.string.message_ai_context_failed)
+                    ),
+                    noticeTone = StatusTone.DANGER
+                )
+            }
+        }
+    }
+
+    /** 用户在 SAF 面板取消了保存：丢弃已构建的任务文件。 */
+    fun cancelManualExport() {
+        manualExportInFlight = null
+        mutableState.value = mutableState.value.copy(pendingManualExport = null)
+    }
+
+    /**
+     * 导入外部 agent 的结果文件（可多选）：读文本 → 校验逐批落检查点 →
+     * 覆盖满 100% 则自动离线生成译本对照（一个网络请求都不发）。
+     * 导入阶段登记进 [aiTranslationJobs]，书卡上的「取消生成」真有效。
+     */
+    fun importManualResults(book: Book, uris: List<Uri>) {
+        dismissManualTranslationPrepare()
+        if (book.id in mutableState.value.aiTranslationProgress) return
+        aiTranslationJobs[book.id] = viewModelScope.launch {
+            var readyToComplete = false
+            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, preparing = true))
+            try {
+                if (aiTranslationRepository.manualCoverage(book).totalBatches == 0) {
+                    mutableState.value = mutableState.value.copy(
+                        notice = string(R.string.notice_translation_manual_empty)
+                    )
+                    return@launch
+                }
+                val texts = uris.map { uri ->
+                    withContext(Dispatchers.IO) {
+                        getApplication<Application>().contentResolver.openInputStream(uri)
+                            ?.bufferedReader()
+                            ?.use { it.readText() }
+                            ?: error("无法读取所选文件")
+                    }
+                }
+                val report = aiTranslationRepository.importManualResults(book, texts)
+                if (report.coverage.complete) {
+                    readyToComplete = true
+                    mutableState.value = mutableState.value.copy(
+                        notice = string(R.string.notice_translation_manual_imported_done, report.coverage.totalBatches)
+                    )
+                } else {
+                    mutableState.value = mutableState.value.copy(
+                        notice = string(
+                            R.string.notice_translation_manual_imported_partial,
+                            report.coverage.coveredBatches,
+                            report.coverage.totalBatches,
+                            report.rejected.size
+                        ),
+                        noticeTone = if (report.acceptedBatches == 0) StatusTone.DANGER else StatusTone.NEUTRAL
+                    )
+                }
+                if (report.rejected.isNotEmpty()) {
+                    // 拒绝详情立刻弹对话框逐条展示——「拒绝 N 条」的条数不告诉
+                    // 用户该让 agent 改什么（典型错误：段落编号被重新编号）。
+                    mutableState.value = mutableState.value.copy(
+                        manualImportRejected = report.rejected
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failed: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(
+                        R.string.notice_translation_manual_import_failed,
+                        failed.message ?: string(R.string.message_ai_context_failed)
+                    ),
+                    noticeTone = StatusTone.DANGER
+                )
+            } finally {
+                aiTranslationJobs.remove(book.id)
+                if (!readyToComplete) {
+                    mutableState.value = mutableState.value.copy(
+                        aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
+                    )
+                }
+            }
+            // finally 已摘掉本 job，这里才能过 completeManualTranslation 的防重闸。
+            if (readyToComplete) completeManualTranslation(book)
+        }
+    }
+
+    /**
+     * 手动译文齐批后的离线生成：completeFromCheckpoints（零出网）→ 对齐落盘。
+     * 进度条与取消复用在线翻译的 [aiTranslationProgress] 机制。
+     */
+    private fun completeManualTranslation(book: Book) {
+        if (book.id in aiTranslationJobs) return
+        aiTranslationJobs[book.id] = viewModelScope.launch {
+            val startedAt = System.currentTimeMillis()
+            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 100, aligning = true))
+            try {
+                val translationBook = aiTranslationRepository.completeFromCheckpoints(
+                    book,
+                    providerName = string(R.string.translation_manual_provider)
+                )
+                val result = translationRepository.attachGenerated(book, translationBook)
+                library.saveTranslation(
+                    book,
+                    result.translationBook.id,
+                    result.translationBook.title,
+                    result.memory.alignedAt
+                )
+                val seconds = ((System.currentTimeMillis() - startedAt) / 1000).toInt()
+                mutableState.value = mutableState.value.copy(
+                    notice = string(R.string.notice_translation_ready, result.memory.pairs.size, seconds),
+                    noticeTone = StatusTone.SUCCESS
+                )
+                refresh()
+            } catch (cancelled: CancellationException) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(R.string.notice_translation_ai_cancelled)
+                )
+            } catch (failed: Throwable) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(
+                        R.string.notice_translation_ai_failed,
+                        failed.message ?: string(R.string.message_ai_context_failed)
+                    ),
+                    noticeTone = StatusTone.DANGER
+                )
+            } finally {
+                aiTranslationJobs.remove(book.id)
+                mutableState.value = mutableState.value.copy(
+                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
+                )
+            }
+        }
     }
 
     /** 句级定点重翻的在跑书（每本同时最多一次，防双击双扣费）。 */

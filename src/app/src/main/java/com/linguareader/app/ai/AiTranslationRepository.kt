@@ -7,6 +7,7 @@ import com.linguareader.app.data.Book
 import com.linguareader.app.data.Chapter
 import com.linguareader.shared.importer.escapeHtml
 import com.linguareader.app.tts.TtsTextExtractor
+import com.linguareader.shared.ai.ManualTranslationIo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
@@ -77,6 +78,156 @@ class AiTranslationRepository(
             oversizedParagraphs = oversized
         )
     }
+
+    // --- 手动 AI 全书翻译（导出任务文件 / 导入外部 agent 结果） -----------------
+    //
+    // 与在线翻译共用同一条批次规划、同一套校验、同一批检查点文件，只是
+    // 请求/响应不再走 HTTP，而是用户手动把任务文件交给外部 AI agent、把结果
+    // 文件搬回来。全程本地计算，不出网。
+
+    /**
+     * 导出手动翻译任务文件：全书批次 + 术语表（与 prompt 注入同口径）+ 风格
+     * 说明 + 给 agent 的输出契约。已有有效检查点的批次打 hasCheckpoint 标，
+     * agent 按说明跳过——在线翻译中断后可以只手动补翻剩余批次。
+     */
+    suspend fun buildManualTask(book: Book, styleNotes: String?): JSONObject =
+        withContext(Dispatchers.IO) {
+            val glossary = glossaryRepository.load(book.id).entries.filter { it.enabled }
+            val extractor = TtsTextExtractor()
+            val checkpoints = File(checkpointDir, book.id)
+            val batches = book.chapters.indices.flatMap { chapterIndex ->
+                val blocks = extractor.chapter(book, chapterIndex).blocks
+                AiBookTranslator.groupIntoBatches(chapterIndex, blocks).map { batch ->
+                    val hash = AiBookTranslator.sourceHash(batch.paragraphs)
+                    ManualTranslationIo.ManualTaskBatch(
+                        chapterTitle = book.chapters[chapterIndex].title,
+                        sourceHash = hash,
+                        batch = batch,
+                        hasCheckpoint = readCheckpoint(checkpoints, batch, hash) != null
+                    )
+                }
+            }
+            ManualTranslationIo.buildTask(
+                bookId = book.id,
+                bookTitle = book.title,
+                glossary = glossary,
+                styleNotes = styleNotes,
+                batches = batches
+            )
+        }
+
+    /** 手动导入的进度报告：批次数按全书当前批次规划口径统计。 */
+    data class ManualCoverage(
+        /** 已有有效检查点（含历史在线批次 + 已导入的手动批次）的批次数。 */
+        val coveredBatches: Int,
+        val totalBatches: Int
+    ) {
+        val complete: Boolean get() = totalBatches > 0 && coveredBatches >= totalBatches
+    }
+
+    /** 全书检查点覆盖进度（手动翻译对话框展示「已收 X/Y 批」用）。 */
+    suspend fun manualCoverage(book: Book): ManualCoverage = withContext(Dispatchers.IO) {
+        val checkpoints = File(checkpointDir, book.id)
+        val extractor = TtsTextExtractor()
+        val batches = book.chapters.indices.flatMap { chapterIndex ->
+            AiBookTranslator.groupIntoBatches(chapterIndex, extractor.chapter(book, chapterIndex).blocks)
+        }
+        ManualCoverage(
+            coveredBatches = batches.count { batch ->
+                readCheckpoint(checkpoints, batch, AiBookTranslator.sourceHash(batch.paragraphs)) != null
+            },
+            totalBatches = batches.size
+        )
+    }
+
+    /**
+     * 导入外部 agent 产出的结果文件（可多文件、可多次导入合并——落点是检查点）。
+     * 结构性错误按文件整体拒绝，单批错误（批次对不上、指纹不符、硬校验不过）
+     * 逐条进 [ManualImportReport.rejected]，不影响其余批次。校验只保硬校验
+     * （结构完整、段数、非空白），软校验不拦——外部 agent 没有「带原因重试」
+     * 的机会，把数字锚点这类质量偏好拦在门外只会让用户对着拒绝清单干瞪眼。
+     */
+    data class ManualImportReport(
+        val acceptedBatches: Int,
+        /** 逐条拒绝原因（面向用户）。 */
+        val rejected: List<String>,
+        val coverage: ManualCoverage
+    )
+
+    suspend fun importManualResults(book: Book, texts: List<String>): ManualImportReport =
+        withContext(Dispatchers.IO) {
+            val glossary = glossaryRepository.load(book.id).entries.filter { it.enabled }
+            val keepOriginalTerms = glossary.filter { it.translation.isBlank() }.map { it.term }
+            val extractor = TtsTextExtractor()
+            val plan = book.chapters.indices.flatMap { chapterIndex ->
+                AiBookTranslator.groupIntoBatches(chapterIndex, extractor.chapter(book, chapterIndex).blocks)
+            }
+            val byKey = plan.associateBy { it.chapterIndex to it.batchIndex }
+            val checkpoints = File(checkpointDir, book.id)
+            val rejected = mutableListOf<String>()
+            var accepted = 0
+
+            texts.forEachIndexed { fileIndex, text ->
+                val entries = try {
+                    ManualTranslationIo.parseResults(text)
+                } catch (error: IllegalArgumentException) {
+                    rejected += "文件 ${fileIndex + 1}：${error.message}"
+                    return@forEachIndexed
+                }
+                for (entry in entries) {
+                    val label = "批次 ${entry.chapterIndex}-${entry.batchIndex}"
+                    val batch = byKey[entry.chapterIndex to entry.batchIndex]
+                    if (batch == null) {
+                        rejected += "$label：不属于这本书（检查 bookId 或全书批次规划是否已变化）"
+                        continue
+                    }
+                    val hash = AiBookTranslator.sourceHash(batch.paragraphs)
+                    if (entry.sourceHash != null && entry.sourceHash != hash) {
+                        rejected += "$label：原文指纹不符（书重新导入过，或结果文件是旧任务产的）"
+                        continue
+                    }
+                    val translations = try {
+                        AiBookTranslator.extractValidated(
+                            entry.segments, batch, keepOriginalTerms, strict = false
+                        )
+                    } catch (error: AiRequestException) {
+                        rejected += "$label：${error.message}"
+                        continue
+                    }
+                    storeCheckpoint(checkpoints, batch, hash, translations, ManualTranslationIo.MODE_MANUAL)
+                    accepted++
+                }
+            }
+            ManualImportReport(accepted, rejected, manualCoverage(book))
+        }
+
+    /**
+     * 只凭检查点离线组装整本译作：一个网络请求都不发，批次规划或指纹对不上
+     * 即抛 [ManualTranslationIncompleteException]（调用方只在覆盖满 100% 时
+     * 走到这里，这是最后一道防御）。
+     */
+    suspend fun completeFromCheckpoints(book: Book, providerName: String): Book =
+        withContext(Dispatchers.IO) {
+            val checkpoints = File(checkpointDir, book.id)
+            val extractor = TtsTextExtractor()
+            val translatedChapters = book.chapters.indices.map { chapterIndex ->
+                val blocks = extractor.chapter(book, chapterIndex).blocks
+                AiBookTranslator.groupIntoBatches(chapterIndex, blocks).flatMap { batch ->
+                    val hash = AiBookTranslator.sourceHash(batch.paragraphs)
+                    readCheckpoint(checkpoints, batch, hash)
+                        ?: throw ManualTranslationIncompleteException(
+                            "批次 ${batch.chapterIndex}-${batch.batchIndex} 没有可用译文，" +
+                                "请先在「手动 AI 翻译」里补齐并导入"
+                        )
+                }
+            }
+            writeTranslationBook(
+                book,
+                translatedChapters,
+                providerName = providerName,
+                titleOverride = appContext.getString(R.string.translation_manual_title)
+            )
+        }
 
     /**
      * 逐章逐批翻译整本书。译文章节文件写好后返回合成译本 [Book]（id 带
@@ -412,7 +563,8 @@ class AiTranslationRepository(
     private fun writeTranslationBook(
         source: Book,
         translatedChapters: List<List<String>>,
-        providerName: String
+        providerName: String,
+        titleOverride: String? = null
     ): Book {
         val dir = File(translationsDir, translationId(source.id))
         dir.deleteRecursively()
@@ -428,7 +580,7 @@ class AiTranslationRepository(
         }
         return Book(
             id = translationId(source.id),
-            title = appContext.getString(R.string.translation_ai_title, providerName),
+            title = titleOverride ?: appContext.getString(R.string.translation_ai_title, providerName),
             author = providerName,
             extractedDir = dir.absolutePath,
             coverRelativePath = null,
@@ -467,3 +619,10 @@ ${body.ifBlank { "<p></p>" }}
         const val MODE_POLISH = "polish"
     }
 }
+
+/**
+ * 手动导入结果后离线组装译本时的防御性失败：仍有批次缺有效检查点。
+ * 正常流程只在覆盖满 100% 时才调 [AiTranslationRepository.completeFromCheckpoints]，
+ * 这是最后一道闸。
+ */
+class ManualTranslationIncompleteException(message: String) : RuntimeException(message)

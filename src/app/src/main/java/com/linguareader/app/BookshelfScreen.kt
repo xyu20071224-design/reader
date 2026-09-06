@@ -109,6 +109,16 @@ private val TRANSLATION_MIME_TYPES = arrayOf(
     "text/plain"
 )
 
+/**
+ * 「手动 AI 翻译 → 导入翻译结果」的可选文件类型。agent 产出的结果文件可能是
+ * .json，也可能被存成 .txt / 未知类型（octet-stream），三种都放行。
+ */
+private val MANUAL_RESULT_MIME_TYPES = arrayOf(
+    "application/json",
+    "text/plain",
+    "application/octet-stream"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BookshelfScreen(
@@ -122,6 +132,17 @@ internal fun BookshelfScreen(
     onStartAiTranslation: (Book, String, String) -> Unit,
     onCancelAiTranslation: (Book) -> Unit,
     onDismissAiTranslationPrepare: () -> Unit,
+    onPrepareManualTranslation: (Book) -> Unit,
+    onDismissManualTranslationPrepare: () -> Unit,
+    /** 构建手动任务文件（IO），就绪后 state.pendingManualExport 非空、界面取走并弹保存面板。 */
+    onExportManualTranslation: (Book, String) -> Unit,
+    /** 取走构建好的任务文件（状态即刻清空，避免重建组合后重放面板），返回 null = 无待导出。 */
+    onTakeManualExport: () -> PendingManualExport?,
+    /** 手动任务文件的 SAF 保存面板回调。 */
+    onManualExportReady: (android.net.Uri) -> Unit,
+    onCancelManualExport: () -> Unit,
+    onImportManualResults: (Book, List<android.net.Uri>) -> Unit,
+    onClearManualImportRejected: () -> Unit,
     onAiSettingsChange: (AiSettings) -> Unit,
     /** 存储占用页面（D2.4b）：打开时扫一次盘，孤儿只报不删。 */
     onRefreshStorage: () -> Unit = {},
@@ -160,6 +181,26 @@ internal fun BookshelfScreen(
             pendingTranslationBook = null
             if (uri != null && target != null) onAttachTranslation(target, uri)
         }
+    // 手动 AI 翻译：任务文件导出（SAF 保存面板）与结果文件导入（可多选）。
+    // 任务文件内容由 ViewModel 异步构建，构建完成后在 LaunchedEffect 里先取走
+    // 状态再弹面板——状态清空后，旋转屏幕重建组合不会重放出第二个面板。
+    var pendingManualImportBook by remember { mutableStateOf<Book?>(null) }
+    val manualExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) onManualExportReady(uri) else onCancelManualExport()
+    }
+    val manualImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val target = pendingManualImportBook
+        pendingManualImportBook = null
+        if (!uris.isNullOrEmpty() && target != null) onImportManualResults(target, uris)
+    }
+    LaunchedEffect(state.pendingManualExport) {
+        val pending = onTakeManualExport() ?: return@LaunchedEffect
+        manualExportLauncher.launch(pending.fileName)
+    }
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var showUpdateSheet by rememberSaveable { mutableStateOf(false) }
@@ -464,6 +505,14 @@ internal fun BookshelfScreen(
             text = {
                 Column {
                     Text(stringResource(R.string.shelf_translation_manage_body))
+                    // 手动补翻/修正入口：agent 返工后的新结果文件从这里导入
+                    //（检查点按批覆盖，齐批自动重新生成），不必删掉译本重来。
+                    TextButton(onClick = {
+                        aiTranslationManageCandidate = null
+                        onPrepareManualTranslation(book)
+                    }) {
+                        Text(stringResource(R.string.shelf_translation_manage_import))
+                    }
                     TextButton(onClick = {
                         aiTranslationManageCandidate = null
                         detachTranslationCandidate = book
@@ -497,7 +546,118 @@ internal fun BookshelfScreen(
                 }) { Text(stringResource(R.string.shelf_translation_choice_ai)) }
             },
             title = { Text(stringResource(R.string.shelf_translation_choice_title)) },
-            text = { Text(stringResource(R.string.shelf_translation_choice_body)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.shelf_translation_choice_body))
+                    // 第三条路：手动 AI 翻译——导出任务文件交给外部 agent，再把
+                    // 结果文件导回来。不要求应用内配置 API Key。
+                    TextButton(onClick = {
+                        translationChoiceCandidate = null
+                        onPrepareManualTranslation(book)
+                    }) {
+                        Text(stringResource(R.string.shelf_translation_choice_manual))
+                    }
+                }
+            },
+            containerColor = CardSurface,
+            shape = CardShape
+        )
+    }
+
+    state.manualTranslationPrepare?.let { prepare ->
+        var styleNotes by remember(prepare.book.id) { mutableStateOf(prepare.styleNotes) }
+        AlertDialog(
+            onDismissRequest = onDismissManualTranslationPrepare,
+            confirmButton = {
+                TextButton(onClick = { onExportManualTranslation(prepare.book, styleNotes) }) {
+                    Text(stringResource(R.string.shelf_translation_manual_export))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissManualTranslationPrepare) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+            title = { Text(stringResource(R.string.shelf_translation_manual_title)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.shelf_translation_manual_body, prepare.batches))
+                    if (prepare.coveredBatches > 0) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            stringResource(
+                                R.string.shelf_translation_manual_coverage,
+                                prepare.coveredBatches,
+                                prepare.batches
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSoft
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.shelf_translation_ai_style_label),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = InkSoft
+                    )
+                    OutlinedTextField(
+                        value = styleNotes,
+                        onValueChange = { styleNotes = it },
+                        placeholder = {
+                            Text(
+                                stringResource(R.string.shelf_translation_ai_style_placeholder),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    // 导入入口放在正文区（AlertDialog 只有两个按钮槽位，加第三个
+                    // 动作的管理对话框先例见「AI 译本管理」）。
+                    TextButton(onClick = {
+                        pendingManualImportBook = prepare.book
+                        onDismissManualTranslationPrepare()
+                        manualImportLauncher.launch(MANUAL_RESULT_MIME_TYPES)
+                    }) {
+                        Text(stringResource(R.string.shelf_translation_manual_import))
+                    }
+                }
+            },
+            containerColor = CardSurface,
+            shape = CardShape
+        )
+    }
+
+    // 手动导入的逐条拒绝原因：「拒绝 N 条」的条数不告诉用户该改什么，
+    // 典型错误（agent 把段落编号重新编号）只有看到具体原因才能定位。
+    state.manualImportRejected?.let { rejected ->
+        AlertDialog(
+            onDismissRequest = onClearManualImportRejected,
+            confirmButton = {
+                TextButton(onClick = onClearManualImportRejected) {
+                    Text(stringResource(R.string.common_got_it))
+                }
+            },
+            title = { Text(stringResource(R.string.shelf_translation_manual_rejected_title)) },
+            text = {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        stringResource(R.string.shelf_translation_manual_rejected_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSoft
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    rejected.forEach { reason ->
+                        Text(reason, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+            },
             containerColor = CardSurface,
             shape = CardShape
         )

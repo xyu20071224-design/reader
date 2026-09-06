@@ -121,6 +121,7 @@
     <string name="shelf_translation_manage_body">这本译本由 AI 生成。重新生成会复用已完成的批次（不重复请求），只补未翻译的段落；也可以删除译本。</string>
     <string name="shelf_translation_manage_regenerate">重新生成</string>
     <string name="shelf_translation_manage_remove">删除译本</string>
+    <string name="shelf_translation_manage_import">导入翻译结果</string>
     <string name="shelf_translation_ai_title">AI 生成译本</string>
     <string name="shelf_translation_ai_confirm_body">将为《%1$s》用 %2$s 逐章翻译整本中文译文并自动对齐：\n\n· 共 %3$d 章，预计约 %4$d 次 AI 请求\n· 当前术语表 %5$d 条，实际注入翻译 %6$d 条（手动译法优先；超出的不生效）\n· 全程联网并产生 API 费用；整本可能需要几十分钟，可随时取消，已完成进度会保留</string>
     <string name="shelf_translation_ai_oversized">注意：本书有 %1$d 个超长段落，译文可能超出模型输出上限；失败的段落将保留原文，可随后重新生成补齐</string>
@@ -141,6 +142,23 @@
     <string name="notice_translation_ai_aborted">《%1$s》连续 %2$d 批翻译失败，生成已中止。请检查服务商配置与网络；已完成批次已保留，重新生成会自动续跑</string>
     <string name="notice_translation_ai_failed">AI 译本生成失败：%1$s（已完成进度保留，可重试续跑）</string>
     <string name="notice_translation_ai_need_key">请先在「AI 中心」配置 DeepSeek API Key，再使用 AI 生成译本</string>
+    <!-- 手动 AI 翻译：导出任务文件给外部 agent，导入结果文件离线生成 -->
+    <string name="shelf_translation_choice_manual">手动 AI 翻译…</string>
+    <string name="shelf_translation_manual_title">手动 AI 翻译</string>
+    <string name="shelf_translation_manual_body">把整本书拆成 %1$d 个批次导出为任务文件，交给你的外部 AI agent；agent 按文件内说明产出结果文件后，回来点「导入翻译结果」，全部批次齐了自动生成译本对照。无需在应用内配置 API Key。</string>
+    <string name="shelf_translation_manual_coverage">已有译文 %1$d/%2$d 批（可以让 agent 只翻其余批次）</string>
+    <string name="shelf_translation_manual_export">导出任务文件</string>
+    <string name="shelf_translation_manual_import">导入翻译结果…</string>
+    <string name="notice_translation_manual_exported">任务文件已导出（共 %1$d 批）。把它交给你的 AI agent，按文件内说明拿到结果文件后，回「加译本 → 手动 AI 翻译」导入</string>
+    <string name="notice_translation_manual_export_failed">任务文件导出失败：%1$s</string>
+    <string name="notice_translation_manual_imported_partial">已收 %1$d/%2$d 批译文（拒绝 %3$d 条）；继续导入其余结果文件，齐了自动生成译本对照</string>
+    <string name="notice_translation_manual_imported_done">全部 %1$d 批译文已就绪，开始生成译本对照…</string>
+    <string name="notice_translation_manual_import_failed">导入翻译结果失败：%1$s</string>
+    <string name="notice_translation_manual_empty">本书没有可翻译的文本段落</string>
+    <string name="shelf_translation_manual_rejected_title">部分批次未通过校验</string>
+    <string name="shelf_translation_manual_rejected_hint">被拒绝的批次没有写入译文；按原因修正结果文件后重新导入即可（已收下的批次不受影响）。</string>
+    <string name="translation_manual_provider">手动 AI</string>
+    <string name="translation_manual_title">手动 AI 译本</string>
     <string name="reader_translation_title">译本对照</string>
     <string name="reader_translation_loading">正在查译本…</string>
     <string name="reader_translation_meta_sentence">%1$s · 句级 · 置信度 %2$d%%</string>
@@ -158,6 +176,7 @@
     <string name="reader_translation_miss">本句未对上译本（所在段落或章节没有参与对齐）</string>
 
     <!-- 听书播放条 -->
+    <string name="player_cache_progress"> 缓存全书 %1$d%%</string>
     <string name="player_previous">上一句</string>
     <string name="player_pause">暂停</string>
     <string name="player_play">播放</string>
@@ -166,13 +185,12 @@
     <string name="player_preparing">正在准备朗读…</string>
     <string name="player_paused">已暂停</string>
     <string name="player_set_start">设置起点</string>
+    <string name="player_cache_book">缓存全书音频</string>
     <string name="player_speed">语速</string>
     <string name="player_speed_value">语速 %1$s</string>
     <string name="player_speed_hint">0.5× – 2.0×，点击页面可从此句开始听</string>
     <string name="player_stop">停止听书</string>
     <string name="player_back_to_speaking">回到朗读处</string>
-    <string name="player_offscreen_hint">朗读已跑出可视范围</string>
-    <string name="player_more">更多</string>
 
     <!-- 多角色音色 -->
     <!-- 通用（跨模块复用） -->
