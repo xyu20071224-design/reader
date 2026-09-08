@@ -202,7 +202,7 @@ class TranslationGoldenReplayTest {
         reportV6Fidelity(artifacts, samples, displays, locatedBySample, pairs)
 
         // ---- 4b. 回归报告（本地产物）：判定卡生成器的输入 ----
-        writeReplayReport(artifacts, samples, displays)
+        writeReplayReport(artifacts, samples, displays, pairs)
 
         // ---- 5. 报告 ----
         val garbageCount = samples.count { it.garbage }
@@ -232,7 +232,8 @@ class TranslationGoldenReplayTest {
     private fun writeReplayReport(
         artifacts: File,
         samples: List<Sample>,
-        displays: Map<String, Display>
+        displays: Map<String, Display>,
+        pairs: List<AlignedSentencePair>
     ) {
         val array = JSONArray()
         for (sample in samples) {
@@ -275,6 +276,29 @@ class TranslationGoldenReplayTest {
         file.parentFile?.mkdirs()
         file.writeText(report.toString(2) + "\n")
         println("[golden] 回归报告 → ${file.path}")
+
+        // 句对样本（等距抽样 ≤2000 条）：给语义代理工具算「整本分布」的回归门基线
+        val sentencePairs = pairs.filter { it.enSentence.isNotBlank() }
+        val step = maxOf(1, sentencePairs.size / 2000)
+        val sampled = JSONArray()
+        sentencePairs.filterIndexed { index, _ -> index % step == 0 }.forEach { pair ->
+            sampled.put(
+                JSONObject()
+                    .put("en", pair.enSentence)
+                    .put("zh", pair.zhSentence)
+                    .put("confidence", pair.confidence.toDouble())
+            )
+        }
+        val pairsFile = File(artifacts, "alignment-eval/pairs-sample.json")
+        pairsFile.writeText(
+            JSONObject()
+                .put("formatVersion", 1)
+                .put("totalSentencePairs", sentencePairs.size)
+                .put("sampled", sampled.length())
+                .put("pairs", sampled)
+                .toString(2) + "\n"
+        )
+        println("[golden] 句对样本 ${sampled.length()}/${sentencePairs.size} → ${pairsFile.path}")
     }
 
     // ---- 定位：样本英文句 → 它所在的章与段落 ----
