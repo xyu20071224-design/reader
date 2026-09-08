@@ -99,7 +99,7 @@ class TranslationJudgmentCardTool {
 
     /** 对「当前展示」打分；证据不足时 [SemanticProxyIndex.Score.rank] = 1.0，排到最后。 */
     private fun proxyScore(
-        index: Map<String, Set<String>>,
+        index: SemanticProxyIndex.Index,
         sample: JSONObject
     ): SemanticProxyIndex.Score {
         val zh = sample.optJSONObject("current")?.optString("zh").orEmpty()

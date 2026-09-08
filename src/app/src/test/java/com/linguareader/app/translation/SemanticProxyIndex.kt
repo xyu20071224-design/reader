@@ -30,8 +30,28 @@ object SemanticProxyIndex {
         "man", "men", "way", "day", "days", "thing", "things", "yet", "still", "too", "also"
     )
 
-    /** 候选中文过多 = 太泛的词（good → 好/善/良…），命中是噪声，直接不参与评分。 */
-    private const val maxCandidates = 200
+    /**
+     * P3 评分变体：候选来源（全部释义 / 仅首释义）、候选最短字数、候选上限、是否按
+     * 特异性加权。默认值是**在圣经 2,268 条机械真值上选出来的**（见 README §6 变体表）。
+     */
+    data class Config(
+        /** 只用词条的第一个释义（主释义）——降多义噪声，但会掉覆盖。 */
+        val primaryGlossOnly: Boolean = false,
+        /** 候选中文最短字数：1 保留单字（好/大），2 只保留多字词（更具体）。 */
+        val minCandidateChars: Int = 1,
+        /**
+         * 候选中文过多 = 太泛的词（good → 好/善/良…），超过这个数就不收。
+         * P3 实测：放宽到 5000 + 加权只在共同子集上小胜（圣经 0.821→0.833、金标准
+         * 0.881→0.883，约 1 个标准误），且新增的低区分度样本会稀释报警口径 →
+         * **不采用**，保留 200 硬过滤。见 README §6 变体表。
+         */
+        val maxCandidates: Int = 200,
+        /**
+         * 是否按「英文词特异性」加权：候选越少权重越高（`1/ln(2+n)`），
+         * 取代「每词一票」——`troll→巨魔` 该比 `good→好/善/良` 更有说服力。
+         */
+        val idf: Boolean = false
+    )
 
     /**
      * 可评分内容词下限：低于这个数的句子「命中率」没有统计意义（1 个词命中就是 1.0、
@@ -64,9 +84,24 @@ object SemanticProxyIndex {
         val rank: Double get() = if (scoreable) hitRate else 1.0
     }
 
+    /**
+     * 建好的索引：英文内容词 → 候选简体词，外加（可选）每个词的特异性权重。
+     * [weights] 为空表示「每词一票」。
+     */
+    class Index(
+        val candidates: Map<String, Set<String>>,
+        val weights: Map<String, Double>
+    ) {
+        /** 收录的英文词条数（报告用）。 */
+        val size: Int get() = candidates.size
+
+        fun weightOf(word: String): Double = weights[word] ?: 1.0
+    }
+
     /** `繁 简 [pin1 yin1] /gloss1/gloss2/` → 英文 gloss 内容词 → 简体词条集合。 */
-    fun build(file: File): Map<String, Set<String>> {
-        val index = HashMap<String, MutableSet<String>>()
+    fun build(file: File, config: Config = Config()): Index {
+        val buckets = HashMap<String, MutableSet<String>>()
+        val entryCounts = HashMap<String, Int>()
         GZIPInputStream(file.inputStream()).bufferedReader(Charsets.UTF_8).useLines { lines ->
             for (line in lines) {
                 if (line.isBlank() || line.startsWith("#")) continue
@@ -78,25 +113,38 @@ object SemanticProxyIndex {
                 val simplified = head[1]
                 val glossPart = line.substring(close + 1).trim()
                 if (!glossPart.startsWith("/")) continue
-                for (gloss in glossPart.split('/')) {
+                val glosses = if (config.primaryGlossOnly) {
+                    listOf(glossPart.split('/').firstOrNull { it.isNotBlank() } ?: "")
+                } else {
+                    glossPart.split('/')
+                }
+                // 同一个词条里同一个英文词只算一次（多释义重复出现不重复计数）
+                val wordsOfEntry = HashSet<String>()
+                for (gloss in glosses) {
                     if (gloss.isBlank()) continue
                     for (word in enWord.findAll(gloss.lowercase())) {
                         if (word.value in stopwords) continue
-                        val bucket = index.getOrPut(word.value) { HashSet() }
-                        if (bucket.size <= maxCandidates) bucket.add(simplified)
+                        wordsOfEntry += word.value
+                        if (simplified.length < config.minCandidateChars) continue
+                        val bucket = buckets.getOrPut(word.value) { HashSet() }
+                        if (bucket.size <= config.maxCandidates) bucket.add(simplified)
                     }
                 }
+                for (word in wordsOfEntry) entryCounts[word] = (entryCounts[word] ?: 0) + 1
             }
         }
-        return index.mapValues { it.value.toSet() }.filterValues { it.size <= maxCandidates }
+        val candidates = buckets.mapValues { it.value.toSet() }
+            .filterValues { it.size <= config.maxCandidates }
+        val weights = if (!config.idf) emptyMap()
+        else candidates.keys.associateWith { 1.0 / kotlin.math.ln(2.0 + (entryCounts[it] ?: 1)) }
+        return Index(candidates, weights)
     }
 
     /** 英文句内容词的中文候选是否出现在中文展示里（命中率，越低越可疑）。 */
-    fun score(index: Map<String, Set<String>>, en: String, zh: String): Double =
-        evaluate(index, en, zh).hitRate
+    fun score(index: Index, en: String, zh: String): Double = evaluate(index, en, zh).hitRate
 
     /** 完整评分（命中率 + 证据量 + Wilson 下界）；短句证据不足时 [Score.scoreable] = false。 */
-    fun evaluate(index: Map<String, Set<String>>, en: String, zh: String): Score {
+    fun evaluate(index: Index, en: String, zh: String): Score {
         if (zh.isBlank()) return Score(0.0, 0, 0.0, false)
         // CC-CEDICT 候选是简体；评估语料（和合本、朱譯魔戒）是繁体，不归一会把
         // 命中率整体压低（P2 大规模验证暴露：圣经同节样本均值只有 0.11）。归一
@@ -106,17 +154,20 @@ object SemanticProxyIndex {
         if (words.isEmpty()) return Score(0.0, 0, 0.0, false)
         var hit = 0.0
         var total = 0.0
+        var scorable = 0
         for (word in words) {
-            val candidates = index[word] ?: continue
-            total += 1.0
-            if (candidates.any { it in zhSimplified }) hit += 1.0
+            val candidates = index.candidates[word] ?: continue
+            val weight = index.weightOf(word)
+            total += weight
+            scorable++
+            if (candidates.any { it in zhSimplified }) hit += weight
         }
-        if (total == 0.0) return Score(0.0, 0, 0.0, false)
+        if (scorable == 0) return Score(0.0, 0, 0.0, false)
         return Score(
             hitRate = hit / total,
-            scorableWords = total.toInt(),
+            scorableWords = scorable,
             wilsonLower = wilsonLower(hit, total),
-            scoreable = total >= MIN_SCORABLE_WORDS
+            scoreable = scorable >= MIN_SCORABLE_WORDS
         )
     }
 

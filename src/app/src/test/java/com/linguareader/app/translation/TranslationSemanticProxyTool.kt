@@ -46,6 +46,30 @@ class TranslationSemanticProxyTool {
         println("[proxy] CC-CEDICT 索引: ${index.size} 个英文词条，耗时 ${System.currentTimeMillis() - started}ms")
 
         val samples = loadSamples(fixtureFile)
+
+        // P3 变体对照：同一批人工判定样本上比 AUC（选型依据；圣经机械真值上的对照见
+        // TranslationProxyBibleValidationTest 的同一张表）
+        println("[proxy] P3 变体对照（金标准；共同子集 = 所有变体都能评分的样本，口径才可比）：")
+        val variantScored = variants.map { (name, config) ->
+            val variant = SemanticProxyIndex.build(cedict, config)
+            name to samples
+                .map { it to SemanticProxyIndex.evaluate(variant, it.en, it.zh) }
+                .filter { it.second.scoreable }
+        }
+        val common = variantScored
+            .map { entry -> entry.second.map { it.first.id }.toSet() }
+            .reduce { a, b -> a intersect b }
+        for ((name, scored) in variantScored) {
+            val sub = scored.filter { it.first.id in common }
+            val subAuc = auc(sub.map { it.first }, sub.associate { it.first.id to it.second.hitRate })
+            val allAuc = auc(scored.map { it.first }, scored.associate { it.first.id to it.second.hitRate })
+            println(
+                "  %-18s 共同子集 n=%-4d AUC=%.3f | 全可评分 n=%-4d AUC=%.3f%s".format(
+                    name, sub.size, subAuc, scored.size, allAuc,
+                    if (variants.first { it.second == SemanticProxyIndex.Config() }.first == name) "（当前默认）" else ""
+                )
+            )
+        }
         val scores = samples.associate { it.id to SemanticProxyIndex.evaluate(index, it.en, it.zh) }
         val scoreable = samples.filter { scores.getValue(it.id).scoreable }
         val thin = samples.filter { !scores.getValue(it.id).scoreable }
@@ -94,7 +118,7 @@ class TranslationSemanticProxyTool {
     }
 
     /** 用途一：整本句对抽样分布——均值/分位数就是回归门基线，漂移即报警。 */
-    private fun reportBookLevel(index: Map<String, Set<String>>, file: File) {
+    private fun reportBookLevel(index: SemanticProxyIndex.Index, file: File) {
         if (!file.isFile) {
             println("[proxy] 没有 pairs-sample.json（先跑 TranslationGoldenReplayTest），跳过整本分布")
             return
@@ -214,6 +238,16 @@ class TranslationSemanticProxyTool {
         }
         println("[proxy] %-32s 报警精确率/召回率: %s".format(label, cells))
     }
+
+    /** P3 变体清单（与 TranslationProxyBibleValidationTest 保持一致）。 */
+    private val variants = listOf(
+        "base(200,uniform)" to SemanticProxyIndex.Config(maxCandidates = 200, idf = false),
+        "idf(200)" to SemanticProxyIndex.Config(maxCandidates = 200, idf = true),
+        "idf_wide(5000)" to SemanticProxyIndex.Config(maxCandidates = 5000, idf = true),
+        "primary" to SemanticProxyIndex.Config(primaryGlossOnly = true),
+        "primary_idf" to SemanticProxyIndex.Config(primaryGlossOnly = true, idf = true),
+        "idf_min2" to SemanticProxyIndex.Config(idf = true, minCandidateChars = 2)
+    )
 
     private fun findRoot(): File? {
         var dir: File? = File("").absoluteFile
