@@ -263,7 +263,7 @@ data class AiSettings(
     val enabled: Boolean = false,
     val apiKey: String = "",
     val baseUrl: String = "https://api.deepseek.com",
-    val model: String = "deepseek-chat",
+    val model: String = "deepseek-v4-flash",
     /** Master switch for all networked AI; when false the app stays fully offline. */
     val powerEnabled: Boolean = true,
     /** 已配置的服务商列表；旧字段 apiKey/baseUrl/model 始终是生效服务商的镜像值。 */
