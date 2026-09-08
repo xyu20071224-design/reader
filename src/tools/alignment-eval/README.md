@@ -17,6 +17,23 @@ ok/bad」来评估，六轮判定（2026-09-02 ~ 09-03，对齐器 V2→V5）的
 | 每轮人工盲判 100 条 | 回归报告直接列出「展示发生变化的样本」，人工只看增量 |
 | 评估工具依赖机器上的 Python 与旧路径 | 工具改写成 Kotlin 测试，走仓库自带 Gradle 工具链；Python 只留作历史参考 |
 
+## 控制台（一条命令看报告）
+
+Gradle 默认吞掉测试 stdout，工具报告原本只能去 `build/test-results` 的 XML 或 HTML
+报告页里翻。`run-tool.sh` 把「跑 + 取报告」收成一条命令，输出与测试内的报告逐字一致：
+
+```bash
+bash src/tools/alignment-eval/run-tool.sh proxy            # 语义代理：AUC / 回归门 / 主动采样
+bash src/tools/alignment-eval/run-tool.sh cards            # 判定卡：变化样本 → HTML
+bash src/tools/alignment-eval/run-tool.sh fixture          # 重建金标准 fixture + 台账
+bash src/tools/alignment-eval/run-tool.sh replay           # 金标准重放（整本，约 40s）
+bash src/tools/alignment-eval/run-tool.sh generalization   # 公版泛化集（KJV × 和合本）
+bash src/tools/alignment-eval/run-tool.sh synthetic        # 合成语料真值对齐
+```
+
+加 `--rerun` 强制重跑；不加时若 Gradle 判定测试未变，直接打印上次结果（秒出）。
+各组件小节里也给了等价的直接 Gradle 写法。
+
 ## 六个组件
 
 ### 1. 金标准 fixture 生成工具
