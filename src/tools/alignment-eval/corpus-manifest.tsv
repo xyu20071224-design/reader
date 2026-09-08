@@ -1,0 +1,10 @@
+# 译本对齐评估语料清单（唯一权威）。
+#
+# 素材本体都在 artifacts/ 下，gitignored、不入库（体积 + 版权），所以「持久化」靠
+# 这张表：来源 URL、许可、字节数、sha256 都钉在这里，任何机器上都能一字不差地重建
+# 并校验。改了行必须同步更新 sha256（`fetch-corpus.sh --refresh` 后重算）。
+#
+# 列：id <TAB> 相对路径 <TAB> sha256 <TAB> 字节 <TAB> 许可 <TAB> 下载 URL <TAB> 使用方
+kjv	artifacts/generalization/KJV.json	de476d306687f8b45978f45f3346dcd30c685b9532afb05197849522c6e93ec0	11415048	Public Domain	https://raw.githubusercontent.com/scrollmapper/bible_databases/master/formats/json/KJV.json	PublicDomainAlignmentGeneralizationTest
+chiun	artifacts/generalization/ChiUn.json	a04203e832b0f09900cbefdec2d18a4b94d8fb6b1c6737c29dcd4d4186b74d87	7746731	Public Domain	https://raw.githubusercontent.com/scrollmapper/bible_databases/master/formats/json/ChiUn.json	PublicDomainAlignmentGeneralizationTest
+cedict	artifacts/generalization/cedict.txt.gz	5df285ee022f133d8a61bc252eda02d04d5c75161363b634babc7cbc531e49d0	3973063	CC BY-SA 4.0	https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz	TranslationSemanticProxyTool

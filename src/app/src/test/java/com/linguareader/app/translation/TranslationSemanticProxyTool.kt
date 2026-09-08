@@ -6,7 +6,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.io.File
-import java.util.zip.GZIPInputStream
 import kotlin.math.abs
 import kotlin.math.ln
 
@@ -32,20 +31,6 @@ import kotlin.math.ln
 @RunWith(RobolectricTestRunner::class)
 class TranslationSemanticProxyTool {
 
-    private val enWord = Regex("[a-z][a-z'-]+")
-    private val stopwords = setOf(
-        "the", "and", "for", "that", "with", "was", "were", "his", "her", "him", "she", "they",
-        "them", "their", "there", "here", "have", "has", "had", "not", "but", "you", "your",
-        "are", "all", "one", "two", "out", "into", "upon", "from", "this", "these", "those",
-        "who", "whom", "which", "what", "when", "where", "will", "would", "could", "should",
-        "been", "being", "about", "than", "then", "now", "more", "most", "some", "such", "very",
-        "said", "says", "say", "come", "came", "went", "goes", "going", "get", "got", "let",
-        "man", "men", "way", "day", "days", "thing", "things", "yet", "still", "too", "also"
-    )
-
-    /** 候选中文过多 = 太泛的词（good → 好/善/良…），命中是噪声，直接不参与评分。 */
-    private val maxCandidates = 200
-
     @Test
     fun validateAgainstHumanJudgments() {
         val root = findRoot()
@@ -57,13 +42,13 @@ class TranslationSemanticProxyTool {
         assumeTrue("缺少金标准 fixture，跳过", fixtureFile.isFile)
 
         val started = System.currentTimeMillis()
-        val index = buildIndex(cedict)
+        val index = SemanticProxyIndex.build(cedict)
         println("[proxy] CC-CEDICT 索引: ${index.size} 个英文词条，耗时 ${System.currentTimeMillis() - started}ms")
 
         val samples = loadSamples(fixtureFile)
         println("[proxy] 可评分样本=${samples.size}（ok/ok2=${samples.count { it.positive }}，bad=${samples.count { !it.positive }}）")
 
-        val proxyScores = samples.associate { it.id to scoreProxy(index, it.en, it.zh) }
+        val proxyScores = samples.associate { it.id to SemanticProxyIndex.score(index, it.en, it.zh) }
         val lengthScores = samples.associate { it.id to scoreLengthRatio(it.en, it.zh) }
         val anchorScores = samples.associate { it.id to scoreAnchorOverlap(it.en, it.zh) }
 
@@ -99,7 +84,7 @@ class TranslationSemanticProxyTool {
         val array = root.getJSONArray("pairs")
         val scores = (0 until array.length()).map {
             val pair = array.getJSONObject(it)
-            scoreProxy(index, pair.getString("en"), pair.getString("zh"))
+            SemanticProxyIndex.score(index, pair.getString("en"), pair.getString("zh"))
         }
         val sorted = scores.sorted()
         fun percentile(p: Double) = sorted[(p * (sorted.size - 1)).toInt()]
@@ -127,21 +112,6 @@ class TranslationSemanticProxyTool {
 
     // ---- 信号 ----
 
-    /** 外部信号：英文句内容词的中文候选是否出现在中文展示里（命中率，越低越可疑）。 */
-    private fun scoreProxy(index: Map<String, Set<String>>, en: String, zh: String): Double {
-        if (zh.isBlank()) return 0.0
-        val words = contentWords(en)
-        if (words.isEmpty()) return 0.0
-        var hit = 0.0
-        var total = 0.0
-        for (word in words) {
-            val candidates = index[word] ?: continue
-            total += 1.0
-            if (candidates.any { it in zh }) hit += 1.0
-        }
-        return if (total == 0.0) 0.0 else hit / total
-    }
-
     /** 内部信号 A：长度比越贴近 1 越好（展示是整段时天然偏低，这正是它的局限）。 */
     private fun scoreLengthRatio(en: String, zh: String): Double {
         val enWords = en.split(Regex("\\s+")).count { it.isNotBlank() }
@@ -158,9 +128,6 @@ class TranslationSemanticProxyTool {
         if (anchors.isEmpty()) return 0.5 // 无锚点可判，给中间分
         return anchors.count { it in zh.lowercase() }.toDouble() / anchors.size
     }
-
-    private fun contentWords(en: String): Set<String> =
-        enWord.findAll(en.lowercase()).map { it.value }.filter { it !in stopwords }.toSet()
 
     // ---- 指标 ----
 
@@ -214,35 +181,6 @@ class TranslationSemanticProxyTool {
             "t=%.1f(%.2f/%.2f)".format(t, precision, recall)
         }
         println("[proxy] %-32s 报警精确率/召回率: %s".format(label, cells))
-    }
-
-    // ---- CC-CEDICT ----
-
-    /** `繁 简 [pin1 yin1] /gloss1/gloss2/` → 英文 gloss 内容词 → 简体词条集合。 */
-    private fun buildIndex(file: File): Map<String, Set<String>> {
-        val index = HashMap<String, MutableSet<String>>()
-        GZIPInputStream(file.inputStream()).bufferedReader(Charsets.UTF_8).useLines { lines ->
-            for (line in lines) {
-                if (line.isBlank() || line.startsWith("#")) continue
-                val open = line.indexOf('[')
-                val close = line.indexOf(']')
-                if (open < 0 || close < open) continue
-                val head = line.substring(0, open).trim().split(' ')
-                if (head.size < 2) continue
-                val simplified = head[1]
-                val glossPart = line.substring(close + 1).trim()
-                if (!glossPart.startsWith("/")) continue
-                for (gloss in glossPart.split('/')) {
-                    if (gloss.isBlank()) continue
-                    for (word in enWord.findAll(gloss.lowercase())) {
-                        if (word.value in stopwords) continue
-                        val bucket = index.getOrPut(word.value) { HashSet() }
-                        if (bucket.size <= maxCandidates) bucket.add(simplified)
-                    }
-                }
-            }
-        }
-        return index.mapValues { it.value.toSet() }.filterValues { it.size <= maxCandidates }
     }
 
     private fun findRoot(): File? {

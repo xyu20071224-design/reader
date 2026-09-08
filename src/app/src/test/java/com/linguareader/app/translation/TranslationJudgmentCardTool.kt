@@ -27,6 +27,10 @@ import java.util.Date
  *   --tests "com.linguareader.app.translation.TranslationJudgmentCardTool"
  * ```
  * 产出 `artifacts/alignment-eval/judgment-cards.html`（含书文，本地 gitignored）。
+ *
+ * **排序**：有 `artifacts/generalization/cedict.txt.gz` 时按 CC-CEDICT 语义代理分数
+ * 升序排（越低越可疑，人工先看最可能出问题的）；缺词典时退回报告顺序，并在卡片顶部
+ * 说明。代理只做排序参考，判定仍以人眼为准。
  */
 @RunWith(RobolectricTestRunner::class)
 class TranslationJudgmentCardTool {
@@ -66,23 +70,57 @@ class TranslationJudgmentCardTool {
             return
         }
 
-        outFile.writeText(renderHtml(report, changed, total))
-        println("[cards] 变化样本 ${changed.size}/$total 条（未定位 $notLocated 条不参与）→ ${outFile.path}")
+        // 有 CC-CEDICT 就按语义代理分数升序排：分数越低越可疑，人工先看它们。
+        // 缺词典不报错——排序只是省注意力，不影响判定流程。
+        val cedict = File(artifacts, "generalization/cedict.txt.gz")
+        val proxy = if (cedict.isFile) SemanticProxyIndex.build(cedict) else null
+        val scores = if (proxy == null) emptyMap()
+        else changed.associate { it.getString("id") to proxyScore(proxy, it) }
+        val ordered = if (proxy == null) changed
+        else changed.sortedBy { scores.getValue(it.getString("id")) }
+
+        outFile.writeText(renderHtml(report, ordered, total, scores))
+        println("[cards] 变化样本 ${ordered.size}/$total 条（未定位 $notLocated 条不参与）→ ${outFile.path}")
+        if (proxy == null) {
+            println("[cards] 缺少 CC-CEDICT，按报告顺序排列；跑 fetch-semantic-proxy-corpus.sh 可启用可疑度排序")
+        } else {
+            println(
+                "[cards] 已按语义代理分数升序排列（最低 %.2f，最高 %.2f；越低越可疑）".format(
+                    scores.getValue(ordered.first().getString("id")),
+                    scores.getValue(ordered.last().getString("id"))
+                )
+            )
+        }
         println("[cards] 判定串格式：s57=ok2;s62=bad;… 贴进 src/tools/alignment-eval/verdict-overrides.json 的新一轮")
         assertTrue("判定卡文件应已写出", outFile.isFile && outFile.length() > 0)
     }
 
-    private fun renderHtml(report: JSONObject, changed: List<JSONObject>, total: Int): String {
+    /** 对「当前展示」打分；展示为空（极少见）时排到最后，而不是当成最可疑。 */
+    private fun proxyScore(index: Map<String, Set<String>>, sample: JSONObject): Double {
+        val zh = sample.optJSONObject("current")?.optString("zh").orEmpty()
+        if (zh.isBlank()) return 1.0
+        return SemanticProxyIndex.score(index, sample.optString("en"), zh)
+    }
+
+    private fun renderHtml(
+        report: JSONObject,
+        changed: List<JSONObject>,
+        total: Int,
+        scores: Map<String, Double>
+    ): String {
         val generatedAt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date())
         val cards = changed.joinToString("\n") { sample ->
             val id = sample.getString("id")
             val approved = sample.optJSONObject("approved")
             val current = sample.optJSONObject("current")
+            val score = scores[id]
+            val scoreText = if (score == null) "" else " · 代理%.2f".format(score)
             buildString {
                 appendLine("""<div class="s" data-id="${escape(id)}">""")
                 appendLine(
                     """  <div class="meta">#${escape(id)} · ${escape(sample.optString("stratum"))}""" +
-                        """ · 章${sample.optInt("chapter") + 1} · 历史判定 ${escape(sample.optString("verdict"))}</div>"""
+                        """ · 章${sample.optInt("chapter") + 1} · 历史判定 ${escape(sample.optString("verdict"))}""" +
+                        """$scoreText</div>"""
                 )
                 appendLine("""  <div class="en">EN：${escape(sample.optString("en"))}</div>""")
                 appendLine(
@@ -125,6 +163,8 @@ class TranslationJudgmentCardTool {
 <body>
 <h1>译本对齐判定卡 · 展示变化样本 ${changed.size} / ${total}</h1>
 <div class="hint">生成于 $generatedAt · alignerVersion=${report.optInt("alignerVersion")}。
+${if (scores.isEmpty()) "排列顺序：报告原顺序（缺 CC-CEDICT，跑 fetch-semantic-proxy-corpus.sh 可按可疑度排序）"
+else "排列顺序：CC-CEDICT 语义代理分数升序，越低越可疑（只做排序参考，判定以人眼为准）"}。
 逐条选择后点「收集判定」，把文本框里的 <code>sN=verdict;…</code> 贴进
 <code>src/tools/alignment-eval/verdict-overrides.json</code> 的新一轮。</div>
 <div id="collect">

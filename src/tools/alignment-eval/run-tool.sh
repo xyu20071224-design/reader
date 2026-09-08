@@ -12,6 +12,7 @@
 #   bash src/tools/alignment-eval/run-tool.sh replay           # 金标准重放（整本，约 40s）
 #   bash src/tools/alignment-eval/run-tool.sh generalization   # 公版泛化集（KJV × 和合本）
 #   bash src/tools/alignment-eval/run-tool.sh synthetic        # 合成语料真值对齐
+#   bash src/tools/alignment-eval/run-tool.sh full             # 上面四个本地工具按序全跑（发版前）
 #
 # 加 --rerun 可强制重跑（默认命中 Gradle 缓存时直接打印上次结果）。
 set -euo pipefail
@@ -24,6 +25,25 @@ RERUN=()
 for arg in "$@"; do
   [ "$arg" = "--rerun" ] && RERUN=(--rerun-tasks)
 done
+
+# 发版前/重拟合门槛后的固定跑法：语料先校验，再按序跑四个本地工具。
+# 单个工具失败不中断其余（后跑完再一起报错），便于一次看到全部退化点。
+if [ "$NAME" = full ]; then
+  bash src/tools/alignment-eval/fetch-corpus.sh --check || echo "[tool] 语料校验未通过，继续跑（相关测试会跳过）" >&2
+  STATUS=0
+  for task in replay synthetic generalization proxy; do
+    echo
+    echo "=========================== $task ==========================="
+    bash "$0" "$task" "${RERUN[@]}" || STATUS=$?
+  done
+  echo
+  if [ "$STATUS" != 0 ]; then
+    echo "[tool] full：有工具失败（最后退出码 $STATUS）" >&2
+  else
+    echo "[tool] full：全部通过"
+  fi
+  exit "$STATUS"
+fi
 
 case "$NAME" in
   proxy)
@@ -39,7 +59,7 @@ case "$NAME" in
   synthetic)
     MODULE=shared; CLASS=com.linguareader.shared.translation.SyntheticAlignmentTruthTest; PREFIX='[synthetic]' ;;
   *)
-    echo "用法: $0 {proxy|cards|fixture|replay|generalization|synthetic} [--rerun]" >&2
+    echo "用法: $0 {proxy|cards|fixture|replay|generalization|synthetic|full} [--rerun]" >&2
     exit 2 ;;
 esac
 
