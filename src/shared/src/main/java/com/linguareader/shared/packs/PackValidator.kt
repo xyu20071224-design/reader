@@ -55,7 +55,12 @@ object PackValidator {
      * 三个判据都不可省：缺文件、大小不符、哈希不符、**多出未登记的文件**。
      * 最后一个常被忘 —— 未登记的载荷文件永远不会被校验，正是夹带私货的入口。
      */
-    fun validateFiles(manifest: PackManifest, root: File): PackValidationResult {
+    fun validateFiles(
+        manifest: PackManifest,
+        root: File,
+        /** 预先算好的 `路径 → sha256`（音频包安装时复用同一份做章节树对账，避免哈希两遍）。 */
+        digests: Map<String, String>? = null
+    ): PackValidationResult {
         if (!root.isDirectory) return PackValidationResult.reject("资源包目录不存在：${root.name}")
         val declared = manifest.files.associateBy { it.path }
         for ((path, entry) in declared) {
@@ -64,7 +69,8 @@ object PackValidator {
             if (file.length() != entry.bytes) {
                 return PackValidationResult.reject("资源包文件大小不符：$path")
             }
-            if (ImportSupport.sha256(file) != entry.sha256) {
+            val actual = digests?.get(path) ?: ImportSupport.sha256(file)
+            if (actual != entry.sha256) {
                 return PackValidationResult.reject("资源包文件校验失败：$path")
             }
         }
@@ -79,6 +85,49 @@ object PackValidator {
         return PackValidationResult.Ok
     }
 
+    /** 只对登记过的路径算哈希（不扫目录），供 `validateFiles` 与章节树对账共用。 */
+    fun digests(root: File, paths: Collection<String>): Map<String, String> =
+        paths.associateWith { ImportSupport.sha256(File(root, it)) }
+
+    /**
+     * 音频包的结构 + 章节树对账（方案 T3.1）。
+     *
+     * 逐文件哈希只证明「每个文件没坏」，证明不了「章目录与 manifest 对得上」——
+     * 少一个章节目录、章内多塞一个未登记文件，文件哈希都是全对的。这里按
+     * `audio/<章号>/` 分组复核文件数与树摘要。
+     */
+    fun validateAudioChapters(manifest: PackManifest, digests: Map<String, String>): PackValidationResult {
+        val audio = manifest.audioPayload ?: return PackValidationResult.Ok
+        val declaredChapters = audio.chapters.associateBy { it.index }
+        val grouped = digests.keys
+            .filter { it.startsWith(AudioPackSource.PAYLOAD_DIR + "/") }
+            .groupBy { path ->
+                path.removePrefix(AudioPackSource.PAYLOAD_DIR + "/").substringBefore('/').toIntOrNull()
+            }
+        if (grouped.containsKey(null)) {
+            return PackValidationResult.reject("音频包里有无法识别的章节目录")
+        }
+        for ((index, files) in grouped) {
+            val chapter = declaredChapters[index]
+                ?: return PackValidationResult.reject("音频包清单里没有第 $index 章")
+            if (files.size != chapter.files) {
+                return PackValidationResult.reject(
+                    "第 $index 章文件数与清单不符（清单 ${chapter.files}，实际 ${files.size}）"
+                )
+            }
+            val prefix = "${AudioPackSource.PAYLOAD_DIR}/$index"
+            val actual = PackHasher.treeSha256(prefix, digests)
+            if (chapter.treeSha256.isNotBlank() && actual != chapter.treeSha256) {
+                return PackValidationResult.reject("第 $index 章内容与清单不符")
+            }
+        }
+        val missing = declaredChapters.keys.filter { it !in grouped.keys }
+        if (missing.isNotEmpty()) {
+            return PackValidationResult.reject("音频包缺少第 ${missing.min()} 章")
+        }
+        return PackValidationResult.Ok
+    }
+
     /** 目录实际占用（字节），与 manifest 里 files 的 bytes 之和独立核算。 */
     fun directoryBytes(root: File): Long =
         if (root.isDirectory) root.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
@@ -88,12 +137,25 @@ object PackValidator {
 /** 章节树摘要：章内 `相对路径:sha256` 排序后拼行再取 SHA-256。 */
 object PackHasher {
 
-    fun treeSha256(root: File): String {
-        val lines = root.walkTopDown()
+    /** 直接扫目录算树摘要（包生成工具与单测用）。 */
+    fun treeSha256(root: File): String = treeSha256(
+        prefix = "",
+        digests = root.walkTopDown()
             .filter { it.isFile }
-            .map { file ->
-                file.relativeTo(root).invariantSeparatorsPath + ":" + ImportSupport.sha256(file)
-            }
+            .associate { it.relativeTo(root).invariantSeparatorsPath to ImportSupport.sha256(it) }
+    )
+
+    /**
+     * 从**已有的** `路径 → sha256` 表算某个子树摘要，路径相对 [prefix]。
+     *
+     * 应用侧安装音频包时用它：逐文件哈希只算一遍，章节摘要从同一份结果推出来。
+     * [prefix] 为空表示整棵树。
+     */
+    fun treeSha256(prefix: String, digests: Map<String, String>): String {
+        val base = if (prefix.isBlank()) "" else prefix.trimEnd('/') + "/"
+        val lines = digests
+            .filterKeys { it.startsWith(base) }
+            .map { (path, sha) -> path.removePrefix(base) + ":" + sha }
             .sorted()
         return sha256Hex(lines.joinToString("\n"))
     }

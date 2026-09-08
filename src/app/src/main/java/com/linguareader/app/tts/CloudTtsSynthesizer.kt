@@ -8,6 +8,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.linguareader.app.data.Book
+import com.linguareader.app.packs.PackRepository
+import com.linguareader.shared.tts.TtsCacheKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,6 +58,12 @@ class CloudTtsSynthesizer(
     private val mainHandler = Handler(Looper.getMainLooper())
     /** 缓存路径的唯一知情者（见 TtsAudioCache 的类注释：这条路径以前被写了两遍）。 */
     private val cache = TtsAudioCache(appContext)
+
+    /**
+     * 预生成音频包（M3）。与 UI 侧各自持有一个实例：两边都读同一份 registry.json，
+     * `PackRepository` 用文件时间戳判缓存失效，所以装了新包这边立刻能看见。
+     */
+    private val packs = PackRepository(appContext)
 
     /**
      * 引擎身份，进缓存键。快照即可：换引擎/换服务器会走 ACTION_RECONFIGURE，
@@ -155,7 +163,13 @@ class CloudTtsSynthesizer(
             return
         }
         val effectiveVoice = voice?.takeIf { it.isNotBlank() } ?: backend.voiceFor(text)
-        val file = cacheFile(parsed.bookId, parsed.chapterIndex, parsed.sentenceIndex, parsed.segmentIndex, effectiveVoice)
+        // 解析链（方案 §3）：预生成包（只读、永不淘汰）→ 缓存 → 现场合成。
+        // 包命中时 file 已存在，waitForFileOrSynthesize 直接返回，不重新计费。
+        val file = packFile(
+            parsed.bookId, parsed.chapterIndex, parsed.sentenceIndex, parsed.segmentIndex, effectiveVoice
+        ) ?: cacheFile(
+            parsed.bookId, parsed.chapterIndex, parsed.sentenceIndex, parsed.segmentIndex, effectiveVoice
+        )
         stopped = false
         scope.launch {
             val ready = waitForFileOrSynthesize(file, text, effectiveVoice)
@@ -180,10 +194,15 @@ class CloudTtsSynthesizer(
         mainHandler.post { releaseCurrentPlayer() }
     }
 
-    private suspend fun generateOne(book: Book, chapter: TtsChapter, utterance: TtsUtterance): Boolean {
+    // internal 而非 private：M3 的「包命中不合成」由单测直接驱动这条分支（避免 25s 等待）。
+    internal suspend fun generateOne(book: Book, chapter: TtsChapter, utterance: TtsUtterance): Boolean {
         val voice = voiceForSpeaker(utterance.speaker, utterance.text)?.takeIf { it.isNotBlank() }
             ?: backend.voiceFor(utterance.text)
         val file = cacheFile(book.id, chapter.chapterIndex, utterance.sentenceIndex, utterance.segmentIndex, voice)
+        // 包已覆盖这句：不预生成、不写缓存（预生成会把整包再抄一遍，纯浪费）。
+        if (packFile(book.id, chapter.chapterIndex, utterance.sentenceIndex, utterance.segmentIndex, voice) != null) {
+            return true
+        }
         if (file.exists() && file.length() > 0) return true
         val key = file.absolutePath
         if (inflightFiles.putIfAbsent(key, true) != null) {
@@ -275,6 +294,24 @@ class CloudTtsSynthesizer(
             )
         }
     }
+
+    /**
+     * 预生成音频包里的句子文件；null = 包没有这句。
+     *
+     * 键与缓存键同源（[TtsCacheKey.relativePath]），所以「包里的文件」与「现场合成的
+     * 文件」永远指向同一句话；引擎/音色/管线版本任一不匹配，路径就不同，自然不命中
+     * —— 不匹配的表现是**降级为现场合成**，不会放错音。
+     */
+    internal fun packFile(
+        bookId: String,
+        chapterIndex: Int,
+        sentenceIndex: Int,
+        segmentIndex: Int,
+        voice: String
+    ): File? = packs.audioPackFile(
+        bookId,
+        TtsCacheKey.relativePath(chapterIndex, sentenceIndex, segmentIndex, engineTag, voice)
+    )
 
     private suspend fun waitForFileOrSynthesize(
         file: File,

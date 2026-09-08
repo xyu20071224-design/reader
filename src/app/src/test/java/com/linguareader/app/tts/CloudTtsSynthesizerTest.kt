@@ -1,13 +1,26 @@
 package com.linguareader.app.tts
 
+import android.content.Context
+import android.net.Uri
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
+import com.linguareader.app.packs.PackRepository
+import com.linguareader.shared.packs.PackHasher
+import com.linguareader.shared.packs.PackManifest
+import com.linguareader.shared.tts.TtsCacheKey
+import com.linguareader.shared.tts.TtsPipelineContract
+import kotlinx.coroutines.runBlocking
+import com.linguareader.shared.tts.TtsChapter
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
@@ -35,6 +48,9 @@ class CloudTtsSynthesizerTest {
         override fun isConfigured(): Boolean = true
         override suspend fun synthesize(text: String, voice: String, outputFile: File): Result<Unit> {
             synthesizeCalls++
+            // 真实后端会建目录（CloudTtsBackend 实现里都有）；测试替身必须同口径，
+            // 否则「章预生成」这条路径一碰就 FileNotFoundException。
+            outputFile.parentFile?.mkdirs()
             outputFile.writeBytes(byteArrayOf(1, 2, 3))
             return Result.success(Unit)
         }
@@ -72,6 +88,88 @@ class CloudTtsSynthesizerTest {
             listener.errors.isEmpty(),
             "云 TTS 必须解析引擎的 5 段 utteranceId，但 speak() 直接触发了 onError（无声音）"
         )
+        synth.shutdown()
+    }
+
+
+    /**
+     * M3 核心契约：**包命中时一句都不许再合成**（合成 = 花钱 + 慢）。
+     *
+     * 直接驱动 `generateOne`（章预生成的单位）而不是 `speak`：后者在无章预生成时
+     * 会先等 25s 缓存窗口，测试会慢到不可接受，而这条契约只关心「有没有发起合成」。
+     */
+    @Test
+    fun audioPackIsResolvedWithoutSynthesizing() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val engineTag = VoiceLibraryLoader.engineKey(CloudTtsSettings.load(context))
+        val staging = File.createTempFile("pack-", "").let { it.delete(); it.mkdirs(); it }
+        val relative = TtsCacheKey.relativePath(0, 0, 0, engineTag, "default")
+        val payload = File(staging, "audio/$relative").apply {
+            parentFile?.mkdirs()
+            writeText("fake-mp3")
+        }
+        val sha = com.linguareader.shared.importer.ImportSupport.sha256(payload)
+        val manifest = JSONObject()
+            .put("packId", "synth-pack").put("type", "audio").put("version", "1.0.0")
+            .put("nameZh", "音频包").put("schemaVersion", 1).put("minAppVersion", 0)
+            .put(
+                "files",
+                JSONArray().put(
+                    JSONObject().put("path", "audio/$relative").put("sha256", sha)
+                        .put("bytes", payload.length())
+                )
+            )
+            .put(
+                "audio",
+                JSONObject().put("bookId", "book-1").put("engineTag", engineTag)
+                    .put("voice", "default").put("pipelineVersion", TtsPipelineContract.VERSION)
+                    .put(
+                        "chapters",
+                        JSONArray().put(
+                            JSONObject().put("index", 0).put("files", 1)
+                                .put("treeSha256", PackHasher.treeSha256("audio/0", mapOf("audio/$relative" to sha)))
+                        )
+                    )
+            )
+        val zip = File(staging, "pack.lrpack")
+        ZipOutputStream(zip.outputStream()).use { out ->
+            out.putNextEntry(ZipEntry(PackManifest.FILE_NAME))
+            out.write(manifest.toString().toByteArray())
+            out.closeEntry()
+            out.putNextEntry(ZipEntry("audio/$relative"))
+            out.write(payload.readBytes())
+            out.closeEntry()
+        }
+        PackRepository(context, appVersionCode = 15).install(Uri.fromFile(zip))
+
+        val backend = RecordingBackend()
+        val synth = CloudTtsSynthesizer(context, backend, RecordingListener())
+        val chapter = TtsChapter(0, "Chapter", listOf("Hello. Goodbye."))
+        val book = com.linguareader.shared.data.Book(
+            id = "book-1", title = "T", author = "A", extractedDir = "/tmp",
+            coverRelativePath = null, chapters = emptyList(), addedAt = 0L
+        )
+        val packed = chapter.utterances.first { it.sentenceIndex == 0 && it.segmentIndex == 0 }
+        val unpacked = chapter.utterances.first { it.sentenceIndex == 1 }
+
+        // 解析链：包命中 → 返回包内文件（安装后已落位到 filesDir/packs）
+        val resolved = synth.packFile("book-1", 0, 0, 0, "default")
+        assertEquals(true, resolved != null)
+        assertEquals("fake-mp3", resolved!!.readText())
+        assertEquals(true, resolved.path.endsWith("audio/$relative"))
+        // 不匹配的三种情形都不命中 → 自动降级现场合成
+        assertEquals(null, synth.packFile("book-2", 0, 0, 0, "default"))
+        assertEquals(null, synth.packFile("book-1", 0, 0, 0, "other"))
+        assertEquals(null, synth.packFile("book-1", 9, 0, 0, "default"))
+
+        // 包里的句子：不合成
+        assertEquals(true, synth.generateOne(book, chapter, packed))
+        assertEquals(0, backend.synthesizeCalls, "包命中不该合成（会重复计费）")
+
+        // 包里没有的句子：照常合成
+        assertEquals(true, synth.generateOne(book, chapter, unpacked))
+        assertEquals(1, backend.synthesizeCalls)
+
         synth.shutdown()
     }
 

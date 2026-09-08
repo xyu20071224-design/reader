@@ -8,8 +8,11 @@ import com.linguareader.app.data.DictionaryRepository
 import com.linguareader.app.data.WordLookup
 import com.linguareader.shared.importer.ImportSupport
 import com.linguareader.shared.packs.PackFormatException
+import com.linguareader.shared.packs.PackHasher
 import com.linguareader.shared.packs.PackManifest
 import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.tts.TtsCacheKey
+import com.linguareader.shared.tts.TtsPipelineContract
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -248,6 +251,113 @@ class PackRepositoryTest {
         assertTrue(
             (result as com.linguareader.shared.packs.PackValidationResult.Rejected).reason.contains("大小不符")
         )
+    }
+
+
+    /** 造一个合法的音频包 zip：audio/<章>/<音色目录>/s<句>-<段>.mp3。 */
+    private fun audioPack(
+        packId: String = "audio-1",
+        bookId: String = "book-1",
+        engineTag: String = "engine",
+        voice: String = "default",
+        pipelineVersion: Int = TtsPipelineContract.VERSION,
+        brokenTree: Boolean = false
+    ): File {
+        val staging = tempDir("audio-stage-")
+        val segment = TtsCacheKey.segmentDir(engineTag, voice, pipelineVersion)
+        val contents = linkedMapOf(
+            "audio/0/$segment/s0-0.mp3" to "one",
+            "audio/0/$segment/s0-1.mp3" to "two",
+            "audio/1/$segment/s1-0.mp3" to "three"
+        )
+        contents.forEach { (path, text) ->
+            File(staging, path).apply { parentFile?.mkdirs(); writeText(text) }
+        }
+        val digests = contents.keys.associateWith { sha256(File(staging, it)) }
+        fun tree(prefix: String) = PackHasher.treeSha256(prefix, digests)
+        val manifest = JSONObject()
+            .put("packId", packId)
+            .put("type", "audio")
+            .put("version", "1.0.0")
+            .put("nameZh", "音频包 $packId")
+            .put("schemaVersion", 1)
+            .put("minAppVersion", 0)
+            .put(
+                "files",
+                JSONArray().apply {
+                    digests.entries.sortedBy { it.key }.forEach { (path, sha) ->
+                        put(
+                            JSONObject().put("path", path).put("sha256", sha)
+                                .put("bytes", File(staging, path).length())
+                        )
+                    }
+                }
+            )
+            .put(
+                "audio",
+                JSONObject()
+                    .put("bookId", bookId)
+                    .put("engineTag", engineTag)
+                    .put("voice", voice)
+                    .put("pipelineVersion", pipelineVersion)
+                    .put(
+                        "chapters",
+                        JSONArray()
+                            .put(
+                                JSONObject().put("index", 0).put("files", 2)
+                                    .put("treeSha256", if (brokenTree) "0".repeat(64) else tree("audio/0"))
+                            )
+                            .put(
+                                JSONObject().put("index", 1).put("files", 1)
+                                    .put("treeSha256", tree("audio/1"))
+                            )
+                    )
+            )
+        val zip = File(staging, "$packId.lrpack")
+        ZipOutputStream(zip.outputStream()).use { out ->
+            out.putNextEntry(ZipEntry(PackManifest.FILE_NAME))
+            out.write(manifest.toString().toByteArray())
+            out.closeEntry()
+            contents.keys.sorted().forEach { path ->
+                out.putNextEntry(ZipEntry(path))
+                out.write(File(staging, path).readBytes())
+                out.closeEntry()
+            }
+        }
+        return zip
+    }
+
+    @Test
+    fun `audio pack installs and resolves by cache key`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        val installed = install(repo, audioPack())
+
+        assertEquals(PackType.AUDIO, installed.type)
+        val relative = TtsCacheKey.relativePath(0, 0, 0, "engine", "default")
+        val resolved = repo.audioPackFile("book-1", relative)
+        assertNotNull(resolved)
+        assertEquals("one", resolved!!.readText())
+        // 别的书、别的音色、别的章都不命中 → 自动降级现场合成
+        assertNull(repo.audioPackFile("book-2", relative))
+        assertNull(repo.audioPackFile("book-1", TtsCacheKey.relativePath(0, 0, 0, "engine", "other")))
+        assertNull(repo.audioPackFile("book-1", TtsCacheKey.relativePath(3, 0, 0, "engine", "default")))
+    }
+
+    @Test
+    fun `audio pack from another pipeline version is rejected`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        val error = runCatching {
+            install(repo, audioPack(pipelineVersion = TtsPipelineContract.VERSION + 1))
+        }.exceptionOrNull()
+        assertTrue(error!!.message.orEmpty(), error.message.orEmpty().contains("朗读管线"))
+        assertTrue(repo.registry().packs.isEmpty())
+    }
+
+    @Test
+    fun `audio pack with tampered chapter tree is rejected`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        val error = runCatching { install(repo, audioPack(brokenTree = true)) }.exceptionOrNull()
+        assertTrue(error!!.message.orEmpty(), error.message.orEmpty().contains("不符"))
     }
 
     @Test

@@ -15,6 +15,7 @@ import com.linguareader.shared.packs.PackType
 import com.linguareader.shared.packs.PackValidationResult
 import com.linguareader.shared.packs.PackValidator
 import com.linguareader.shared.packs.SafeZip
+import com.linguareader.shared.tts.TtsPipelineContract
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,17 +55,33 @@ class PackRepository(
     @Volatile
     private var cached: PackRegistry? = null
 
-    /** 登记表快照。首次读盘，之后走缓存；损坏时回退空表（查词不能因此哑掉）。 */
+    @Volatile
+    private var cachedStamp: Long = -1L
+
+    /**
+     * 登记表快照。首次读盘，之后走缓存；损坏时回退空表（查词不能因此哑掉）。
+     *
+     * 每次调用比一次 `lastModified`：听书链路的合成器与 UI 是两个实例，装了新包
+     * 必须让另一侧**立刻**看见，否则会出现「页面里有了、听书还在按老包找文件」。
+     */
     fun registry(): PackRegistry {
-        cached?.let { return it }
+        val stamp = stampOf(registryFile)
+        cached?.takeIf { stamp == cachedStamp }?.let { return it }
         return synchronized(this) {
-            cached ?: readRegistry().also { cached = it }
+            if (cached != null && stamp == cachedStamp) cached!!
+            else readRegistry().also {
+                cached = it
+                cachedStamp = stamp
+            }
         }
     }
 
     /** 强制重读（「验证完整性」与外部改动后）。 */
     fun reload(): PackRegistry = synchronized(this) {
-        readRegistry().also { cached = it }
+        readRegistry().also {
+            cached = it
+            cachedStamp = stampOf(registryFile)
+        }
     }
 
     /** 当前生效的词典文件；null = 用内置 assets。 */
@@ -81,7 +98,11 @@ class PackRepository(
             ?: return PackValidationResult.reject("资源包不存在：$packId")
         val manifestCheck = PackValidator.validateManifest(pack.manifest, appVersionCode)
         if (!manifestCheck.ok) return manifestCheck
-        return PackValidator.validateFiles(pack.manifest, pack.root(packsRoot))
+        val root = pack.root(packsRoot)
+        val digests = PackValidator.digests(root, pack.manifest.files.map { it.path })
+        val filesCheck = PackValidator.validateFiles(pack.manifest, root, digests)
+        if (!filesCheck.ok) return filesCheck
+        return PackValidator.validateAudioChapters(pack.manifest, digests)
     }
 
     /**
@@ -112,7 +133,19 @@ class PackRepository(
                     maxBytes = limits.maxUnzippedBytes,
                     label = "资源包"
                 )
-                PackValidator.validateFiles(manifest, staging).requireOk()
+                if (manifest.type == PackType.AUDIO) {
+                    val audio = manifest.audioPayload
+                        ?: throw PackFormatException("音频包缺少 audio 载荷")
+                    if (audio.pipelineVersion != TtsPipelineContract.VERSION) {
+                        throw PackFormatException(
+                            "音频包由不同版本的朗读管线生成（包 v${audio.pipelineVersion}，" +
+                                "应用 v${TtsPipelineContract.VERSION}）。装了会播出与正文对不上的音频，已拒绝。"
+                        )
+                    }
+                }
+                val digests = PackValidator.digests(staging, manifest.files.map { it.path })
+                PackValidator.validateFiles(manifest, staging, digests).requireOk()
+                PackValidator.validateAudioChapters(manifest, digests).requireOk()
                 if (manifest.type == PackType.DICTIONARY) {
                     val entry = manifest.dictionaryEntryFile
                         ?: throw PackFormatException("词典包缺少 entryFile")
@@ -211,6 +244,8 @@ class PackRepository(
         }
     }
 
+    private fun stampOf(file: File): Long = if (file.isFile) file.lastModified() else -1L
+
     private fun readRegistry(): PackRegistry = runCatching {
         if (!registryFile.isFile) PackRegistry.EMPTY
         else PackRegistry.parse(registryFile.readText())
@@ -229,6 +264,7 @@ class PackRepository(
             temp.delete()
         }
         cached = registry
+        cachedStamp = stampOf(registryFile)
     }
 
     private fun PackValidationResult.requireOk() {
