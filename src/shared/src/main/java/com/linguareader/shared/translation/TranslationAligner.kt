@@ -23,7 +23,9 @@ interface MeaningIndex {
  *     尺寸保护 / 边际收益）。
  *
  * 对齐代价 = 长度比偏差（英文词数 vs 中文有效字符数）− 数字/拉丁专名锚点命中率
- * − 词义锚点加分（V2：ECDICT 释义短语命中）。
+ * − 词义锚点加分（V2：ECDICT 释义短语命中）。长度比 V6 起按章自适应：段级用
+ * 「本章中文字符数 / 英文词数」，句级用「平均中文句长 / 平均英文句长」——单一全局
+ * 常量 1.7 对古典紧凑译本偏高 14–23%，是整节漂移的主因（见 [ZH_CHARS_PER_EN_WORD]）。
  * 置信度 = 1 − 归一化代价，钳制到 [MIN_CONFIDENCE, 1]。
  *
  * **性能上的硬要求**：代价函数在 O(n·m) 的 DP 内层被调用，因此它只允许做算术与
@@ -35,7 +37,7 @@ interface MeaningIndex {
 object TranslationAligner {
 
     /** 档案里把多少号对齐器写入 alignerVersion；算法/分句规则变化时必须 +1。 */
-    const val VERSION = 5
+    const val VERSION = 6
 
     /** 词义锚点每次命中的加分上限与单点权重（与「数字/拉丁锚点」同量级、略高）。 */
     private const val MEANING_MAX_HITS = 4
@@ -58,7 +60,7 @@ object TranslationAligner {
     private const val SENTENCE_MERGE_SCALE = 0.85f
 
     /**
-     * 句对落盘的长度比硬门槛（V5）：zh 字符数 /（en 词数 × [ZH_CHARS_PER_EN_WORD]）
+     * 句对落盘的长度比硬门槛（V5）：zh 字符数 /（en 词数 × 句级自适应比例）
      * 落在区间外的不落盘，降级为段级条目。100 样本判定拟合：残 <0.45 的样本
      * 判定全 bad（3/3），超 >2.6 只剩 ok2/bad（ok 集最大 2.02，留 0.6 余量）；
      * 置信度门槛管不住它们——锚点/词义加分能把长度比崩坏的错对拉回 0.30 以上。
@@ -77,8 +79,34 @@ object TranslationAligner {
     const val MIN_CONFIDENCE = 0.15f
     private const val SKIP_COST = 1.2
 
-    /** 启发式：约 1.7 个中文字符对应 1 个英文单词（用于长度归一）。 */
+    /**
+     * 长度归一化的兜底值：约 1.7 个中文字符对应 1 个英文单词。
+     *
+     * V6 起它只在拿不到文本特征时兜底（空章、全空白）：正常路径用两级自适应密度——
+     * 段级 = 本章 `中文字符数 / 英文词数`，句级 = `平均中文句长 / 平均英文句长`。
+     * 依据是恒等式 `C/W = (μ_zh/μ_en) × (S_zh/S_en)`：段级对齐要前者、句级对齐要后者，
+     * 古典紧凑译本（和合本整本 1.31–1.47、句长比 0.88–1.26）与现代译本（魔戒 1.78 / 2.03）
+     * 差得很远，单一全局常量必然偏向一头。泛化集实测：同节精度 0.649→0.858（John）、
+     * 0.599→0.845（Genesis）、0.465→0.769（Proverbs）。
+     */
     private const val ZH_CHARS_PER_EN_WORD = 1.7
+
+    /**
+     * 自适应密度所需的最小英文词数：低于它就退回全局常量/整本密度。
+     * 几十个词的样本算出来的密度是噪声（单元测试、封面/标题页这类短章），
+     * 真实章节远高于此（魔戒 74–16,322 词、圣经每章 1,000+ 词）。
+     */
+    private const val MIN_ADAPTIVE_WORDS = 200
+
+    /** 自适应密度的钳制范围：防短章/误配对把比例算飞（魔戒实测章密度 0.40–10.31）。 */
+    private const val MIN_ADAPTIVE_SCALE = 0.9
+    private const val MAX_ADAPTIVE_SCALE = 2.6
+
+    /**
+     * 一次对齐用的两级长度归一化比例（zh 字符 / en 词）。
+     * [paragraph] 用于段落级 DP 与段级兜底；[sentence] 用于句级 DP、V5 落盘门槛与 1:N 合并门槛。
+     */
+    private class LengthScales(val paragraph: Double, val sentence: Double)
 
     /** 邻近段落兜底的置信度缩放：它只是「大致对应」，必须明显低于真配对。 */
     private const val NEIGHBOUR_CONFIDENCE_SCALE = 0.55
@@ -92,6 +120,10 @@ object TranslationAligner {
     private val HAN_RUNS = Regex("[\\u4e00-\\u9fa5]+")
     private val WHITESPACE = Regex("\\s+")
     private val ZH_SENTENCE_END = Regex("(?<=[。！？；!?;])|(?<=\\n)")
+
+    /** 句级密度用的近似句数计数（只数终止符游程，不跑分句器，见 [countSentencesApprox]）。 */
+    private val EN_SENTENCE_ENDS = Regex("[.!?…]+")
+    private val ZH_SENTENCE_ENDS = Regex("[。！？；!?;]+")
 
     // DP 回溯用的走法编码（每格 1 字节，避免每格再分配对象）。
     private const val MOVE_NONE: Byte = 0
@@ -117,20 +149,23 @@ object TranslationAligner {
         val enParagraphSpans = enChapters.map { paragraphs -> paragraphs.map { englishSpan(it, meaning) } }
         val zhParagraphSpans = zhChapters.map { paragraphs -> paragraphs.map { chineseSpan(it) } }
 
+        // 整本字/词密度：不依赖章配对（只对全书求和），供章节对齐与章级估计兜底用。
+        val bookScale = bookParagraphScale(enParagraphSpans, zhParagraphSpans)
         val result = mutableListOf<AlignedSentencePair>()
 
-        for ((enIdx, zhIdx) in alignChapters(enParagraphSpans, zhParagraphSpans)) {
+        for ((enIdx, zhIdx) in alignChapters(enParagraphSpans, zhParagraphSpans, bookScale)) {
             val enParagraphs = enChapters[enIdx]
             val zhParagraphs = zhChapters[zhIdx]
             if (enParagraphs.isEmpty() || zhParagraphs.isEmpty()) continue
 
             val enSpans = enParagraphSpans[enIdx]
             val zhSpans = zhParagraphSpans[zhIdx]
+            val scales = chapterScales(enParagraphs, zhParagraphs, enSpans, zhSpans, bookScale)
 
             // 记录哪些英文段落真的配上了，以及它落在哪个中文段落（供邻近兜底用）。
             val zhForEn = HashMap<Int, Int>()
 
-            for (paragraphPair in alignSpans(enSpans, zhSpans, allowMerge = true)) {
+            for (paragraphPair in alignSpans(enSpans, zhSpans, allowMerge = true, scale = scales.paragraph)) {
                 val enParagraph = join(enParagraphs, paragraphPair.a)
                 val zhParagraph = join(zhParagraphs, paragraphPair.b)
                 if (enParagraph.isBlank() || zhParagraph.isBlank()) continue
@@ -143,7 +178,13 @@ object TranslationAligner {
 
                 val sentencePairs =
                     if (enSentences.isEmpty() || zhSentences.isEmpty()) emptyList()
-                    else alignSpans(enSentenceSpans, zhSentenceSpans, allowMerge = true, mergeGate = ::sentenceMergeAllowed)
+                    else alignSpans(
+                        enSentenceSpans, zhSentenceSpans, allowMerge = true,
+                        mergeGate = { e1, e2, z1, z2 ->
+                            sentenceMergeAllowed(e1, e2, z1, z2, scales.sentence)
+                        },
+                        scale = scales.sentence
+                    )
 
                 // V4：低置信句对是 DP 残渣（实测整本魔戒 2% 的句子精确命中这类对：
                 // 27 词英文配上「啊！」、70 词配上 16 字）。查询侧 1–3 级是文本精确
@@ -153,7 +194,8 @@ object TranslationAligner {
                 for (sentencePair in sentencePairs) {
                     val raw = confidenceOf(
                         enSentenceSpans, sentencePair.a,
-                        zhSentenceSpans, sentencePair.b
+                        zhSentenceSpans, sentencePair.b,
+                        scales.sentence
                     )
                     // 合并句对（1:N）是真配对但粒度跳，置信度轻折扣。
                     val confidence =
@@ -164,7 +206,9 @@ object TranslationAligner {
                     // V5：长度比硬门槛——置信度被锚点/词义加分拉高、但长度比
                     // 崩坏的错对（用户主诉「长度明显不匹配的对照」）同样不落盘。
                     // 合并对比例天然偏高（引文整句 vs 短英文引导），上限放宽一档。
-                    val ratio = lengthRatioOf(enSentenceSpans, sentencePair.a, zhSentenceSpans, sentencePair.b)
+                    val ratio = lengthRatioOf(
+                        enSentenceSpans, sentencePair.a, zhSentenceSpans, sentencePair.b, scales.sentence
+                    )
                     val merged = sentencePair.a.size > 1 || sentencePair.b.size > 1
                     val maxRatio = if (merged) SENTENCE_MAX_MERGED_LENGTH_RATIO else SENTENCE_MAX_LENGTH_RATIO
                     if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > maxRatio) continue
@@ -188,7 +232,9 @@ object TranslationAligner {
                         zhParagraph = zhParagraph,
                         enSentence = "",
                         zhSentence = "",
-                        confidence = confidenceOf(enSpans, paragraphPair.a, zhSpans, paragraphPair.b)
+                        confidence = confidenceOf(
+                            enSpans, paragraphPair.a, zhSpans, paragraphPair.b, scales.paragraph
+                        )
                     )
                 } else {
                     result += emitted
@@ -198,7 +244,9 @@ object TranslationAligner {
                 // 段落文本对不上（标题、诗行这类不以句末标点结尾的段落连句子也切不出来）。
                 // 为每个成分段落补一条段级条目，让这种点词至少落在正确的中文段落上。
                 if (paragraphPair.a.size > 1) {
-                    val merged = confidenceOf(enSpans, paragraphPair.a, zhSpans, paragraphPair.b)
+                    val merged = confidenceOf(
+                        enSpans, paragraphPair.a, zhSpans, paragraphPair.b, scales.paragraph
+                    )
                     for (index in paragraphPair.a) {
                         val constituent = enParagraphs[index]
                         if (constituent.isBlank()) continue
@@ -224,7 +272,8 @@ object TranslationAligner {
                 enSpans = enSpans,
                 zhSpans = zhSpans,
                 zhForEn = zhForEn,
-                meaning = meaning
+                meaning = meaning,
+                scales = scales
             )
         }
         return result
@@ -250,7 +299,8 @@ object TranslationAligner {
         enSpans: List<Span>,
         zhSpans: List<Span>,
         zhForEn: Map<Int, Int>,
-        meaning: MeaningIndex?
+        meaning: MeaningIndex?,
+        scales: LengthScales
     ): List<AlignedSentencePair> {
         if (zhForEn.isEmpty()) return emptyList()
         val covered = zhForEn.keys.toIntArray()
@@ -274,12 +324,15 @@ object TranslationAligner {
             if (enSentences.isNotEmpty() && zhSentences.isNotEmpty()) {
                 val enSentenceSpans = enSentences.map { englishSpan(it, meaning) }
                 val zhSentenceSpans = zhSentences.map { chineseSpan(it) }
-                for (sentencePair in alignSpans(enSentenceSpans, zhSentenceSpans, allowMerge = false)) {
+                for (sentencePair in alignSpans(
+                    enSentenceSpans, zhSentenceSpans, allowMerge = false, scale = scales.sentence
+                )) {
                     val cost = pairCost(
                         enSentenceSpans[sentencePair.a[0]],
                         sentencePair.a.getOrNull(1)?.let { enSentenceSpans[it] },
                         zhSentenceSpans[sentencePair.b[0]],
-                        sentencePair.b.getOrNull(1)?.let { zhSentenceSpans[it] }
+                        sentencePair.b.getOrNull(1)?.let { zhSentenceSpans[it] },
+                        scales.sentence
                     )
                     val confidence = ((1.0 - cost) * NEIGHBOUR_CONFIDENCE_SCALE / distance)
                         .coerceIn(0.0, 1.0)
@@ -287,7 +340,9 @@ object TranslationAligner {
                     if (confidence < TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE) continue
                     // V5：兜底句对同样受长度比硬门槛约束（s78/s79 型：71 词英文
                     // 配 13 字中文、置信度 0.35 过了门槛——长度比 0.11 一票否决）。
-                    val ratio = lengthRatioOf(enSentenceSpans, sentencePair.a, zhSentenceSpans, sentencePair.b)
+                    val ratio = lengthRatioOf(
+                        enSentenceSpans, sentencePair.a, zhSentenceSpans, sentencePair.b, scales.sentence
+                    )
                     if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > SENTENCE_MAX_LENGTH_RATIO) continue
                     fallbacks += AlignedSentencePair(
                         enChapter = enChapter,
@@ -301,7 +356,7 @@ object TranslationAligner {
                 }
             }
 
-            val base = 1.0 - pairCost(enSpans[index], null, zhSpans[zhIndex], null)
+            val base = 1.0 - pairCost(enSpans[index], null, zhSpans[zhIndex], null, scales.paragraph)
             val confidence = (base * NEIGHBOUR_CONFIDENCE_SCALE / distance)
                 .coerceIn(0.0, 1.0)
                 .toFloat()
@@ -413,14 +468,70 @@ object TranslationAligner {
 
     private fun alignChapters(
         en: List<List<Span>>,
-        zh: List<List<Span>>
+        zh: List<List<Span>>,
+        scale: Double
     ): List<Pair<Int, Int>> {
         if (en.size == zh.size) return en.indices.map { it to it }
         val enSpans = en.map { foldSpans(it) }
         val zhSpans = zh.map { foldSpans(it) }
         // 直接用 DP 给出的下标。不要拿文本去 indexOf 回查：两章正文完全相同
         // （或都为空）时会全部映射到第一处，导致整章错配。
-        return alignSpans(enSpans, zhSpans, allowMerge = false).map { it.a[0] to it.b[0] }
+        return alignSpans(enSpans, zhSpans, allowMerge = false, scale = scale).map { it.a[0] to it.b[0] }
+    }
+
+    /** 整本字/词密度（不依赖章配对）；拿不到时退回全局常量。 */
+    private fun bookParagraphScale(en: List<List<Span>>, zh: List<List<Span>>): Double {
+        var enWords = 0
+        for (chapter in en) for (span in chapter) enWords += span.words
+        var zhChars = 0
+        for (chapter in zh) for (span in chapter) zhChars += span.chars
+        if (enWords < MIN_ADAPTIVE_WORDS || zhChars == 0) return ZH_CHARS_PER_EN_WORD
+        return clampScale(zhChars.toDouble() / enWords)
+    }
+
+    /**
+     * 本章的两级密度（V6 核心）：
+     *  - 段级 = 本章中文字符数 / 英文词数；
+     *  - 句级 = 平均中文句长 / 平均英文句长（用与 DP 相同的分句规则计数）。
+     * 空章/空白章退回整本密度；两者都钳制到 [MIN_ADAPTIVE_SCALE, MAX_ADAPTIVE_SCALE]。
+     */
+    private fun chapterScales(
+        enParagraphs: List<String>,
+        zhParagraphs: List<String>,
+        enSpans: List<Span>,
+        zhSpans: List<Span>,
+        bookScale: Double
+    ): LengthScales {
+        var enWords = 0
+        for (span in enSpans) enWords += span.words
+        var zhChars = 0
+        for (span in zhSpans) zhChars += span.chars
+        if (enWords < MIN_ADAPTIVE_WORDS || zhChars == 0) return LengthScales(bookScale, bookScale)
+        val paragraph = clampScale(zhChars.toDouble() / enWords)
+
+        val enSentences = countSentencesApprox(enParagraphs, EN_SENTENCE_ENDS)
+        val zhSentences = countSentencesApprox(zhParagraphs, ZH_SENTENCE_ENDS)
+        if (enSentences == 0 || zhSentences == 0) return LengthScales(paragraph, paragraph)
+        val sentence = clampScale(
+            (zhChars.toDouble() / zhSentences) / (enWords.toDouble() / enSentences)
+        )
+        return LengthScales(paragraph, sentence)
+    }
+
+    private fun clampScale(value: Double): Double =
+        value.coerceIn(MIN_ADAPTIVE_SCALE, MAX_ADAPTIVE_SCALE)
+
+    /**
+     * 章内句数的**近似**计数：只数终止符游程，不真的分句。
+     *
+     * 句级密度 μ_zh/μ_en 只需要一个比例；近似计数与精确分句的差异（缩写句点、
+     * 引号残片、省略号）在两侧同量级，泛化集实测指标与精确计数持平或略好，
+     * 而省掉了「整体先分句一遍、DP 里再分一遍」的双倍开销（基准 514→1408ms 的那部分）。
+     */
+    private fun countSentencesApprox(texts: List<String>, pattern: Regex): Int {
+        var total = 0
+        for (text in texts) total += pattern.findAll(text).count().coerceAtLeast(1)
+        return total
     }
 
     // --- 通用单调序列对齐 ----------------------------------------------------
@@ -441,7 +552,8 @@ object TranslationAligner {
         a: List<Span>,
         b: List<Span>,
         allowMerge: Boolean,
-        mergeGate: ((Span, Span?, Span, Span?) -> Boolean)? = null
+        mergeGate: ((Span, Span?, Span, Span?) -> Boolean)? = null,
+        scale: Double
     ): List<SpanPair> {
         if (a.isEmpty() || b.isEmpty()) return emptyList()
         val n = a.size
@@ -475,7 +587,7 @@ object TranslationAligner {
                     }
                 }
                 if (i > 0 && j > 0 && prev1[j - 1] < Double.POSITIVE_INFINITY) {
-                    val cost = prev1[j - 1] + pairCost(a[i - 1], null, b[j - 1], null)
+                    val cost = prev1[j - 1] + pairCost(a[i - 1], null, b[j - 1], null, scale)
                     if (cost < best) {
                         best = cost
                         move = MOVE_ONE_ONE
@@ -485,7 +597,7 @@ object TranslationAligner {
                     if (i > 1 && j > 0 && prev2[j - 1] < Double.POSITIVE_INFINITY &&
                         (mergeGate == null || mergeGate(a[i - 2], a[i - 1], b[j - 1], null))
                     ) {
-                        val cost = prev2[j - 1] + pairCost(a[i - 2], a[i - 1], b[j - 1], null)
+                        val cost = prev2[j - 1] + pairCost(a[i - 2], a[i - 1], b[j - 1], null, scale)
                         if (cost < best) {
                             best = cost
                             move = MOVE_TWO_ONE
@@ -494,7 +606,7 @@ object TranslationAligner {
                     if (i > 0 && j > 1 && prev1[j - 2] < Double.POSITIVE_INFINITY &&
                         (mergeGate == null || mergeGate(a[i - 1], null, b[j - 2], b[j - 1]))
                     ) {
-                        val cost = prev1[j - 2] + pairCost(a[i - 1], null, b[j - 2], b[j - 1])
+                        val cost = prev1[j - 2] + pairCost(a[i - 1], null, b[j - 2], b[j - 1], scale)
                         if (cost < best) {
                             best = cost
                             move = MOVE_ONE_TWO
@@ -588,23 +700,29 @@ object TranslationAligner {
      * 尺寸保护、合并须比局部最优 1:1 便宜 [SENTENCE_MERGE_MARGIN] 以上。
      * 全部是 O(1) 哈希查表与算术，守住性能护栏。
      */
-    private fun sentenceMergeAllowed(en1: Span, en2: Span?, zh1: Span, zh2: Span?): Boolean {
+    private fun sentenceMergeAllowed(
+        en1: Span,
+        en2: Span?,
+        zh1: Span,
+        zh2: Span?,
+        scale: Double
+    ): Boolean {
         for (en in listOfNotNull(en1, en2)) {
             if (en.words < SENTENCE_MERGE_MIN_EN_WORDS) return false
         }
         for (zh in listOfNotNull(zh1, zh2)) {
             if (zh.chars < SENTENCE_MERGE_MIN_ZH_CHARS) return false
         }
-        val merged = pairCost(en1, en2, zh1, zh2)
+        val merged = pairCost(en1, en2, zh1, zh2, scale)
         val local = if (en2 == null) {
             minOf(
-                pairCost(en1, null, zh1, null),
-                pairCost(en1, null, zh2!!, null)
+                pairCost(en1, null, zh1, null, scale),
+                pairCost(en1, null, zh2!!, null, scale)
             )
         } else {
             minOf(
-                pairCost(en1, null, zh1, null),
-                pairCost(en2, null, zh1, null)
+                pairCost(en1, null, zh1, null, scale),
+                pairCost(en2, null, zh1, null, scale)
             )
         }
         if (merged <= local - SENTENCE_MERGE_MARGIN) {
@@ -614,12 +732,12 @@ object TranslationAligner {
             // 解释长度关系（残或超）时放行——引文整句对多条短英文句是唯一形态。
             val enWords = en1.words + (en2?.words ?: 0)
             val zhChars = zh1.chars + (zh2?.chars ?: 0)
-            val mergedRatio = if (enWords == 0) 0.0 else zhChars / (enWords * ZH_CHARS_PER_EN_WORD)
+            val mergedRatio = if (enWords == 0) 0.0 else zhChars / (enWords * scale)
             if (mergedRatio in SENTENCE_MIN_LENGTH_RATIO..SENTENCE_MAX_MERGED_LENGTH_RATIO) {
                 val localRatio = if (en2 == null) {
-                    maxOf(ratioOf(en1.words, zh1.chars), ratioOf(en1.words, zh2!!.chars))
+                    maxOf(ratioOf(en1.words, zh1.chars, scale), ratioOf(en1.words, zh2!!.chars, scale))
                 } else {
-                    maxOf(ratioOf(en1.words, zh1.chars), ratioOf(en2.words, zh1.chars))
+                    maxOf(ratioOf(en1.words, zh1.chars, scale), ratioOf(en2.words, zh1.chars, scale))
                 }
                 return localRatio !in SENTENCE_MIN_LENGTH_RATIO..SENTENCE_MAX_LENGTH_RATIO
             }
@@ -627,16 +745,16 @@ object TranslationAligner {
         return false
     }
 
-    private fun ratioOf(enWords: Int, zhChars: Int): Double =
-        if (enWords == 0) 0.0 else zhChars / (enWords * ZH_CHARS_PER_EN_WORD)
+    private fun ratioOf(enWords: Int, zhChars: Int, scale: Double): Double =
+        if (enWords == 0) 0.0 else zhChars / (enWords * scale)
 
     // --- 代价与置信度（只做算术与哈希查表） ----------------------------------
 
-    /** 长度比偏差（0..1）：英文词数 vs 中文有效字符数，按 1.7 字符/词归一。 */
-    private fun lengthCost(enWords: Int, zhChars: Int): Double {
+    /** 长度比偏差（0..1）：英文词数 vs 中文有效字符数，按 [scale]（字符/词）归一。 */
+    private fun lengthCost(enWords: Int, zhChars: Int, scale: Double): Double {
         val ew = enWords.coerceAtLeast(1)
         val zc = zhChars.coerceAtLeast(1)
-        val zcNorm = zc / ZH_CHARS_PER_EN_WORD
+        val zcNorm = zc / scale
         val diff = abs(ew - zcNorm)
         return diff / (ew + zcNorm + 1.0)
     }
@@ -669,10 +787,10 @@ object TranslationAligner {
         return (hits.toDouble() / total) * 0.5
     }
 
-    private fun pairCost(en1: Span, en2: Span?, zh1: Span, zh2: Span?): Double {
+    private fun pairCost(en1: Span, en2: Span?, zh1: Span, zh2: Span?, scale: Double): Double {
         val enWords = en1.words + (en2?.words ?: 0)
         val zhChars = zh1.chars + (zh2?.chars ?: 0)
-        return lengthCost(enWords, zhChars) -
+        return lengthCost(enWords, zhChars, scale) -
             anchorBonus(en1.anchors, en2?.anchors, zh1.latin, zh2?.latin) -
             meaningBonus(en1.meaning, en2?.meaning, zh1.meaning, zh2?.meaning)
     }
@@ -702,26 +820,29 @@ object TranslationAligner {
         enSpans: List<Span>,
         a: IntArray,
         zhSpans: List<Span>,
-        b: IntArray
+        b: IntArray,
+        scale: Double
     ): Double {
         var enWords = 0
         for (i in a) enWords += enSpans[i].words
         var zhChars = 0
         for (j in b) zhChars += zhSpans[j].chars
-        return if (enWords == 0) 0.0 else zhChars / (enWords * ZH_CHARS_PER_EN_WORD)
+        return if (enWords == 0) 0.0 else zhChars / (enWords * scale)
     }
 
     private fun confidenceOf(
         enSpans: List<Span>,
         enIndices: IntArray,
         zhSpans: List<Span>,
-        zhIndices: IntArray
+        zhIndices: IntArray,
+        scale: Double
     ): Float {
         val cost = pairCost(
             enSpans[enIndices[0]],
             enIndices.getOrNull(1)?.let { enSpans[it] },
             zhSpans[zhIndices[0]],
-            zhIndices.getOrNull(1)?.let { zhSpans[it] }
+            zhIndices.getOrNull(1)?.let { zhSpans[it] },
+            scale
         )
         val confidence = (1.0 - cost).coerceIn(0.0, 1.0)
         return confidence.toFloat().coerceIn(MIN_CONFIDENCE, 1f)

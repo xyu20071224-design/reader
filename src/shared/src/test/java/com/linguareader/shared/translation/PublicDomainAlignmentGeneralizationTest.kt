@@ -31,16 +31,16 @@ class PublicDomainAlignmentGeneralizationTest {
     private val books = listOf("John", "Genesis", "Proverbs")
 
     /**
-     * 各书的节级指标下限（2026-09-08 实测值留约 5 个点余量）。
+     * 各书的节级指标下限（**V6 自适应长度归一化**后实测值留约 5 个点余量）。
      *
-     * **圣经不是「应该全对」的语料**：和合本用词远比现代译本紧凑，长度比
-     * （zh 字 / en 词 × 1.7）系统性偏低，DP 会为凑长度而整节错位——实测 John
-     * 有 35% 的句对跨节，其中多数只差 1 节。所以这里量两条：`exact`（同节）与
-     * `within1`（同节或相邻节），后者才是「结构没崩」的判据。
+     * 2026-09-08 V5（全局 1.7）实测只有 John 0.649 / Genesis 0.599 / Proverbs 0.465——
+     * 和合本用词远比现代译本紧凑，单一常量把 DP 拽向更长的中文节，整节漂移（Δ±1 为主）。
+     * V6 改成两级自适应密度（段级=章字/词、句级=平均句长比）后升到 0.86 / 0.85 / 0.77，
+     * 覆盖率 0.78 / 0.74 / 0.73。下限按 V6 值设，**掉回 V5 水平即红**。
      */
-    private val minimumExact = mapOf("John" to 0.60, "Genesis" to 0.55, "Proverbs" to 0.42)
-    private val minimumWithin1 = mapOf("John" to 0.80, "Genesis" to 0.77, "Proverbs" to 0.72)
-    private val minimumCoverage = mapOf("John" to 0.47, "Genesis" to 0.36, "Proverbs" to 0.23)
+    private val minimumExact = mapOf("John" to 0.81, "Genesis" to 0.79, "Proverbs" to 0.72)
+    private val minimumWithin1 = mapOf("John" to 0.91, "Genesis" to 0.91, "Proverbs" to 0.89)
+    private val minimumCoverage = mapOf("John" to 0.73, "Genesis" to 0.69, "Proverbs" to 0.68)
 
     @Test
     fun alignsPublicDomainParallelBooks() {

@@ -86,7 +86,7 @@ class TranslationJudgmentCardTool {
         } else {
             val thin = scores.values.count { !it.scoreable }
             println(
-                "[cards] 已按语义代理 Wilson 下界升序排列（最低 %.2f，最高 %.2f；越低越可疑，证据不足 %d 条排末尾）".format(
+                "[cards] 已按语义代理命中率升序排列（最低 %.2f，最高 %.2f；越低越可疑，证据不足 %d 条排末尾）".format(
                     scores.getValue(ordered.first().getString("id")).rank,
                     scores.getValue(ordered.last().getString("id")).rank,
                     thin
