@@ -14,7 +14,7 @@
 
 | 项 | 证据 |
 | --- | --- |
-| 真机（Windows 侧已连接设备 `ZXJRNJVWY9C6BYDA`） | `assembleDebug -PverifyBuild` 出并存包并安装；UI 自动化走完「填 Key → 编辑卡保存 → 杀进程重开」，服务商与开关状态仍在 → 卡内保存确已落盘 |
+| 真机（Windows 侧已连接设备 `ZXJRNJVWY9C6BYDA`） | `assembleDebug -PverifyBuild` 出并存包并安装；UI 自动化走完「填 Key → 编辑卡保存 → 杀进程重开」，服务商与开关状态仍在 → 卡内保存确已落盘；用户随后实测确认「可以了」 |
 | Windows 单测 | `ModelDiscoveryTest` 8 例、`AiSettingsStoreMigrationTest` 4 例、`AiProviderPresetsTest` 2 例全 0 失败；`:shared:test` BUILD SUCCESSFUL（前台 gradlew，32s） |
 | Linux 复验（本次） | `./toolchain/build.sh testDebugUnitTest :shared:test` → `:app` 44 个结果 XML **354 用例 0 失败 0 错误**、`:shared` 29 个 XML **230 用例 0 失败 0 错误 1 跳过** |
 | 残留检查 | `grep -rn "deepseek-chat" --include=*.kt --include=*.kts --include=*.xml src/` 为空 |
