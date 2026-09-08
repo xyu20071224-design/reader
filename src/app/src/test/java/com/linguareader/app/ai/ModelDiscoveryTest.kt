@@ -13,14 +13,14 @@ class ModelDiscoveryTest {
         val body = JSONObject(
             """
             {"object":"list","data":[
-                {"id":"deepseek-chat","object":"model","owned_by":"deepseek"},
+                {"id":"deepseek-v4-flash","object":"model","owned_by":"deepseek"},
                 {"id":"deepseek-reasoner","name":"DeepSeek Reasoner",
                  "context_window":128000,"max_output_tokens":8192}
             ]}
             """.trimIndent()
         )
         val models = parseModelListing(body)
-        assertEquals(listOf("deepseek-chat", "deepseek-reasoner"), models.map { it.id })
+        assertEquals(listOf("deepseek-v4-flash", "deepseek-reasoner"), models.map { it.id })
         assertNull(models[0].contextWindow)
         val reasoner = models[1]
         assertEquals("DeepSeek Reasoner", reasoner.name)

@@ -27,8 +27,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.AndroidUiDispatcher
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.compositionContext
+import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.linguareader.app.data.ReaderTheme
@@ -45,11 +48,24 @@ class MainActivity : ComponentActivity() {
             setTheme(R.style.Theme_LinguaReader_Dark)
         }
         super.onCreate(savedInstanceState)
+        // 交互动画速度：Compose 自带的动画缩放只跟随系统设置，这里换成「系统 × 档位」的实现。
+        // 做法等价于 Compose 内部的 createAndInstallWindowRecomposer（那个是 internal API）：
+        // 自建 lifecycle-aware Recomposer，再挂到窗口根视图的 compositionContext 上——这样
+        // activity-compose 的 setContent 以及弹层/弹窗都会复用它，而不是各自新建默认缩放的。
+        // 必须在任何 ComposeView 建树之前完成，否则界面会先用上 Compose 自带的那一份。
+        val animRecomposer = window.decorView.createLifecycleAwareWindowRecomposer(
+            AndroidUiDispatcher.CurrentThread + appUiAnimDurationScale,
+            lifecycle
+        )
+        window.decorView.compositionContext = animRecomposer
+        applyUiAnimSpeed(this, storedUiAnimSpeed(this))
         setContent {
             val context = LocalContext.current
             // 外壳配色跟随正文阅读主题（「夜间」→ 整个界面变暗），
             // 用户还没设过阅读主题时跟随系统深色设置。
             var readerTheme by remember { mutableStateOf(storedReaderTheme(context)) }
+            // 交互动画速度：进 App 时读缓存，书架外观弹层里可改，改完立刻作用于全局动画。
+            var uiAnimSpeed by remember { mutableStateOf(storedUiAnimSpeed(context)) }
             val palette = paletteFor(readerTheme, isSystemInDarkTheme())
             ApplySystemBars(palette)
             val snackbar = rememberAppSnackbar()
@@ -63,11 +79,23 @@ class MainActivity : ComponentActivity() {
                 ) {
                     LinguaReaderApp(
                         viewModel = viewModel,
-                        onReaderThemeChanged = { readerTheme = it }
+                        onReaderThemeChanged = { readerTheme = it },
+                        uiAnimSpeed = uiAnimSpeed,
+                        onAnimSpeedChange = {
+                            uiAnimSpeed = it
+                            saveUiAnimSpeed(context, it)
+                            applyUiAnimSpeed(context, it)
+                        }
                     )
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 系统动画缩放（开发者选项 / 无障碍「移除动画」）可能在后台被改过，回前台重算一次。
+        applyUiAnimSpeed(this, storedUiAnimSpeed(this))
     }
 
     private fun isSystemNightMode(): Boolean =
@@ -104,7 +132,9 @@ private fun ApplySystemBars(palette: LinguaPalette) {
 @Composable
 private fun LinguaReaderApp(
     viewModel: AppViewModel,
-    onReaderThemeChanged: (ReaderTheme) -> Unit
+    onReaderThemeChanged: (ReaderTheme) -> Unit,
+    uiAnimSpeed: UiAnimSpeed,
+    onAnimSpeedChange: (UiAnimSpeed) -> Unit
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val currentBook = state.currentBook
@@ -164,7 +194,9 @@ private fun LinguaReaderApp(
                 onAutoCheckChange = viewModel::setAutoCheck,
                 onDownloadUpdate = viewModel::downloadUpdate,
                 onCancelUpdateDownload = viewModel::cancelUpdateDownload,
-                onDismissMessage = viewModel::clearMessage
+                onDismissMessage = viewModel::clearMessage,
+                uiAnimSpeed = uiAnimSpeed,
+                onAnimSpeedChange = onAnimSpeedChange
             )
         } else {
             ReaderScreen(

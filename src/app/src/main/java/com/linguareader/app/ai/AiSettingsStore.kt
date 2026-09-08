@@ -15,9 +15,9 @@ class AiSettingsStore(context: Context) {
         val baseUrl = prefs.getString("base_url", DEFAULT_BASE_URL)
             .orEmpty()
             .ifBlank { DEFAULT_BASE_URL }
-        val model = prefs.getString("model", "deepseek-chat")
+        val model = prefs.getString("model", "deepseek-v4-flash")
             .orEmpty()
-            .ifBlank { "deepseek-chat" }
+            .ifBlank { "deepseek-v4-flash" }
         val providers = prefs.getString(PROVIDERS_KEY, null)
             ?.let(::decodeProviders)
             .orEmpty()
@@ -62,7 +62,7 @@ class AiSettingsStore(context: Context) {
             .putBoolean("enabled", mirrored.enabled)
             .putString("api_key", encryptOrNull(mirrored.apiKey))
             .putString("base_url", mirrored.baseUrl.trim().ifBlank { DEFAULT_BASE_URL })
-            .putString("model", mirrored.model.trim().ifBlank { "deepseek-chat" })
+            .putString("model", mirrored.model.trim().ifBlank { "deepseek-v4-flash" })
             .putBoolean("power_enabled", mirrored.powerEnabled)
             .putString(PROVIDERS_KEY, encodeProviders(mirrored.providers))
             .putString(ACTIVE_KEY, mirrored.activeProviderId)

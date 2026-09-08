@@ -1,0 +1,1239 @@
+{
+  "formatVersion": 1,
+  "description": "六轮人工判定台账(2026-09-02~03,魔戒首部曲 100 样本集)。不含书文;全量 fixture(含 en 原文与批准展示)在 artifacts\/alignment-eval\/golden-samples.json,因版权不入库。",
+  "verdictVocabulary": "ok=对 \/ ok2=勉强对(粒度跳或残缺) \/ bad=错 \/ skip=跳过",
+  "samples": [
+    {
+      "id": "s1",
+      "stratum": "S1-句级高置信",
+      "chapter": 30,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s2",
+      "stratum": "S1-句级高置信",
+      "chapter": 26,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s3",
+      "stratum": "S1-句级高置信",
+      "chapter": 21,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s4",
+      "stratum": "S1-句级高置信",
+      "chapter": 30,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s5",
+      "stratum": "S1-句级高置信",
+      "chapter": 16,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "ok2",
+        "r3": "ok2"
+      }
+    },
+    {
+      "id": "s6",
+      "stratum": "S1-句级高置信",
+      "chapter": 30,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "ok2",
+        "r3": "ok2",
+        "r4": "bad",
+        "r5": "ok2"
+      }
+    },
+    {
+      "id": "s7",
+      "stratum": "S1-句级高置信",
+      "chapter": 31,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s8",
+      "stratum": "S1-句级高置信",
+      "chapter": 12,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s9",
+      "stratum": "S1-句级高置信",
+      "chapter": 12,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s10",
+      "stratum": "S1-句级高置信",
+      "chapter": 28,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s11",
+      "stratum": "S1-句级高置信",
+      "chapter": 15,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s12",
+      "stratum": "S1-句级高置信",
+      "chapter": 26,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s13",
+      "stratum": "S1-句级高置信",
+      "chapter": 22,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s14",
+      "stratum": "S1-句级高置信",
+      "chapter": 32,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s15",
+      "stratum": "S1-句级高置信",
+      "chapter": 26,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s16",
+      "stratum": "S1-句级高置信",
+      "chapter": 12,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s17",
+      "stratum": "S1-句级高置信",
+      "chapter": 31,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s18",
+      "stratum": "S1-句级高置信",
+      "chapter": 31,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s19",
+      "stratum": "S2-句级中置信",
+      "chapter": 13,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s20",
+      "stratum": "S2-句级中置信",
+      "chapter": 16,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s21",
+      "stratum": "S2-句级中置信",
+      "chapter": 12,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s22",
+      "stratum": "S2-句级中置信",
+      "chapter": 30,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok",
+        "r4": "ok2",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s23",
+      "stratum": "S2-句级中置信",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s24",
+      "stratum": "S2-句级中置信",
+      "chapter": 13,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "ok2",
+        "r3": "ok2"
+      }
+    },
+    {
+      "id": "s25",
+      "stratum": "S2-句级中置信",
+      "chapter": 22,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok2",
+        "r3": "ok2",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s26",
+      "stratum": "S2-句级中置信",
+      "chapter": 12,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s27",
+      "stratum": "S2-句级中置信",
+      "chapter": 13,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s28",
+      "stratum": "S2-句级中置信",
+      "chapter": 25,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "ok2",
+        "r3": "ok2"
+      }
+    },
+    {
+      "id": "s29",
+      "stratum": "S2-句级中置信",
+      "chapter": 25,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s30",
+      "stratum": "S2-句级中置信",
+      "chapter": 19,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s31",
+      "stratum": "S2-句级中置信",
+      "chapter": 14,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s32",
+      "stratum": "S2-句级中置信",
+      "chapter": 16,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s33",
+      "stratum": "S3-句级低置信",
+      "chapter": 27,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s34",
+      "stratum": "S3-句级低置信",
+      "chapter": 25,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s35",
+      "stratum": "S3-句级低置信",
+      "chapter": 33,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s36",
+      "stratum": "S3-句级低置信",
+      "chapter": 15,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s37",
+      "stratum": "S3-句级低置信",
+      "chapter": 12,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s38",
+      "stratum": "S3-句级低置信",
+      "chapter": 26,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s39",
+      "stratum": "S3-句级低置信",
+      "chapter": 30,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s40",
+      "stratum": "S3-句级低置信",
+      "chapter": 31,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s41",
+      "stratum": "S3-句级低置信",
+      "chapter": 32,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s42",
+      "stratum": "S3-句级低置信",
+      "chapter": 27,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s43",
+      "stratum": "S3-句级低置信",
+      "chapter": 14,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok2",
+        "r3": "ok2",
+        "r4": "bad",
+        "r5": "ok2"
+      }
+    },
+    {
+      "id": "s44",
+      "stratum": "S3-句级低置信",
+      "chapter": 21,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok2",
+        "r3": "ok2"
+      }
+    },
+    {
+      "id": "s45",
+      "stratum": "S3-句级低置信",
+      "chapter": 12,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s46",
+      "stratum": "S3-句级低置信",
+      "chapter": 27,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s47",
+      "stratum": "S4-长度比异常",
+      "chapter": 32,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s48",
+      "stratum": "S4-长度比异常",
+      "chapter": 16,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s49",
+      "stratum": "S4-长度比异常",
+      "chapter": 28,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s50",
+      "stratum": "S4-长度比异常",
+      "chapter": 16,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s51",
+      "stratum": "S4-长度比异常",
+      "chapter": 20,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s52",
+      "stratum": "S4-长度比异常",
+      "chapter": 15,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s53",
+      "stratum": "S4-长度比异常",
+      "chapter": 25,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s54",
+      "stratum": "S4-长度比异常",
+      "chapter": 27,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s55",
+      "stratum": "S4-长度比异常",
+      "chapter": 20,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s56",
+      "stratum": "S4-长度比异常",
+      "chapter": 21,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s57",
+      "stratum": "S4-长度比异常",
+      "chapter": 19,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s58",
+      "stratum": "S4-长度比异常",
+      "chapter": 25,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s59",
+      "stratum": "S4-长度比异常",
+      "chapter": 23,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s60",
+      "stratum": "S4-长度比异常",
+      "chapter": 14,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s61",
+      "stratum": "S4-长度比异常",
+      "chapter": 26,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s62",
+      "stratum": "P1-段级合并成分",
+      "chapter": 20,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok",
+        "r4": "bad",
+        "r5": "ok2"
+      }
+    },
+    {
+      "id": "s63",
+      "stratum": "P1-段级合并成分",
+      "chapter": 26,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "ok2",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s64",
+      "stratum": "P1-段级合并成分",
+      "chapter": 14,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s65",
+      "stratum": "P1-段级合并成分",
+      "chapter": 25,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s66",
+      "stratum": "P1-段级合并成分",
+      "chapter": 21,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r3": "ok",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s67",
+      "stratum": "P1-段级合并成分",
+      "chapter": 17,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "ok2",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s68",
+      "stratum": "P1-段级合并成分",
+      "chapter": 21,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "ok",
+        "r3": "ok",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s69",
+      "stratum": "P1-段级合并成分",
+      "chapter": 27,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok2",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s70",
+      "stratum": "P1-段级合并成分",
+      "chapter": 26,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s71",
+      "stratum": "P1-段级合并成分",
+      "chapter": 14,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s72",
+      "stratum": "P1-段级合并成分",
+      "chapter": 13,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "bad",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s73",
+      "stratum": "P1-段级合并成分",
+      "chapter": 21,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s74",
+      "stratum": "P1-段级合并成分",
+      "chapter": 30,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok2",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s75",
+      "stratum": "P1-段级合并成分",
+      "chapter": 20,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "ok",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok2"
+      }
+    },
+    {
+      "id": "s76",
+      "stratum": "P1-段级合并成分",
+      "chapter": 26,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s77",
+      "stratum": "P1-段级合并成分",
+      "chapter": 25,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "bad",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s78",
+      "stratum": "P2-段级邻近兜底",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s79",
+      "stratum": "P2-段级邻近兜底",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s80",
+      "stratum": "P2-段级邻近兜底",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s81",
+      "stratum": "P2-段级邻近兜底",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s82",
+      "stratum": "P3-段级整段降级",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s83",
+      "stratum": "P3-段级整段降级",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad",
+        "r4": "bad",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s84",
+      "stratum": "P3-段级整段降级",
+      "chapter": 5,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s85",
+      "stratum": "P3-段级整段降级",
+      "chapter": 5,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r3": "bad"
+      }
+    },
+    {
+      "id": "s86",
+      "stratum": "U-正文漏配",
+      "chapter": 34,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok"
+      }
+    },
+    {
+      "id": "s87",
+      "stratum": "U-正文漏配",
+      "chapter": 29,
+      "verdict": "bad",
+      "garbage": true,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s88",
+      "stratum": "U-正文漏配",
+      "chapter": 21,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s89",
+      "stratum": "U-正文漏配",
+      "chapter": 21,
+      "verdict": "bad",
+      "garbage": true,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s90",
+      "stratum": "U-正文漏配",
+      "chapter": 29,
+      "verdict": "bad",
+      "garbage": true,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s91",
+      "stratum": "U-正文漏配",
+      "chapter": 16,
+      "verdict": "ok2",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok2",
+        "r3": "ok2"
+      }
+    },
+    {
+      "id": "s92",
+      "stratum": "U-正文漏配",
+      "chapter": 29,
+      "verdict": "bad",
+      "garbage": true,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s93",
+      "stratum": "U-正文漏配",
+      "chapter": 21,
+      "verdict": "bad",
+      "garbage": true,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "ok",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s94",
+      "stratum": "U-正文漏配",
+      "chapter": 27,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "ok",
+        "r3": "ok"
+      }
+    },
+    {
+      "id": "s95",
+      "stratum": "U-非正文无对照",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s96",
+      "stratum": "U-非正文无对照",
+      "chapter": 11,
+      "verdict": "ok",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad",
+        "r5": "ok"
+      }
+    },
+    {
+      "id": "s97",
+      "stratum": "U-非正文无对照",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s98",
+      "stratum": "U-非正文无对照",
+      "chapter": 37,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r5": "bad"
+      }
+    },
+    {
+      "id": "s99",
+      "stratum": "U-非正文无对照",
+      "chapter": 38,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    },
+    {
+      "id": "s100",
+      "stratum": "U-非正文无对照",
+      "chapter": 6,
+      "verdict": "bad",
+      "garbage": false,
+      "history": {
+        "r1": "bad",
+        "r2": "bad",
+        "r3": "bad",
+        "r4": "bad"
+      }
+    }
+  ]
+}

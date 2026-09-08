@@ -168,7 +168,9 @@ internal fun BookshelfScreen(
     onAutoCheckChange: (Boolean) -> Unit,
     onDownloadUpdate: () -> Unit,
     onCancelUpdateDownload: () -> Unit,
-    onDismissMessage: () -> Unit
+    onDismissMessage: () -> Unit,
+    uiAnimSpeed: UiAnimSpeed,
+    onAnimSpeedChange: (UiAnimSpeed) -> Unit
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         if (it != null) onImport(it)
@@ -439,6 +441,8 @@ internal fun BookshelfScreen(
                 shelfAppearance = next
                 ShelfAppearance.save(context, next)
             },
+            animSpeed = uiAnimSpeed,
+            onAnimSpeedChange = onAnimSpeedChange,
             onDismiss = { showAppearanceSheet = false }
         )
     }

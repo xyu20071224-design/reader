@@ -1,3 +1,94 @@
+## 2026-09-08 译本对齐：金标准回归集落地 + 评估工具链入库（Windows 会话第一步）
+
+**来源**：Windows 机会话（`session-5067d167`）针对「译本对齐效果没有自动化评估」给出五条建议，用户批准先做第一步（金标准 fixture + golden replay + 工具入库）。该会话已写完 fixture 生成工具，跑测试时先撞上另一会话 `UiAnimSpeed` 的编译错误、随后 API 429 中断。本次在 Linux 侧补齐、跑通全链路并建立首次基线。
+
+**产出**（权威说明在 `src/tools/alignment-eval/README.md`）：
+
+- `src/tools/alignment-eval/verdict-history.json` — 六轮人工判定台账（100 样本：id / 分层 / 章节 / 最终判定 / 逐轮判定史，**不含书文**）入库；判定是已花掉的人工成本，丢了不可再生。
+- `TranslationGoldenFixtureTool.kt` — 把散在 HTML / CSV / txt / 探针脚本里的六轮判定整理成 fixture。合并口径 = `alignment-eval6.csv` 的 `verdict4` → 第 5 轮覆盖；独立重建链 r1→r2→r3 对账差异 0，en 不同源 1 处（s82 的 `&amp;`，以 HTML 原文为准）。
+- `TranslationGoldenReplayTest.kt` — **生产路径重放**：app 格式书 → `TtsTextExtractor` 叶级段落 → `TranslationAligner.align` + 真 `EcdictMeaningIndex` → `TranslationMemoryIndex.lookup`。`ok/ok2` 的展示必须与 `approved` 逐字一致；`bad/skip` 只报告变化；纯标点垃圾样本排除。bless 走 `artifacts/alignment-eval/bless.flag` 文件标志（Gradle 的 `-D` 不会转发给测试 JVM）。
+- `EvalCsv.kt` — 两个工具共用的 utf-8-sig CSV 解析。
+
+**首次基线（bless，本机 PC / Robolectric）**：整本对齐 **11,017 句对（句级 10,323），18.5s**；批准 94 条（100 − 5 垃圾 − 1 未定位的 bad 样本 s22）；契约样本 65 条全绿。与 `alignment-eval6.csv` 的 09-03 V5 展示对账 **81/94 一致**，13 处差异已逐条归因：3 处旧评估工具伪影（spine 章表与 app 章表错桶、`&amp;` 未反转义），10 处局部句级↔段级落盘差异——其中 s57/s62/s69/s71/s74 五条是 `ok2`，当年判定看的是旧展示，**未按当前展示重判**，下一轮人工判定优先看这批。
+
+**顺带订正记忆**：`.agents/memory/translation-alignment-module.md` 原记「段落兜底内两级段内句级找回（2026-09-06 加入）」——该功能已在 `f721f4e` 整笔回退，记忆没同步；已订正为「当前 L5 无找回，段级命中只出整段译文」。
+
+**顺带修复性能护栏**：`artifacts/alignment-package/` 在多次搬迁中丢失，`TranslationAlignerBenchmarkTest` 一直静默跳过——「DP 内层又去扫描文本」的耗时退化此前**没有护栏**。本次给它加解包目录回退（`artifacts/lotr-book` + `artifacts/lotr-zh`），基准恢复运行：英 45 / 中 29 章、**11,106 句对、514ms**、点词命中率 96.9%（历史值 97.2%），`pairs > 10_000` 与 `< 3s` 两条断言都成立。
+
+| 项 | 证据 |
+| --- | --- |
+| 全量单测 | `./toolchain/build.sh testDebugUnitTest :shared:test` → `src/app/build/test-results/testDebugUnitTest/*.xml` **364 用例 0 失败 0 错误**；`src/shared/build/test-results/test/*.xml` **230 用例 0 失败 0 跳过**（基准已恢复运行） |
+| 台账确定性 | 同一输入连续两次生成，`verdict-history.json` sha256 一致（`dd206e99…`） |
+| 真机 | **未做**——本改动是纯评估/测试基础设施，不触 UI 与运行时行为；下一轮人工判定卡生成工具仍未入库（README 已注明按需再写） |
+
+**遗留**：13 处历史差异中 5 条 `ok2`（s57/s62/s69/s71/s74）尚未按当前展示重新人工判定——金标准基线已按当前生产行为建立，但这 5 条是否仍算「勉强对」需要下一轮人工确认。
+
+## 2026-09-08 交互动画速度设置（舒缓/标准/跟手/关闭）：全局 MotionDurationScale 落地
+
+**来源**：Windows 机会话（`session-6cabe0d6`）的未完成改动——用户要求「点击按钮的过渡动画」可切速度。该会话已定方案（全局 Compose 点击反馈 / 四档位 / 放书架「外观」弹层）并写了代码，但从未编译过，且机制不成立。本次在 Linux 侧重建、纠错、验证。
+
+**关键纠错（原方案对按钮无效）**：原实现用自定义 `Indication` + `LocalIndication` 替换默认涟漪。但 M3 1.3.2 的 `Button` / `IconButton` / 可点击 `Surface` 都直接调 `rippleOrFallbackImplementation()`，**不读 `LocalIndication`**（反汇编 `SurfaceKt$Surface$2`、`IconButtonKt` 确认），`ripple()`/`RippleNode` 也没有时长参数——换 Indication 只能改到 foundation 的 `Modifier.clickable`。改用 Compose 的全局动画缩放：`MotionDurationScale`（`animation-core` 的 `SuspendAnimationKt` 每次 `animateTo` 读 `coroutineContext[MotionDurationScale]`）+ 自建 lifecycle-aware `Recomposer`（公开 API `View.createLifecycleAwareWindowRecomposer` + `View.compositionContext`，等价于 internal 的 `WindowRecomposerPolicy.createAndInstallWindowRecomposer`，因此不碰 internal API）。涟漪、弹层、开关等所有 Compose 动画一起缩放；生效倍率 = 档位 × 系统缩放（系统「移除动画」=0 时任何档位都不会强行开动画）。另有编译错误一并修掉：`DrawModifierNode.draw` 是成员扩展 `fun ContentDrawScope.draw()`，原写法 `fun draw(scope)` 覆盖不了。
+
+**实现**：`UiAnimSpeed.kt`（枚举倍率 2/1/0.5/0 + prefs `reader_preferences/ui_anim_speed` + `systemAnimDurationScale` + 纯函数 `effectiveAnimDurationScale` + 进程级 `appUiAnimDurationScale`）；`MainActivity` 在 `setContent` 前给 decorView 装 Recomposer、`onResume` 重算系统缩放；`ShelfAppearanceSheet` 新增 `UiAnimSpeedSelector`（档位胶囊）；zh/en 各 +5 条文案。
+
+| 项 | 证据 |
+| --- | --- |
+| 编译 | 隔离 worktree（`artifacts/verify-wt`，见下）`assembleDebug` BUILD SUCCESSFUL |
+| 单测 | `testDebugUnitTest` 结果 XML：**362 用例 0 失败 0 错误**（含新增 `UiAnimSpeedTest` 6 例、`UiAnimSpeedStoreTest` 5 例） |
+| 真机 | **未做**——本机 `adb devices` 为空且未装模拟器。四档实际手感、涟漪/弹层缩放观感是否合适，需真机确认 |
+
+**并行会话提醒（已收尾）**：当时工作区有另一会话在并发提交（`dffd62e`…`c728c07`），其未跟踪的 `src/app/src/test/.../translation/TranslationGoldenReplayTest.kt` 一度编译不过（`located` 作用域 bug），会让主工作树的 `testDebugUnitTest` 红；本次验证因此走隔离 worktree，未动该文件。随后对方自行修好并以 `d29ad7d` 提交，**合流后的整树复核为 `:app` 364 用例 + `:shared` 全绿（0 失败 0 错误）**，两条线一起推送（`1ec4aae` + `d29ad7d`）。
+
+## 2026-09-08 AI 中心保存链路修复收尾：模型名统一 + 跑测试铁律落地 + 模板提炼
+
+**背景**：Windows 机会话（`session-1d6c5bb4`）定位并修复了「填了 Key、测试连接能过，但书内整句/全书翻译不可用；退出重进后连接测试也失败」，真机验收后按用户要求把两条坑写进记忆；最后一轮「把两条可迁移方法论提炼进 `agent-kb-template/`」获批时因 API 429 额度中断。项目随后整体复制到 Linux（`/home/xinyan/work/reader`），而该会话最后几轮对 `.agents/` 的编辑发生在复制之后、未随副本带过来。本条目记录在 Linux 侧补齐与复验。
+
+**根因（两个）**：
+1. AI 中心「翻译设置」有两层「保存」：服务商编辑卡（填 Key 那层）的「保存」只更新内存草稿，真正写盘的是底部大「保存」。用户只点卡内保存 → 退出重进 Key 丢失 → `remoteReady=false` → 书内功能禁用。这是「第一次测试能过、重进就失败」的直接原因。
+2. 默认/回退模型名多处不一致：`ai/AiSettingsStore.kt`、`shared/ai/AiModels.kt` 默认 `deepseek-chat`，而 DeepSeek 预设是 `deepseek-v4-flash`；`deepseek-chat` 已不被官方使用。「测试连接」只发最小请求，未必触发模型名校验 —— **测试连接通过 ≠ 模型名有效**。
+
+**修复**：
+- `AiDrawerSheet.kt`：抽出 `persistCurrent()`（当前开关 + 服务商列表 + 生效项 → `withActiveMirrored()` → 写盘），编辑卡「保存」直接调用；底部大「保存」保留为兜底。
+- `AiSettingsStore.kt`（3 处）、`shared/ai/AiModels.kt`（`AiSettings.model`）、`ModelDiscoveryTest.kt`（快照与断言）：`deepseek-chat` → `deepseek-v4-flash`。
+
+**验证**：
+
+| 项 | 证据 |
+| --- | --- |
+| 真机（Windows 侧已连接设备 `ZXJRNJVWY9C6BYDA`） | `assembleDebug -PverifyBuild` 出并存包并安装；UI 自动化走完「填 Key → 编辑卡保存 → 杀进程重开」，服务商与开关状态仍在 → 卡内保存确已落盘；用户随后实测确认「可以了」 |
+| Windows 单测 | `ModelDiscoveryTest` 8 例、`AiSettingsStoreMigrationTest` 4 例、`AiProviderPresetsTest` 2 例全 0 失败；`:shared:test` BUILD SUCCESSFUL（前台 gradlew，32s） |
+| Linux 复验（本次） | `./toolchain/build.sh testDebugUnitTest :shared:test` → `:app` 44 个结果 XML **354 用例 0 失败 0 错误**、`:shared` 29 个 XML **230 用例 0 失败 0 错误 1 跳过** |
+| 残留检查 | `grep -rn "deepseek-chat" --include=*.kt --include=*.kts --include=*.xml src/` 为空 |
+
+**知识沉淀（Windows 侧写、Linux 侧按现状补写）**：`known-pitfalls.md` §27（模型名单点定义）+ §25 扩充（构建成功但 job 结果丢 / 以结果 XML 为判据 / `:shared:test` 任务名）；`ai-context-translation.md` 关键契约补 `deepseek-v4-flash` 硬契约；`build-test-verify.md` 顶部「跑测试前必读」铁律（Linux 走 `build.sh`，Windows 别用 `build.ps1` 跑测试）；`code-and-verification.md` 与 `AGENTS.md`「验证纪律」加指向。`agent-kb-template/` 新增两条可迁移方法论：**默认值/标识符单点定义**、**判据是产物而非作业状态**。
+
+**未做**：Linux 本机 `adb devices` 为空，仪器测试与真机验证仍待接设备。
+
+## 2026-09-08 Linux 开发机（CachyOS x86_64）首次跑通构建与单测
+
+**背景**：项目整体从 Windows（`C:\Users\nagisa\work\reader`）复制到 Linux（`/home/xinyan/work/reader`）。开箱即坏：`src/local.properties` 的 `sdk.dir` 指向 Windows 路径、`gradlew` 是 CRLF、`toolchain/` 里的 JDK 与 Android SDK 是 Windows 二进制（`.exe`/`.bat`）、系统本身没有 java。
+
+**环境搭建**（全部落在 `toolchain/` 内；沙箱把真实 `$HOME` 挂成只读，重定向不是可选项）：
+1. JDK：Temurin **17.0.20.1+1** → `toolchain/jdk-linux`；
+2. Android SDK：cmdline-tools + `platform-tools` + `platforms;android-35` + `build-tools;35.0.0` → `toolchain/android-sdk-linux`。`sdkmanager` 的下载缓存必须重定向（`ANDROID_USER_HOME`），否则报 `NoSuchFileException: /home/xinyan/.android/cache/…` 并表现为「下载源全失败」；
+3. `GRADLE_USER_HOME=toolchain/gradle-home-linux`，并从 Windows 侧复制平台无关的 `wrapper/dists` + `caches/modules-2`（省约 800 MB 下载）；`init.d/robolectric-offline.gradle` 按 Linux 路径重写（android-all jar 指向工作区内那份 190 MB 副本）；
+4. `src/local.properties` → `sdk.dir=/home/xinyan/work/reader/toolchain/android-sdk-linux`；新增入口脚本 `toolchain/build.sh`（等价 `build.ps1`）与 `toolchain/env.sh`。
+
+**签名连续性**：Linux 首次构建时 AGP 自动生成了一把**新**的 debug 密钥（`4F:10:73…`），与手机上已装包（Windows 侧 `toolchain/guser/.android/debug.keystore`，`FF:9D…83:6F`）不同 → 覆盖安装必被拒。已把 Windows 密钥库拷入 `toolchain/guser-linux/.android/debug.keystore` 并重新打包，`apksigner verify --print-certs` 复核指纹 `ff9db6e1…55836f`，与 v1.6.1 / v1.6.2 发布资产一致。
+
+**验证结果**：
+
+| 验证点 | 命令 | 结果 |
+| --- | --- | --- |
+| :app JVM 单测 | `./toolchain/build.sh testDebugUnitTest` | 43 个测试类 **351 用例 0 失败 0 错误** ✅ |
+| :shared 纯逻辑单测 | `./toolchain/build.sh :shared:test` | 29 个测试类 **230 用例 0 失败 0 错误 1 跳过** ✅ |
+| 调试 APK | `./toolchain/build.sh :app:assembleDebug` | `app-debug.apk` 57.1 MB；`aapt2 dump badging` = `com.linguareader.app` versionCode 15 / 1.6.3 / minSdk 23 / target 35 ✅ |
+| 签名 | `apksigner verify --print-certs` | 与 Windows 侧 debug.keystore 同指纹 ✅ |
+
+**换行符清理**：Windows 复制把 273 个跟踪文件整树转成 CRLF，`git status` 全变「已修改」。逐文件比对 `git diff --ignore-cr-at-eol` 后确认 **269 个是纯换行噪声**（按 index 还原），**4 个含真实未提交改动**（`AiDrawerSheet.kt` / `AiSettingsStore.kt` / `ModelDiscoveryTest.kt` / `AiModels.kt`：AI 保存行内反馈重构 + 默认模型改 `deepseek-v4-flash`）——后者只去掉 CR、内容一字未动，工作树现存差异即这 4 个文件。`gradlew` 在 index 里是 100644，Linux 上需可执行位（`build.sh` 已自愈）。
+
+**未做**：真机/模拟器安装与仪器测试（本机 `adb devices` 为空）；`connectedDebugAndroidTest` 待接设备后补。
+
 ## 2026-09-06 手动 AI 全书翻译全链路真机验收（PKB110 / v1.6.2 versionCode 14，提交 1c83006 + 505626e + 077a45e）
 
 **范围**：手动 AI 翻译三阶段真实闭环——应用内导出任务文件（SAF）→ PC 端充当外部 agent 产出结果文件 → adb 推回手机 → 应用内导入（OpenMultipleDocuments）→ 校验落检查点 → 覆盖进度更新。测试书：The Fellowship of the Ring（207 批 / 4069 段 / 约 102 万字符，术语表 60 条全「保留原文」）。

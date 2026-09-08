@@ -55,6 +55,8 @@ private enum class ShelfImageStatus { DONE, FAILED }
 internal fun ShelfAppearanceSheet(
     appearance: ShelfAppearance,
     onAppearanceChange: (ShelfAppearance) -> Unit,
+    animSpeed: UiAnimSpeed,
+    onAnimSpeedChange: (UiAnimSpeed) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -159,6 +161,11 @@ internal fun ShelfAppearanceSheet(
                 valueRange = 0f..0.8f
             )
 
+            UiAnimSpeedSelector(
+                animSpeed = animSpeed,
+                onAnimSpeedChange = onAnimSpeedChange
+            )
+
             OutlinedButton(
                 onClick = {
                     scope.launch {
@@ -204,4 +211,64 @@ private fun PresetSwatch(
             maxLines = 1
         )
     }
+}
+
+/**
+ * 全局交互动画速度选择器：横向一排选项（舒缓 / 标准 / 跟手 / 关闭）。
+ * 独立成组件，方便以后放到其它设置入口复用。
+ */
+@Composable
+internal fun UiAnimSpeedSelector(
+    animSpeed: UiAnimSpeed,
+    onAnimSpeedChange: (UiAnimSpeed) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            stringResource(R.string.shelf_anim_speed_title),
+            style = MaterialTheme.typography.labelLarge,
+            color = InkSoft
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            UiAnimSpeed.entries.forEach { speed ->
+                AnimSpeedChip(
+                    label = stringResource(speed.labelRes()),
+                    selected = speed == animSpeed,
+                    onClick = { onAnimSpeedChange(speed) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimSpeedChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .clip(PillShape)
+            .background(if (selected) AccentSoft else Color.Transparent)
+            .border(
+                width = 1.dp,
+                color = if (selected) Accent else InkFaint,
+                shape = PillShape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (selected) Accent else InkSoft
+        )
+    }
+}
+
+private fun UiAnimSpeed.labelRes(): Int = when (this) {
+    UiAnimSpeed.SLOW -> R.string.shelf_anim_speed_slow
+    UiAnimSpeed.NORMAL -> R.string.shelf_anim_speed_normal
+    UiAnimSpeed.FAST -> R.string.shelf_anim_speed_fast
+    UiAnimSpeed.OFF -> R.string.shelf_anim_speed_off
 }

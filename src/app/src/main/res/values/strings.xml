@@ -56,6 +56,11 @@
     <string name="shelf_background_dim">蒙版浓度</string>
     <string name="shelf_background_reset">恢复默认</string>
     <string name="shelf_background_reset_done">书架外观已恢复默认</string>
+    <string name="shelf_anim_speed_title">交互动画速度</string>
+    <string name="shelf_anim_speed_slow">舒缓</string>
+    <string name="shelf_anim_speed_normal">标准</string>
+    <string name="shelf_anim_speed_fast">跟手</string>
+    <string name="shelf_anim_speed_off">关闭</string>
     <string name="shelf_loading">正在整理图书…</string>
     <string name="shelf_delete_title">删除《%1$s》？</string>
     <string name="shelf_delete_body">本地书籍副本与阅读进度会一并删除。</string>

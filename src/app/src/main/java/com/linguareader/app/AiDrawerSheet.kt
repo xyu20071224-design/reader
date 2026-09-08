@@ -159,6 +159,39 @@ private fun AiTranslationSettingsBody(
     var editorDraft by remember { mutableStateOf<AiProviderProfile?>(null) }
     var editorIsNew by remember { mutableStateOf(false) }
 
+    // 保存后必须有明确反馈：此前点「保存」界面毫无变化，用户会以为没响应。
+    // 抽屉是独立窗口（全局 Snackbar 会被它遮住），所以确认信息放在行内。
+    var savedNotice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(savedNotice) {
+        if (savedNotice != null) {
+            delay(3000)
+            savedNotice = null
+        }
+    }
+    // 「保存后会发生什么」文案（onClick 不是 @Composable 作用域，先取出来复用；
+    // 编辑卡「保存即落盘」与底部大「保存」共用同一套持久化与提示）。
+    val savedPowerOffText = stringResource(R.string.aidrawer_saved_power_off)
+    val savedReadyText = stringResource(R.string.aidrawer_saved_ready)
+    val savedLocalText = stringResource(R.string.aidrawer_saved_local)
+    val savedOffText = stringResource(R.string.aidrawer_saved_off)
+
+    // 用当前草稿（开关状态 + 服务商列表 + 生效项）构造完整 AiSettings 并写盘。
+    // 编辑卡「保存」与底部「保存」都走这一处，保证退出重进后 Key 不丢。
+    fun persistCurrent() {
+        val updated = settings.copy(
+            enabled = remoteEnabled,
+            providers = providers,
+            activeProviderId = activeId
+        ).withActiveMirrored()
+        onSave(updated)
+        savedNotice = when {
+            !enabled -> savedPowerOffText
+            updated.remoteReady -> savedReadyText
+            remoteEnabled -> savedLocalText
+            else -> savedOffText
+        }
+    }
+
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -214,15 +247,6 @@ private fun AiTranslationSettingsBody(
             )
         }
         Spacer(Modifier.height(20.dp))
-        // 保存后必须有明确反馈：此前点「保存」界面毫无变化，用户会以为没响应。
-        // 抽屉是独立窗口（全局 Snackbar 会被它遮住），所以确认信息放在行内。
-        var savedNotice by remember { mutableStateOf<String?>(null) }
-        LaunchedEffect(savedNotice) {
-            if (savedNotice != null) {
-                delay(3000)
-                savedNotice = null
-            }
-        }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             savedNotice?.let {
                 Row(
@@ -243,27 +267,8 @@ private fun AiTranslationSettingsBody(
                     )
                 }
             } ?: Spacer(Modifier.weight(1f))
-            // onClick 不是 @Composable 作用域，四种「保存后会发生什么」文案先取出来。
-            val savedPowerOffText = stringResource(R.string.aidrawer_saved_power_off)
-            val savedReadyText = stringResource(R.string.aidrawer_saved_ready)
-            val savedLocalText = stringResource(R.string.aidrawer_saved_local)
-            val savedOffText = stringResource(R.string.aidrawer_saved_off)
             Button(
-                onClick = {
-                    val updated = settings.copy(
-                        enabled = remoteEnabled,
-                        providers = providers,
-                        activeProviderId = activeId
-                    ).withActiveMirrored()
-                    onSave(updated)
-                    // 说清「保存后会发生什么」，而不是只说“已保存”。
-                    savedNotice = when {
-                        !enabled -> savedPowerOffText
-                        updated.remoteReady -> savedReadyText
-                        remoteEnabled -> savedLocalText
-                        else -> savedOffText
-                    }
-                },
+                onClick = { persistCurrent() },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Accent,
                     contentColor = OnAccent
@@ -286,6 +291,9 @@ private fun AiTranslationSettingsBody(
                     providers = providers.map { if (it.id == saved.id) saved else it }
                 }
                 editorDraft = null
+                // 「卡片保存即落盘」：编辑卡里的保存直接持久化服务商 + 当前开关状态，
+                // 退出重进后不再丢 Key，也无需再回到底部大「保存」二次提交。
+                persistCurrent()
             },
             onDelete = if (editorIsNew) {
                 null

@@ -4,14 +4,28 @@
 
 ## ⚠️ 三个最容易踩的前提
 
-1. **Gradle 根在 `src/`，不是仓库根。** 所有 gradle 命令都要在 `C:\Users\nagisa\work\reader\src` 下执行。仓库根没有 `gradlew`。
-2. **开发机是 Windows / PowerShell。** 用 `.\gradlew.bat`；`cd` 不跨命令保留，用工具的 `workdir` 参数。
+1. **Gradle 根在 `src/`，不是仓库根。** 所有 gradle 命令都在 `src/` 下执行（仓库根没有 `gradlew`）；`toolchain/build.sh` / `build.ps1` 已自己 `cd` 过去。
+2. **开发机已迁到 Linux（CachyOS，2026-09-08），Windows 旧机仍在。** Linux 一律走 `./toolchain/build.sh <task>`（自带 JDK/SDK/GRADLE_USER_HOME，别裸调 `gradlew`）；Windows 旧机走 `.\toolchain\build.ps1 <task>` 或 `.\gradlew.bat`。`cd` 不跨命令保留，用工具的 `workdir` 参数。
 3. **`readest-src/`、`Readest/` 不是本项目代码。** 它们是另一个开源阅读器 Readest 的源码与安装目录，仅作参考（已在 `.gitignore`）。改动本项目时绝不要动它们，也不要把它们的结论当作本项目事实。
 
 ## 常用命令
 
+```bash
+# Linux（当前开发机；脚本自己切到 src/，无需 cd）
+./toolchain/build.sh assembleDebug             # 构建调试 APK
+./toolchain/build.sh installDebug              # 安装到已连接设备/模拟器
+./toolchain/build.sh testDebugUnitTest         # :app JVM 单元测试（Robolectric，快，改逻辑必跑）
+./toolchain/build.sh testDebugUnitTest :shared:test   # CI 同款全量单测（:shared 是纯 JVM 库）
+./toolchain/build.sh connectedDebugAndroidTest # 仪器测试（需设备）
+
+# 真机上已装正式调试包时，装一个并存的验证包（applicationId 加 .verify 后缀）
+./toolchain/build.sh assembleDebug -PverifyBuild
+
+source toolchain/env.sh                        # 人手调 adb / apksigner / aapt2 前先 source
+```
+
 ```powershell
-# 工作目录：C:\Users\nagisa\work\reader\src
+# Windows 旧机（工作目录：C:\Users\nagisa\work\reader\src）
 .\gradlew.bat assembleDebug            # 构建调试 APK
 .\gradlew.bat installDebug             # 安装到已连接设备/模拟器
 .\gradlew.bat testDebugUnitTest        # JVM 单元测试（Robolectric，快，改逻辑必跑）
@@ -21,7 +35,9 @@
 .\gradlew.bat assembleDebug -PverifyBuild
 ```
 
-⚠️ **发 Release / 给用户装的 APK 必须走 `toolchain/build.ps1` 构建**（或等价地把 `USERPROFILE`/`-Duser.home` 重定向到 `toolchain/guser`）。debug 包默认用 `user.home` 下的 debug.keystore 签名：走 build.ps1 签的是 `toolchain/guser/.android/debug.keystore`，绕过它直接 `gradlew` 会签成真实用户密钥库——两个签名的包互相拒绝覆盖安装（2026-09-06 v1.6.2 首次发版就踩了：Release 资产传了错误签名的 APK，用户装不上）。
+⚠️ **发 Release / 给用户装的 APK 必须走 `toolchain/build.sh`（Linux）或 `toolchain/build.ps1`（Windows）构建**（或等价地把 `HOME`/`-Duser.home` 重定向到 `toolchain/guser-linux` / `toolchain/guser`）。debug 包默认用 `user.home` 下的 debug.keystore 签名：走脚本签的是工作区内的密钥库，绕过它直接 `gradlew` 会签成真实用户密钥库——两个签名的包互相拒绝覆盖安装（2026-09-06 v1.6.2 首次发版就踩了：Release 资产传了错误签名的 APK，用户装不上）。
+
+**两台机器的 debug.keystore 必须是同一份**：2026-09-08 迁到 Linux 时 AGP 自动生成了新密钥（`4F:10:73…`），与手机上已装包（`FF:9D…83:6F`）不同，覆盖安装必被拒；已把 Windows 侧 `toolchain/guser/.android/debug.keystore` 拷到 `toolchain/guser-linux/.android/debug.keystore` 并复核指纹一致。**别删也别重新生成这两份密钥库。**
 
 自建 TTS 服务端见 `.agents/memory/tts-server-stack.md`。
 
@@ -41,7 +57,8 @@
 - **仓库配置阿里云镜像优先**（`src/settings.gradle.kts`），因为上游仓库在部分网络下 403/reset。加依赖时别把镜像顺序改掉。
 - `src/gradle.properties` 开了 `android.overridePathCheck=true`（路径含中文时 AGP 会报错）。
 - **仓库搬过家（三次）**：`C:\工作文件夹\reader` → `C:\work\reader` →（2026-09-03）`D:\reader` →（当前）`C:\Users\nagisa\work\reader`。搬迁已核对：工作树与 HEAD 零差异、单测在新位置全绿；`src/local.properties` 与 `.agents/` 记忆里的路径已同步订正，历史快照里的旧路径只出现在 git 历史里。`tts-voice-studio/studio.py` 与 `scripts/cut_first_3s.py` **曾**硬编码**最旧**中文路径、直接跑会失败，**已于 2026-09-04 改为当前路径**（详见 `.agents/memory/local-tools-and-assets.md`）。上面那条 `overridePathCheck` 也是旧中文路径留下的。
-- `minSdk = 23`：写代码别用未做兼容处理的高版本 API。
+- **Linux 工具链**（2026-09-08 落地；全部在 `toolchain/` 内、已 gitignore）：`jdk-linux`（Temurin 17，系统没装 java）、`android-sdk-linux`（cmdline-tools + platform-tools + `platforms;android-35` + `build-tools;35.0.0`）、`gradle-home-linux`（含 `init.d/robolectric-offline.gradle`，把 Robolectric 的 android-all jar 与 tmpdir 指进工作区）、`guser-linux`（`HOME`/`ANDROID_USER_HOME`；adb key 与 debug.keystore 在此）。`src/local.properties` 的 `sdk.dir` 指向 `toolchain/android-sdk-linux`。**沙箱把真实 `$HOME` 挂成只读**，所以这些重定向不是可选优化。重建：`toolchain/setup-linux.sh`（JDK + cmdline-tools）→ `toolchain/setup-sdk.sh`（SDK 包）。
+- **换行符**：仓库里存的是 LF。2026-09-08 从 Windows 拷来时整树变 CRLF（273 个文件在 git 里全成「已修改」），已按 index 还原；`gradlew` 的 index 模式是 100644，**新克隆到 Linux 后要么 `chmod +x src/gradlew`，要么走 `build.sh`（它自己会补）**。
 
 ## 目录布局
 
@@ -95,6 +112,7 @@
 
 ## 验证纪律
 
+- **跑测试先看 `.agents/memory/build-test-verify.md` 顶部「跑测试前必读」铁律**：Linux 走 `./toolchain/build.sh`（内部 `exec`，安全）；Windows 别用 `build.ps1` 跑测试（Gradle 守护进程持有重定向句柄会假挂，构建其实已完成）。判据以 `src/*/build/test-results/**/*.xml` 的 `tests/failures/errors` 为准，别依赖 job/作业状态；`:shared` 用 `:shared:test`；模型名默认 `deepseek-v4-flash`（`deepseek-chat` 已废弃）。
 - 改纯逻辑 → `testDebugUnitTest` 必跑（本地或 CI 皆可，CI 在 push 时自动兜底）。
 - 改 WebView 渲染、手势、TTS 播放、通知栏媒体控制 → **必须真机或模拟器实测**，这些行为单测覆盖不到。历史真机验证设备：PKB110 / Android 16。
 - **分页跟随已于 2026-09-01 解禁**（M2 第 2 刀），但解禁的前提别丢：当年章末死循环（2026-08-23 真机事故）的成因是「翻页 → 阅读器位置回报 → 引擎被拽回该页首块」这条回路，现在**回报路径整条删除**（契约反转成「页面跟朗读」），回路不可能闭合。护栏有三道：`followRangeIntoView` 只在句子不在当前页时翻、300ms 合并、用户接管窗口内不翻；跟随翻页带 `origin='tts'`，Kotlin 侧据此不清高亮。**谁要把「阅读位置回报给 TTS」加回来，必须先重新设计抑制机制**，否则死循环会原样复活。

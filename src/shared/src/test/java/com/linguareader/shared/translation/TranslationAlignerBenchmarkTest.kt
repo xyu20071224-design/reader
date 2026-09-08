@@ -1,6 +1,7 @@
 package com.linguareader.shared.translation
 
 import com.linguareader.shared.tts.SentenceSplitter
+import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -26,8 +27,8 @@ class TranslationAlignerBenchmarkTest {
 
     @Test
     fun alignsAFullNovelFastEnoughForAPhone() {
-        val english = findBook("英文原版")
-        val chinese = findBook("中譯本")
+        val english = findSource("英文原版", "lotr-book")
+        val chinese = findSource("中譯本", "lotr-zh")
         assumeTrue("缺少 artifacts 里的测试书，跳过基准", english != null && chinese != null)
 
         val enChapters = readBlocks(english!!)
@@ -92,21 +93,38 @@ class TranslationAlignerBenchmarkTest {
         assertTrue("整本书对齐退化到 ${elapsed}ms（>3s），DP 内层大概率又在扫描文本", elapsed < 3_000)
     }
 
-    private fun findBook(prefix: String): File? {
+    /** 测试书来源：优先 `artifacts/alignment-package` 里的 EPUB，缺失时退回解包目录。 */
+    private sealed interface BookSource {
+        class EpubFile(val file: File) : BookSource
+        class UnpackedDir(val dir: File) : BookSource
+    }
+
+    private fun findSource(epubPrefix: String, unpackedDirName: String): BookSource? {
         var dir: File? = File("").absoluteFile
         while (dir != null) {
-            val candidate = File(dir, "artifacts/alignment-package")
-            if (candidate.isDirectory) {
-                return candidate.walkTopDown()
-                    .firstOrNull { it.isFile && it.extension == "epub" && it.name.startsWith(prefix) }
+            val packageDir = File(dir, "artifacts/alignment-package")
+            if (packageDir.isDirectory) {
+                val epub = packageDir.walkTopDown().firstOrNull {
+                    it.isFile && it.extension == "epub" && it.name.startsWith(epubPrefix)
+                }
+                if (epub != null) return BookSource.EpubFile(epub)
             }
+            // 2026-09-08：alignment-package 在多次搬迁中丢失，基准测试长期静默跳过；
+            // 退回解包目录（英文 = app 导入格式，中文 = 解包 EPUB）以恢复性能护栏。
+            val unpacked = File(dir, "artifacts/$unpackedDirName")
+            if (unpacked.isDirectory) return BookSource.UnpackedDir(unpacked)
             dir = dir.parentFile
         }
         return null
     }
 
+    private fun readBlocks(source: BookSource): List<List<String>> = when (source) {
+        is BookSource.EpubFile -> readEpubBlocks(source.file)
+        is BookSource.UnpackedDir -> readUnpackedBlocks(source.dir)
+    }
+
     /** 与 `align-cli` 相同的读法：每章 → 叶级段落文本列表。 */
-    private fun readBlocks(file: File): List<List<String>> {
+    private fun readEpubBlocks(file: File): List<List<String>> {
         ZipFile(file).use { zip ->
             val container = zip.getEntry("META-INF/container.xml")
                 ?.let { zip.getInputStream(it).readBytes().toString(Charsets.UTF_8) }
@@ -133,6 +151,40 @@ class TranslationAlignerBenchmarkTest {
             }
             return chapters
         }
+    }
+
+    /**
+     * 解包目录的读法（`alignment-package` 缺失时的回退）：
+     * - 有 `metadata.json` = app 导入格式（英文书）：按章表里的 `relativePath` 读；
+     * - 有 `META-INF/container.xml` = 解包 EPUB（中文译本）：按 spine 读。
+     *
+     * 与 EPUB 读法同样丢掉空章节，保证两种来源喂给对齐器的形状一致。
+     */
+    private fun readUnpackedBlocks(root: File): List<List<String>> {
+        val metadata = File(root, "metadata.json")
+        val paths: List<String> = if (metadata.isFile) {
+            val chapters = JSONObject(metadata.readText()).getJSONArray("chapters")
+            (0 until chapters.length()).map { chapters.getJSONObject(it).getString("relativePath") }
+        } else {
+            val container = File(root, "META-INF/container.xml").readText()
+            val opfPath = Regex("full-path=\"([^\"]+)\"").find(container)?.groupValues?.get(1)
+                ?: error("container.xml 缺少 rootfile full-path")
+            val opf = Jsoup.parse(File(root, opfPath).readText())
+            val manifest = opf.select("manifest item").associate { it.attr("id") to it.attr("href") }
+            val baseDir = opfPath.substringBeforeLast('/', "")
+            opf.select("spine itemref").mapNotNull { manifest[it.attr("idref")] }
+                .map { href -> if (baseDir.isEmpty()) href else "$baseDir/$href" }
+        }
+        val chapters = mutableListOf<List<String>>()
+        for (path in paths) {
+            val file = File(root, path)
+            if (!file.isFile) continue
+            val blocks = leafBlocks(Jsoup.parse(file.readText()))
+                .map { it.text().replace(Regex("\\s+"), " ").trim() }
+                .filter { it.isNotBlank() }
+            if (blocks.isNotEmpty()) chapters += blocks
+        }
+        return chapters
     }
 
     private fun leafBlocks(document: Document): List<Element> {
