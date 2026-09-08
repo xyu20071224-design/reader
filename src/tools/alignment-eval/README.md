@@ -24,6 +24,7 @@ Gradle 默认吞掉测试 stdout，工具报告原本只能去 `build/test-resul
 
 ```bash
 bash src/tools/alignment-eval/run-tool.sh proxy            # 语义代理：AUC / 回归门 / 主动采样
+bash src/tools/alignment-eval/run-tool.sh proxy-scale      # 语义代理大规模验证（圣经机械真值）
 bash src/tools/alignment-eval/run-tool.sh cards            # 判定卡：变化样本 → HTML
 bash src/tools/alignment-eval/run-tool.sh fixture          # 重建金标准 fixture + 台账
 bash src/tools/alignment-eval/run-tool.sh replay           # 金标准重放（整本，约 40s）
@@ -161,7 +162,8 @@ fork 出来的测试 JVM，文件标志没有这个坑，两台机器行为一�
 产出 `artifacts/alignment-eval/judgment-cards.html`（含书文，本地 gitignored；垃圾样本与
 定位不到的样本不进卡）。**排序**：本地有 CC-CEDICT 时按语义代理分数升序排（分数越低
 越可疑，人工先看最可能出问题的），卡片元信息里带分数；缺词典时退回报告顺序并在卡片
-顶部说明。排序只是省注意力，判定仍以人眼为准。判定完把收集到的判定串写进
+顶部说明（可查内容词 <3 的样本标「不可评分」并排到最后）。排序只是省注意力，
+判定仍以人眼为准。判定完把收集到的判定串写进
 `verdict-overrides.json` 的新一轮，再依次跑 fixture 工具（并入台账）→ bless（更新批准
 展示）→ 重放校验。
 
@@ -197,45 +199,54 @@ bash src/tools/alignment-eval/fetch-generalization-corpus.sh
 
 ### 6. 语义代理评分（外部信号，先验证再依赖）
 
-`src/app/src/test/java/com/linguareader/app/translation/TranslationSemanticProxyTool.kt`
+`TranslationSemanticProxyTool`（金标准验证）+ `TranslationProxyBibleValidationTest`
+（圣经机械真值大规模验证）共用 `SemanticProxyIndex.kt`（CC-CEDICT 索引 + 评分 +
+证据门槛 + Wilson 下界；判定卡排序也用它）。
 
 对齐器自身的信号（长度比 / 锚点 / 词义加分 / 置信度）量的是「DP 有没有优化自己的
 目标函数」，是循环论证。这里引入**外部**信号：CC-CEDICT（社区维护的中英词典，
-**不是**对齐器用的 ECDICT）反查「英文句内容词的中文候选是否出现在展示的中文里」，
-拿六轮人工判定做 ROC/AUC 验证——先证明它分得开，再谈依赖。
+**不是**对齐器用的 ECDICT）反查「英文句内容词的中文候选是否出现在展示的中文里」。
 
 ```bash
 bash src/tools/alignment-eval/fetch-semantic-proxy-corpus.sh   # CC BY-SA 4.0，约 4 MB，gitignored
-./toolchain/build.sh :app:testDebugUnitTest \
-  --tests "com.linguareader.app.translation.TranslationSemanticProxyTool"
+bash src/tools/alignment-eval/run-tool.sh proxy                # 金标准 91 条人工判定
+bash src/tools/alignment-eval/run-tool.sh proxy-scale          # 圣经 2,268 条机械真值
 ```
 
-**验证结果（2026-09-08，91 条可评分样本：ok/ok2 = 64、bad = 27）**：
+**2026-09-08 三项增强后的结果**：
 
-| 信号 | ok/ok2 均值 | bad 均值 | AUC |
-| --- | --- | --- | --- |
-| 语义代理（CC-CEDICT 内容词命中率，**外部**） | 0.311 | 0.071 | **0.802** |
-| 长度比贴近 1（内部） | 0.694 | 0.515 | 0.756 |
-| 数字 / 拉丁锚点重叠（内部） | 0.047 | 0.130 | 0.434 |
+1. **证据门槛**（`MIN_SCORABLE_WORDS = 3`）：可查内容词 <3 的句对不参与 AUC / 报警 /
+   排序——之前主动采样 top-10 全是这类短对白，它们不是「可疑」而是「没法评」。
+   金标准 91 条里剔掉 31 条薄样本后，**AUC 0.802 → 0.901**。
+2. **繁→简归一**：CC-CEDICT 候选是简体、评估语料（和合本、朱譯魔戒）是繁体；用
+   对齐器同一张 `TraditionalSimplified` 表归一后，圣经侧 AUC 0.790 → **0.833**，
+   同节样本均值 0.11 → 0.15。
+3. **大规模验证**（`proxy-scale`，KJV × 和合本逐节真值：2,268 条可评分句对，
+   同节 1327 / 错节 941）：AUC **0.833**（John 0.819 / Genesis 0.830 / Proverbs
+   0.836），跨文体一致。
 
-**结论**：外部信号确实分得开（0.80 > 内部长度比 0.76 ≫ 锚点 0.43——锚点甚至反向，
-再次印证「句首大写词」这类内部信号不是质量指标）。但报警口径 t=0.2 时精确率仅
-0.55 / 召回 0.89：**只够当粗筛，不能单独定质量**。局限：短对白句可用词太少，
-分数天然为 0（主动采样列表里多数是短句）。
+| 验证集 | 样本 | AUC（够证据） |
+| --- | --- | --- |
+| 魔戒金标准（人工判定） | 60 条（ok/ok2 48、bad 12） | **0.901**（Wilson 下界 0.877） |
+| 圣经机械真值（合计） | 2,268 条（同节 1327、错节 941） | **0.833** |
+| 内部长度比（对照） | 91 条 | 0.756 |
+| 内部锚点重叠（对照） | 91 条 | 0.434（反向） |
 
-两个落地用途（工具直接输出）：
+**结论与纪律**：
 
-- **回归门**：整本句对抽样（`pairs-sample.json`，≤2000 条）的分布基线——当前
-  均值 0.261 / 中位 0.250 / p25 0.000 / p75 0.400；相对漂移 >0.03 报警。
-- **主动采样**：把「人工判对、代理却存疑」的样本排到最前面（工具打印 10 条），
-  下一轮人工只复看这批，判定量从 100 条降到 10 条量级。
+- 外部信号的**排序能力跨文体稳定**（0.83–0.90），可以决定「谁先被人看」。
+- **绝对阈值不跨书**：圣经侧错节基率 41%，t=0.05 时精确率 0.690 / 召回 0.777，
+  没有任何阈值能到 0.70 精确率；魔戒侧 t=0.2 精确率 0.58 / 召回 0.92。报警必须
+  **按书内分布归一**（回归门基线），不能拿一本书拟合的绝对阈值去套另一本。
+- 落地用途（工具直接输出）：**回归门**——整本句对抽样（`pairs-sample.json`，
+  ≤2000 条）分布基线当前为均值 0.338 / 中位 0.333 / p25 0.125 / p75 0.500，
+  相对漂移 >0.03 报警；**主动采样**——命中率最低的 10 条 ok/ok2 优先复看（短句已剔除）。
+- 代理**不能回灌进对齐器代价函数**——那会把刚证伪的循环论证建回去。
 
 **为什么没直接上句向量**：LaBSE 一类多语模型约 1.8 GB 且要 Python/torch，与
 「离线优先 + 仓库自带 JVM 工具链」冲突；先用零额外运行时依赖的外部词典验证
-「外部信号有没有用」——结论是有用。若要把 AUC 从 0.80 再往上推，再引入句向量，
-替换点就是 `SemanticProxyIndex.score(index, en, zh)` 这一个函数（索引与打分已抽到
-`src/app/src/test/java/com/linguareader/app/translation/SemanticProxyIndex.kt`，
-判定卡排序与本工具共用同一份实现）。
+「外部信号有没有用」——结论是有用。若要把 AUC 再往上推，再引入句向量，替换点就是
+`SemanticProxyIndex.evaluate(index, en, zh)` 这一个函数。
 
 ## 待审核：长度归一化改造（两层密度自适应，2026-09-08 研究）
 

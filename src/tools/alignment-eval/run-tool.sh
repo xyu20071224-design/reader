@@ -12,6 +12,7 @@
 #   bash src/tools/alignment-eval/run-tool.sh replay           # 金标准重放（整本，约 40s）
 #   bash src/tools/alignment-eval/run-tool.sh generalization   # 公版泛化集（KJV × 和合本）
 #   bash src/tools/alignment-eval/run-tool.sh synthetic        # 合成语料真值对齐
+#   bash src/tools/alignment-eval/run-tool.sh proxy-scale      # 代理大规模验证（圣经机械真值，几千条）
 #   bash src/tools/alignment-eval/run-tool.sh full             # 上面四个本地工具按序全跑（发版前）
 #
 # 加 --rerun 可强制重跑（默认命中 Gradle 缓存时直接打印上次结果）。
@@ -50,6 +51,8 @@ case "$NAME" in
     MODULE=app; CLASS=com.linguareader.app.translation.TranslationSemanticProxyTool; PREFIX='[proxy]' ;;
   cards)
     MODULE=app; CLASS=com.linguareader.app.translation.TranslationJudgmentCardTool; PREFIX='[cards]' ;;
+  proxy-scale)
+    MODULE=app; CLASS=com.linguareader.app.translation.TranslationProxyBibleValidationTest; PREFIX='[proxy-scale]' ;;
   fixture)
     MODULE=app; CLASS=com.linguareader.app.translation.TranslationGoldenFixtureTool; PREFIX='[golden]' ;;
   replay)
@@ -59,7 +62,7 @@ case "$NAME" in
   synthetic)
     MODULE=shared; CLASS=com.linguareader.shared.translation.SyntheticAlignmentTruthTest; PREFIX='[synthetic]' ;;
   *)
-    echo "用法: $0 {proxy|cards|fixture|replay|generalization|synthetic|full} [--rerun]" >&2
+    echo "用法: $0 {proxy|proxy-scale|cards|fixture|replay|generalization|synthetic|full} [--rerun]" >&2
     exit 2 ;;
 esac
 

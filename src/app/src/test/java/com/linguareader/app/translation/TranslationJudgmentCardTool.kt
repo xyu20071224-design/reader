@@ -71,23 +71,25 @@ class TranslationJudgmentCardTool {
         }
 
         // 有 CC-CEDICT 就按语义代理分数升序排：分数越低越可疑，人工先看它们。
-        // 缺词典不报错——排序只是省注意力，不影响判定流程。
+        // 缺词典不报错——排序只是省注意力，不影响判定流程。证据不足的样本排到最后。
         val cedict = File(artifacts, "generalization/cedict.txt.gz")
         val proxy = if (cedict.isFile) SemanticProxyIndex.build(cedict) else null
         val scores = if (proxy == null) emptyMap()
         else changed.associate { it.getString("id") to proxyScore(proxy, it) }
         val ordered = if (proxy == null) changed
-        else changed.sortedBy { scores.getValue(it.getString("id")) }
+        else changed.sortedBy { scores.getValue(it.getString("id")).rank }
 
         outFile.writeText(renderHtml(report, ordered, total, scores))
         println("[cards] 变化样本 ${ordered.size}/$total 条（未定位 $notLocated 条不参与）→ ${outFile.path}")
         if (proxy == null) {
             println("[cards] 缺少 CC-CEDICT，按报告顺序排列；跑 fetch-semantic-proxy-corpus.sh 可启用可疑度排序")
         } else {
+            val thin = scores.values.count { !it.scoreable }
             println(
-                "[cards] 已按语义代理分数升序排列（最低 %.2f，最高 %.2f；越低越可疑）".format(
-                    scores.getValue(ordered.first().getString("id")),
-                    scores.getValue(ordered.last().getString("id"))
+                "[cards] 已按语义代理 Wilson 下界升序排列（最低 %.2f，最高 %.2f；越低越可疑，证据不足 %d 条排末尾）".format(
+                    scores.getValue(ordered.first().getString("id")).rank,
+                    scores.getValue(ordered.last().getString("id")).rank,
+                    thin
                 )
             )
         }
@@ -95,18 +97,20 @@ class TranslationJudgmentCardTool {
         assertTrue("判定卡文件应已写出", outFile.isFile && outFile.length() > 0)
     }
 
-    /** 对「当前展示」打分；展示为空（极少见）时排到最后，而不是当成最可疑。 */
-    private fun proxyScore(index: Map<String, Set<String>>, sample: JSONObject): Double {
+    /** 对「当前展示」打分；证据不足时 [SemanticProxyIndex.Score.rank] = 1.0，排到最后。 */
+    private fun proxyScore(
+        index: Map<String, Set<String>>,
+        sample: JSONObject
+    ): SemanticProxyIndex.Score {
         val zh = sample.optJSONObject("current")?.optString("zh").orEmpty()
-        if (zh.isBlank()) return 1.0
-        return SemanticProxyIndex.score(index, sample.optString("en"), zh)
+        return SemanticProxyIndex.evaluate(index, sample.optString("en"), zh)
     }
 
     private fun renderHtml(
         report: JSONObject,
         changed: List<JSONObject>,
         total: Int,
-        scores: Map<String, Double>
+        scores: Map<String, SemanticProxyIndex.Score>
     ): String {
         val generatedAt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date())
         val cards = changed.joinToString("\n") { sample ->
@@ -114,7 +118,11 @@ class TranslationJudgmentCardTool {
             val approved = sample.optJSONObject("approved")
             val current = sample.optJSONObject("current")
             val score = scores[id]
-            val scoreText = if (score == null) "" else " · 代理%.2f".format(score)
+            val scoreText = when {
+                score == null -> ""
+                !score.scoreable -> " · 代理不可评分(可查词<${SemanticProxyIndex.MIN_SCORABLE_WORDS})"
+                else -> " · 代理%.2f".format(score.rank)
+            }
             buildString {
                 appendLine("""<div class="s" data-id="${escape(id)}">""")
                 appendLine(

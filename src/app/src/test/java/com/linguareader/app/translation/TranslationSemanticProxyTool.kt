@@ -46,32 +46,51 @@ class TranslationSemanticProxyTool {
         println("[proxy] CC-CEDICT 索引: ${index.size} 个英文词条，耗时 ${System.currentTimeMillis() - started}ms")
 
         val samples = loadSamples(fixtureFile)
+        val scores = samples.associate { it.id to SemanticProxyIndex.evaluate(index, it.en, it.zh) }
+        val scoreable = samples.filter { scores.getValue(it.id).scoreable }
+        val thin = samples.filter { !scores.getValue(it.id).scoreable }
         println("[proxy] 可评分样本=${samples.size}（ok/ok2=${samples.count { it.positive }}，bad=${samples.count { !it.positive }}）")
+        println(
+            "[proxy] 证据门槛(≥%d 个可查词)：够=%d 条（ok/ok2=%d bad=%d）| 不足=%d 条（ok/ok2=%d bad=%d）".format(
+                SemanticProxyIndex.MIN_SCORABLE_WORDS,
+                scoreable.size, scoreable.count { it.positive }, scoreable.count { !it.positive },
+                thin.size, thin.count { it.positive }, thin.count { !it.positive }
+            )
+        )
 
-        val proxyScores = samples.associate { it.id to SemanticProxyIndex.score(index, it.en, it.zh) }
+        val proxyScores = scores.mapValues { it.value.hitRate }
+        val wilsonScores = scores.mapValues { it.value.wilsonLower }
         val lengthScores = samples.associate { it.id to scoreLengthRatio(it.en, it.zh) }
         val anchorScores = samples.associate { it.id to scoreAnchorOverlap(it.en, it.zh) }
 
-        report("语义代理(CC-CEDICT 内容词命中率)", samples, proxyScores)
+        report("语义代理(原始命中率, 全部)", samples, proxyScores)
+        report("语义代理(原始命中率, 仅够证据)", scoreable, proxyScores)
+        report("语义代理(Wilson 下界, 仅够证据)", scoreable, wilsonScores)
         report("内部信号(长度比贴近 1)", samples, lengthScores)
         report("内部信号(数字/拉丁锚点重叠)", samples, anchorScores)
 
-        // 对照：把三个信号按「ok/ok2 vs bad」的分离度排个队，决定值不值得依赖
+        // 对照：把信号按「ok/ok2 vs bad」的分离度排个队，决定值不值得依赖
         val proxyAuc = auc(samples, proxyScores)
+        val scoreableAuc = auc(scoreable, proxyScores)
+        val wilsonAuc = auc(scoreable, wilsonScores)
         val lengthAuc = auc(samples, lengthScores)
         val anchorAuc = auc(samples, anchorScores)
-        println("[proxy] AUC  语义代理=%.3f  长度比=%.3f  锚点=%.3f".format(proxyAuc, lengthAuc, anchorAuc))
+        println(
+            "[proxy] AUC  语义代理(全部=%.3f 够证据=%.3f Wilson=%.3f)  长度比=%.3f  锚点=%.3f".format(
+                proxyAuc, scoreableAuc, wilsonAuc, lengthAuc, anchorAuc
+            )
+        )
         println(
             "[proxy] 结论：" + when {
-                proxyAuc >= 0.80 -> "外部信号可用——可作回归报警与主动采样排序（阈值见上表）"
-                proxyAuc >= 0.65 -> "弱可用——只能当粗筛/报警，不能单独定质量"
+                wilsonAuc >= 0.80 -> "外部信号可用——可作回归报警与主动采样排序（阈值见上表）"
+                wilsonAuc >= 0.65 -> "弱可用——只能当粗筛/报警，不能单独定质量"
                 else -> "不可用——与人工判定分离度不足，别依赖它（要么换句向量模型，要么维持人工判定）"
             }
         )
 
         // 用途一：整本分布当回归门基线；用途二：按分数排出「嫌疑样本」给下一轮人工
         reportBookLevel(index, File(artifacts, "alignment-eval/pairs-sample.json"))
-        reportActiveSampling(samples, proxyScores)
+        reportActiveSampling(scoreable, scores)
     }
 
     /** 用途一：整本句对抽样分布——均值/分位数就是回归门基线，漂移即报警。 */
@@ -99,13 +118,26 @@ class TranslationSemanticProxyTool {
         )
     }
 
-    /** 用途二：把「人工判对、代理却存疑」的样本排在最前面——下一轮人工优先复看这批。 */
-    private fun reportActiveSampling(samples: List<Sample>, scores: Map<String, Double>) {
-        val suspects = samples.filter { it.positive }.sortedBy { scores.getValue(it.id) }.take(10)
-        println("[proxy] 主动采样：代理得分最低的 10 条 ok/ok2 样本（下一轮优先复看）")
+    /**
+     * 用途二：把「人工判对、代理却存疑」的样本排在最前面——下一轮人工优先复看这批。
+     * 只收够证据的样本：短对白句（可查词 < [SemanticProxyIndex.MIN_SCORABLE_WORDS]）
+     * 之前霸占整个列表，那不是可疑，只是没法评。
+     */
+    private fun reportActiveSampling(
+        scoreable: List<Sample>,
+        scores: Map<String, SemanticProxyIndex.Score>
+    ) {
+        val suspects = scoreable.filter { it.positive }
+            .sortedBy { scores.getValue(it.id).rank }
+            .take(10)
+        println("[proxy] 主动采样：代理命中率最低的 10 条 ok/ok2 样本（下一轮优先复看）")
         suspects.forEach {
+            val score = scores.getValue(it.id)
             println(
-                "  %.3f  %-5s EN=«%s»".format(scores.getValue(it.id), it.id, it.en.take(60))
+                "  %.3f (k/n=%d/%d)  %-5s EN=«%s»".format(
+                    score.rank, (score.hitRate * score.scorableWords).toInt(),
+                    score.scorableWords, it.id, it.en.take(60)
+                )
             )
         }
     }
