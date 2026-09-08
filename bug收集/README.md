@@ -42,6 +42,19 @@
 > 另：本目录被 docs-only 提交整批覆盖过两次（`a7bd7c0`、`0d9019e`），后者把前一晚随
 > `5c36f2c` 入库的订正整段还原了。改本目录请只改自己那几行，别整篇写盘。
 
+> ## ⚠️ 语音工作室已改版（2026-09-08 追记）
+>
+> `tts-voice-studio/` 已**重写为 MiMo-only 试听台**：Kokoro / IndexTTS 两套本地模型后端的
+> 启停、日志、GPU 轮询与全部相关接口（`/api/control`、`/api/logs`、`/api/history`、
+> `start_backend`/`stop_backend`/`kill_port`、`studio_logs/`）**已整段删除**。因此下列文档
+> 引用的行号与代码在 main 上**已不存在**，不能再按原文复现或验证：
+> **BUG-016**（start_backend 竞态）、**BUG-017**（stop_backend 误杀）、
+> **BUG-018**（控制面无鉴权，控制面已删；试听代理仍在，密钥由用户提供）、
+> **BUG-022**（随机试听，功能已删）、**BUG-023**（`LAN_IP` 硬编码，已删）、
+> **BUG-026**（blob URL 未释放，新页面已在切换/结束时 `revokeObjectURL`）。
+> 相关缺陷保留作文档，但请先看 `tts-voice-studio/README.md` 与
+> `.agents/memory/local-tools-and-assets.md` 的现状段。App 侧与 `tts-server/` 的条目不受影响。
+
 ---
 
 ## 修复排期（同族分批）
