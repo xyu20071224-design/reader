@@ -1,0 +1,23 @@
+{
+  "name": "@local/dsh-voice-console",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MiMo TTS voice console for the DSH Web GUI: browse and audition preset voices, design/clone voices, copy the App config.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  },
+  "license": "MIT"
+}

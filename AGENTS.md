@@ -80,7 +80,8 @@ source toolchain/env.sh                        # 人手调 adb / apksigner / aap
 | （运行时）`filesDir/packs/` | 资源包安装目录：`<type>/<packId>/<version>/` + `registry.json`；**不进 git、不按书清理**，占用计入存储页 |
 | `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，两侧各 655 个 string + 12 个 plurals（**key 集合必须完全一致**，有测试守着） |
 | `tts-server/` | 自建 OpenAI 兼容 TTS 服务端（Python）+ IndexTTS 克隆音色 + frp 内网穿透配置 |
-| `tts-voice-studio/` | 本地音色调试工作台（Python + 单页 HTML） |
+| `tts-voice-studio/` | 独立 MiMo 试听台（Python 标准库 + 单页 HTML，端口 8002）；本地模型后端已于 2026-09-08 移除 |
+| `tools/dsh-voice-console/` | **DSH Web GUI 持久化插件**（MiMo 音色控制台）：源码在此，链接进 `~/.dsh/profiles/web`；见其 README |
 | `bug收集/` | 缺陷文档库（BUG-001~039 分析/分级/验证方案；001~026 于 2026-08 自 legacy 线收录，027~039 为 2026-09-01 第五轮审查）；修 bug 前先来这里查有没有前人分析，**并留意 README 顶部那条「状态列怎么读」的警告**（001~026 的「已修复」记的是 legacy 线状态，未必等于 main） |
 | `.github/workflows/ci.yml` | GitHub Actions 单测 CI（push/PR 自动跑 `testDebugUnitTest`） |
 | `scripts/`、`src/scripts/` | 克隆音色制作、音频对比、词典构建、示例 EPUB 生成 |
