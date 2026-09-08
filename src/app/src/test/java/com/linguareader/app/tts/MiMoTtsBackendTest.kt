@@ -146,6 +146,8 @@ class MiMoTtsBackendTest {
     fun `model selection follows the voice kind`() {
         assertEquals(MiMoTtsBackend.MODEL_VOICE_DESIGN, MiMoTtsBackend.modelForVoice("mimo-design:a"))
         assertEquals(MiMoTtsBackend.MODEL_VOICE_CLONE, MiMoTtsBackend.modelForVoice("mimo-clone:b"))
+        // M4：音色包的克隆音色走同一个模型分支（样本来自包目录）
+        assertEquals(MiMoTtsBackend.MODEL_VOICE_CLONE, MiMoTtsBackend.modelForVoice("pack:voices-1/hero"))
         assertEquals("mimo-v2.5-tts", MiMoTtsBackend.modelForVoice("Mia"))
     }
 }

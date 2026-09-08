@@ -2,6 +2,8 @@ package com.linguareader.app.tts
 
 import android.content.Context
 import androidx.core.content.edit
+import com.linguareader.app.packs.PackRepository
+import com.linguareader.shared.packs.PackVoice
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -137,7 +139,7 @@ object VoiceLibraryLoader {
     private fun serverVoices(context: Context, settings: CloudTtsSettings): List<VoiceInfo> {
         val advertised = ServerVoiceStore.load(context, settings.serverUrl)
         val configured = configuredIds(settings).map { ServerVoice(it) }
-        return (advertised + configured)
+        val base = (advertised + configured)
             .map { it.copy(id = it.id.trim()) }
             .filter { it.id.isNotEmpty() && !it.id.equals("default", ignoreCase = true) }
             .distinctBy { it.id }
@@ -152,6 +154,41 @@ object VoiceLibraryLoader {
                     style = if (voice.style.isNotEmpty()) voice.style else inferred.style
                 )
             }
+        return applyPackMetadata(base, PackRepository(context).voiceMetadata())
+    }
+
+    /**
+     * 音色包的 metadata 音色叠加到既有音色库上（M4）。
+     *
+     * 优先级：**包 > 服务器广播 > id 形状先验**。包是用户显式装的，就是拿来纠错的；
+     * 服务器自己报的元数据如果比包新，用户会重装包。包描述的目标 id 不在库里时补一条
+     * 空壳音色 —— 否则「服务器暂时没广播出这个音色」会让分配器看不到它。
+     */
+    internal fun applyPackMetadata(
+        base: List<VoiceInfo>,
+        metadata: Map<String, PackVoice>
+    ): List<VoiceInfo> {
+        if (metadata.isEmpty()) return base
+        val seen = mutableSetOf<String>()
+        val merged = base.map { voice ->
+            val pack = metadata[voice.id.lowercase()]
+            seen += voice.id.lowercase()
+            if (pack == null) voice else voice.copy(
+                language = pack.language.ifBlank { voice.language },
+                gender = pack.gender.ifBlank { voice.gender },
+                style = if (pack.style.isNotEmpty()) pack.style else voice.style
+            )
+        }
+        val extra = metadata.filterKeys { it !in seen }.map { (_, pack) ->
+            VoiceInfo(
+                id = pack.key,
+                language = pack.language,
+                gender = pack.gender,
+                style = pack.style,
+                source = "pack"
+            )
+        }
+        return (merged + extra).distinctBy { it.id }
     }
 
     private fun configuredIds(settings: CloudTtsSettings): List<String> = listOf(

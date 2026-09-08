@@ -14,7 +14,9 @@ import com.linguareader.shared.packs.PackRegistry
 import com.linguareader.shared.packs.PackType
 import com.linguareader.shared.packs.PackValidationResult
 import com.linguareader.shared.packs.PackValidator
+import com.linguareader.shared.packs.PackVoice
 import com.linguareader.shared.packs.SafeZip
+import com.linguareader.shared.packs.VoicePackSource
 import com.linguareader.shared.tts.TtsPipelineContract
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -90,6 +92,17 @@ class PackRepository(
     /** 音频包里的句子文件；null = 继续走缓存/现场合成。 */
     fun audioPackFile(bookId: String, relativePath: String): File? =
         AudioPackSource.resolve(registry(), packsRoot, bookId, relativePath)
+
+    /** 音色包的 metadata 音色：目标音色 id → 元数据。 */
+    fun voiceMetadata(): Map<String, PackVoice> = VoicePackSource.metadata(registry())
+
+    /** 音色包的克隆音色（含已解析的样本文件）。 */
+    fun cloneVoices(): List<VoicePackSource.CloneVoice> =
+        VoicePackSource.cloneVoices(registry(), packsRoot)
+
+    /** `pack:<packId>/<key>` 的克隆样本；不是音色包 id 时返回 null。 */
+    fun packVoiceSample(voiceId: String): File? =
+        VoicePackSource.sampleFile(registry(), packsRoot, voiceId)
 
     fun totalBytes(): Long = PackValidator.directoryBytes(packsRoot)
 

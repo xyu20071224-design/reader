@@ -2,6 +2,8 @@ package com.linguareader.app.tts
 
 import android.content.Context
 import android.util.Base64
+import com.linguareader.app.packs.PackRepository
+import com.linguareader.shared.packs.VoicePackSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -42,7 +44,7 @@ class MiMoTtsBackend(
      *  设计/克隆各自独立模型（文档规定）。 */
     internal fun modelFor(voiceId: String): String = when {
         voiceId.startsWith(MiMoVoiceStore.DESIGN_PREFIX) -> MODEL_VOICE_DESIGN
-        voiceId.startsWith(MiMoVoiceStore.CLONE_PREFIX) -> MODEL_VOICE_CLONE
+        isCloneVoice(voiceId) -> MODEL_VOICE_CLONE
         else -> settings.mimoModel.ifBlank { CloudTtsSettings.DEFAULT_MIMO_MODEL }
     }
 
@@ -60,11 +62,7 @@ class MiMoTtsBackend(
         outputFile: File
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val sampleUri = if (voice.startsWith(MiMoVoiceStore.CLONE_PREFIX)) {
-                loadCloneSampleUri(voice)
-            } else {
-                null
-            }
+            val sampleUri = if (isCloneVoice(voice)) loadCloneSampleUri(voice) else null
             // 设计音色的 user 消息 = 该音色自己的描述（mimo-design:<key> 在
             // MiMoVoiceStore 里登记的 prompt），而非全局风格指令；其余音色才
             // 用全局风格指令（文档：voicedesign 的 user 消息必填 = 音色描述）。
@@ -105,9 +103,14 @@ class MiMoTtsBackend(
         }
     }
 
-    /** 克隆样本 → `data:<mime>;base64,<data>`（文档要求的前缀格式）。 */
+    /**
+     * 克隆样本 → `data:<mime>;base64,<data>`（文档要求的前缀格式）。
+     *
+     * 样本来源两处：用户在本机导入的（`MiMoVoiceStore`）与音色包自带的（M4，只读）。
+     */
     private fun loadCloneSampleUri(voice: String): String {
         val sample = MiMoVoiceStore.sampleFile(appContext, voice)
+            ?: PackRepository(appContext).packVoiceSample(voice)
             ?: error("克隆音色样本缺失：$voice")
         val mime = when (sample.extension.lowercase()) {
             "wav" -> "audio/wav"
@@ -145,7 +148,7 @@ class MiMoTtsBackend(
             messages.put(JSONObject().put("role", "assistant").put("content", text))
             val audio = JSONObject().put("format", "wav")
             when {
-                voice.startsWith(MiMoVoiceStore.CLONE_PREFIX) -> {
+                isCloneVoice(voice) -> {
                     check(!sampleDataUri.isNullOrBlank()) { "克隆音色缺少样本" }
                     audio.put("voice", sampleDataUri)
                 }
@@ -180,8 +183,12 @@ class MiMoTtsBackend(
 
         internal fun modelForVoice(voice: String): String = when {
             voice.startsWith(MiMoVoiceStore.DESIGN_PREFIX) -> MODEL_VOICE_DESIGN
-            voice.startsWith(MiMoVoiceStore.CLONE_PREFIX) -> MODEL_VOICE_CLONE
+            isCloneVoice(voice) -> MODEL_VOICE_CLONE
             else -> CloudTtsSettings.DEFAULT_MIMO_MODEL
         }
+
+        /** 克隆音色：本机导入的 `mimo-clone:` 或音色包自带的 `pack:`（M4）。 */
+        internal fun isCloneVoice(voice: String): Boolean =
+            voice.startsWith(MiMoVoiceStore.CLONE_PREFIX) || VoicePackSource.isPackVoice(voice)
     }
 }

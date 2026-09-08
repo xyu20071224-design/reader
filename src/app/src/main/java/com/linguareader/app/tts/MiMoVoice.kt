@@ -2,6 +2,8 @@ package com.linguareader.app.tts
 
 import android.content.Context
 import androidx.core.content.edit
+import com.linguareader.app.packs.PackRepository
+import com.linguareader.shared.packs.VoicePackSource
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -304,9 +306,29 @@ object MiMoVoiceStore {
         }
 }
 
-/** MiMo 引擎的音色库：预置 + 自定义（设计/克隆）。 */
+/** MiMo 引擎的音色库：预置 + 自定义（设计/克隆）+ 音色包的克隆音色（M4）。 */
 fun MiMoVoiceCatalog.library(context: Context): List<VoiceInfo> {
     val presetItems = presets.map { MiMoVoiceCatalog.asVoiceInfo(it) }
     val customs = MiMoVoiceStore.installed(context).map { it.asVoiceInfo() }
-    return (presetItems + customs).distinctBy { it.id }
+    return withPackVoices(presetItems + customs, PackRepository(context).cloneVoices())
 }
+
+/**
+ * 音色包的克隆音色并进音色库（M4，纯函数便于单测）。
+ *
+ * id 带 `pack:<packId>/<key>` 命名空间，与 MiMo 预置/自建音色的 id 天然不撞；
+ * 质量给 0.7（与既有 clone 先验一致），多角色分配器照常参与打分。
+ */
+internal fun withPackVoices(
+    base: List<VoiceInfo>,
+    clones: List<VoicePackSource.CloneVoice>
+): List<VoiceInfo> = (base + clones.map { clone ->
+    VoiceInfo(
+        id = clone.id,
+        language = clone.voice.language,
+        gender = clone.voice.gender,
+        style = clone.voice.style,
+        quality = 0.7f,
+        source = "pack"
+    )
+}).distinctBy { it.id }
