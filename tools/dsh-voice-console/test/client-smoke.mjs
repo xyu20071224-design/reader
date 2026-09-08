@@ -136,6 +136,16 @@ assert.equal(cardTree.type, 'div')
 const cardButtons = cardTree.props.children.flat().filter((child) => child && child.type === 'button')
 assert.ok(cardButtons.length >= 2, `expected audition + action buttons, got ${cardButtons.length}`)
 
+/* 克隆音色卡片必须带「下载样本」——样本只能靠这条路离开这台电脑 */
+const cloneCard = voiceCards.find((card) => card.props.voice.kind === 'clone')
+assert.ok(cloneCard, 'clone card present')
+const cloneButtons = cloneCard
+	.type(cloneCard.props)
+	.props.children.flat()
+	.filter((child) => child && child.type === 'button')
+const downloadButton = cloneButtons.find((child) => [child.props.children].flat().join('') === '下载样本')
+assert.ok(downloadButton, 'clone card must offer 下载样本')
+
 /* 英文区只能列 en 音色（曾因写成 !== "en" 而变成中文区的镜像） */
 const presetsSection = sections.find((section) =>
 	section.props.children.flat().some((child) => child && child.type === 'h3' && [child.props.children].flat().join('').includes('预置音色')),

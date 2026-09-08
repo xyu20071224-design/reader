@@ -53,6 +53,7 @@ ln -sfn /home/xinyan/work/reader/tools/dsh-voice-console "$PROFILE/node_modules/
 | GET | `/record/status` | `{ok, session}`，`{active:false}` 表示当前没在录 |
 | GET | `/samples/<id>` | 试听 / 下载录音样本（wav 字节） |
 | DELETE | `/samples/<id>` | 删除录音样本 |
+| GET | `/voices/sample?id=…` | 下载克隆音色的样本字节（面板「下载样本」按钮用） |
 | POST | `/voices` | 新建：`kind=design`（`name`,`description`,`language`,`gender`）；`kind=clone` 用 `filename`+`dataBase64` 上传，或只给 `sampleId` 直接取内录样本 |
 | DELETE | `/voices?id=…` | 删除自定义音色（克隆音色连同样本文件） |
 
@@ -90,6 +91,18 @@ body: {
 - **样本质量**：10–60 秒、单人、纯语音最好；MiMo 上限 10 MB，24 kHz 单声道约 48 KB/s（≈3.5 分钟）。
   整段都在静音阈值以下会被判为「后处理结果为空」，把音量调大再录。
 - **合规**：只录你有权使用的声音（自己的，或已获本人同意的）——与 `scripts/record_voice_sample.sh` 的 `--consent` 同一约束。
+
+### 样本怎么进 App
+
+控制台与 App 是**两套独立存储，没有直通**：控制台样本在电脑 `~/.dsh/voice-console/{recordings,clones}/`，
+App 的样本在手机 `filesDir/mimo-voices/`。因此「复制配置」对克隆音色**无效**——它只带引擎 / Base URL /
+模型 / 音色 id，不带样本字节，把克隆 id 填进 App 会报「克隆音色样本缺失」。正确路径：
+
+1. 面板里点「下载样本」（内录样本行、克隆音色卡片上都有）；
+2. 把 wav 传到手机（USB / 网盘 / `adb push`）；
+3. App：听书设置 → 多角色 → MiMo 音色区 →「复刻音色」→ 填名称 + 选该文件（mp3/wav，≤10 MB）。
+
+音色包（`.lrpack`，M4）是另一条通道——样本随包分发、装完即用，但控制台目前不生成包。
 
 ## 安全边界
 

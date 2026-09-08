@@ -100,6 +100,9 @@ window.__ModuleLoader__.load({
 			"已放弃录音样本": "Recording discarded",
 			"已存为克隆音色": "Saved as a clone voice",
 			"样本已就绪，可试听或存为克隆音色。": "Sample ready — audition it, or save it as a clone voice.",
+			"下载样本": "Download sample",
+			"已下载": "Downloaded",
+			"下载失败": "Download failed",
 		}
 		let activeLocale = "zh"
 		function tr(text) {
@@ -421,6 +424,36 @@ window.__ModuleLoader__.load({
 				patch({ busyKey: "", error: `${tr("创建失败")}：${String(error.message ?? error)}` })
 			}
 		}
+		/**
+		 * 把 Host 上的音频字节存到本地。样本只能靠这条路离开这台电脑：
+		 * 下载后再手工传到手机，由 App 的「复刻音色」导入。
+		 */
+		async function downloadFile(path, filename) {
+			try {
+				const response = await fetch(API + path, { headers: { "x-voice-console": "1" } })
+				if (!response.ok) throw new Error(`HTTP ${response.status}`)
+				const blob = await response.blob()
+				const url = window.URL.createObjectURL(blob)
+				const anchor = window.document.createElement("a")
+				anchor.href = url
+				anchor.download = filename
+				anchor.rel = "noopener"
+				window.document.body.appendChild(anchor)
+				anchor.click()
+				anchor.remove()
+				window.setTimeout(() => window.URL.revokeObjectURL(url), 10000)
+				patch({ error: "", notice: `${tr("已下载")}：${filename}` })
+			} catch (error) {
+				patch({ error: `${tr("下载失败")}：${String(error.message ?? error)}`, notice: "" })
+			}
+		}
+		/** 下载文件名：音色名（清掉路径字符）+ 样本扩展名。 */
+		function sampleFileName(name, sampleFile) {
+			const extension = String(sampleFile ?? "").split(".").pop() || "wav"
+			const safe = String(name ?? "voice").replace(/[/\\]/g, "_").trim() || "voice"
+			return `${safe}.${extension}`
+		}
+
 		/* 面板是模态浮层：关掉它才能操作别的窗口，所以关闭即收尾（样本留在 store 里） */
 		function closeConsole() {
 			stopAudio()
@@ -595,6 +628,21 @@ window.__ModuleLoader__.load({
 					{ type: "button", style: S.btn, disabled: busy, onClick: () => audition(voice) },
 					busy ? tr("合成中…") : tr("试听"),
 				),
+				voice.kind === "clone"
+					? react.createElement(
+							"button",
+							{
+								type: "button",
+								style: S.btn,
+								onClick: () =>
+									downloadFile(
+										`/voices/sample?id=${encodeURIComponent(voice.id)}`,
+										sampleFileName(voice.name, voice.sampleFile),
+									),
+							},
+							tr("下载样本"),
+						)
+					: null,
 				voice.kind === undefined
 					? react.createElement(
 							"button",
@@ -738,6 +786,15 @@ window.__ModuleLoader__.load({
 									sample.source,
 								),
 								react.createElement("button", { type: "button", style: S.btn, onClick: () => auditionSample(sample.sampleId) }, tr("试听样本")),
+								react.createElement(
+									"button",
+									{
+										type: "button",
+										style: S.btn,
+										onClick: () => downloadFile(`/samples/${encodeURIComponent(sample.sampleId)}`, `${sample.sampleId}.wav`),
+									},
+									tr("下载样本"),
+								),
 								react.createElement("button", { type: "button", style: S.btn, disabled: busy, onClick: () => discardSample() }, tr("放弃样本")),
 							),
 							react.createElement(

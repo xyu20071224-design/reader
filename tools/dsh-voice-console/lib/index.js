@@ -277,6 +277,15 @@ class VoiceStore {
     return `data:${mimeFor(voice.sampleFile)};base64,${bytes.toString('base64')}`
   }
 
+  /** Raw clone sample bytes + filename, for the console's download button. */
+  async sampleBytes(id) {
+    const voice = await this.find(id)
+    if (voice === undefined || voice.kind !== 'clone') throw new Error(`克隆音色不存在：${id}`)
+    const file = join(this.clonesDir, voice.sampleFile)
+    if (!existsSync(file)) throw new Error(`克隆样本文件缺失：${voice.sampleFile}`)
+    return { bytes: await readFile(file), filename: voice.sampleFile, mime: mimeFor(voice.sampleFile) }
+  }
+
   /** Absolute path of a finished internal recording. */
   recordingPath(sampleId) {
     if (!/^[A-Za-z0-9-]+$/.test(String(sampleId ?? ''))) throw new Error('录音样本 id 非法')
@@ -691,6 +700,17 @@ async function handleRequest(ctx, store, recorder, req, res, url) {
       sendJson(res, 200, { ok: true, sampleId })
       return
     }
+  }
+  if (req.method === 'GET' && route === '/voices/sample') {
+    const id = url.searchParams.get('id') ?? ''
+    const sample = await store.sampleBytes(id)
+    res.writeHead(200, {
+      'content-type': sample.mime,
+      'content-length': String(sample.bytes.byteLength),
+      'cache-control': 'no-store',
+    })
+    res.end(sample.bytes)
+    return
   }
   if (req.method === 'POST' && route === '/voices') {
     const input = await readJsonBody(req)
