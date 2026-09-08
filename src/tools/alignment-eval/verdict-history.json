@@ -7,13 +7,14 @@
       "id": "s1",
       "stratum": "S1-句级高置信",
       "chapter": 30,
-      "verdict": "bad",
+      "verdict": "ok2",
       "garbage": false,
       "history": {
         "r1": "bad",
         "r2": "bad",
         "r3": "bad",
-        "r4": "bad"
+        "r4": "bad",
+        "r8": "ok2"
       }
     },
     {
@@ -217,13 +218,14 @@
       "id": "s19",
       "stratum": "S2-句级中置信",
       "chapter": 13,
-      "verdict": "ok",
+      "verdict": "ok2",
       "garbage": false,
       "history": {
         "r1": "bad",
         "r2": "bad",
         "r3": "bad",
-        "r4": "ok"
+        "r4": "ok",
+        "r8": "ok2"
       }
     },
     {
@@ -269,7 +271,8 @@
       "garbage": false,
       "history": {
         "r1": "bad",
-        "r3": "bad"
+        "r3": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -311,13 +314,14 @@
       "id": "s27",
       "stratum": "S2-句级中置信",
       "chapter": 13,
-      "verdict": "ok",
+      "verdict": "ok2",
       "garbage": false,
       "history": {
         "r1": "bad",
         "r2": "bad",
         "r3": "bad",
-        "r4": "ok"
+        "r4": "ok",
+        "r8": "ok2"
       }
     },
     {
@@ -428,7 +432,8 @@
         "r1": "bad",
         "r2": "bad",
         "r3": "bad",
-        "r4": "bad"
+        "r4": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -514,7 +519,8 @@
         "r2": "ok2",
         "r3": "ok2",
         "r4": "bad",
-        "r5": "ok2"
+        "r5": "ok2",
+        "r8": "ok2"
       }
     },
     {
@@ -713,7 +719,8 @@
         "r1": "bad",
         "r2": "bad",
         "r3": "bad",
-        "r4": "ok2"
+        "r4": "ok2",
+        "r8": "ok2"
       }
     },
     {
@@ -879,7 +886,8 @@
         "r1": "bad",
         "r3": "bad",
         "r4": "bad",
-        "r5": "bad"
+        "r5": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -918,7 +926,8 @@
         "r1": "ok",
         "r2": "bad",
         "r3": "bad",
-        "r4": "ok2"
+        "r4": "ok2",
+        "r8": "ok2"
       }
     },
     {
@@ -955,7 +964,8 @@
       "history": {
         "r1": "bad",
         "r3": "bad",
-        "r4": "bad"
+        "r4": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -967,7 +977,8 @@
       "history": {
         "r1": "bad",
         "r3": "bad",
-        "r4": "bad"
+        "r4": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -979,7 +990,8 @@
       "history": {
         "r1": "bad",
         "r3": "bad",
-        "r4": "bad"
+        "r4": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -1004,7 +1016,8 @@
         "r1": "bad",
         "r2": "bad",
         "r3": "bad",
-        "r5": "bad"
+        "r5": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -1017,7 +1030,8 @@
         "r1": "bad",
         "r3": "bad",
         "r4": "bad",
-        "r5": "bad"
+        "r5": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -1039,7 +1053,8 @@
       "garbage": false,
       "history": {
         "r1": "bad",
-        "r3": "bad"
+        "r3": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -1171,7 +1186,8 @@
         "r1": "bad",
         "r2": "bad",
         "r3": "bad",
-        "r4": "bad"
+        "r4": "bad",
+        "r8": "bad"
       }
     },
     {
@@ -1237,7 +1253,8 @@
         "r1": "bad",
         "r2": "bad",
         "r3": "bad",
-        "r4": "bad"
+        "r4": "bad",
+        "r8": "bad"
       }
     }
   ]

@@ -319,9 +319,11 @@ bash src/tools/alignment-eval/run-tool.sh proxy-scale          # 圣经 2,268 �
 泛化集下限已按 V6 实测上调（0.81/0.79/0.72 等，留约 5 个点余量），掉回 V5 水平即红。
 
 **金标准影响（生产路径重放）**：句对 11,003（V5 11,017）；契约样本 ok/ok2 **65 条中 5 条变化**
-（s19/s27/s43/s59/s75），bad/skip 12 条变化——比预估的 20–40 条小得多。**这 5 条要走一轮人工判定**
-（判定卡已生成，17 张），判定完写 `verdict-overrides.json` 第 8 轮 → fixture → bless → 合入 main。
-实施分支 `feat/adaptive-length-scale`。
+（s19/s27/s43/s59/s75），bad/skip 12 条变化——比预估的 20–40 条小得多。
+**第 8 轮人工判定（2026-09-08，用户逐条复核 17 条）**：5 条契约样本全部维持 ok/ok2
+（s19、s27 由 ok 降为 ok2），**s1 由 bad 升为 ok2**（新展示「他滿懷關切地說」对上了
+`he cried, full of concern`），其余 11 条仍 bad。判定写入 `verdict-overrides.json` 第 8 轮，
+台账分布 ok 40 / ok2 26 / bad 34；bless 后契约样本 **66 条全绿**（s1 进入契约）。
 
 ## 首次基线（2026-09-08）
 
