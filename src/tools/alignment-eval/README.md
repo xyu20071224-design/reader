@@ -17,7 +17,7 @@ ok/bad」来评估，六轮判定（2026-09-02 ~ 09-03，对齐器 V2→V5）的
 | 每轮人工盲判 100 条 | 回归报告直接列出「展示发生变化的样本」，人工只看增量 |
 | 评估工具依赖机器上的 Python 与旧路径 | 工具改写成 Kotlin 测试，走仓库自带 Gradle 工具链；Python 只留作历史参考 |
 
-## 四个组件
+## 五个组件
 
 ### 1. 金标准 fixture 生成工具
 
@@ -123,6 +123,36 @@ fork 出来的测试 JVM，文件标志没有这个坑，两台机器行为一�
 产出 `artifacts/alignment-eval/judgment-cards.html`（含书文，本地 gitignored；垃圾样本与
 定位不到的样本不进卡）。判定完把收集到的判定串写进 `verdict-overrides.json` 的新一轮，
 再依次跑 fixture 工具（并入台账）→ bless（更新批准展示）→ 重放校验。
+
+### 5. 公有领域泛化集（KJV × 和合本）
+
+`src/shared/src/test/java/com/linguareader/shared/translation/PublicDomainAlignmentGeneralizationTest.kt`
+
+魔戒金标准集只有一个文体（现代小说 + 现代译本），长度比门槛 [0.45, 2.6] 与 margin 0.12
+全是单书拟合。这里用 KJV（英王钦定本）与和合本做第二、第三评测集：两版都是公有领域，
+**逐节对齐是免费真值**，文体差别也大（福音书叙事 / 创世记 / 箴言格言）。
+
+```bash
+# 素材本地下载（约 19 MB，gitignored；缺失时测试自动跳过）
+bash src/tools/alignment-eval/fetch-generalization-corpus.sh
+./toolchain/build.sh :shared:test \
+  --tests "com.linguareader.shared.translation.PublicDomainAlignmentGeneralizationTest"
+```
+
+**2026-09-08 首次实测**（`meaning = null`，只看结构/长度路径）：
+
+| 书 | 章 | 节 | 句对 | 同节精度 | ±1 节精度 | 节级覆盖 | 平均置信度 | 耗时 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| John | 21 | 879 | 1087 | 0.649 | 0.848 | 0.521 | 0.85 | 248ms |
+| Genesis | 50 | 1533 | 1905 | 0.599 | 0.816 | 0.408 | 0.84 | 161ms |
+| Proverbs | 31 | 915 | 1064 | 0.465 | 0.773 | 0.270 | 0.80 | 77ms |
+
+**结论（重要）**：对齐器在古典经文上明显退化——只有 46–65% 的句对落在同一节，
+错误以 Δ±1 节为主（整节漂移）。最可能的原因是长度比启发式「1.7 中文字 / 英文词」
+不适配和合本的紧凑用词（同一节的中文字数远少于现代译本），DP 为凑长度而整节错位。
+这不是回归，而是**单书过拟合的量化证据**——以后重拟合门槛必须在这几本书上复验。
+测试对三本书各设「同节 / ±1 节 / 覆盖率」三条下限（实测留约 5 个点余量），
+红了说明改动让泛化进一步退化。
 
 ## 首次基线（2026-09-08）
 
