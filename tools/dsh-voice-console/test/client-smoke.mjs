@@ -136,6 +136,20 @@ assert.equal(cardTree.type, 'div')
 const cardButtons = cardTree.props.children.flat().filter((child) => child && child.type === 'button')
 assert.ok(cardButtons.length >= 2, `expected audition + action buttons, got ${cardButtons.length}`)
 
+/* 英文区只能列 en 音色（曾因写成 !== "en" 而变成中文区的镜像） */
+const presetsSection = sections.find((section) =>
+	section.props.children.flat().some((child) => child && child.type === 'h3' && [child.props.children].flat().join('').includes('预置音色')),
+)
+assert.ok(presetsSection, 'presets section present')
+const presetChildren = presetsSection.props.children.flat().filter(Boolean)
+const enHeaderIndex = presetChildren.findIndex(
+	(child) => child && child.type === 'h3' && [child.props.children].flat().join('').includes('英文'),
+)
+assert.ok(enHeaderIndex >= 0, '英文 presets header present')
+const enCards = presetChildren.slice(enHeaderIndex + 1).filter((child) => child && child.props && child.props.voice)
+assert.ok(enCards.length > 0, 'english presets rendered')
+assert.ok(enCards.every((card) => card.props.voice.language === 'en'), 'english section must only list en voices')
+
 /* the 内录 section must offer a source picker and a start-recording button */
 const recorder = body.props.children
 	.flat()

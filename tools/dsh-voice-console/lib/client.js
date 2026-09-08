@@ -785,8 +785,9 @@ window.__ModuleLoader__.load({
 			const [clone, setClone] = react.useState({ name: "", language: "zh", gender: "female", filename: "", fileBase64: "" })
 			const presets = state.state?.presets ?? []
 			const custom = state.state?.voices ?? []
-			const zhPresets = presets.filter((voice) => voice.language === "zh")
-			const enPresets = presets.filter((voice) => voice.language !== "en")
+			/* 两个区必须互补，且与 VoiceCard 的 isZh 口径一致：非 en 一律算中文区 */
+			const zhPresets = presets.filter((voice) => voice.language !== "en")
+			const enPresets = presets.filter((voice) => voice.language === "en")
 			const designVoices = custom.filter((voice) => voice.kind === "design")
 			const cloneVoices = custom.filter((voice) => voice.kind === "clone")
 
