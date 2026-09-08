@@ -65,7 +65,12 @@ class TtsTextExtractor {
     }
 
     companion object {
-        /** Must stay in sync with `TTS_BLOCK_SELECTOR` in ReaderScripts.kt. */
+        /**
+         * Must stay in sync with `TTS_BLOCK_SELECTOR` in ReaderScripts.kt.
+         *
+         * ⚠️ 改这里（或 JS 侧）必须 bump `TtsPipelineContract.VERSION`：块号决定句号，
+         * 句号是音频缓存键与音频包清单的一部分。
+         */
         const val BLOCK_SELECTOR =
             "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, figcaption, pre, div, section, article, header, footer"
     }

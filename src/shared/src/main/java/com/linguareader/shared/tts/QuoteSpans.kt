@@ -3,6 +3,9 @@ package com.linguareader.shared.tts
 /**
  * 引语区间的统一扫描器——发言/旁白分离的公共底层。
  *
+ * ⚠️ **改这里（或依赖它的 [TtsChapter] 片段化）必须 bump [TtsPipelineContract.VERSION]**：
+ * 片段划分决定缓存键里的段号，改了不 bump 就会播出错位的音频。
+ *
  * [SpeakerRuleTagger]（规则打标，:app）与 [TtsChapter]（句内片段化）都要回答
  * 「这些字符在不在引语里」，此前各自实现一份；现在共用这里，避免两条口径漂移。
  *

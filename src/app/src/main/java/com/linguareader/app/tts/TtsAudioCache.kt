@@ -3,8 +3,8 @@ package com.linguareader.app.tts
 import android.content.Context
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.BookScopedStore
+import com.linguareader.shared.tts.TtsCacheKey
 import java.io.File
-import java.security.MessageDigest
 
 /**
  * 云 TTS 音频缓存的所有者：`filesDir/tts_cache/<bookId>/<chapter>/<voice>/<sentence>.mp3`。
@@ -125,6 +125,10 @@ class TtsAudioCache(context: Context) : BookScopedStore {
      * 两台不同的自建服务器上是**不同的声音**，不把它算进键，换服务器后会直接播出
      * 上一台的音频。键里带上它之后，旧引擎的目录自然不再命中，交给配额淘汰或
      * 「清空音频缓存」回收。
+     *
+     * **键里还含朗读管线版本**（`~v1~`，见 [TtsCacheKey] 与 `TtsPipelineContract`）：
+     * 断句/块选择器/片段拆分任一改动都会让存量缓存静默对不上文本，版本进键是唯一的
+     * 闸门。代价是版本 bump 时存量缓存一次性作废（方案 D1 已接受）。
      */
     fun fileFor(
         bookId: String,
@@ -135,49 +139,25 @@ class TtsAudioCache(context: Context) : BookScopedStore {
         engineTag: String
     ): File = File(
         root,
-        "$bookId/$chapterIndex/${segmentFor(engineTag, voice)}/s$sentenceIndex-$segmentIndex.mp3"
+        // 键的唯一实现在 :shared（音频包生成工具共用），见 TtsCacheKey。
+        // 键里含管线版本：切分规则一变，旧目录自然不命中（方案 D1，存量缓存一次性作废）。
+        "$bookId/" + TtsCacheKey.relativePath(
+            chapterIndex = chapterIndex,
+            sentenceIndex = sentenceIndex,
+            segmentIndex = segmentIndex,
+            engineTag = engineTag,
+            voice = voice
+        )
     )
 
     companion object {
         const val DIR_NAME = "tts_cache"
 
-        /**
-         * 音色 id → 缓存目录名。**必须是单射**，否则缓存会串音。
-         *
-         * 旧实现是 voice.replace(Regex("[^A-Za-z0-9._-]"), "_") —— 有损映射：两个不同音色
-         * 可以消毒成同一个目录名（自建服务器把参考音频命名成「男声.wav」「女声.wav」，
-         * 两者都变成同一串下划线），而命中判据只有「文件存在且非空」，于是**放出另一个
-         * 音色的音频**，且永远发现不了。
-         *
-         * 现在只在「这个 id 当目录名会出事」时才改写，其余原样保留：
-         * - 原样保留 ⇒ 单射显然成立，且**存量缓存全部继续命中**（MiMo 的
-         *   mimo-clone:<ascii-slug>、系统音色名、常见服务器音色名都落在这一档）；
-         * - 含路径分隔符 / 空串 / 单点 / 双点 的才换成哈希 —— 这几种当目录名会穿越或
-         *   指错地方，哈希同时保证单射。
-         *
-         * 这里**没有**引擎维度：同一个音色 id 在两台不同服务器上可能是不同的声音，
-         * 那条要等缓存清理入口就绪后一起改（改键会作废存量缓存，见方案 D2.2）。
-         */
-        /**
-         * 淘汰单元的目录名 = 引擎哈希 + 音色段。
-         *
-         * 引擎那半截一律哈希：它可能是 `server:http://…` 这种带路径分隔符的串。
-         * 音色那半截沿用 [voiceSegment] 的「无损优先」策略，方便肉眼排查。
-         */
+        /** 淘汰单元的目录名；实现在 [TtsCacheKey.segmentDir]（含管线版本）。 */
         fun segmentFor(engineTag: String, voice: String): String =
-            "e" + sha256Hex(engineTag).take(8) + "~" + voiceSegment(voice)
+            TtsCacheKey.segmentDir(engineTag, voice)
 
-        private fun sha256Hex(value: String): String =
-            MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
-                .joinToString("") { "%02x".format(it) }
-
-        fun voiceSegment(voice: String): String {
-            val unusable = voice.isEmpty() ||
-                voice == "." ||
-                voice == ".." ||
-                voice.any { it == '/' || it == '\\' || it == '\u0000' }
-            if (!unusable) return voice
-            return "h-" + sha256Hex(voice).take(16)
-        }
+        /** 音色 id → 目录名段；实现在 [TtsCacheKey.voiceSegment]。 */
+        fun voiceSegment(voice: String): String = TtsCacheKey.voiceSegment(voice)
     }
 }

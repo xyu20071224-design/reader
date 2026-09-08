@@ -1022,6 +1022,8 @@ object ReaderScripts {
             updateMetrics();
           };
 
+          // ⚠️ 改这里必须同步 Kotlin 侧 TtsTextExtractor 的选择器，并 bump
+          // TtsPipelineContract.VERSION（块号漂移会连带句号漂移，音频缓存/音频包全靠它）。
           const TTS_BLOCK_SELECTOR =
             'p, li, h1, h2, h3, h4, h5, h6, blockquote, td, figcaption, pre, ' +
             'div, section, article, header, footer';

@@ -3,6 +3,9 @@ package com.linguareader.shared.tts
 /**
  * Splits mixed English / Chinese prose into TTS-sized sentences.
  *
+ * ⚠️ **改这里必须 bump [TtsPipelineContract.VERSION]** —— 句号是音频缓存键与
+ * 音频包清单的一部分，改了切分而不 bump，存量音频会静默对不上文本。
+ *
  * Rules:
  * - Terminators: `. ! ? … 。 ！ ？` (a run of terminators is one boundary).
  * - A run of three or more ASCII dots is an ellipsis and behaves exactly like
