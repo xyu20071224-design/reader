@@ -29,10 +29,31 @@ bash src/tools/alignment-eval/run-tool.sh fixture          # 重建金标准 fix
 bash src/tools/alignment-eval/run-tool.sh replay           # 金标准重放（整本，约 40s）
 bash src/tools/alignment-eval/run-tool.sh generalization   # 公版泛化集（KJV × 和合本）
 bash src/tools/alignment-eval/run-tool.sh synthetic        # 合成语料真值对齐
+bash src/tools/alignment-eval/run-tool.sh full             # 本地全量：replay→synthetic→generalization→proxy
 ```
 
 加 `--rerun` 强制重跑；不加时若 Gradle 判定测试未变，直接打印上次结果（秒出）。
 各组件小节里也给了等价的直接 Gradle 写法。
+
+## 语料持久化（清单 + 校验 + 一条命令跑全量）
+
+素材本体（KJV/和合本/CC-CEDICT，约 23 MB）**不入库**（体积 + 版权），但「不入库」
+不等于「不可重建」：来源 URL、许可、字节数、sha256 全部钉在
+`src/tools/alignment-eval/corpus-manifest.tsv`，任何机器都能一字不差地重建并校验。
+这不是洁癖——魔戒的 `artifacts/alignment-package` 就在搬迁里静默丢过一次，基准测试
+因此空转了很久；泛化集/代理同理，文件在不在必须能一句话答清楚。
+
+```bash
+bash src/tools/alignment-eval/fetch-corpus.sh                 # 缺则下载，在则校验
+bash src/tools/alignment-eval/fetch-corpus.sh --check         # 只校验，不联网（发版前先跑）
+bash src/tools/alignment-eval/fetch-corpus.sh --refresh       # 重新下载
+bash src/tools/alignment-eval/fetch-corpus.sh --only kjv,chiun  # 只处理指定条目
+```
+
+`fetch-generalization-corpus.sh` / `fetch-semantic-proxy-corpus.sh` 是它的两个薄封装
+（`--only kjv,chiun` / `--only cedict`），旧命令照用。**发版前清单**：`fetch-corpus.sh
+--check` → `run-tool.sh full`（后者第一步自己会校验语料，语料缺失时相关测试自动跳过
+并明确打印 skipped）。
 
 ## 六个组件
 
@@ -138,8 +159,11 @@ fork 出来的测试 JVM，文件标志没有这个坑，两台机器行为一�
 ```
 
 产出 `artifacts/alignment-eval/judgment-cards.html`（含书文，本地 gitignored；垃圾样本与
-定位不到的样本不进卡）。判定完把收集到的判定串写进 `verdict-overrides.json` 的新一轮，
-再依次跑 fixture 工具（并入台账）→ bless（更新批准展示）→ 重放校验。
+定位不到的样本不进卡）。**排序**：本地有 CC-CEDICT 时按语义代理分数升序排（分数越低
+越可疑，人工先看最可能出问题的），卡片元信息里带分数；缺词典时退回报告顺序并在卡片
+顶部说明。排序只是省注意力，判定仍以人眼为准。判定完把收集到的判定串写进
+`verdict-overrides.json` 的新一轮，再依次跑 fixture 工具（并入台账）→ bless（更新批准
+展示）→ 重放校验。
 
 ### 5. 公有领域泛化集（KJV × 和合本）
 
@@ -209,7 +233,66 @@ bash src/tools/alignment-eval/fetch-semantic-proxy-corpus.sh   # CC BY-SA 4.0，
 **为什么没直接上句向量**：LaBSE 一类多语模型约 1.8 GB 且要 Python/torch，与
 「离线优先 + 仓库自带 JVM 工具链」冲突；先用零额外运行时依赖的外部词典验证
 「外部信号有没有用」——结论是有用。若要把 AUC 从 0.80 再往上推，再引入句向量，
-替换点就是 `scoreProxy(index, en, zh)` 这一个函数。
+替换点就是 `SemanticProxyIndex.score(index, en, zh)` 这一个函数（索引与打分已抽到
+`src/app/src/test/java/com/linguareader/app/translation/SemanticProxyIndex.kt`，
+判定卡排序与本工具共用同一份实现）。
+
+## 待审核：长度归一化改造（章节密度自适应，2026-09-08 研究）
+
+泛化集暴露的 Δ±1 整节漂移，根因是 `TranslationAligner.ZH_CHARS_PER_EN_WORD = 1.7`
+这个**全局**常量：它把中文字符折算成英文词，DP 的代价函数与 V5 长度门槛都按它归一。
+研究做法：把 aligner 的 `meaning = null` 路径逐行移植到一次性 Python 脚本
+（`artifacts/length-scale-study/`，gitignored），**先用全局 1.7 复现 Kotlin 基线到
+小数点后三位**（John 0.649/0.848/0.521、Genesis 0.599/0.816/0.408、Proverbs
+0.465/0.773/0.270，句对数 1087/1905/1064 也一致）——移植可信后，只换 scale 重跑。
+
+实测密度（zh 字符 / en 词）：
+
+| 书 | 整本 | 章密度均值 ± sd | 章密度范围 |
+| --- | --- | --- | --- |
+| John | 1.470 | 1.471 ± 0.064 | 1.371–1.590 |
+| Genesis | 1.360 | 1.355 ± 0.122 | 1.020–1.581 |
+| Proverbs | 1.314 | 1.317 ± 0.066 | 1.199–1.452 |
+| 魔戒（现代译本） | **1.776** | — | — |
+
+1.7 对圣经偏高 14–23%，DP 因此系统性偏好更长的中文节（漂移方向实测也是 Δ+1/+2 居多）；
+对魔戒只偏低 4.5%。
+
+全 DP 复跑（同书同真值，只换 scale；同节 / ±1 节 / 节级覆盖）：
+
+| 方案 | John | Genesis | Proverbs |
+| --- | --- | --- | --- |
+| 全局 1.7（现状） | 0.649 / 0.848 / 0.521 | 0.599 / 0.816 / 0.408 | 0.465 / 0.773 / 0.270 |
+| 整本密度 | 0.836 / 0.945 / 0.744 | 0.828 / 0.941 / 0.686 | 0.709 / 0.920 / 0.612 |
+| 每章密度 | **0.857 / 0.963 / 0.772** | **0.845 / 0.961 / 0.728** | **0.769 / 0.946 / 0.673** |
+| 每章密度 + 收缩（α=200 词） | 0.858 / 0.963 / 0.775 | 0.841 / 0.953 / 0.715 | 0.761 / 0.931 / 0.670 |
+| 句数归一 `(C/S_zh)/(W/S_en)` | 0.535 / 0.793 / 0.431 | 0.518 / 0.782 / 0.387 | 0.305 / 0.664 / 0.264 |
+| 字数 × (S_en/S_zh)^0.25 | 0.871 / 0.977 / 0.796 | 0.850 / 0.957 / 0.722 | 0.636 / 0.873 / 0.590 |
+
+- **用字数，别用句数**：句数归一比现状更差——中文分句比英文多 20–50%（和合本的
+  `；` 与引号切分），`(C_zh/S_zh)/(W_en/S_en)` 系统性低估；带句数修正的插值在
+  John/Genesis 微涨、Proverbs 掉 13 个点，不稳定，不采用。
+- **章级 > 整本级 > 全局**：章级比整本级多 2–6 个点（Proverbs 最明显）；收缩到整本
+  先验几乎不掉分，可当防误配护栏。
+- **风险在魔戒侧**：魔戒在基准读法下是 45 英文章对 29 中文章（分章粒度本来就不同），
+  章密度因误配波动到 0.40–10.31；把 scale 从 1.7 挪到整本 1.776 会让 **21.5%** 的
+  句对变化（1.71 已 5.2%，1.75 16.3%）。也就是说**任何 scale 改动都要重跑金标准，
+  大概率还要一轮人工判定**。
+
+建议的落地方式（**未实现，等审核**）：
+
+1. `align()` 先算整本密度 `s_book = ΣC_zh / ΣW_en`（不依赖章配对，O(text)）；
+2. 若 `|s_book/1.7 − 1| ≤ 0.10` → 整本沿用 1.7（魔戒 1.776 落在带内 → 零 churn）；
+3. 否则逐章 `s_c = (C_zh + α·s_book)/(W_en + α)`（α≈200 词，防短章/误配），钳制到
+   `[0.9, 2.6]`；
+4. scale 只替换 `lengthCost` / `ratioOf` / `lengthRatioOf` 里的常量（V5 门槛与 1:N
+   合并门槛随之变成「相对本章密度」），`VERSION` bump 到 6；
+5. 验收：泛化集三书同节 ≥0.84 / ±1 ≥0.95，金标准变化样本跑一轮判定卡，
+   benchmark 耗时 <3s 不退化。
+
+两个选项：**A（推荐）全量自适应**——不要第 2 步死区，质量最高，代价是魔戒基线约
+10–20 条样本变化（一轮判定）；**B 零 churn**——保留 10% 死区，圣经三书照常受益
+（都超出 10%），魔戒零变化，代价是密度落在 1.53–1.87 的书拿不到修正。
 
 ## 首次基线（2026-09-08）
 
