@@ -9,6 +9,7 @@ import com.linguareader.shared.translation.AlignedSentencePair
 import com.linguareader.shared.translation.TranslationAligner
 import com.linguareader.shared.translation.TranslationMemory
 import com.linguareader.shared.translation.TranslationMemoryIndex
+import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.junit.Assert.assertTrue
@@ -200,6 +201,9 @@ class TranslationGoldenReplayTest {
         // ---- 4. 保真度对账：与 eval6.csv 记录的 V5 展示比对（只报告，不阻断） ----
         reportV6Fidelity(artifacts, samples, displays, locatedBySample, pairs)
 
+        // ---- 4b. 回归报告（本地产物）：判定卡生成器的输入 ----
+        writeReplayReport(artifacts, samples, displays)
+
         // ---- 5. 报告 ----
         val garbageCount = samples.count { it.garbage }
         println(
@@ -215,6 +219,62 @@ class TranslationGoldenReplayTest {
             "金标准回归失败 ${failures.size} 条：\n" + failures.joinToString("\n"),
             failures.isEmpty()
         )
+    }
+
+    // ---- 回归报告（本地产物，供判定卡生成器使用） ----
+
+    /**
+     * 把本次重放的「用户所见」写成 JSON：每个样本的批准展示 vs 当前展示 + 是否变化。
+     *
+     * 这是 `TranslationJudgmentCardTool` 的输入——下一轮人工判定只需要看这里标了
+     * `changed = true` 的样本。文件在 `artifacts/`（gitignored，含书文）。
+     */
+    private fun writeReplayReport(
+        artifacts: File,
+        samples: List<Sample>,
+        displays: Map<String, Display>
+    ) {
+        val array = JSONArray()
+        for (sample in samples) {
+            val current = displays[sample.id]
+            val entry = JSONObject()
+                .put("id", sample.id)
+                .put("stratum", sample.stratum)
+                .put("chapter", sample.chapter)
+                .put("en", sample.en)
+                .put("verdict", sample.verdict)
+                .put("garbage", sample.garbage)
+            sample.approved?.let {
+                entry.put("approved", JSONObject().put("level", it.level).put("zh", it.zh))
+            }
+            if (current != null) {
+                entry.put(
+                    "current",
+                    JSONObject()
+                        .put("level", current.level)
+                        .put("zh", current.zh)
+                        .put("confidence", current.confidence.toDouble())
+                )
+                entry.put(
+                    "changed",
+                    sample.approved?.let {
+                        it.level != current.level || lightNormalize(it.zh) != lightNormalize(current.zh)
+                    } ?: true
+                )
+            } else {
+                entry.put("changed", true)
+            }
+            array.put(entry)
+        }
+        val report = JSONObject()
+            .put("formatVersion", 1)
+            .put("generatedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(Date()))
+            .put("alignerVersion", TranslationAligner.VERSION)
+            .put("samples", array)
+        val file = File(artifacts, "alignment-eval/replay-report.json")
+        file.parentFile?.mkdirs()
+        file.writeText(report.toString(2) + "\n")
+        println("[golden] 回归报告 → ${file.path}")
     }
 
     // ---- 定位：样本英文句 → 它所在的章与段落 ----

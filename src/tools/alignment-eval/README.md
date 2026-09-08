@@ -17,7 +17,7 @@ ok/bad」来评估，六轮判定（2026-09-02 ~ 09-03，对齐器 V2→V5）的
 | 每轮人工盲判 100 条 | 回归报告直接列出「展示发生变化的样本」，人工只看增量 |
 | 评估工具依赖机器上的 Python 与旧路径 | 工具改写成 Kotlin 测试，走仓库自带 Gradle 工具链；Python 只留作历史参考 |
 
-## 三个组件
+## 四个组件
 
 ### 1. 金标准 fixture 生成工具
 
@@ -37,6 +37,11 @@ ok/bad」来评估，六轮判定（2026-09-02 ~ 09-03，对齐器 V2→V5）的
   **永不入库**：版权 + 它依赖的测试书本来就 gitignore）；
 - `src/tools/alignment-eval/verdict-history.json` — **入库**的判定台账：id / 分层 / 章节号 /
   最终判定 / 逐轮判定史，**不含任何书文**。人工判定是已经花掉的成本，丢了不可再生。
+
+**第七轮起的补充判定**写在 `src/tools/alignment-eval/verdict-overrides.json`（入库、不含书文）：
+六轮历史是既成事实，之后每次人工复核只往这里追加一轮 `{round, date, method, verdicts}`，
+fixture 工具在合并六轮之后按轮次覆盖，并把结果写进台账的 `rN` 字段。已有第 7 轮
+（2026-09-08，5 条 ok2 样本按当前整段展示复核，维持 ok2）。
 
 重新生成会保留 fixture 里已有的 `approved` 块（按 id 合并），所以「先 bless 再重建」不会丢批准状态。
 
@@ -97,6 +102,27 @@ fork 出来的测试 JVM，文件标志没有这个坑，两台机器行为一�
 扩充方式：在 `SyntheticBilingualCorpus.build(markerAt = ...)` 上做段落/句级手术，
 再用 `evaluate` 的编号集合比对；新增病灶请同步补进这张表。改对齐器后这个测试红了，
 说明改动破坏了上面某类结构——先看是哪一行 `[synthetic]` 指标掉了。
+
+### 4. 判定卡生成器（人工只看增量）
+
+`src/app/src/test/java/com/linguareader/app/translation/TranslationJudgmentCardTool.kt`
+
+重放测试每次会写出 `artifacts/alignment-eval/replay-report.json`（每个样本的
+批准展示 vs 当前展示 + `changed` 标记）。本工具把**变化样本**渲染成一份自包含 HTML
+判定页（含当年那种一键收集 `sN=verdict;…` 的按钮），人工只判这几条：
+
+```bash
+# 1) 重放，生成报告
+./toolchain/build.sh :app:testDebugUnitTest \
+  --tests "com.linguareader.app.translation.TranslationGoldenReplayTest" --console=plain
+# 2) 生成判定卡（无变化时会明确说「无需人工判定」并删掉旧卡）
+./toolchain/build.sh :app:testDebugUnitTest \
+  --tests "com.linguareader.app.translation.TranslationJudgmentCardTool" --console=plain
+```
+
+产出 `artifacts/alignment-eval/judgment-cards.html`（含书文，本地 gitignored；垃圾样本与
+定位不到的样本不进卡）。判定完把收集到的判定串写进 `verdict-overrides.json` 的新一轮，
+再依次跑 fixture 工具（并入台账）→ bless（更新批准展示）→ 重放校验。
 
 ## 首次基线（2026-09-08）
 

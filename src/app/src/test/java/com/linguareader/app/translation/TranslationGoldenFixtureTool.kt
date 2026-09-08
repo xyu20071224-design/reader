@@ -98,6 +98,26 @@ class TranslationGoldenFixtureTool {
             if (csvEn.isNotBlank() && collapse(csvEn) != collapse(seed.en)) enMismatches++
         }
 
+        // ---- 4b. 第七轮起的补充判定（verdict-overrides.json，入库、不含书文） ----
+        // 六轮历史是既成事实，后续人工复核只在这里追加，重建 fixture 时按轮次覆盖。
+        val overrideHistory = linkedMapOf<String, MutableMap<String, String>>()
+        val overrideFile = File(root, "src/tools/alignment-eval/verdict-overrides.json")
+        if (overrideFile.isFile) {
+            val rounds = JSONObject(overrideFile.readText()).optJSONArray("rounds") ?: JSONArray()
+            for (i in 0 until rounds.length()) {
+                val round = rounds.getJSONObject(i)
+                val roundNo = round.optInt("round", 0)
+                val verdicts = round.optJSONObject("verdicts") ?: JSONObject()
+                for (id in verdicts.keys()) {
+                    if (id !in finalVerdicts) continue
+                    val verdict = verdicts.getString(id)
+                    finalVerdicts[id] = verdict
+                    overrideHistory.getOrPut(id) { linkedMapOf() }["r$roundNo"] = verdict
+                }
+            }
+            println("[golden] 补充判定: ${overrideHistory.size} 条来自 $overrideFile")
+        }
+
         // ---- 5. 组装 fixture ----
         val goldenDir = File(artifacts, "alignment-eval").apply { mkdirs() }
         val goldenFile = File(goldenDir, "golden-samples.json")
@@ -132,6 +152,7 @@ class TranslationGoldenFixtureTool {
             r3[seed.id]?.let { history.put("r3", it) }
             r4[seed.id]?.let { history.put("r4", it) }
             r5[seed.id]?.let { history.put("r5", it) }
+            overrideHistory[seed.id]?.forEach { (round, verdict) -> history.put(round, verdict) }
             if (history.length() > 0) sample.put("history", history)
             if (garbage) {
                 sample.put(
