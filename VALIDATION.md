@@ -17,8 +17,8 @@
 
 | 验证点 | 结果 |
 | --- | --- |
-| `:app:testDebugUnitTest` | **371 用例 0 失败**（含 `PackRepositoryTest` 12 例端到端：装/切/卸/校验/闸门/穿越/换包后查词真的换词典） |
-| `:shared:test` | **277 用例 0 失败 1 跳过**（含 `PackManifest`/`SafeZip`/`PackRegistry`/`PackAudioValidation`/`VoicePackSource`/`TtsCacheKey`/`EpubImporter`） |
+| `:app:testDebugUnitTest` | **384 用例 0 失败**（本特性新增 16 例；`PackRepositoryTest` 端到端覆盖 装/切/卸/校验/闸门/穿越/换包后查词真的换词典） |
+| `:shared:test` | **277 用例 0 失败**（含 `PackManifest`/`SafeZip`/`PackRegistry`/`PackAudioValidation`/`VoicePackSource`/`TtsCacheKey`/`EpubImporter`） |
 | `:app:assembleDebug` | 成功 |
 | 与并行会话合流 | `git merge main`（含 UiAnimSpeed、译本对齐金标准）**零冲突**，双方改动共存，合流后全量单测复跑通过 |
 
@@ -1278,8 +1278,10 @@ DP 内层时立刻失败。`testDebugUnitTest` **311 个通过**；对齐完成�
 ## 2026-09-06 收尾：并行会话工作提交 + 搬迁遗留清零
 
 - **`f721f4e`**：提交并行会话停止前的最终意志——回退其最后两笔功能（段落兜底的段内句级找回/释义找回，第 5 级降回纯段落级，`lookup` 去掉 senseCandidates 参数），随回退精简 6 条测试；补分句器缩写-引语-旁白回归测试 1 条；清掉 TtsPlaybackEngineTest 旧路径残留。
-- **`5cc93ed`**：AGENTS.md / scripts / tts README / studio.py 内三次搬迁（工作文件夹→D:eader→当前）的旧路径全部订正为 `C:Users
-agisaworkeader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此干净。
+- **`5cc93ed`**：AGENTS.md / scripts / tts README / studio.py 内三次搬迁（工作文件夹→D:
+eader→当前）的旧路径全部订正为 `C:Users
+agisawork
+eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此干净。
 - **终态**：门禁 341+217+3 全绿；桌面版六件事（导入/阅读/查词/收藏/复习/听书）全部成立；工作树仅剩用户自留的方案文档与 .zcode 本地目录。
 
 ## 2026-09-06 桌面迁移 M4/M5：JCEF 阅读器（路线 B）+ 打包落地
