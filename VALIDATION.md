@@ -1,3 +1,36 @@
+## 2026-09-08 资源包系统 M1–M4 落地（Windows 会话遗留任务的续作）
+
+**来源**：Windows 会话（`session-9a9bc12d`）完成了「插件系统可行性」评审与实施计划，未动代码。本次在 Linux 侧按该计划实现并合流。计划权威：根目录 `方案-资源包系统.md`。
+
+**结论先行**：做**资源包**，不做动态代码插件（DexClassLoader / 插件 APK）。三类包：词典、预生成音频、音色。
+
+**实现**（分支 `feat/resource-packs`，四个里程碑各一提交，已合并 main）：
+
+| 里程碑 | 内容 |
+| --- | --- |
+| M1 | `:shared/packs`：`PackManifest`（JSON 往返 + 路径穿越拦截）、`PackRegistry`、`PackValidator`、`SafeZip`（`EpubImporter` 改为共用同一份护栏）；`:app` `PackRepository`（SAF → 临时区 → 护栏 → 哈希对账 → 词典表结构探针 → 原子落位 → registry）；词典解析链「活动包 → 内置副本 → assets」；`PacksSheet`（装/切/卸/校验），入口在存储页 |
+| M2 | `TtsPipelineContract.VERSION` + `TtsCacheKey`（键的唯一实现，应用与打包脚本共用）；缓存键并入管线版本 `e<hash8>~v1~<voice>/s<句>-<段>.mp3`；四处耦合点加「改这里必须 bump」指引 |
+| M3 | 音频包：安装时管线版本闸门 + 逐文件哈希一次算完、章节树摘要同源推导 + `validateAudioChapters`；播放解析链「包 → 缓存 → 现场合成」，包命中不预生成不重复计费；`scripts/build_audio_pack.py` |
+| M4 | 音色包：metadata 叠加（包 > 服务器广播 > id 形状先验）；MiMo 克隆音色入 `pack:<packId>/<key>` 命名空间，样本从包目录读取 |
+
+**验证**（Linux / CachyOS，`./toolchain/build.sh`）：
+
+| 验证点 | 结果 |
+| --- | --- |
+| `:app:testDebugUnitTest` | **371 用例 0 失败**（含 `PackRepositoryTest` 12 例端到端：装/切/卸/校验/闸门/穿越/换包后查词真的换词典） |
+| `:shared:test` | **277 用例 0 失败 1 跳过**（含 `PackManifest`/`SafeZip`/`PackRegistry`/`PackAudioValidation`/`VoicePackSource`/`TtsCacheKey`/`EpubImporter`） |
+| `:app:assembleDebug` | 成功 |
+| 与并行会话合流 | `git merge main`（含 UiAnimSpeed、译本对齐金标准）**零冲突**，双方改动共存，合流后全量单测复跑通过 |
+
+**未做（缺设备）**：本机 `adb devices` 为空，以下必须真机/模拟器实测，接设备后补：
+
+1. 装词典包 → 查词走包 → 卸载/恢复内置自动回退，全程无崩溃；
+2. 装音频包 → 听书命中包内文件（可用 logcat 观察无 `/v1/audio/speech` 请求）；删包内一章 → 该章自动现场合成；切引擎/音色 → 全部不命中走合成；
+3. 装音色包 → 音色出现在选择器 → 试听与多角色分配；
+4. 损坏包（改一个字节/换 manifest）→ 拒装且临时区清净；`minAppVersion` 过高 → 对话框拒装。
+
+**注**：M2 的键变更会让**存量云合成缓存一次性作废**（方案 D1 已接受），用户重听时会重新合成（云引擎会再计费一次）。
+
 ## 2026-09-08 译本对齐：金标准回归集落地 + 评估工具链入库（Windows 会话第一步）
 
 **来源**：Windows 机会话（`session-5067d167`）针对「译本对齐效果没有自动化评估」给出五条建议，用户批准先做第一步（金标准 fixture + golden replay + 工具入库）。该会话已写完 fixture 生成工具，跑测试时先撞上另一会话 `UiAnimSpeed` 的编译错误、随后 API 429 中断。本次在 Linux 侧补齐、跑通全链路并建立首次基线。

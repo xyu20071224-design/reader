@@ -72,10 +72,13 @@ source toolchain/env.sh                        # 人手调 adb / apksigner / aap
 | `.../app/tts/` | 听书全部实现（26 个文件）：播放状态机、合成器、3 类引擎后端（系统 / 自建 OpenAI 兼容 / MiMo；Piper/Azure/火山已于 2026-08-29 移除）、多角色音色 |
 | `.../app/ai/` | 可选联网 AI：语境档案、整句翻译、术语表、说话人 LLM 标注 |
 | `.../app/translation/` | 中文译本对照（F-128，纯离线）：三级 DP 对齐、句/段/词级查询、对齐档案读写 |
-| `src/app/src/test/` | JVM 单测（62 个文件：tts 19 / ai 16 / data 10 / 外壳 7 / translation 5 / update 3 / reader 2） |
+| `.../app/packs/` | **资源包系统**（词典包 / 预生成音频包 / 音色包）：安装、登记表、占用统计。契约在 `src/shared/.../packs/`；计划权威 `方案-资源包系统.md` |
+| `src/shared/src/main/java/com/linguareader/shared/` | **纯 Kotlin/JVM 共享层**（禁 `android.*`）：查词逻辑、导入器、断句、对齐、`packs/`（manifest 解析/校验/路径解析/`SafeZip` 护栏）、`tts/TtsCacheKey`。桌面迁移与资源包契约都放这里 |
+| `src/app/src/test/` | JVM 单测（49 个文件，Robolectric；tts / ai / data / translation / 外壳） |
 | `src/app/src/androidTest/` | 仪器测试（13 个文件） |
 | `src/app/src/main/assets/` | `dictionary/ecdict.sqlite`（离线词典） |
-| `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，两侧各 559 个 string + 11 个 plurals |
+| （运行时）`filesDir/packs/` | 资源包安装目录：`<type>/<packId>/<version>/` + `registry.json`；**不进 git、不按书清理**，占用计入存储页 |
+| `src/app/src/main/res/values{,-en}/strings.xml` | 中文（默认）+ 英文文案，两侧各 655 个 string + 12 个 plurals（**key 集合必须完全一致**，有测试守着） |
 | `tts-server/` | 自建 OpenAI 兼容 TTS 服务端（Python）+ IndexTTS 克隆音色 + frp 内网穿透配置 |
 | `tts-voice-studio/` | 本地音色调试工作台（Python + 单页 HTML） |
 | `bug收集/` | 缺陷文档库（BUG-001~039 分析/分级/验证方案；001~026 于 2026-08 自 legacy 线收录，027~039 为 2026-09-01 第五轮审查）；修 bug 前先来这里查有没有前人分析，**并留意 README 顶部那条「状态列怎么读」的警告**（001~026 的「已修复」记的是 legacy 线状态，未必等于 main） |
