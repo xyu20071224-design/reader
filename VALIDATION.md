@@ -1,3 +1,53 @@
+## 2026-09-08 AI 中心保存链路修复收尾：模型名统一 + 跑测试铁律落地 + 模板提炼
+
+**背景**：Windows 机会话（`session-1d6c5bb4`）定位并修复了「填了 Key、测试连接能过，但书内整句/全书翻译不可用；退出重进后连接测试也失败」，真机验收后按用户要求把两条坑写进记忆；最后一轮「把两条可迁移方法论提炼进 `agent-kb-template/`」获批时因 API 429 额度中断。项目随后整体复制到 Linux（`/home/xinyan/work/reader`），而该会话最后几轮对 `.agents/` 的编辑发生在复制之后、未随副本带过来。本条目记录在 Linux 侧补齐与复验。
+
+**根因（两个）**：
+1. AI 中心「翻译设置」有两层「保存」：服务商编辑卡（填 Key 那层）的「保存」只更新内存草稿，真正写盘的是底部大「保存」。用户只点卡内保存 → 退出重进 Key 丢失 → `remoteReady=false` → 书内功能禁用。这是「第一次测试能过、重进就失败」的直接原因。
+2. 默认/回退模型名多处不一致：`ai/AiSettingsStore.kt`、`shared/ai/AiModels.kt` 默认 `deepseek-chat`，而 DeepSeek 预设是 `deepseek-v4-flash`；`deepseek-chat` 已不被官方使用。「测试连接」只发最小请求，未必触发模型名校验 —— **测试连接通过 ≠ 模型名有效**。
+
+**修复**：
+- `AiDrawerSheet.kt`：抽出 `persistCurrent()`（当前开关 + 服务商列表 + 生效项 → `withActiveMirrored()` → 写盘），编辑卡「保存」直接调用；底部大「保存」保留为兜底。
+- `AiSettingsStore.kt`（3 处）、`shared/ai/AiModels.kt`（`AiSettings.model`）、`ModelDiscoveryTest.kt`（快照与断言）：`deepseek-chat` → `deepseek-v4-flash`。
+
+**验证**：
+
+| 项 | 证据 |
+| --- | --- |
+| 真机（Windows 侧已连接设备 `ZXJRNJVWY9C6BYDA`） | `assembleDebug -PverifyBuild` 出并存包并安装；UI 自动化走完「填 Key → 编辑卡保存 → 杀进程重开」，服务商与开关状态仍在 → 卡内保存确已落盘 |
+| Windows 单测 | `ModelDiscoveryTest` 8 例、`AiSettingsStoreMigrationTest` 4 例、`AiProviderPresetsTest` 2 例全 0 失败；`:shared:test` BUILD SUCCESSFUL（前台 gradlew，32s） |
+| Linux 复验（本次） | `./toolchain/build.sh testDebugUnitTest :shared:test` → `:app` 44 个结果 XML **354 用例 0 失败 0 错误**、`:shared` 29 个 XML **230 用例 0 失败 0 错误 1 跳过** |
+| 残留检查 | `grep -rn "deepseek-chat" --include=*.kt --include=*.kts --include=*.xml src/` 为空 |
+
+**知识沉淀（Windows 侧写、Linux 侧按现状补写）**：`known-pitfalls.md` §27（模型名单点定义）+ §25 扩充（构建成功但 job 结果丢 / 以结果 XML 为判据 / `:shared:test` 任务名）；`ai-context-translation.md` 关键契约补 `deepseek-v4-flash` 硬契约；`build-test-verify.md` 顶部「跑测试前必读」铁律（Linux 走 `build.sh`，Windows 别用 `build.ps1` 跑测试）；`code-and-verification.md` 与 `AGENTS.md`「验证纪律」加指向。`agent-kb-template/` 新增两条可迁移方法论：**默认值/标识符单点定义**、**判据是产物而非作业状态**。
+
+**未做**：Linux 本机 `adb devices` 为空，仪器测试与真机验证仍待接设备。
+
+## 2026-09-08 Linux 开发机（CachyOS x86_64）首次跑通构建与单测
+
+**背景**：项目整体从 Windows（`C:\Users\nagisa\work\reader`）复制到 Linux（`/home/xinyan/work/reader`）。开箱即坏：`src/local.properties` 的 `sdk.dir` 指向 Windows 路径、`gradlew` 是 CRLF、`toolchain/` 里的 JDK 与 Android SDK 是 Windows 二进制（`.exe`/`.bat`）、系统本身没有 java。
+
+**环境搭建**（全部落在 `toolchain/` 内；沙箱把真实 `$HOME` 挂成只读，重定向不是可选项）：
+1. JDK：Temurin **17.0.20.1+1** → `toolchain/jdk-linux`；
+2. Android SDK：cmdline-tools + `platform-tools` + `platforms;android-35` + `build-tools;35.0.0` → `toolchain/android-sdk-linux`。`sdkmanager` 的下载缓存必须重定向（`ANDROID_USER_HOME`），否则报 `NoSuchFileException: /home/xinyan/.android/cache/…` 并表现为「下载源全失败」；
+3. `GRADLE_USER_HOME=toolchain/gradle-home-linux`，并从 Windows 侧复制平台无关的 `wrapper/dists` + `caches/modules-2`（省约 800 MB 下载）；`init.d/robolectric-offline.gradle` 按 Linux 路径重写（android-all jar 指向工作区内那份 190 MB 副本）；
+4. `src/local.properties` → `sdk.dir=/home/xinyan/work/reader/toolchain/android-sdk-linux`；新增入口脚本 `toolchain/build.sh`（等价 `build.ps1`）与 `toolchain/env.sh`。
+
+**签名连续性**：Linux 首次构建时 AGP 自动生成了一把**新**的 debug 密钥（`4F:10:73…`），与手机上已装包（Windows 侧 `toolchain/guser/.android/debug.keystore`，`FF:9D…83:6F`）不同 → 覆盖安装必被拒。已把 Windows 密钥库拷入 `toolchain/guser-linux/.android/debug.keystore` 并重新打包，`apksigner verify --print-certs` 复核指纹 `ff9db6e1…55836f`，与 v1.6.1 / v1.6.2 发布资产一致。
+
+**验证结果**：
+
+| 验证点 | 命令 | 结果 |
+| --- | --- | --- |
+| :app JVM 单测 | `./toolchain/build.sh testDebugUnitTest` | 43 个测试类 **351 用例 0 失败 0 错误** ✅ |
+| :shared 纯逻辑单测 | `./toolchain/build.sh :shared:test` | 29 个测试类 **230 用例 0 失败 0 错误 1 跳过** ✅ |
+| 调试 APK | `./toolchain/build.sh :app:assembleDebug` | `app-debug.apk` 57.1 MB；`aapt2 dump badging` = `com.linguareader.app` versionCode 15 / 1.6.3 / minSdk 23 / target 35 ✅ |
+| 签名 | `apksigner verify --print-certs` | 与 Windows 侧 debug.keystore 同指纹 ✅ |
+
+**换行符清理**：Windows 复制把 273 个跟踪文件整树转成 CRLF，`git status` 全变「已修改」。逐文件比对 `git diff --ignore-cr-at-eol` 后确认 **269 个是纯换行噪声**（按 index 还原），**4 个含真实未提交改动**（`AiDrawerSheet.kt` / `AiSettingsStore.kt` / `ModelDiscoveryTest.kt` / `AiModels.kt`：AI 保存行内反馈重构 + 默认模型改 `deepseek-v4-flash`）——后者只去掉 CR、内容一字未动，工作树现存差异即这 4 个文件。`gradlew` 在 index 里是 100644，Linux 上需可执行位（`build.sh` 已自愈）。
+
+**未做**：真机/模拟器安装与仪器测试（本机 `adb devices` 为空）；`connectedDebugAndroidTest` 待接设备后补。
+
 ## 2026-09-06 手动 AI 全书翻译全链路真机验收（PKB110 / v1.6.2 versionCode 14，提交 1c83006 + 505626e + 077a45e）
 
 **范围**：手动 AI 翻译三阶段真实闭环——应用内导出任务文件（SAF）→ PC 端充当外部 agent 产出结果文件 → adb 推回手机 → 应用内导入（OpenMultipleDocuments）→ 校验落检查点 → 覆盖进度更新。测试书：The Fellowship of the Ring（207 批 / 4069 段 / 约 102 万字符，术语表 60 条全「保留原文」）。
