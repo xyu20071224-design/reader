@@ -1,6 +1,7 @@
 package com.linguareader.shared.importer
 
 import com.linguareader.shared.data.Book
+import com.linguareader.shared.packs.SafeZip
 import com.linguareader.shared.data.Chapter
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -8,7 +9,6 @@ import org.jsoup.parser.Parser
 import java.io.File
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
-import java.util.zip.ZipFile
 
 class EpubImporter(private val booksDir: File) {
     /** [source] 由调用方负责生命周期（Android facade 传临时拷贝并自删；桌面传原文件）。 */
@@ -34,44 +34,15 @@ class EpubImporter(private val booksDir: File) {
 
 
     private fun extractSafely(epub: File, destination: File) {
-        val rootPath = destination.canonicalPath + File.separator
-        var totalBytes = 0L
-        var entryCount = 0
-
-        ZipFile(epub).use { zip ->
-            val entries = zip.entries()
-            while (entries.hasMoreElements()) {
-                val entry = entries.nextElement()
-                entryCount += 1
-                require(entryCount <= 10_000) { "EPUB 文件条目过多" }
-
-                val output = File(destination, entry.name)
-                require(output.canonicalPath.startsWith(rootPath)) { "检测到不安全的文件路径" }
-
-                if (entry.isDirectory) {
-                    output.mkdirs()
-                    continue
-                }
-
-                totalBytes += entry.size.coerceAtLeast(0)
-                require(totalBytes <= 500L * 1024 * 1024) { "解压内容超过 500MB" }
-                output.parentFile?.mkdirs()
-                // The zip header size is attacker-controlled, so count bytes
-                // actually written and re-check the quota while decompressing.
-                zip.getInputStream(entry).use { input ->
-                    output.outputStream().use { out ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            out.write(buffer, 0, read)
-                            totalBytes += read
-                            require(totalBytes <= 500L * 1024 * 1024) { "解压内容超过 500MB" }
-                        }
-                    }
-                }
-            }
-        }
+        // 护栏的唯一实现在 SafeZip（资源包安装共用同一份）：路径穿越、条目数、
+        // 解压总量。这里只给 EPUB 自己的阈值与消息前缀。
+        SafeZip.extract(
+            zip = epub,
+            destination = destination,
+            maxEntries = 10_000,
+            maxBytes = 500L * 1024 * 1024,
+            label = "EPUB"
+        )
     }
 
     private fun parsePackage(inputRoot: File, id: String): Book {

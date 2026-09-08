@@ -147,6 +147,11 @@ internal fun BookshelfScreen(
     /** 存储占用页面（D2.4b）：打开时扫一次盘，孤儿只报不删。 */
     onRefreshStorage: () -> Unit = {},
     onCleanOrphans: () -> Unit = {},
+    /** 资源包（M1）：安装 / 切换当前词典包 / 卸载 / 校验。 */
+    onInstallPack: (android.net.Uri) -> Unit = {},
+    onSetActiveDictionary: (String?) -> Unit = {},
+    onUninstallPack: (String) -> Unit = {},
+    onVerifyPack: (String) -> Unit = {},
     onLoadGlossary: suspend (String) -> BookGlossary,
     onAddGlossary: suspend (String, String, String) -> BookGlossary,
     onUpdateGlossary: suspend (String, GlossaryEntry) -> BookGlossary,
@@ -205,6 +210,7 @@ internal fun BookshelfScreen(
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var showUpdateSheet by rememberSaveable { mutableStateOf(false) }
     var showStorageSheet by rememberSaveable { mutableStateOf(false) }
+    var showPacksSheet by rememberSaveable { mutableStateOf(false) }
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
     var rosterBook by remember { mutableStateOf<Book?>(null) }
 
@@ -403,9 +409,26 @@ internal fun BookshelfScreen(
         StorageSheet(
             report = state.storage,
             scanning = state.storageScanning,
+            packCount = state.packs.items.size,
+            packBytes = state.packs.totalBytes,
             onRescan = onRefreshStorage,
             onCleanOrphans = onCleanOrphans,
+            onManagePacks = {
+                showStorageSheet = false
+                showPacksSheet = true
+            },
             onDismiss = { showStorageSheet = false }
+        )
+    }
+
+    if (showPacksSheet) {
+        PacksSheet(
+            state = state.packs,
+            onInstall = onInstallPack,
+            onSetActiveDictionary = onSetActiveDictionary,
+            onUninstall = onUninstallPack,
+            onVerify = onVerifyPack,
+            onDismiss = { showPacksSheet = false }
         )
     }
 

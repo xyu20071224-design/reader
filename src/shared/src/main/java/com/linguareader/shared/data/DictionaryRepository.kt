@@ -13,6 +13,14 @@ class DictionaryRepository(private val db: DictionaryDatabase) {
         ): Boolean = size > 256
     }
 
+    /**
+     * 换词典源（资源包切换 / 恢复内置）时必须调用：缓存键是词条查询串，值来自**旧库**，
+     * 不清就会拿旧词典的释义回答新词典的查询 —— 而且命中率还不低（常用词全在缓存里）。
+     */
+    fun clearCache() {
+        synchronized(entryCache) { entryCache.clear() }
+    }
+
     suspend fun lookup(lookup: WordLookup): DictionaryLookupResult =
         withContext(Dispatchers.IO) {
             val tokens = ContextAnalyzer.tokenize(lookup.sentence)

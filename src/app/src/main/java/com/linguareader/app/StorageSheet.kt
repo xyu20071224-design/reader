@@ -13,6 +13,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -37,8 +38,12 @@ import com.linguareader.app.data.formatStorageBytes
 internal fun StorageSheet(
     report: StorageReport?,
     scanning: Boolean,
+    /** 资源包数量与占用：存储页只给入口，管理在 [PacksSheet]。 */
+    packCount: Int,
+    packBytes: Long,
     onRescan: () -> Unit,
     onCleanOrphans: () -> Unit,
+    onManagePacks: () -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
@@ -126,6 +131,31 @@ internal fun StorageSheet(
                     Text(stringResource(R.string.storage_rescan))
                 }
             }
+
+            // 资源包入口：它也是存储大户（整书音频包可达 GB 级），放在存储页语义自洽；
+            // 书架顶栏已有 6 个图标，再加一个会把标题挤没。
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.storage_store_packs),
+                style = MaterialTheme.typography.labelLarge,
+                color = InkSoft
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (packCount == 0) stringResource(R.string.packs_empty)
+                    else stringResource(R.string.packs_count, packCount) + " · " + formatStorageBytes(packBytes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSoft
+                )
+                TextButton(onClick = onManagePacks) {
+                    Text(stringResource(R.string.storage_packs_manage), color = Accent)
+                }
+            }
         }
     }
 }
@@ -142,5 +172,6 @@ private fun storeLabel(storeId: String): String = when (storeId) {
     "ai/ai-translations" -> stringResource(R.string.storage_store_ai_translations)
     "tts_cache" -> stringResource(R.string.storage_store_tts_cache)
     "voice_maps" -> stringResource(R.string.storage_store_voice_maps)
+    "packs" -> stringResource(R.string.storage_store_packs)
     else -> storeId
 }

@@ -40,6 +40,14 @@ class StringResourcesTest {
             "全部 12 批译文已就绪，开始生成译本对照…",
             context.getString(R.string.notice_translation_manual_imported_done, 12)
         )
+        // 资源包（M1）：装/切/卸的文案两侧都要能取到
+        assertEquals("资源包", context.getString(R.string.packs_title))
+        assertEquals("安装资源包", context.getString(R.string.packs_install))
+        assertEquals("已安装「ECDICT」", context.getString(R.string.packs_installed, "ECDICT"))
+        assertEquals(
+            "将删除「ECDICT」（58.0 MB）。卸载后需要重新安装才能恢复。",
+            context.getString(R.string.packs_uninstall_message, "ECDICT", "58.0 MB")
+        )
     }
 
     @Test
@@ -67,6 +75,10 @@ class StringResourcesTest {
             "All 12 batches ready — generating the translation…",
             context.getString(R.string.notice_translation_manual_imported_done, 12)
         )
+        // Resource packs (M1)
+        assertEquals("Resource packs", context.getString(R.string.packs_title))
+        assertEquals("Install pack", context.getString(R.string.packs_install))
+        assertEquals("Installed \"ECDICT\"", context.getString(R.string.packs_installed, "ECDICT"))
     }
 
     @Test

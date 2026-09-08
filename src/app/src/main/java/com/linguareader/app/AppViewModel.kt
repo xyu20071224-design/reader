@@ -47,12 +47,18 @@ import com.linguareader.app.data.LibraryRepository
 import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.VocabularyRepository
 import com.linguareader.app.data.WordLookup
+import com.linguareader.app.packs.PackRepository
+import com.linguareader.app.packs.PackUiItem
+import com.linguareader.app.packs.PackUiState
+import com.linguareader.app.packs.toUiItem
 import com.linguareader.app.tts.MultiVoiceSupport
 import com.linguareader.app.tts.TtsAudioCache
 import com.linguareader.app.update.AppUpdateRepository
 import com.linguareader.app.update.UpdateCheckOutcome
 import com.linguareader.shared.update.AppUpdatePhase
 import com.linguareader.shared.update.AppUpdateUiState
+import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.packs.PackValidationResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -153,7 +159,9 @@ data class AppUiState(
     val update: AppUpdateUiState = AppUpdateUiState(),
     /** 存储体检结果；null = 还没扫过（扫盘只在用户打开存储页面时跑）。 */
     val storage: StorageReport? = null,
-    val storageScanning: Boolean = false
+    val storageScanning: Boolean = false,
+    /** 资源包（词典/预生成音频/音色）列表与安装状态。 */
+    val packs: PackUiState = PackUiState()
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -161,7 +169,9 @@ data class AppUiState(
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val library = LibraryRepository(application)
-    private val dictionary = DictionaryRepository(application)
+    /** 资源包（词典/音频/音色）：安装、登记表、当前词典包。 */
+    private val packs = PackRepository(application)
+    private val dictionary = DictionaryRepository(application) { packs.dictionarySource() }
     private val vocabulary = VocabularyRepository(application)
     private val reviewPrefs = application.getSharedPreferences("review_settings", android.content.Context.MODE_PRIVATE)
     private val launchPrefs = application.getSharedPreferences("launch_promo", android.content.Context.MODE_PRIVATE)
@@ -256,6 +266,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             checkForUpdate(silent = true)
         }
         refresh()
+        // 资源包列表要出现在存储页与资源包页，启动时读一次登记表（小文件，无扫盘）。
+        refreshPacks()
     }
 
     fun refresh() {
@@ -376,7 +388,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         val books = library.loadBooks()
         val usages = bookDataStores.map { store ->
             StoreUsage(store.storeId, store.storageRoots().sumOf { sizeOf(it) })
-        }
+        } + StoreUsage(PackRepository.DIR_NAME, packs.totalBytes())
         val orphans = bookDataStores.flatMap { store ->
             runCatching { store.orphans(books) }.getOrDefault(emptyList()).map { file ->
                 BookDataOrphan(storeId = store.storeId, path = file, bytes = sizeOf(file))
@@ -422,6 +434,142 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun sizeOf(file: File): Long =
         if (file.isDirectory) file.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
         else file.length()
+
+    // ─── 资源包（方案-资源包系统.md §5 M1） ─────────────────────────────────────
+
+    /** 重读登记表并刷新资源包列表（打开页面、安装/卸载/切换后调用）。 */
+    fun refreshPacks() {
+        viewModelScope.launch {
+            val snapshot = withContext(Dispatchers.IO) {
+                val books = runCatching { library.loadBooks() }.getOrDefault(emptyList()).associateBy { it.id }
+                val registry = packs.reload()
+                val items = registry.packs.map { pack ->
+                    pack.toUiItem(
+                        active = registry.activeDictionary == pack.packId,
+                        bookTitle = pack.manifest.audioPayload?.bookId?.let { books[it]?.title }
+                    )
+                }
+                PackUiState(items = items, totalBytes = items.sumOf { it.bytes })
+            }
+            mutableState.value = mutableState.value.copy(
+                packs = mutableState.value.packs.copy(items = snapshot.items, totalBytes = snapshot.totalBytes)
+            )
+        }
+    }
+
+    /**
+     * 安装一个 `.lrpack`（SAF 选中的 Uri）。
+     *
+     * 失败走**对话框**（message）而不是 Snackbar：装包失败的原因（哈希不符、版本过高、
+     * 路径穿越）用户需要看清并据此换文件，一次性提示会被忽略。
+     */
+    fun installPack(uri: Uri) {
+        if (mutableState.value.packs.installing) return
+        viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(
+                packs = mutableState.value.packs.copy(installing = true)
+            )
+            runCatching { withContext(Dispatchers.IO) { packs.install(uri) } }
+                .onSuccess { installed ->
+                    // 词典包首次安装会自动生效 → 必须让查词侧换源，否则旧库句柄还开着。
+                    if (installed.type == PackType.DICTIONARY) dictionary.invalidate()
+                    mutableState.value = mutableState.value.copy(
+                        packs = mutableState.value.packs.copy(installing = false),
+                        notice = string(
+                            R.string.packs_installed,
+                            installed.nameZh.ifBlank { installed.nameEn }
+                        ),
+                        noticeTone = StatusTone.SUCCESS
+                    )
+                    refreshPacks()
+                }
+                .onFailure { error ->
+                    mutableState.value = mutableState.value.copy(
+                        packs = mutableState.value.packs.copy(installing = false),
+                        message = error.message ?: string(R.string.packs_install_failed),
+                        messageTitle = string(R.string.packs_install_failed_title)
+                    )
+                }
+        }
+    }
+
+    /** 切换当前词典包；[packId] 为 null = 恢复内置词典。 */
+    fun setActiveDictionary(packId: String?) {
+        viewModelScope.launch {
+            val name = packId?.let { id ->
+                mutableState.value.packs.items.firstOrNull { it.packId == id }?.let { packName(it) }
+            } ?: string(R.string.packs_dictionary_builtin_name)
+            runCatching { withContext(Dispatchers.IO) { packs.setActiveDictionary(packId) } }
+                .onSuccess {
+                    // 关键：不清句柄与 LRU 就是「切了等于没切」（旧词典的释义还在缓存里）。
+                    dictionary.invalidate()
+                    mutableState.value = mutableState.value.copy(
+                        notice = if (packId == null) string(R.string.packs_dictionary_restored)
+                        else string(R.string.packs_dictionary_activated, name),
+                        noticeTone = StatusTone.SUCCESS
+                    )
+                    refreshPacks()
+                }
+                .onFailure { error ->
+                    mutableState.value = mutableState.value.copy(
+                        message = error.message ?: string(R.string.packs_switch_failed),
+                        messageTitle = string(R.string.packs_switch_failed_title)
+                    )
+                }
+        }
+    }
+
+    /** 卸载资源包；若是当前词典包则自动回退内置。 */
+    fun uninstallPack(packId: String) {
+        viewModelScope.launch {
+            val item = mutableState.value.packs.items.firstOrNull { it.packId == packId }
+            val wasActive = item?.active == true
+            runCatching { withContext(Dispatchers.IO) { packs.uninstall(packId) } }
+                .onSuccess {
+                    if (wasActive) dictionary.invalidate()
+                    mutableState.value = mutableState.value.copy(
+                        notice = string(R.string.packs_uninstalled, item?.let { packName(it) } ?: packId),
+                        noticeTone = StatusTone.DANGER
+                    )
+                    refreshPacks()
+                }
+                .onFailure { error ->
+                    mutableState.value = mutableState.value.copy(
+                        message = error.message ?: string(R.string.packs_uninstall_failed),
+                        messageTitle = string(R.string.packs_uninstall_failed_title)
+                    )
+                }
+        }
+    }
+
+    /** 手动重哈希校验一个包（安装时已对过账；这是用户主动复查的入口）。 */
+    fun verifyPack(packId: String) {
+        if (mutableState.value.packs.verifying != null) return
+        viewModelScope.launch {
+            val name = mutableState.value.packs.items.firstOrNull { it.packId == packId }?.let { packName(it) } ?: packId
+            mutableState.value = mutableState.value.copy(
+                packs = mutableState.value.packs.copy(verifying = packId)
+            )
+            val result = withContext(Dispatchers.IO) { packs.verify(packId) }
+            mutableState.value = mutableState.value.copy(
+                packs = mutableState.value.packs.copy(verifying = null)
+            )
+            if (result.ok) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(R.string.packs_verify_ok, name),
+                    noticeTone = StatusTone.SUCCESS
+                )
+            } else {
+                mutableState.value = mutableState.value.copy(
+                    message = (result as PackValidationResult.Rejected).reason,
+                    messageTitle = string(R.string.packs_verify_failed_title)
+                )
+            }
+        }
+    }
+
+    private fun packName(item: PackUiItem): String =
+        item.nameZh.ifBlank { item.nameEn }
 
     fun deleteBook(book: Book) {
         viewModelScope.launch {
