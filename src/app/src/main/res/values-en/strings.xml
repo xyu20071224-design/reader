@@ -58,6 +58,11 @@
     <string name="shelf_background_dim">Dim overlay</string>
     <string name="shelf_background_reset">Reset to default</string>
     <string name="shelf_background_reset_done">Shelf appearance reset</string>
+    <string name="shelf_anim_speed_title">Tap animation speed</string>
+    <string name="shelf_anim_speed_slow">Slow</string>
+    <string name="shelf_anim_speed_normal">Standard</string>
+    <string name="shelf_anim_speed_fast">Fast</string>
+    <string name="shelf_anim_speed_off">Off</string>
     <string name="shelf_loading">Organising books…</string>
     <string name="shelf_delete_title">Delete \"%1$s\"?</string>
     <string name="shelf_delete_body">The local copy of the book and its reading progress are removed as well.</string>

@@ -1,3 +1,19 @@
+## 2026-09-08 交互动画速度设置（舒缓/标准/跟手/关闭）：全局 MotionDurationScale 落地
+
+**来源**：Windows 机会话（`session-6cabe0d6`）的未完成改动——用户要求「点击按钮的过渡动画」可切速度。该会话已定方案（全局 Compose 点击反馈 / 四档位 / 放书架「外观」弹层）并写了代码，但从未编译过，且机制不成立。本次在 Linux 侧重建、纠错、验证。
+
+**关键纠错（原方案对按钮无效）**：原实现用自定义 `Indication` + `LocalIndication` 替换默认涟漪。但 M3 1.3.2 的 `Button` / `IconButton` / 可点击 `Surface` 都直接调 `rippleOrFallbackImplementation()`，**不读 `LocalIndication`**（反汇编 `SurfaceKt$Surface$2`、`IconButtonKt` 确认），`ripple()`/`RippleNode` 也没有时长参数——换 Indication 只能改到 foundation 的 `Modifier.clickable`。改用 Compose 的全局动画缩放：`MotionDurationScale`（`animation-core` 的 `SuspendAnimationKt` 每次 `animateTo` 读 `coroutineContext[MotionDurationScale]`）+ 自建 lifecycle-aware `Recomposer`（公开 API `View.createLifecycleAwareWindowRecomposer` + `View.compositionContext`，等价于 internal 的 `WindowRecomposerPolicy.createAndInstallWindowRecomposer`，因此不碰 internal API）。涟漪、弹层、开关等所有 Compose 动画一起缩放；生效倍率 = 档位 × 系统缩放（系统「移除动画」=0 时任何档位都不会强行开动画）。另有编译错误一并修掉：`DrawModifierNode.draw` 是成员扩展 `fun ContentDrawScope.draw()`，原写法 `fun draw(scope)` 覆盖不了。
+
+**实现**：`UiAnimSpeed.kt`（枚举倍率 2/1/0.5/0 + prefs `reader_preferences/ui_anim_speed` + `systemAnimDurationScale` + 纯函数 `effectiveAnimDurationScale` + 进程级 `appUiAnimDurationScale`）；`MainActivity` 在 `setContent` 前给 decorView 装 Recomposer、`onResume` 重算系统缩放；`ShelfAppearanceSheet` 新增 `UiAnimSpeedSelector`（档位胶囊）；zh/en 各 +5 条文案。
+
+| 项 | 证据 |
+| --- | --- |
+| 编译 | 隔离 worktree（`artifacts/verify-wt`，见下）`assembleDebug` BUILD SUCCESSFUL |
+| 单测 | `testDebugUnitTest` 结果 XML：**362 用例 0 失败 0 错误**（含新增 `UiAnimSpeedTest` 6 例、`UiAnimSpeedStoreTest` 5 例） |
+| 真机 | **未做**——本机 `adb devices` 为空且未装模拟器。四档实际手感、涟漪/弹层缩放观感是否合适，需真机确认 |
+
+**并行会话提醒**：当时工作区有另一会话在并发提交（`dffd62e`…`c728c07`），其未跟踪的 `src/app/src/test/.../translation/TranslationGoldenReplayTest.kt` 目前编译不过（`located` 作用域 bug），会让主工作树的 `testDebugUnitTest` 红；本次验证因此走隔离 worktree，未动该文件。
+
 ## 2026-09-08 AI 中心保存链路修复收尾：模型名统一 + 跑测试铁律落地 + 模板提炼
 
 **背景**：Windows 机会话（`session-1d6c5bb4`）定位并修复了「填了 Key、测试连接能过，但书内整句/全书翻译不可用；退出重进后连接测试也失败」，真机验收后按用户要求把两条坑写进记忆；最后一轮「把两条可迁移方法论提炼进 `agent-kb-template/`」获批时因 API 429 额度中断。项目随后整体复制到 Linux（`/home/xinyan/work/reader`），而该会话最后几轮对 `.agents/` 的编辑发生在复制之后、未随副本带过来。本条目记录在 Linux 侧补齐与复验。
