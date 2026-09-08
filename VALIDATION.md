@@ -1,3 +1,28 @@
+## 2026-09-08 译本对齐：金标准回归集落地 + 评估工具链入库（Windows 会话第一步）
+
+**来源**：Windows 机会话（`session-5067d167`）针对「译本对齐效果没有自动化评估」给出五条建议，用户批准先做第一步（金标准 fixture + golden replay + 工具入库）。该会话已写完 fixture 生成工具，跑测试时先撞上另一会话 `UiAnimSpeed` 的编译错误、随后 API 429 中断。本次在 Linux 侧补齐、跑通全链路并建立首次基线。
+
+**产出**（权威说明在 `src/tools/alignment-eval/README.md`）：
+
+- `src/tools/alignment-eval/verdict-history.json` — 六轮人工判定台账（100 样本：id / 分层 / 章节 / 最终判定 / 逐轮判定史，**不含书文**）入库；判定是已花掉的人工成本，丢了不可再生。
+- `TranslationGoldenFixtureTool.kt` — 把散在 HTML / CSV / txt / 探针脚本里的六轮判定整理成 fixture。合并口径 = `alignment-eval6.csv` 的 `verdict4` → 第 5 轮覆盖；独立重建链 r1→r2→r3 对账差异 0，en 不同源 1 处（s82 的 `&amp;`，以 HTML 原文为准）。
+- `TranslationGoldenReplayTest.kt` — **生产路径重放**：app 格式书 → `TtsTextExtractor` 叶级段落 → `TranslationAligner.align` + 真 `EcdictMeaningIndex` → `TranslationMemoryIndex.lookup`。`ok/ok2` 的展示必须与 `approved` 逐字一致；`bad/skip` 只报告变化；纯标点垃圾样本排除。bless 走 `artifacts/alignment-eval/bless.flag` 文件标志（Gradle 的 `-D` 不会转发给测试 JVM）。
+- `EvalCsv.kt` — 两个工具共用的 utf-8-sig CSV 解析。
+
+**首次基线（bless，本机 PC / Robolectric）**：整本对齐 **11,017 句对（句级 10,323），18.5s**；批准 94 条（100 − 5 垃圾 − 1 未定位的 bad 样本 s22）；契约样本 65 条全绿。与 `alignment-eval6.csv` 的 09-03 V5 展示对账 **81/94 一致**，13 处差异已逐条归因：3 处旧评估工具伪影（spine 章表与 app 章表错桶、`&amp;` 未反转义），10 处局部句级↔段级落盘差异——其中 s57/s62/s69/s71/s74 五条是 `ok2`，当年判定看的是旧展示，**未按当前展示重判**，下一轮人工判定优先看这批。
+
+**顺带订正记忆**：`.agents/memory/translation-alignment-module.md` 原记「段落兜底内两级段内句级找回（2026-09-06 加入）」——该功能已在 `f721f4e` 整笔回退，记忆没同步；已订正为「当前 L5 无找回，段级命中只出整段译文」。
+
+**顺带修复性能护栏**：`artifacts/alignment-package/` 在多次搬迁中丢失，`TranslationAlignerBenchmarkTest` 一直静默跳过——「DP 内层又去扫描文本」的耗时退化此前**没有护栏**。本次给它加解包目录回退（`artifacts/lotr-book` + `artifacts/lotr-zh`），基准恢复运行：英 45 / 中 29 章、**11,106 句对、514ms**、点词命中率 96.9%（历史值 97.2%），`pairs > 10_000` 与 `< 3s` 两条断言都成立。
+
+| 项 | 证据 |
+| --- | --- |
+| 全量单测 | `./toolchain/build.sh testDebugUnitTest :shared:test` → `src/app/build/test-results/testDebugUnitTest/*.xml` **364 用例 0 失败 0 错误**；`src/shared/build/test-results/test/*.xml` **230 用例 0 失败 0 跳过**（基准已恢复运行） |
+| 台账确定性 | 同一输入连续两次生成，`verdict-history.json` sha256 一致（`dd206e99…`） |
+| 真机 | **未做**——本改动是纯评估/测试基础设施，不触 UI 与运行时行为；下一轮人工判定卡生成工具仍未入库（README 已注明按需再写） |
+
+**遗留**：13 处历史差异中 5 条 `ok2`（s57/s62/s69/s71/s74）尚未按当前展示重新人工判定——金标准基线已按当前生产行为建立，但这 5 条是否仍算「勉强对」需要下一轮人工确认。
+
 ## 2026-09-08 交互动画速度设置（舒缓/标准/跟手/关闭）：全局 MotionDurationScale 落地
 
 **来源**：Windows 机会话（`session-6cabe0d6`）的未完成改动——用户要求「点击按钮的过渡动画」可切速度。该会话已定方案（全局 Compose 点击反馈 / 四档位 / 放书架「外观」弹层）并写了代码，但从未编译过，且机制不成立。本次在 Linux 侧重建、纠错、验证。
