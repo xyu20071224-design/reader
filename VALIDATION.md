@@ -37,7 +37,7 @@
 | 单测 | `testDebugUnitTest` 结果 XML：**362 用例 0 失败 0 错误**（含新增 `UiAnimSpeedTest` 6 例、`UiAnimSpeedStoreTest` 5 例） |
 | 真机 | **未做**——本机 `adb devices` 为空且未装模拟器。四档实际手感、涟漪/弹层缩放观感是否合适，需真机确认 |
 
-**并行会话提醒**：当时工作区有另一会话在并发提交（`dffd62e`…`c728c07`），其未跟踪的 `src/app/src/test/.../translation/TranslationGoldenReplayTest.kt` 目前编译不过（`located` 作用域 bug），会让主工作树的 `testDebugUnitTest` 红；本次验证因此走隔离 worktree，未动该文件。
+**并行会话提醒（已收尾）**：当时工作区有另一会话在并发提交（`dffd62e`…`c728c07`），其未跟踪的 `src/app/src/test/.../translation/TranslationGoldenReplayTest.kt` 一度编译不过（`located` 作用域 bug），会让主工作树的 `testDebugUnitTest` 红；本次验证因此走隔离 worktree，未动该文件。随后对方自行修好并以 `d29ad7d` 提交，**合流后的整树复核为 `:app` 364 用例 + `:shared` 全绿（0 失败 0 错误）**，两条线一起推送（`1ec4aae` + `d29ad7d`）。
 
 ## 2026-09-08 AI 中心保存链路修复收尾：模型名统一 + 跑测试铁律落地 + 模板提炼
 
