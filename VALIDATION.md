@@ -1406,3 +1406,13 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
 - **M4b（同提交）**：`DesktopCefRuntime`（jcefmaven 146.0.10 引导 CEF，运行时按需下载内核到 `<home>/jcef-cache`，失败降级）+ `DesktopReaderPane`（SwingPanel 承载 JCEF；`window.ReaderBridge` shim 经 CefMessageRouter 转发 onWord/onPageChanged/onChapterRequested——与 Android `@JavascriptInterface` 方法名/参数一一对应）：点词→语境查词→收藏、翻章、进度落盘接通。AppScaffold 按 CEF 可用性自动降级纯文本阅读。
 - **M4 已知留白（记入 M4 验收清单）**：TTS 句高亮跟随未接（需 ReaderBridge 高亮回调与听书引擎联动）、preferenceScript 主题同步未接（阅读设置面板）、jcefmaven 内核下载走 GitHub（离线首跑阅读屏会降级）。
 - **M5（`7c17a88`）**：run/package 统一收口 `compose.desktop.application`（与 application 插件 run 任务名冲突，二选一）；`-PmainClass` 探针切换改配置期读取；`packageAppImage` 产物实测 `LinguaReader.exe`（136MB，含 JBR）可启动；MSI/EXE 安装器需 WiX（未装，二期）。**坑**：jpackage @args 文件按系统码表（GBK）解码，元数据含中文报 Input length = 1——元数据一律 ASCII。
+
+## 2026-09-09 发版 v1.7.0（versionCode 16）
+
+- **随版内容**：资源包系统 M1–M4（词典包 / 预生成音频包 / 音色包）、听书句内发言/旁白分离、LLM 说话人标注（代词消解 + 未署名对话放行）、交互动画速度档位、AI 编辑卡保存即落盘、译本对齐 V6（长度归一化两级自适应）。跨 v1.6.3 之后 35 个提交；`tools/dsh-voice-console`（音色控制台）与 `tts-voice-studio`（MiMo 试听台）属仓库工具，不进 APK。
+- **门禁**：`:app:testDebugUnitTest` + `:shared:test` 共 **676 条全绿**（0 失败 / 0 错误 / 0 跳过，91 个结果文件）；CI run [`34297082546`](https://github.com/xyu20071224-design/reader/actions/runs/34297082546) success。
+- **产物**：`assembleRelease`（R8 + 资源裁剪）→ `app-release-unsigned.apk` 35,036,470 B，`zipalign -c 4` 通过后经 `apksigner`（`toolchain/guser-linux/.android/debug.keystore`，alias `androiddebugkey`）签名 → `artifacts/LinguaReader-v1.7.0.apk` 35,063,213 B。
+- **签名核验**：SHA-256 `ff9db6e1…55836f` / SHA-1 `ae54b5aa…b7`，与 v1.6.1–v1.6.3 发布资产同指纹；`aapt2 dump badging` = `com.linguareader.app` versionCode 16 / versionName 1.7.0 / minSdk 23 / target 35。
+- **发布验收**：GitHub Release `v1.7.0`（非 prerelease / 非 draft，故 `/releases/latest` 返回它，应用内更新可见）附 `LinguaReader-v1.7.0.apk`；回下载资产 SHA-256 `5a48ed90…75eba6` 与本地 `cmp` 逐字节一致。
+- **上传坑（可复用）**：首次用 python `urllib` 传 35 MB 资产在 write 阶段超时，GitHub 侧留下 `state=starter` 的半截资产——同名会挡住重传，须先 `DELETE /releases/assets/<id>` 再传；改用 `curl --data-binary -H "Expect:"` 成功（约 340 KB/s）。**下次发版直接 curl，别用 urllib。**
+- **未做真机验证**：本机当前无设备连接（`adb devices` 空），本次未走真机 smoke；R8 风险面（点词查词 / 翻页回报 / PDF 导入 / 复习节奏 / 自动更新）按 Release 页「建议验证」清单待补。
