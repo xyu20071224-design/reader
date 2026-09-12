@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -831,9 +832,14 @@ internal fun BookshelfScreen(
  */
 @Composable
 private fun ShelfBackgroundLayer(appearance: ShelfAppearance) {
-    val scrim = Paper.copy(alpha = appearance.dimOpacity)
+    val context = LocalContext.current
+    // 深色外壳下浅色预设不可读（审查 5-1：叠加后对比度低到 1.02–2.56:1），
+    // 此时预设整体不渲染，只留蒙版，等同回到调色板纸色；见 ShelfAppearanceSheet 的同类判定。
+    val dark = chromeIsDark(storedReaderTheme(context), isSystemInDarkTheme())
+    // 深色外壳 + 自定义背景时加重蒙版，保住顶栏与文字可读。
+    val scrimAlpha = if (dark) maxOf(appearance.dimOpacity, DARK_CHROME_MIN_SCRIM) else appearance.dimOpacity
+    val scrim = Paper.copy(alpha = scrimAlpha)
     Box(Modifier.fillMaxSize()) {
-        val context = LocalContext.current
         val imageFile = appearance.imageFile
             ?.let { ShelfBackgroundStore.backgroundFile(context, it) }
             ?.takeIf { it.isFile }
@@ -851,7 +857,7 @@ private fun ShelfBackgroundLayer(appearance: ShelfAppearance) {
                     contentScale = ContentScale.Crop
                 )
             }
-        } else {
+        } else if (!dark) {
             appearance.preset?.let { preset ->
                 Box(
                     Modifier.fillMaxSize().background(
@@ -863,6 +869,13 @@ private fun ShelfBackgroundLayer(appearance: ShelfAppearance) {
         Box(Modifier.fillMaxSize().background(scrim))
     }
 }
+
+/**
+ * 深色外壳 + 自定义背景时的蒙版下限。0.35（用户默认档）在深色墨色下不足以把浅色背景
+ * 压到可读；0.72 与 [BookshelfScreen] 无书空态所用的遮罩同档（审查 5-1 建议"提到能保
+ * 4.5:1 需 ~0.8，等于预设失去意义"，故这里仅对图片背景兜底，不作用于预设）。
+ */
+private const val DARK_CHROME_MIN_SCRIM = 0.72f
 
 /**
  * 该书的多角色/角色管理（方向 A）：从书卡片「角色」入口打开，复用 [MultiVoiceSection]，

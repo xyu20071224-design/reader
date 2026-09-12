@@ -51,6 +51,7 @@
     <string name="shelf_preset_sand">Sand</string>
     <string name="shelf_preset_blush">Blush</string>
     <string name="shelf_preset_mist">Mist</string>
+    <string name="shelf_preset_dark_disabled">These light backgrounds make shelf text unreadable under the dark/AMOLED chrome, so they are disabled. Use \"Choose image\" to set a custom background instead.</string>
     <string name="shelf_background_pick_image">Choose image</string>
     <string name="shelf_background_change_image">Change image</string>
     <string name="shelf_background_image_done">Background image updated</string>

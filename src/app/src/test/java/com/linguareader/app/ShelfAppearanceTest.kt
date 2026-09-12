@@ -23,6 +23,27 @@ class ShelfAppearanceTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
+    /**
+     * 第四轮审查 5-1 的护栏：浅色预设**不得**在深色外壳下被视为可用。
+     *
+     * 现象：深色墨色叠上 4 个浅色预设后对比度只有 1.02–2.56:1，几乎不可读，而默认蒙版
+     * 档位（0.35）就已经失效。修复方式是深色外壳下停用预设（界面按 [isReadableOn] 判定）。
+     * 这里用与 `审查附件-第四轮/contrast.py` 同源的 WCAG 相对亮度公式实测，钉死两侧行为。
+     */
+    @Test
+    fun `light presets are readable on light chrome but not on dark chrome`() {
+        ShelfBackgroundPresets.all.forEach { preset ->
+            assertTrue(
+                "预设 ${preset.id} 在浅色墨色下应达 4.5:1（否则浅色外壳也不可用）",
+                preset.isReadableOn(LightLinguaPalette.ink)
+            )
+            assertFalse(
+                "预设 ${preset.id} 在深色墨色下实测不可读，界面必须停用它（审查 5-1）",
+                preset.isReadableOn(DarkLinguaPalette.ink)
+            )
+        }
+    }
+
     @Test
     fun `default appearance follows the theme palette`() {
         val appearance = ShelfAppearance.load(context)

@@ -49,6 +49,7 @@
     <string name="shelf_preset_sand">暖沙</string>
     <string name="shelf_preset_blush">豆沙</string>
     <string name="shelf_preset_mist">海盐</string>
+    <string name="shelf_preset_dark_disabled">夜间/纯黑外壳下这些浅色背景会让书架文字看不清，已停用；可改用「选择图片」自定义背景。</string>
     <string name="shelf_background_pick_image">选择图片</string>
     <string name="shelf_background_change_image">更换图片</string>
     <string name="shelf_background_image_done">背景图已更新</string>

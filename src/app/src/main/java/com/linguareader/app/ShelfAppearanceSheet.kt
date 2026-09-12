@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -62,6 +64,8 @@ internal fun ShelfAppearanceSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var imageStatus by remember { mutableStateOf<ShelfImageStatus?>(null) }
+    // 深色外壳下浅色预设不可读（审查 5-1），据此禁用预设并说明。
+    val darkChrome = chromeIsDark(storedReaderTheme(context), isSystemInDarkTheme())
 
     val imageLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -109,6 +113,7 @@ internal fun ShelfAppearanceSheet(
                         brush = Brush.verticalGradient(
                             listOf(Color(preset.topColor), Color(preset.bottomColor))
                         ),
+                        enabled = !darkChrome,
                         onClick = {
                             onAppearanceChange(
                                 appearance.copy(presetId = preset.id, imageFile = null)
@@ -116,6 +121,16 @@ internal fun ShelfAppearanceSheet(
                         }
                     )
                 }
+            }
+
+            // 深色外壳下这些浅色预设叠加后文字对比度只有 1.02–2.56:1（审查 5-1），
+            // 直接禁用并说明原因，比装上去再让用户自己发现不可读更诚实。
+            if (darkChrome) {
+                Text(
+                    stringResource(R.string.shelf_preset_dark_disabled),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSoft
+                )
             }
 
             OutlinedButton(
@@ -186,11 +201,15 @@ private fun PresetSwatch(
     label: String,
     selected: Boolean,
     brush: Brush,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(64.dp).clickable(onClick = onClick)
+        modifier = Modifier
+            .width(64.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.4f)
     ) {
         Box(
             modifier = Modifier

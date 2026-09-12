@@ -5,19 +5,48 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.annotation.StringRes
+import androidx.compose.ui.graphics.Color
 import java.io.File
 import java.io.FileOutputStream
 
 /**
  * 书架外观预设。只提供浅色底：外壳文字颜色由日/夜调色板驱动，深色底在日间外壳下
  * 无法保证可读性（顶栏标题、卡片文字都取 Ink 系语义色），所以不做深色预设。
+ *
+ * 反过来说，**深色外壳配浅色预设同样不可读**（第四轮审查 5-1：叠加后 1.02–2.56:1）。
+ * 预设是否可用由 [ShelfBackgroundPreset.isReadableOn] 判定，界面据此禁用，而不是让
+ * 用户装上去才发现文字看不清。
  */
 internal data class ShelfBackgroundPreset(
     val id: String,
     @StringRes val labelRes: Int,
     val topColor: Long,
     val bottomColor: Long
-)
+) {
+    /** 该预设叠上某个外壳墨色后，最差一端是否仍达可读门槛（[MIN_READABLE_CONTRAST]）。 */
+    fun isReadableOn(foreground: Color): Boolean =
+        minOf(
+            contrastRatio(foreground, Color(topColor)),
+            contrastRatio(foreground, Color(bottomColor))
+        ) >= MIN_READABLE_CONTRAST
+}
+
+/** 预设可读门槛：WCAG AA 正文级 4.5:1。 */
+internal const val MIN_READABLE_CONTRAST = 4.5f
+
+/** WCAG 2.x 对比度（相对亮度公式与 `审查附件-第四轮/contrast.py` 同源）。 */
+internal fun contrastRatio(a: Color, b: Color): Float {
+    val la = relativeLuminance(a)
+    val lb = relativeLuminance(b)
+    return (maxOf(la, lb) + 0.05f) / (minOf(la, lb) + 0.05f)
+}
+
+internal fun relativeLuminance(color: Color): Float {
+    fun channel(value: Float): Float =
+        if (value <= 0.03928f) value / 12.92f
+        else Math.pow(((value + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+    return 0.2126f * channel(color.red) + 0.7152f * channel(color.green) + 0.0722f * channel(color.blue)
+}
 
 internal object ShelfBackgroundPresets {
     val all = listOf(
