@@ -1331,7 +1331,8 @@ private fun LookupSheet(
                     Spacer(Modifier.width(12.dp))
                     Text(
                         "/${entry?.phonetic}/",
-                        color = Ink.copy(alpha = .58f),
+                        // 5-6：音标属次级文字，原 .58 在浅色最弱表面 3.91:1
+                        color = InkSoft,
                         modifier = Modifier.padding(bottom = 3.dp)
                     )
                 }
@@ -1383,7 +1384,8 @@ private fun LookupSheet(
                         stringResource(entry.inferredPartOfSpeech.labelRes.resolve())
                     ),
                     style = MaterialTheme.typography.labelMedium,
-                    color = Ink.copy(alpha = .56f)
+                    // 5-6：原 .56 在浅色最弱表面（cardSurface）仅 3.70:1，不足 4.5:1
+                    color = InkSoft
                 )
             }
             if (entry != null) {
@@ -1719,7 +1721,8 @@ private fun LookupSheet(
                                 },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (sense.contextPreferred && index == 0) Accent
-                                else Ink.copy(alpha = .38f),
+                                // 5-6：项目符号也是文字，原 .38 在浅/深最弱表面仅 2.27/3.01:1
+                                else InkFaint,
                                 modifier = Modifier.width(if (sense.contextPreferred && index == 0) 64.dp else 20.dp)
                             )
                             Text(
@@ -1766,7 +1769,8 @@ private fun LookupSheet(
             Text(
                 stringResource(R.string.reader_dict_source),
                 style = MaterialTheme.typography.labelSmall,
-                color = Ink.copy(alpha = .45f)
+                // 5-6：原 .45 在浅/深最弱表面仅 2.71/3.69:1；实色后 5.56/4.63:1
+                color = InkFaint
             )
         }
     }
