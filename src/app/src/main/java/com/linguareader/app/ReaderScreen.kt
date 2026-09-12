@@ -1478,7 +1478,7 @@ private fun LookupSheet(
                     Text(
                         stringResource(R.string.reader_ai_phrase, it),
                         style = MaterialTheme.typography.labelMedium,
-                        color = Ink.copy(alpha = .62f)
+                        color = InkSoft
                     )
                 }
                 if (aiContext.explanation.isNotBlank()) {
@@ -1533,7 +1533,7 @@ private fun LookupSheet(
                         (result.confidence * 100).roundToInt()
                     ),
                     style = MaterialTheme.typography.labelMedium,
-                    color = Ink.copy(alpha = .62f)
+                    color = InkSoft
                 )
                 if (pairingExpanded) {
                     // 整句对照：并排给出配对到的英文原句与译文段落，便于判断配对是否正确。
@@ -1732,14 +1732,14 @@ private fun LookupSheet(
                     if (entry.senses.isEmpty()) {
                         Text(
                             stringResource(R.string.reader_no_senses),
-                            color = Ink.copy(alpha = .62f)
+                            color = InkSoft
                         )
                     }
                     if (entry.definitions.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
                         Text(
                             entry.definitions.take(2).joinToString("\n"),
-                            color = Ink.copy(alpha = .62f),
+                            color = InkSoft,
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1747,7 +1747,7 @@ private fun LookupSheet(
                 }
                 else -> Text(
                     stringResource(R.string.reader_word_not_found),
-                    color = Ink.copy(alpha = .62f)
+                    color = InkSoft
                 )
             }
             Spacer(Modifier.height(18.dp))

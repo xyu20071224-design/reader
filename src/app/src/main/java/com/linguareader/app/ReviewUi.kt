@@ -446,7 +446,7 @@ internal fun ReviewSettingsSheet(
                                     presetMode.dailyPromptLimit,
                                     presetMode.sessionMaxWords
                                 ),
-                                color = Ink.copy(alpha = .55f),
+                                color = InkSoft,
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
