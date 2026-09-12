@@ -57,14 +57,17 @@ internal val LightLinguaPalette = LinguaPalette(
     cardSurface = Color(0xFFFFFBF4),
     ink = Color(0xFF27231F),
     inkSoft = Color(0xFF6F665C),
-    inkFaint = Color(0xFF9C938A),
+    // 2.48–2.93:1 → 全表面 ≥4.5:1（第四轮审查 5-2；值由 WCAG 相对亮度公式反解，非目测）
+    inkFaint = Color(0xFF6C655F),
     accent = Color(0xFF8D5535),
     accentDeep = Color(0xFF6F4127),
     accentSoft = Color(0xFFE7D3BC),
     onAccent = Color.White,
     gold = Color(0xFFC99B3F),
-    success = Color(0xFF4E7A57),
-    danger = Color(0xFFB0493E),
+    // 4.47/4.06:1（paper/paperDeep）→ ≥4.5:1（审查 5-9 临界项）
+    success = Color(0xFF487050),
+    // paperDeep 上 4.46:1 → ≥4.5:1（审查 5-9 临界项）
+    danger = Color(0xFFAC483D),
     bookCoverFallback = Color(0xFFE1D5C2),
     isDark = false
 )
@@ -80,7 +83,8 @@ internal val DarkLinguaPalette = LinguaPalette(
     cardSurface = Color(0xFF221F1B),
     ink = Color(0xFFE8E3DA),
     inkSoft = Color(0xFFB6ADA2),
-    inkFaint = Color(0xFF8C8479),
+    // cardSurface 上 4.45:1 → ≥4.5:1（审查 5-9 临界项）
+    inkFaint = Color(0xFF8F877B),
     accent = Color(0xFFC98A5E),
     accentDeep = Color(0xFFE3AE83),
     accentSoft = Color(0xFF3A2E25),

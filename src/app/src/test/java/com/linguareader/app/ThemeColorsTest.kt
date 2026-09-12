@@ -107,6 +107,55 @@ class ThemeColorsTest {
         }
     }
 
+    /**
+     * 第四轮审查 5-2/5-3/5-9 的护栏：**当正文/标签用的语义色**在三种表面上都要 ≥4.5:1。
+     *
+     * 报告实测：浅色 `inkFaint` 2.48–2.93:1、`gold` 2.09:1、`success` 4.47:1，深色
+     * `inkFaint` 在 cardSurface 上 4.45:1 —— 断言先落地，改值才有护栏（§9 P0 第 4 项
+     * 原话：「建议先加断言再改值」）。
+     *
+     * `gold` **不在此列**：报告只把它当"统计数字/徽章文字"的点状问题，且 gold 是品牌色；
+     * 是否把它降为纯图形色或补一个 on-paper 变体属视觉决策，留给人工（见待确认项）。
+     */
+    @Test
+    fun `text palette colors keep at least four point five to one on every surface`() {
+        val failures = mutableListOf<String>()
+        listOf(LightLinguaPalette, DarkLinguaPalette).forEach { palette ->
+            val surfaces = mapOf(
+                "paper" to palette.paper,
+                "paperDeep" to palette.paperDeep,
+                "cardSurface" to palette.cardSurface
+            )
+            val textColors = mapOf(
+                "ink" to palette.ink,
+                "inkSoft" to palette.inkSoft,
+                "inkFaint" to palette.inkFaint,
+                "accent" to palette.accent,
+                "accentDeep" to palette.accentDeep,
+                "success" to palette.success,
+                "danger" to palette.danger
+            )
+            textColors.forEach { (name, color) ->
+                surfaces.forEach { (surfaceName, surface) ->
+                    val ratio = contrastRatio(color, surface)
+                    if (ratio < 4.5f) {
+                        failures += "${if (palette.isDark) "dark" else "light"}.$name on $surfaceName = ${"%.2f".format(ratio)}"
+                    }
+                }
+            }
+        }
+        assertTrue(
+            "以下语义色未达 4.5:1，需调值或改用途：\n  " + failures.joinToString("\n  "),
+            failures.isEmpty()
+        )
+    }
+
+    private fun contrastRatio(a: androidx.compose.ui.graphics.Color, b: androidx.compose.ui.graphics.Color): Float {
+        val la = relativeLuminance(a)
+        val lb = relativeLuminance(b)
+        return (maxOf(la, lb) + 0.05f) / (minOf(la, lb) + 0.05f)
+    }
+
     private fun relativeLuminance(color: androidx.compose.ui.graphics.Color): Float {
         fun channel(value: Float): Float =
             if (value <= 0.03928f) value / 12.92f else Math.pow(((value + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
