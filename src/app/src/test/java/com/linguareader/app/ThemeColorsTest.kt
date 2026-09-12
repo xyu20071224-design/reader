@@ -114,8 +114,8 @@ class ThemeColorsTest {
      * `inkFaint` 在 cardSurface 上 4.45:1 —— 断言先落地，改值才有护栏（§9 P0 第 4 项
      * 原话：「建议先加断言再改值」）。
      *
-     * `gold` **不在此列**：报告只把它当"统计数字/徽章文字"的点状问题，且 gold 是品牌色；
-     * 是否把它降为纯图形色或补一个 on-paper 变体属视觉决策，留给人工（见待确认项）。
+     * `gold` **不在此列**（只作图形/描边）；当文字用的金色走 `goldOnPaper`，
+     * 由下面 `goldOnPaperKeepsTextContrast` 单独守住。
      */
     @Test
     fun `text palette colors keep at least four point five to one on every surface`() {
@@ -132,6 +132,7 @@ class ThemeColorsTest {
                 "inkFaint" to palette.inkFaint,
                 "accent" to palette.accent,
                 "accentDeep" to palette.accentDeep,
+                "goldOnPaper" to palette.goldOnPaper,
                 "success" to palette.success,
                 "danger" to palette.danger
             )

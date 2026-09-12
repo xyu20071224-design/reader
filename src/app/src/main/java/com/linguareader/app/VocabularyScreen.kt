@@ -142,7 +142,7 @@ internal fun VocabularyScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             StatChip("${words.size}", stringResource(R.string.vocab_stat_total), Accent, Modifier.weight(1f))
-            StatChip("${dueWords.size}", stringResource(R.string.vocab_stat_due), Gold, Modifier.weight(1f))
+            StatChip("${dueWords.size}", stringResource(R.string.vocab_stat_due), GoldOnPaper, Modifier.weight(1f))
             StatChip("${masteredWords.size}", stringResource(R.string.vocab_stat_mastered), Success, Modifier.weight(1f))
         }
 

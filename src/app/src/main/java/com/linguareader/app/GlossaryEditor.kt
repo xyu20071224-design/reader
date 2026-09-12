@@ -419,7 +419,8 @@ private fun OriginBadge(origin: String) {
     val label = originLabel(origin)
     val color = when (origin) {
         "manual" -> Accent
-        "auto" -> Gold
+        // 当文字用（徽章标签 + 半透明底）⇒ 取 on-paper 变体：浅色 gold 只有 2.30:1（审查 5-3）
+        "auto" -> GoldOnPaper
         else -> InkFaint
     }
     Surface(color = color.copy(alpha = 0.12f), shape = PillShape) {

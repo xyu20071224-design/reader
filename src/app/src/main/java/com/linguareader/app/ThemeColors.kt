@@ -40,8 +40,16 @@ internal data class LinguaPalette(
     val accentSoft: Color,
     /** 强调色上的文字（日间白字、夜间墨字，保证对比度） */
     val onAccent: Color,
-    /** 点缀：书签金 */
+    /** 点缀：书签金。**只作图形/描边**，当文字用请取 [goldOnPaper]。 */
     val gold: Color,
+    /**
+     * 需要**当文字**显示的金色（统计数字、来源徽章）。
+     *
+     * light `gold` 在三种表面上只有 2.09–2.47:1（第四轮审查 5-3），远低于 4.5:1；这里
+     * 用一个更深的 on-paper 变体保住可读性，同时让品牌金继续用于图形。深色主题下
+     * gold 本身已达 8.10:1，故与 [gold] 同值。
+     */
+    val goldOnPaper: Color,
     /** 认识 / 掌握 */
     val success: Color,
     /** 删除 / 危险 */
@@ -64,6 +72,8 @@ internal val LightLinguaPalette = LinguaPalette(
     accentSoft = Color(0xFFE7D3BC),
     onAccent = Color.White,
     gold = Color(0xFFC99B3F),
+    // 5.67:1 on paper / 5.16:1 on paperDeep（浅色下 gold 当文字只有 2.30–2.09:1，审查 5-3）
+    goldOnPaper = Color(0xFF7A5420),
     // 4.47/4.06:1（paper/paperDeep）→ ≥4.5:1（审查 5-9 临界项）
     success = Color(0xFF487050),
     // paperDeep 上 4.46:1 → ≥4.5:1（审查 5-9 临界项）
@@ -90,6 +100,8 @@ internal val DarkLinguaPalette = LinguaPalette(
     accentSoft = Color(0xFF3A2E25),
     onAccent = Color(0xFF231F1B),
     gold = Color(0xFFD8B15C),
+    // 深色下 gold 本身已达 8.10:1（cardSurface），文字用同值即可
+    goldOnPaper = Color(0xFFD8B15C),
     success = Color(0xFF7FB08C),
     danger = Color(0xFFE0796C),
     bookCoverFallback = Color(0xFF3A342C),
@@ -122,6 +134,8 @@ internal val OnAccent: Color
     @Composable @ReadOnlyComposable get() = LocalLinguaPalette.current.onAccent
 internal val Gold: Color
     @Composable @ReadOnlyComposable get() = LocalLinguaPalette.current.gold
+internal val GoldOnPaper: Color
+    @Composable @ReadOnlyComposable get() = LocalLinguaPalette.current.goldOnPaper
 internal val Success: Color
     @Composable @ReadOnlyComposable get() = LocalLinguaPalette.current.success
 internal val Danger: Color
