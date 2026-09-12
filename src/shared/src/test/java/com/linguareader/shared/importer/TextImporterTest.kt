@@ -55,6 +55,33 @@ class TextImporterTest {
         assertTrue(html.contains("-- separator"), "`--` 分隔线应保留：$html")
     }
 
+    /**
+     * 第四轮审查 4-7：TXT 正文此前零标题标签（章名只在 `<title>` 与书库章名），
+     * 滚动/朗读时看不到章内大标题。识别出的章标题应在正文里落成 `<h1>`，
+     * 且数量等于识别出的章节数。
+     */
+    @Test
+    fun chapterTitlesBecomeHeadingsInBody() {
+        val text = "第一章 起点\n正文一。\n\n第二章 转折\n正文二。\n"
+        val chapters = splitChapters(text)
+        assertEquals(2, chapters.size, "应识别出 2 章")
+
+        val htmls = chapters.map { (title, body) -> textToXhtml(title, body) }
+        htmls.forEachIndexed { index, html ->
+            assertTrue(html.contains("<h1>"), "第 ${index + 1} 章正文应有 <h1>：$html")
+        }
+        assertEquals(2, htmls.count { it.contains("<h1>") }, "标题标签数应等于章节数")
+        assertTrue(htmls[0].contains("<h1>第一章 起点</h1>"), "标题文字应在 <h1> 内：${htmls[0]}")
+    }
+
+    /** 无标题的 TXT（整篇一章、章名为空）不应凭空生出 <h1>。 */
+    @Test
+    fun untitledChapterGetsNoHeading() {
+        val html = textToXhtml("", "只有正文，没有标题行。")
+        assertFalse(html.contains("<h1>"), "无标题章节不应有 <h1>：$html")
+        assertTrue(html.contains("<p>只有正文，没有标题行。</p>"))
+    }
+
     @Test
     fun decodesUtf8AndGbkText() {
         val utf8 = File.createTempFile("utf8", ".txt")

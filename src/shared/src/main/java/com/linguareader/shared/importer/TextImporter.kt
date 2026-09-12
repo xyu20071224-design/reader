@@ -119,13 +119,17 @@ fun textToXhtml(title: String, body: String): String {
         .map { it.replace(hyphenatedLineBreak, "$1$2").replace('\n', ' ').trim() }
         .filter { it.isNotBlank() }
         .joinToString("\n") { "<p>${escapeHtml(it)}</p>" }
+    // 审查 4-7：TXT 此前正文里零标题标签（章名只出现在 <title> 与书库章名里），
+    // 滚动/朗读时看不到章内大标题。识别出的章节标题在这里落成 <h1>。
+    val heading = title.takeIf { it.isNotBlank() }?.let { "<h1>${escapeHtml(it)}</h1>" }.orEmpty()
+    val bodyHtml = listOf(heading, paragraphs).filter { it.isNotBlank() }.joinToString("\n")
     return """<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
 <title>${escapeHtml(title)}</title>
 </head><body>
-${paragraphs.ifBlank { "<p></p>" }}
+${bodyHtml.ifBlank { "<p></p>" }}
 </body></html>"""
 }
 
