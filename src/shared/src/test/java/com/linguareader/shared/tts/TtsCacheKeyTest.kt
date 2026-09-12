@@ -10,7 +10,11 @@ class TtsCacheKeyTest {
     @Test
     fun `pipeline version is part of the cache key`() {
         val current = TtsCacheKey.segmentDir("server:http://a.local", "narrator.wav")
-        val next = TtsCacheKey.segmentDir("server:http://a.local", "narrator.wav", pipelineVersion = 2)
+        val next = TtsCacheKey.segmentDir(
+            "server:http://a.local",
+            "narrator.wav",
+            pipelineVersion = TtsPipelineContract.VERSION + 1
+        )
 
         assertTrue(current.contains("~v${TtsPipelineContract.VERSION}~"), current)
         assertNotEquals(current, next, "版本变了键必须全变，否则旧音频会被当成新音频播")
@@ -51,8 +55,12 @@ class TtsCacheKeyTest {
 
     @Test
     fun `bumping the contract is a deliberate act`() {
-        // 这条断言的作用不是「保护 1」，而是让任何 bump 都必须同时改测试 ——
+        // 这条断言的作用不是「保护某个数字」，而是让任何 bump 都必须同时改测试 ——
         // 版本号是音频缓存与音频包的闸门，不能悄悄变。
-        assertEquals(1, TtsPipelineContract.VERSION)
+        //
+        // 1 → 2（2026-09-12，第四轮审查 2-1/2-2/2-3 合并为一次 bump）：
+        // 中文引号嵌套不再误切、a.m./p.m./i.e./e.g./Ph.D. 纳入总是保护档、U+3000 归一化。
+        // 已同步 `scripts/build_audio_pack.py` 的 PIPELINE_VERSION（该副本无自动比对）。
+        assertEquals(2, TtsPipelineContract.VERSION)
     }
 }

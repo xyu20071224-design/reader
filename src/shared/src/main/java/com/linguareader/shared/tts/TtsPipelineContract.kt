@@ -24,8 +24,12 @@ object TtsPipelineContract {
     /**
      * 当前管线版本。改动 [SentenceSplitter] / 块选择器 / 片段拆分后 **+1**，
      * 并同步更新 `方案-资源包系统.md` 的实施记录与 `.agents/memory/tts-architecture.md`。
+     *
+     * v2（2026-09-12，第四轮审查 2-1/2-2/2-3 合并为一次 bump）：分句器改三处 ——
+     * 中文引号嵌套不再误切、`a.m./p.m./i.e./e.g./Ph.D.` 纳入总是保护档、U+3000 归一化。
+     * 三者都改变句号，故按并法合并为**一次**版本变更；存量缓存与 v1 音频包按契约自然失效。
      */
-    const val VERSION = 1
+    const val VERSION = 2
 }
 
 /**

@@ -50,12 +50,27 @@ object SentenceSplitter {
     private val initials = Regex("""\b(?:[A-Za-z]\.){2,}""")
     // "J. R. R. Tolkien"：缩写之间带空格，句点同样不是句末。
     private val spacedInitials = Regex("""\b[A-Za-z]\.(?:\s+[A-Za-z]\.)+""")
+
+    /**
+     * **总是保护**档的点号缩写：`a.m.` / `p.m.` / `i.e.` / `e.g.` / `Ph.D.` 等。
+     *
+     * 它们不在两档表里时，行为会取决于下一个词的大小写（`9 a.m. Then left` 被切两句，
+     * 而 `at 5 p.m. he said` 不切），既不可预期又不正确（审查 2-2）。这类缩写几乎
+     * 不会真的出现在句末（句末会写成 `in the morning`），所以一律保护。
+     *
+     * `Ph.D.` 的末端句点由内层 `D.` 命中；`a.m.`/`i.e.` 末端句点由整体命中。
+     */
+    private val alwaysProtectedAbbreviation = Regex(
+        """(?i)\b(?:a\.m|p\.m|i\.e|e\.g|cf|viz|Ph\.D|D\.Phil|M\.A|B\.A|M\.Sc|B\.Sc)\."""
+    )
     private val terminators = setOf('.', '!', '?', '…', '。', '！', '？')
     private val cjkTerminators = setOf('。', '！', '？')
     private val closing = setOf('"', '\'', '”', '’', ')', ']', '）', '】', '」', '』')
 
     fun split(raw: String, maxSentenceLength: Int = Int.MAX_VALUE): List<String> {
-        val text = raw.replace(whitespace, " ").trim()
+        // U+3000 全角空格是 CJK 排版里的缩进符，Java 的 `\s` 不匹配它，
+        // 原样留着会让朗读在句首多一个停顿、高亮坐标带不可见字符（审查 2-3）。
+        val text = raw.replace('\u3000', ' ').replace(whitespace, " ").trim()
         if (text.isEmpty()) return emptyList()
 
         val protectedPeriods = protectedPeriods(text)
@@ -85,7 +100,9 @@ object SentenceSplitter {
                 val nextNonSpace = (end until text.length).firstOrNull { text[it] != ' ' }
                 val shouldSplit = when {
                     end >= text.length -> true
-                    hasCjkTerminator -> true
+                    // 中文引号嵌套：`他问：「你听见『谁在敲门？』了吗？」` 里的 ？/！ 不是
+                    // 外层引语的句界，否则整行会被切成两半、两个声音读同一句（审查 2-1）。
+                    hasCjkTerminator -> !hasUnclosedCjkQuote(text, end)
                     isEllipsis -> {
                         // 中文省略号后接 CJK 字符一律视为句界：句末省略号
                         // （他走了……她哭了）与悬停语气（我想…算了）无法区分，
@@ -144,6 +161,10 @@ object SentenceSplitter {
 
     private fun protectedPeriods(text: String): Set<Int> {
         val protected = mutableSetOf<Int>()
+        // 「总是保护」档先收集：即使同段文字里同时命中其它规则，也不该被当成句界。
+        alwaysProtectedAbbreviation.findAll(text).forEach { match ->
+            protected += match.range.last
+        }
         titleAbbreviation.findAll(text).forEach { match ->
             protected += match.range.last
         }
@@ -182,4 +203,22 @@ object SentenceSplitter {
 
     private fun Char.isCjkIdeograph(): Boolean =
         this in '\u4E00'..'\u9FFF' || this in '\u3400'..'\u4DBF'
+
+    /**
+     * [until] 之前是否存在**未闭合的中文引号**（`「` / `『`）。
+     *
+     * 用途：中文 `！`/`？` 后紧跟 CJK 时本应无条件切分，但如果这个问号/叹号落在嵌套
+     * 引语内部（`他问：「你听见『谁在敲门？』了吗？」`），切下去会把外层引语行劈成
+     * 两半 —— TTS 会用两个声音读同一句，对齐侧也会多出一对句对（审查 2-1）。
+     */
+    private fun hasUnclosedCjkQuote(text: String, until: Int): Boolean {
+        var depth = 0
+        for (i in 0 until until.coerceAtMost(text.length)) {
+            when (text[i]) {
+                '「', '『' -> depth++
+                '」', '』' -> if (depth > 0) depth--
+            }
+        }
+        return depth > 0
+    }
 }

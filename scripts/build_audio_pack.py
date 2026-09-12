@@ -28,7 +28,8 @@ import zipfile
 from pathlib import Path
 
 # 与 :shared TtsPipelineContract.VERSION 对齐；不匹配的包会被 App 拒装。
-PIPELINE_VERSION = 1
+# 2026-09-12 随分句器三处修正（审查 2-1/2-2/2-3）由 1 提到 2。
+PIPELINE_VERSION = 2
 MANIFEST_NAME = "manifest.json"
 PAYLOAD_DIR = "audio"
 

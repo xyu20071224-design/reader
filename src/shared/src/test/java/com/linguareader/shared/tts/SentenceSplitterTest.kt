@@ -139,6 +139,51 @@ class SentenceSplitterTest {
     }
 
     @Test
+    fun `nestedChineseQuoteDoesNotSplitTheOuterQuotation`() {
+        // 审查 2-1：中文 ！/？ 后紧跟 CJK 本应无条件切，但落在嵌套引语内部时
+        // 切下去就把外层引语行劈成两半（两个声音读同一句）。
+        val question = SentenceSplitter.split("他问：「你听见『谁在敲门？』了吗？」")
+        assertEquals(1, question.size, "嵌套问号不应切分外层引语：$question")
+
+        val exclaim = SentenceSplitter.split("他说：「她喊『救命！』然后跑了。」")
+        assertEquals(1, exclaim.size, "嵌套叹号不应切分外层引语：$exclaim")
+    }
+
+    @Test
+    fun `cjkQuoteStillSplitsAfterTheOuterQuoteCloses`() {
+        // 反向保护：引号闭合后的真句界仍要切，不能因为加了深度判据就整段并成一句。
+        val sentences = SentenceSplitter.split("他说：「好的。」然后他走了。")
+        assertEquals(2, sentences.size)
+    }
+
+    @Test
+    fun `alwaysProtectedAbbreviationsDoNotSplitBeforeCapitalisedWord`() {
+        // 审查 2-2：a.m./p.m./i.e./e.g./Ph.D. 原先不在缩写表里，行为取决于下一个词的
+        // 大小写（9 a.m. Then 被切成两句）。纳入总是保护档后一律不切。
+        val time = SentenceSplitter.split("He arrived at 9 a.m. Then left at 5 p.m.")
+        assertEquals(1, time.size, "时间缩写不应切分：$time")
+
+        val latin = SentenceSplitter.split("Use the short form, e.g. this one.")
+        assertEquals(1, latin.size, "e.g. 不应切分：$latin")
+
+        val degree = SentenceSplitter.split("She holds a Ph.D. Next year she teaches.")
+        assertEquals(1, degree.size, "Ph.D. 不应切分：$degree")
+    }
+
+    @Test
+    fun `ideographicSpaceIsNormalisedInsteadOfLeakingIntoText`() {
+        // 审查 2-3：U+3000 不被 \s 匹配，原样进入分句与朗读文本（句首多一个停顿、
+        // 高亮坐标带不可见字符）。
+        val sentences = SentenceSplitter.split("第10节\u3000神行客")
+        assertEquals(1, sentences.size)
+        assertEquals(
+            "第10节 神行客",
+            sentences[0],
+            "全角空格应归一化为普通空格，实际：'${sentences[0]}'"
+        )
+    }
+
+    @Test
     fun `titleAbbreviationsNeverEndASentence`() {
         val sentences = SentenceSplitter.split(
             "He met Dr. Watson near St. James's Park. Gen. Ross joined them."
