@@ -215,6 +215,18 @@ class TranslationGoldenReplayTest {
         changedKnownBad.forEach { println("[已知坏状态变化] $it") }
         notLocated.forEach { println("[未定位] $it") }
 
+        // ---- 6. 软报警（第四轮审查 1-3） ----
+        // 契约只保证「已批准的样本（ok/ok2）不回归」，bad/skip 群体此前**完全不报**：
+        // 对齐器的隐藏缺陷只要不落在契约样本内，CI 就不会给任何信号。这里显式把
+        // 「已知坏状态发生变化」打成软报警 —— 仍然不失败（既有契约不变），但不再无声。
+        if (changedKnownBad.isNotEmpty()) {
+            println(
+                "[golden][软报警] 已知坏状态(bad/skip)发生变化 ${changedKnownBad.size} 条：" +
+                    "可能是修好了、也可能是新引入 —— 请人工判定并据此重跑 bless。" +
+                    "（不失败，符合本测试既有契约：bad/skip 变化不阻断）"
+            )
+        }
+
         assertTrue(
             "金标准回归失败 ${failures.size} 条：\n" + failures.joinToString("\n"),
             failures.isEmpty()
