@@ -42,7 +42,7 @@ class StringResourcesTest {
         )
         // 资源包（M1）：装/切/卸的文案两侧都要能取到
         assertEquals("资源包", context.getString(R.string.packs_title))
-        assertEquals("安装资源包", context.getString(R.string.packs_install))
+        assertEquals("导入资源包", context.getString(R.string.packs_install))
         assertEquals("已安装「ECDICT」", context.getString(R.string.packs_installed, "ECDICT"))
         assertEquals(
             "将删除「ECDICT」（58.0 MB）。卸载后需要重新安装才能恢复。",
@@ -77,7 +77,7 @@ class StringResourcesTest {
         )
         // Resource packs (M1)
         assertEquals("Resource packs", context.getString(R.string.packs_title))
-        assertEquals("Install pack", context.getString(R.string.packs_install))
+        assertEquals("Import pack", context.getString(R.string.packs_install))
         assertEquals("Installed \"ECDICT\"", context.getString(R.string.packs_installed, "ECDICT"))
     }
 
