@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.charset.Charset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class TextImporterTest {
@@ -35,6 +36,23 @@ class TextImporterTest {
         assertTrue(html.contains("&lt;p&gt;"))
         assertTrue(html.contains("&quot;quoted&quot;"))
         assertEquals(2, Regex("<p>").findAll(html).count())
+    }
+
+    /**
+     * 第四轮审查 4-5：PDF 行末排印断词 `exam-` + 换行应在转 XHTML 时合并成一个词，
+     * 而不是留下 `exam- ple`（朗读与点词都会看错）。
+     */
+    @Test
+    fun joinsHyphenatedLineBreaksButKeepsRealHyphens() {
+        val html = textToXhtml(
+            "t",
+            "This is an exam-\nple of a broken word.\n\nKeep the dash in C-3PO and a -- separator."
+        )
+
+        assertTrue(html.contains("example of a broken word"), "断词应合并：$html")
+        assertFalse(html.contains("exam- ple"), "不应残留 `exam- ple`：$html")
+        assertTrue(html.contains("C-3PO"), "正常连字符应保留：$html")
+        assertTrue(html.contains("-- separator"), "`--` 分隔线应保留：$html")
     }
 
     @Test

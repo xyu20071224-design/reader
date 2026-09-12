@@ -104,10 +104,19 @@ fun splitChapters(text: String): List<Pair<String, String>> {
     return chapters.map { (title, body) -> title to body.joinToString("\n") }
 }
 
+/**
+ * 行末断词连字符：`exam-\n` 后接小写字母时，把 `-` 与换行一起去掉，恢复成一个词。
+ *
+ * 审查 4-5：PDF 抽取出来的行末常有排印断词（`exam-` + 换行），而本函数把段内 `\n`
+ * 换成空格 ⇒ 正文与朗读里出现 `exam- ple`、点词也点不中。只在「字母-换行-小写字母」
+ * 时合并，避免影响 `C-3PO`、`--` 分隔线这类正常连字符。
+ */
+private val hyphenatedLineBreak = Regex("""([A-Za-z])-\s*\n\s*([a-z])""")
+
 fun textToXhtml(title: String, body: String): String {
     val paragraphs = body
         .split(Regex("""\n\s*\n"""))
-        .map { it.replace('\n', ' ').trim() }
+        .map { it.replace(hyphenatedLineBreak, "$1$2").replace('\n', ' ').trim() }
         .filter { it.isNotBlank() }
         .joinToString("\n") { "<p>${escapeHtml(it)}</p>" }
     return """<?xml version="1.0" encoding="UTF-8"?>
