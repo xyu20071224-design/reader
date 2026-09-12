@@ -27,6 +27,7 @@ import org.robolectric.RobolectricTestRunner
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.test.assertFailsWith
 
 /**
  * M1 验收：安装 / 启用 / 卸载 / 校验的磁盘行为，以及**换源后查词真的换了词典**。
@@ -215,12 +216,60 @@ class PackRepositoryTest {
     @Test
     fun `healthy registry reports no error`() {
         val repo = PackRepository(context, appVersionCode = 15)
-        install(repo, dictionaryPack("ecdict-zh"))
+        val installed = install(repo, dictionaryPack("healthy-probe"))
 
         val loaded = repo.reloadWithError()
         assertNull(loaded.error)
-        assertEquals(1, loaded.registry.packs.size)
+        // 不断言总数：registry 落在共享的 context.filesDir 上，其它用例可能已留下登记项
+        assertTrue(loaded.registry.packs.any { it.packId == "healthy-probe" })
         assertFalse(repo.activeDictionaryFileMissing())
+    }
+
+    @Test
+    fun `upgrading a pack leaves registry pointing at the installed directory`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        install(repo, dictionaryPack("upgradable", version = "1.0.0"))
+        install(repo, dictionaryPack("upgradable", version = "2.0.0"))
+
+        val entries = repo.registry().packs.filter { it.packId == "upgradable" }
+        assertEquals("同 packId 只应登记一条", 1, entries.size)
+        assertEquals("2.0.0", entries.first().version)
+        val dir = entries.first().root(repo.packsRoot)
+        assertTrue("登记表指向的目录必须真的存在（审查 7-3）", dir.isDirectory)
+        assertFalse("旧版本目录应被清理", File(repo.packsRoot, "dictionary/upgradable/1.0.0").exists())
+        assertNotNull(repo.dictionarySource())
+    }
+
+    @Test
+    fun `non zip source is rejected as pack format error`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        val bogus = File.createTempFile("not-a-pack-", ".lrpack").apply { writeText("这不是一个 zip 文件") }
+
+        val error = assertFailsWith<PackFormatException> { install(repo, bogus) }
+        assertTrue(
+            "必须是 PackFormatException（复用本地化文案），不能漏出英文 ZipException",
+            error.message.orEmpty().isNotBlank()
+        )
+    }
+
+    @Test
+    fun `oversized manifest is rejected before being parsed`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        val staging = tempDir("big-manifest-")
+        val zip = File(staging, "huge.lrpack")
+        // 1 MB 上限（PackRepository.MAX_MANIFEST_BYTES）：塞一个超大条目，内容不必是合法 JSON
+        val payload = ByteArray((PackRepository.MAX_MANIFEST_BYTES + 1024).toInt()) { 'a'.code.toByte() }
+        ZipOutputStream(zip.outputStream()).use { out ->
+            out.putNextEntry(ZipEntry(PackManifest.FILE_NAME))
+            out.write(payload)
+            out.closeEntry()
+        }
+
+        val error = assertFailsWith<PackFormatException> { install(repo, zip) }
+        assertTrue(
+            "应报 manifest 过大，实际：${error.message}",
+            error.message.orEmpty().contains("过大")
+        )
     }
 
     @Test

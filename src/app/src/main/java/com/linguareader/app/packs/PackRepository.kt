@@ -172,10 +172,12 @@ class PackRepository(
                 if (destination.exists() && !destination.deleteRecursively()) {
                     throw IllegalStateException("无法替换已存在的资源包目录")
                 }
-                // 同 packId 的旧版本目录（换了版本号就是另一个目录）一并清掉，避免同一包多份占空间。
-                registry().byId(manifest.packId)
+                // 同 packId 的旧版本目录：先记下来，**落位并写表之后再删**（审查 7-3）。
+                // 旧顺序「删旧目录 → 落位 → 写表」在落位/写表失败或进程被杀时，registry
+                // 会指向已被删除的旧目录 —— 活动词典静默回内置、新包成孤儿。
+                val previousDir = registry().byId(manifest.packId)
                     ?.takeIf { it.dir != PackPaths.directoryFor(manifest.type, manifest.packId, manifest.version) }
-                    ?.let { old -> old.root(packsRoot).deleteRecursively() }
+                    ?.let { it.root(packsRoot) }
                 if (!staging.renameTo(destination)) {
                     throw IllegalStateException("资源包落位失败（可能是存储空间不足）")
                 }
@@ -194,6 +196,8 @@ class PackRepository(
                     }
                 }
                 writeRegistry(next)
+                // 登记表已不再引用旧目录，此时删除才是安全的；返回值即便失败也只是占空间。
+                previousDir?.deleteRecursively()
                 installed
             } finally {
                 sourceZip.delete()
@@ -246,15 +250,31 @@ class PackRepository(
     }
 
     private fun readManifest(zip: File): PackManifest {
-        ZipFile(zip).use { archive ->
-            val entry = archive.getEntry(PackManifest.FILE_NAME)
-                ?: archive.entries().asSequence().firstOrNull {
-                    it.name.substringAfterLast('/') == PackManifest.FILE_NAME
+        val text = try {
+            ZipFile(zip).use { archive ->
+                val entry = archive.getEntry(PackManifest.FILE_NAME)
+                    ?: archive.entries().asSequence().firstOrNull {
+                        it.name.substringAfterLast('/') == PackManifest.FILE_NAME
+                    }
+                    ?: throw PackFormatException("这个文件不是资源包（缺少 manifest.json）")
+                // 上限先于读取生效（审查 7-5）：`readBytes()` 无上限会被恶意超大条目打爆内存，
+                // 而此时 SafeZip 的解压阈值还没轮到生效。
+                val declared = entry.size
+                if (declared > MAX_MANIFEST_BYTES) {
+                    throw PackFormatException("资源包的 manifest.json 过大（${declared / 1024}KB），已拒绝")
                 }
-                ?: throw PackFormatException("这个文件不是资源包（缺少 manifest.json）")
-            val text = archive.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
-            return PackManifest.parse(text)
+                val bytes = archive.getInputStream(entry).use { it.readBytes() }
+                if (bytes.size > MAX_MANIFEST_BYTES) {
+                    throw PackFormatException("资源包的 manifest.json 过大（${bytes.size / 1024}KB），已拒绝")
+                }
+                bytes.toString(Charsets.UTF_8)
+            }
+        } catch (error: java.util.zip.ZipException) {
+            // 非 zip / 畸形 zip：包成 PackFormatException 以复用本地化文案（审查 7-11），
+            // 否则 ZipException 的英文 message 会原样进对话框。
+            throw PackFormatException("这个文件不是有效的资源包（压缩包无法读取）")
         }
+        return PackManifest.parse(text)
     }
 
     private fun stampOf(file: File): Long = if (file.isFile) file.lastModified() else -1L
@@ -331,6 +351,15 @@ class PackRepository(
         const val DIR_NAME = "packs"
         const val REGISTRY_NAME = "registry.json"
         const val TEMP_DIR = ".tmp"
+
+        /**
+         * `manifest.json` 的读取上限。
+         *
+         * 正常清单是几十 KB 量级（音频包按章列文件）；这里给 1 MB 留足余量，同时挡住
+         * 「导入一个声明了超大 manifest 条目的 zip」把内存打爆（第四轮审查 7-5）。
+         */
+        const val MAX_MANIFEST_BYTES = 1L * 1024 * 1024
+
         private const val TAG = "PackRepository"
     }
 }
