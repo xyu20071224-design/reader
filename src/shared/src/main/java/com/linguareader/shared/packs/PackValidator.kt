@@ -1,6 +1,7 @@
 package com.linguareader.shared.packs
 
 import com.linguareader.shared.importer.ImportSupport
+import com.linguareader.shared.tts.TtsCacheKey
 import java.io.File
 
 /** 校验结论。失败消息面向用户，可直接进对话框/Snackbar。 */
@@ -98,6 +99,22 @@ object PackValidator {
      */
     fun validateAudioChapters(manifest: PackManifest, digests: Map<String, String>): PackValidationResult {
         val audio = manifest.audioPayload ?: return PackValidationResult.Ok
+        // 审查 6-10：交叉校验 manifest 的 engineTag/voice 与载荷目录段。
+        // 二者不一致时包会「装得上但永不命中」（解析路径由 segmentDir 派生），属静默不可用，故安装时直接拒。
+        val expectedSegment = TtsCacheKey.segmentDir(audio.engineTag, audio.voice)
+        val actualSegments = digests.keys
+            .filter { it.startsWith(AudioPackSource.PAYLOAD_DIR + "/") }
+            .mapNotNull { path ->
+                path.removePrefix(AudioPackSource.PAYLOAD_DIR + "/").split('/').getOrNull(1)
+                    ?.takeIf { it.isNotBlank() }
+            }
+            .toSet()
+        if (actualSegments != setOf(expectedSegment)) {
+            return PackValidationResult.reject(
+                "音频包目录与清单不符（由清单 engineTag/voice 推导应为 $expectedSegment，" +
+                    "实际 ${actualSegments.joinToString("、").ifBlank { "无" }}）"
+            )
+        }
         val declaredChapters = audio.chapters.associateBy { it.index }
         val grouped = digests.keys
             .filter { it.startsWith(AudioPackSource.PAYLOAD_DIR + "/") }
