@@ -137,9 +137,11 @@ class TtsAudioCache(context: Context) : BookScopedStore {
      * 上一台的音频。键里带上它之后，旧引擎的目录自然不再命中，交给配额淘汰或
      * 「清空音频缓存」回收。
      *
-     * **键里还含朗读管线版本**（`~v1~`，见 [TtsCacheKey] 与 `TtsPipelineContract`）：
+     * **键里还含朗读管线版本与引擎身份指纹**（`e<sha256(引擎身份)[:8]>~v2~<voice>`，
+     * 当前 v2；见 [TtsCacheKey] 与 `TtsPipelineContract`）：
      * 断句/块选择器/片段拆分任一改动都会让存量缓存静默对不上文本，版本进键是唯一的
-     * 闸门。代价是版本 bump 时存量缓存一次性作废（方案 D1 已接受）。
+     * 闸门；引擎身份自 2026-09-12 起含 `serverModel` / MiMo 风格指令，换模型即换键。
+     * 代价是版本 bump 或换模型时存量缓存一次性作废（方案 D1 已接受）。
      */
     fun fileFor(
         bookId: String,
