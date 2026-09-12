@@ -423,7 +423,7 @@
     <string name="packs_count">已安装 %1$d 个</string>
     <string name="packs_empty">还没有安装资源包</string>
     <string name="packs_empty_hint">资源包（.lrpack）可以替换词典、离线收听整本书、补充音色。文件需要你自己准备，应用不会联网下载。</string>
-    <string name="packs_install">安装资源包</string>
+    <string name="packs_install">导入资源包</string>
     <string name="packs_installing">正在安装…</string>
     <string name="packs_installed">已安装「%1$s」</string>
     <string name="packs_install_failed">无法安装这个资源包</string>

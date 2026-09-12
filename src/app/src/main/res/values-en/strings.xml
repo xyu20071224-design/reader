@@ -428,7 +428,7 @@
     <string name="packs_count">%1$d installed</string>
     <string name="packs_empty">No resource packs installed</string>
     <string name="packs_empty_hint">Resource packs (.lrpack) can replace the dictionary, make a whole book listenable offline, or add voices. You provide the files — the app never downloads them.</string>
-    <string name="packs_install">Install pack</string>
+    <string name="packs_install">Import pack</string>
     <string name="packs_installing">Installing…</string>
     <string name="packs_installed">Installed \"%1$s\"</string>
     <string name="packs_install_failed">This resource pack could not be installed</string>
