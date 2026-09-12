@@ -286,7 +286,8 @@ class CloudTtsSynthesizer(
                 }
             val allOk = jobs.all { it.await() }
             // 整书缓存是最容易把配额顶穿的入口：填完立刻整理。
-            trimCache(book.id, protectChapterIndex = null)
+            // M6：这里只保该书的「最近写入的那一章」，不再保护整本 —— 否则单本超上限就永不淘汰。
+            trimCache(book.id, protectChapterIndex = null, protectNewestChapterOnly = true)
             if (!shutdown) {
                 mainHandler.post { onComplete(allOk) }
             }
@@ -300,8 +301,15 @@ class CloudTtsSynthesizer(
      * 只在**预生成刚结束**时调用 —— 那既是占用刚变大的时刻，也是不在播放中间的
      * 时刻。正在听的书（章）永不淘汰：删掉它会当场触发重新合成，云 TTS 是花钱的。
      * 上限为 0（不限）时 trimTo 直接不动。
+     *
+     * [protectNewestChapterOnly] 对应整书缓存路径（M6）：只保该书最近写入的一章，
+     * 避免"保护整本 ⇒ 单本超上限即永不淘汰"。
      */
-    private fun trimCache(bookId: String, protectChapterIndex: Int?) {
+    private fun trimCache(
+        bookId: String,
+        protectChapterIndex: Int?,
+        protectNewestChapterOnly: Boolean = false
+    ) {
         if (shutdown) return
         val limitMb = runCatching { CloudTtsSettings.load(appContext).cacheLimitMb }.getOrDefault(0)
         if (limitMb <= 0) return
@@ -309,7 +317,8 @@ class CloudTtsSynthesizer(
             cache.trimTo(
                 limitBytes = limitMb.toLong() * 1024L * 1024L,
                 protectBookId = bookId,
-                protectChapterIndex = protectChapterIndex
+                protectChapterIndex = protectChapterIndex,
+                protectNewestChapterOnly = protectNewestChapterOnly
             )
         }
     }

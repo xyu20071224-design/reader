@@ -89,22 +89,33 @@ class TtsAudioCache(context: Context) : BookScopedStore {
      * - [limitBytes] <= 0 表示**不限**（用户可选），直接不动；
      * - [protectBookId] / [protectChapterIndex] 指定的单元永不淘汰 —— 正在听的东西
      *   被删掉会当场触发重新合成，云 TTS 那是要花钱的；
+     * - [protectNewestChapterOnly] 为真且 [protectChapterIndex] 为 null 时，**只**保护该
+     *   书最近写入的那一章（第四轮审查 M6：整书缓存路径此前保护整本书，单本超上限就永不
+     *   淘汰，配额形同失效）。非空 [protectChapterIndex] 优先，语义不变。
      * - 淘汰顺序按 [Entry.lastModified] 从旧到新（注意那是「最近写入」，见该字段注释）。
      */
     fun trimTo(
         limitBytes: Long,
         protectBookId: String? = null,
-        protectChapterIndex: Int? = null
+        protectChapterIndex: Int? = null,
+        protectNewestChapterOnly: Boolean = false
     ): Long {
         if (limitBytes <= 0) return 0L
         val all = entries()
         var total = all.sumOf { it.bytes }
         if (total <= limitBytes) return 0L
+        // M6：整书缓存路径只保该书的「最近写入的那一章」，而不是整本。
+        val effectiveProtectChapter = when {
+            protectChapterIndex != null -> protectChapterIndex
+            protectNewestChapterOnly && protectBookId != null ->
+                all.filter { it.bookId == protectBookId }.maxByOrNull { it.lastModified }?.chapterIndex
+            else -> null
+        }
         var freed = 0L
         for (entry in all.sortedBy { it.lastModified }) {
             if (total <= limitBytes) break
             val protectedEntry = protectBookId != null && entry.bookId == protectBookId &&
-                (protectChapterIndex == null || entry.chapterIndex == protectChapterIndex)
+                (effectiveProtectChapter == null || entry.chapterIndex == effectiveProtectChapter)
             if (protectedEntry) continue
             if (entry.dir.deleteRecursively()) {
                 total -= entry.bytes

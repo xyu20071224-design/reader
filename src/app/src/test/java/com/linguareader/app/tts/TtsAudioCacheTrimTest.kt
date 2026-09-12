@@ -46,6 +46,57 @@ class TtsAudioCacheTrimTest {
         addedAt = 0L
     )
 
+    /**
+     * 第四轮审查 M6：整书缓存路径此前 `protectChapterIndex = null` ⇒ 保护**整本**，
+     * 单本书超过上限时永不被淘汰，配额形同失效。改为只保该书最近写入的一章。
+     */
+    @Test
+    fun wholeBookPathProtectsOnlyTheNewestChapterNotTheWholeBook() {
+        // 同一本书 4 章，共 1600B；上限压到 400B
+        seed("big", 0, "v", 400, modifiedAt = 1_000L)
+        seed("big", 1, "v", 400, modifiedAt = 2_000L)
+        seed("big", 2, "v", 400, modifiedAt = 3_000L)
+        seed("big", 3, "v", 400, modifiedAt = 4_000L)
+        assertEquals(1600L, cache.totalBytes())
+
+        val freed = cache.trimTo(
+            limitBytes = 400L,
+            protectBookId = "big",
+            protectChapterIndex = null,
+            protectNewestChapterOnly = true
+        )
+
+        // 必须真的释放到上限附近（旧行为会保护整本 ⇒ freed = 0）
+        assertEquals(1200L, freed)
+        assertEquals(400L, cache.totalBytes())
+        // 只有最近写入的第 3 章留下
+        assertTrue(cache.fileFor("big", 3, 0, 0, "v", ENGINE).exists())
+        listOf(0, 1, 2).forEach { chapter ->
+            assertFalse(
+                cache.fileFor("big", chapter, 0, 0, "v", ENGINE).exists(),
+                "第 $chapter 章应被淘汰（整书路径只保最近一章）"
+            )
+        }
+    }
+
+    /** 显式指定章号时语义不变：只保护那一章，与 [protectNewestChapterOnly] 无关。 */
+    @Test
+    fun explicitProtectedChapterStillWins() {
+        seed("b", 0, "v", 400, modifiedAt = 1_000L)
+        seed("b", 1, "v", 400, modifiedAt = 2_000L)
+        seed("b", 2, "v", 400, modifiedAt = 3_000L)
+
+        val freed = cache.trimTo(
+            limitBytes = 400L,
+            protectBookId = "b",
+            protectChapterIndex = 0,
+            protectNewestChapterOnly = true
+        )
+
+        assertTrue(cache.fileFor("b", 0, 0, 0, "v", ENGINE).exists(), "显式保护的章必须在")
+        assertTrue(freed > 0L, "其余章仍应被淘汰以收敛到上限")
+    }
+
     @Test
     fun oldestEntriesAreEvictedUntilUnderTheLimit() {
         seed("b1", 0, "v", 400, modifiedAt = 1_000L)
