@@ -131,7 +131,8 @@ class PackRepository(
             val sourceZip = File.createTempFile("pack-", ".zip", tempRoot)
             val staging = File(tempRoot, "staging-" + System.nanoTime())
             try {
-                copySource(uri, sourceZip)
+                // 解析前用最宽上限（AUDIO 2GB）预检并拷贝；解析出类型后再卡严格上限。
+                copySource(uri, sourceZip, PackLimits.of(PackType.AUDIO).maxSourceBytes)
                 val manifest = readManifest(sourceZip)
                 val limits = PackLimits.of(manifest.type)
                 require(sourceZip.length() <= limits.maxSourceBytes) {
@@ -227,7 +228,22 @@ class PackRepository(
         }
     }
 
-    private fun copySource(uri: Uri, target: File) {
+    /**
+     * 把 SAF 选中的包拷进临时区。
+     *
+     * 审查 7-6：**解析 manifest 之前先按元数据预检体积**，超上限直接拒、不拷贝。
+     * 原实现在解析前无条件整份拷入（内部存储先被占满才报错）；严格上限要等 manifest
+     * 解析出类型后才卡。这里先用 [ContentResolver] 的 `SIZE` 问一次，能拿到就提前拒。
+     *
+     * 拿不到 SIZE 时（部分 provider 不提供）回退：拷贝流程里仍保留逐块 `maxSourceBytes`
+     * 兜底，因此不会无界写入。
+     */
+    private fun copySource(uri: Uri, target: File, maxSourceBytes: Long) {
+        declaredSizeBytes(uri)?.let { declared ->
+            require(declared <= maxSourceBytes) {
+                "资源包文件过大：${declared / 1024 / 1024}MB 超过 ${maxSourceBytes / 1024 / 1024}MB 上限"
+            }
+        }
         val input = appContext.contentResolver.openInputStream(uri)
             ?: throw IllegalArgumentException("无法读取所选文件")
         input.use { source ->
@@ -239,15 +255,24 @@ class PackRepository(
                     if (read <= 0) break
                     written += read
                     // 类型未知时按全类型上限兜底；具体类型的上限在解析 manifest 后再卡。
-                    require(written <= PackLimits.of(PackType.AUDIO).maxSourceBytes) {
-                        "资源包文件过大"
-                    }
+                    require(written <= maxSourceBytes) { "资源包文件过大" }
                     output.write(buffer, 0, read)
                 }
             }
         }
         require(target.length() > 0) { "文件内容为空" }
     }
+
+    /** SAF 文档声明的字节数；provider 不提供时返回 null（调用方需自行兜底）。 */
+    private fun declaredSizeBytes(uri: Uri): Long? = runCatching {
+        appContext.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (index >= 0 && !cursor.isNull(index)) cursor.getLong(index) else null
+                } else null
+            }
+    }.getOrNull()
 
     private fun readManifest(zip: File): PackManifest {
         val text = try {
