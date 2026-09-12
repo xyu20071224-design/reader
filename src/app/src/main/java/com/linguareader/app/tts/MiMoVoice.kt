@@ -310,14 +310,26 @@ object MiMoVoiceStore {
 fun MiMoVoiceCatalog.library(context: Context): List<VoiceInfo> {
     val presetItems = presets.map { MiMoVoiceCatalog.asVoiceInfo(it) }
     val customs = MiMoVoiceStore.installed(context).map { it.asVoiceInfo() }
-    return withPackVoices(presetItems + customs, PackRepository(context).cloneVoices())
+    return withPackVoices(presetItems + customs, usableCloneVoices(PackRepository(context).cloneVoices()))
 }
+
+/**
+ * 样本缺失的克隆音色不能进库（审查 7-10）。
+ *
+ * 否则多角色分配器会挑到一个**必然合成失败**的音色（样本文件不存在，`pack:` id 到合成时
+ * 才报错）。抽成纯函数是为了可测：只读磁盘判存在性，不依赖 Context。
+ */
+internal fun usableCloneVoices(
+    clones: List<VoicePackSource.CloneVoice>
+): List<VoicePackSource.CloneVoice> = clones.filter { it.sampleFile != null }
 
 /**
  * 音色包的克隆音色并进音色库（M4，纯函数便于单测）。
  *
  * id 带 `pack:<packId>/<key>` 命名空间，与 MiMo 预置/自建音色的 id 天然不撞；
  * 质量给 0.7（与既有 clone 先验一致），多角色分配器照常参与打分。
+ *
+ * 注意：调用方需先经 [usableCloneVoices] 剔除样本缺失者；本函数不碰磁盘，保持纯函数可测。
  */
 internal fun withPackVoices(
     base: List<VoiceInfo>,

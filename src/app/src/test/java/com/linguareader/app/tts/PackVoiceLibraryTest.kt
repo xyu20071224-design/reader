@@ -3,6 +3,8 @@ package com.linguareader.app.tts
 import com.linguareader.shared.packs.PackVoice
 import com.linguareader.shared.packs.VoicePackSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -91,6 +93,44 @@ class PackVoiceLibraryTest {
             listOf(clone.copy(voice = packVoice("Mia", PackVoice.MODE_CLONE)))
         )
         assertEquals(listOf("Mia", "pack:voices-1/Mia"), sameName.map { it.id })
+    }
+
+    /**
+     * 第四轮审查 7-10：样本文件缺失的克隆音色**不得进入音色库**，否则多角色会分到
+     * 一个必然合成失败的音色（到合成时才报错）。
+     */
+    @Test
+    fun `clone voices with missing samples are filtered out of the library`() {
+        val root = File.createTempFile("voice-pack-", "").let { it.delete(); it.mkdirs(); it }
+        // packVoice 对 clone 固定样本路径为 samples/<key>.wav：只给 hero 建文件，ghost 缺失
+        File(root, "samples").mkdirs()
+        File(root, "samples/hero.wav").writeBytes(byteArrayOf(1, 2, 3))
+
+        val present = VoicePackSource.CloneVoice(
+            packId = "voices-1",
+            packName = "音色包",
+            packRoot = root,
+            voice = packVoice("hero", PackVoice.MODE_CLONE)
+        )
+        val missing = VoicePackSource.CloneVoice(
+            packId = "voices-1",
+            packName = "音色包",
+            packRoot = root,
+            voice = packVoice("ghost", PackVoice.MODE_CLONE)
+        )
+
+        assertNotNull("样本存在的应保留", present.sampleFile)
+        assertNull("样本不存在的应为 null", missing.sampleFile)
+
+        val usable = usableCloneVoices(listOf(present, missing))
+        assertEquals(listOf("pack:voices-1/hero"), usable.map { it.id })
+
+        val library = withPackVoices(listOf(VoiceInfo("Mia")), usable)
+        assertEquals(listOf("Mia", "pack:voices-1/hero"), library.map { it.id })
+        assertTrue(
+            "样本缺失的音色不得出现在库里：${library.map { it.id }}",
+            library.none { it.id == "pack:voices-1/ghost" }
+        )
     }
 
     @Test
