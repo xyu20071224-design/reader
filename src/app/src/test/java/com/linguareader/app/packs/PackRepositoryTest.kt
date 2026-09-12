@@ -167,6 +167,63 @@ class PackRepositoryTest {
     }
 
     @Test
+    fun `corrupt registry falls back to empty but reports the reason`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        install(repo, dictionaryPack("ecdict-zh"))
+        val registryFile = File(repo.packsRoot, PackRepository.REGISTRY_NAME)
+        assertTrue(registryFile.isFile)
+
+        // 模拟写坏：登记表存在但内容不是合法 JSON（截断/半写）
+        registryFile.writeText("{\"version\":1,\"packs\":[{\"packId\"")
+
+        val loaded = repo.reloadWithError()
+        // 查词不能因此哑掉：仍按空表降级
+        assertTrue(loaded.registry.packs.isEmpty())
+        assertNull(loaded.registry.activeDictionary)
+        // 但失败必须能被界面看见（第四轮审查 7-1：不能再静默）
+        assertNotNull("登记表损坏时 error 必须非空", loaded.error)
+        // 旧 API 行为不变：仍是空表回退
+        assertTrue(repo.registry().packs.isEmpty())
+    }
+
+    @Test
+    fun `zero byte registry is reported as damaged`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        install(repo, dictionaryPack("ecdict-zh"))
+        File(repo.packsRoot, PackRepository.REGISTRY_NAME).writeText("")
+
+        val loaded = repo.reloadWithError()
+        assertTrue(loaded.registry.packs.isEmpty())
+        assertNotNull("0 字节登记表必须报损坏，而不是静默空表", loaded.error)
+    }
+
+    @Test
+    fun `missing active dictionary file is detected`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        val installed = install(repo, dictionaryPack("ecdict-zh"))
+        assertFalse("包完整时不应报警", repo.activeDictionaryFileMissing())
+
+        val dictionaryFile = File(repo.packsRoot, installed.dir).walkTopDown()
+            .first { it.isFile && it.name == "dictionary.sqlite" }
+        assertTrue(dictionaryFile.delete())
+
+        // registry 仍写着 active，但磁盘已缺 → 界面必须能据此降级展示（第四轮审查 7-2）
+        assertTrue("活动词典包文件缺失必须被检出", repo.activeDictionaryFileMissing())
+        assertNull("查词仍静默回内置（离线优先，不弄哑查词）", repo.dictionarySource())
+    }
+
+    @Test
+    fun `healthy registry reports no error`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        install(repo, dictionaryPack("ecdict-zh"))
+
+        val loaded = repo.reloadWithError()
+        assertNull(loaded.error)
+        assertEquals(1, loaded.registry.packs.size)
+        assertFalse(repo.activeDictionaryFileMissing())
+    }
+
+    @Test
     fun `uninstall removes directory and clears activation`() {
         val repo = PackRepository(context, appVersionCode = 15)
         val installed = install(repo, dictionaryPack("gone"))

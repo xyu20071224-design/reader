@@ -259,13 +259,56 @@ class PackRepository(
 
     private fun stampOf(file: File): Long = if (file.isFile) file.lastModified() else -1L
 
-    private fun readRegistry(): PackRegistry = runCatching {
-        if (!registryFile.isFile) PackRegistry.EMPTY
-        else PackRegistry.parse(registryFile.readText())
+    /**
+     * 登记表读取结果：始终给出可用登记表（失败回退空表），另带一条**失败原因**。
+     *
+     * [error] 只在「文件存在但读不动」时非空——这是必须让用户看见的降级：包列表会
+     * 整片变空、活动词典静默回内置，仅写 `Log.w` 等于让用户以为一切正常（第四轮
+     * 审查 7-1）。查词本身仍按空表降级，不受影响。
+     */
+    data class RegistrySnapshot(val registry: PackRegistry, val error: String?)
+
+    /**
+     * 读登记表并**显式报告**失败原因（供 UI 展示降级提示）。
+     *
+     * 空文件/0 字节也算损坏：正常写出的登记表至少含 `{"version":…}`，截断成 0 字节
+     * 只可能是写到一半失败，静默当空表会让全部已装包从界面消失。
+     */
+    fun reloadWithError(): RegistrySnapshot = synchronized(this) {
+        val snapshot = readRegistrySnapshot()
+        cached = snapshot.registry
+        cachedStamp = stampOf(registryFile)
+        snapshot
+    }
+
+    private fun readRegistry(): PackRegistry = readRegistrySnapshot().registry
+
+    private fun readRegistrySnapshot(): RegistrySnapshot = runCatching {
+        if (!registryFile.isFile) RegistrySnapshot(PackRegistry.EMPTY, null)
+        else {
+            val text = registryFile.readText()
+            if (text.isBlank()) {
+                RegistrySnapshot(PackRegistry.EMPTY, "登记表为空文件（0 字节或全空白）")
+            } else {
+                RegistrySnapshot(PackRegistry.parse(text), null)
+            }
+        }
     }.getOrElse { error ->
         Log.w(TAG, "资源包登记表读取失败，按空表处理：${error.message}")
-        PackRegistry.EMPTY
+        RegistrySnapshot(PackRegistry.EMPTY, error.message ?: error.javaClass.simpleName)
     }
+
+    /**
+     * 活动词典包是否**真的落盘**。
+     *
+     * `registry.activeDictionary` 只是登记表里的一句话；目录被外部清理、卸载失败残留、
+     * 或 registry 与磁盘漂移时，[dictionarySource] 会静默回内置，而界面仍把它显示为
+     * 已启用（第四轮审查 7-2）。这里给 UI 一个只读校验点，不改查词降级行为。
+     */
+    fun activeDictionaryFileMissing(): Boolean =
+        registry().activeDictionaryPack()
+            ?.let { pack -> pack.dictionaryFile(packsRoot)?.isFile != true }
+            ?: false
 
     /** 原子写：`*.tmp` + rename，失败回退直写（与项目其余落盘纪律一致）。 */
     private fun writeRegistry(registry: PackRegistry) {

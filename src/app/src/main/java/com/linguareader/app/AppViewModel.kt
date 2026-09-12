@@ -47,6 +47,7 @@ import com.linguareader.app.data.LibraryRepository
 import com.linguareader.app.data.SavedWord
 import com.linguareader.app.data.VocabularyRepository
 import com.linguareader.app.data.WordLookup
+import com.linguareader.app.packs.LoadWarning
 import com.linguareader.app.packs.PackRepository
 import com.linguareader.app.packs.PackUiItem
 import com.linguareader.app.packs.PackUiState
@@ -442,17 +443,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val snapshot = withContext(Dispatchers.IO) {
                 val books = runCatching { library.loadBooks() }.getOrDefault(emptyList()).associateBy { it.id }
-                val registry = packs.reload()
+                val loaded = packs.reloadWithError()
+                val registry = loaded.registry
                 val items = registry.packs.map { pack ->
                     pack.toUiItem(
                         active = registry.activeDictionary == pack.packId,
                         bookTitle = pack.manifest.audioPayload?.bookId?.let { books[it]?.title }
                     )
                 }
-                PackUiState(items = items, totalBytes = items.sumOf { it.bytes })
+                // 降级优先级：登记表自身损坏 > 活动词典包文件缺失（两者都会让「已启用」名不副实）。
+                val warning = when {
+                    loaded.error != null -> LoadWarning.REGISTRY_DAMAGED
+                    packs.activeDictionaryFileMissing() -> LoadWarning.ACTIVE_DICTIONARY_MISSING
+                    else -> null
+                }
+                PackUiState(
+                    items = items,
+                    totalBytes = items.sumOf { it.bytes },
+                    loadWarning = warning
+                )
             }
             mutableState.value = mutableState.value.copy(
-                packs = mutableState.value.packs.copy(items = snapshot.items, totalBytes = snapshot.totalBytes)
+                packs = mutableState.value.packs.copy(
+                    items = snapshot.items,
+                    totalBytes = snapshot.totalBytes,
+                    loadWarning = snapshot.loadWarning
+                )
             )
         }
     }

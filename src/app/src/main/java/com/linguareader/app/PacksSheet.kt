@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.data.formatStorageBytes
+import com.linguareader.app.packs.LoadWarning
 import com.linguareader.app.packs.PackUiItem
 import com.linguareader.app.packs.PackUiState
 import com.linguareader.shared.packs.PackType
@@ -96,6 +97,20 @@ internal fun PacksSheet(
                 )
             }
             Spacer(Modifier.height(12.dp))
+
+            state.loadWarning?.let { warning ->
+                Text(
+                    stringResource(
+                        when (warning) {
+                            LoadWarning.REGISTRY_DAMAGED -> R.string.packs_load_warning_registry_damaged
+                            LoadWarning.ACTIVE_DICTIONARY_MISSING -> R.string.packs_load_warning_active_missing
+                        }
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Danger
+                )
+                Spacer(Modifier.height(10.dp))
+            }
 
             if (state.items.isEmpty()) {
                 Text(

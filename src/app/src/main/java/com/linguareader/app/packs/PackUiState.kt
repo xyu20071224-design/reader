@@ -46,9 +46,23 @@ data class PackUiState(
     /** 安装中（SAF 回来到落位完成之间）；界面禁用安装按钮并显示进度。 */
     val installing: Boolean = false,
     /** 正在重哈希校验的包 id（手动「验证完整性」）。 */
-    val verifying: String? = null
+    val verifying: String? = null,
+    /**
+     * 本次加载的降级提示；null = 一切正常。
+     *
+     * 两类静默失败必须显式告诉用户，否则「查词静默回内置、界面却写着已启用」：
+     * [LoadWarning.REGISTRY_DAMAGED]（登记表损坏 → 按空表加载）与
+     * [LoadWarning.ACTIVE_DICTIONARY_MISSING]（活动词典包文件缺失 → 当前用内置词典）。
+     */
+    val loadWarning: LoadWarning? = null
 ) {
     val dictionaryPack: PackUiItem? get() = items.firstOrNull { it.type == PackType.DICTIONARY && it.active }
+}
+
+/** 资源包加载降级原因；文案映射在界面层（`packs_load_warning_*`）。 */
+enum class LoadWarning {
+    REGISTRY_DAMAGED,
+    ACTIVE_DICTIONARY_MISSING
 }
 
 fun InstalledPack.toUiItem(active: Boolean, bookTitle: String?): PackUiItem = PackUiItem(
