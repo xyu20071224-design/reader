@@ -95,8 +95,8 @@ class MiMoTtsBackend(
                 val json = connection.inputStream.bufferedReader().use { it.readText() }
                 val audioBytes = decodeAudioData(json)
                 check(audioBytes.isNotEmpty()) { "MiMo 合成结果为空" }
-                outputFile.parentFile?.mkdirs()
-                outputFile.writeBytes(audioBytes)
+                // 原子写：同上，避免半截文件被当缓存命中。
+                writeAudioAtomically(outputFile) { temp -> temp.writeBytes(audioBytes) }
             } finally {
                 connection.disconnect()
             }

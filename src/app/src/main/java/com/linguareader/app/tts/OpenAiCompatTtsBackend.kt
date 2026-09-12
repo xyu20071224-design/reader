@@ -94,9 +94,11 @@ class OpenAiCompatTtsBackend(
                     val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                     error("合成失败（HTTP ${connection.responseCode}）：${error.take(200)}")
                 }
-                outputFile.parentFile?.mkdirs()
-                connection.inputStream.use { input ->
-                    outputFile.outputStream().use { output -> input.copyTo(output) }
+                // 原子写：最终路径出现即完整文件，半成品不会永久成为缓存命中（审查 6-1/6-2）。
+                writeAudioAtomically(outputFile) { temp ->
+                    connection.inputStream.use { input ->
+                        temp.outputStream().use { output -> input.copyTo(output) }
+                    }
                 }
                 check(outputFile.length() > 0) { "合成结果为空" }
             } finally {

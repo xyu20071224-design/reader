@@ -204,18 +204,37 @@ class CloudTtsSynthesizer(
             return true
         }
         if (file.exists() && file.length() > 0) return true
+        return synthesizeOnce(file, utterance.text, voice)
+    }
+
+    /**
+     * 同键合成只做一次（第四轮审查 6-4）。
+     *
+     * 预生成与现场播放（`speak`）原先各走一条路：只有预生成登记 `inflightFiles`，
+     * 现场合成在等待超时后会与预生成**对同一文件重复合成**（云 TTS 双计费），
+     * 并且两边并发写同一路径。现在两条路都从这里走，输者只等结果。
+     */
+    private suspend fun synthesizeOnce(file: File, text: String, voice: String): Boolean {
         val key = file.absolutePath
-        if (inflightFiles.putIfAbsent(key, true) != null) {
-            // Another coroutine (chapter prep vs whole-book cache) is already
-            // synthesizing this file — wait for it instead of double-billing.
-            while (inflightFiles.containsKey(key) && !shutdown) delay(100)
-            return file.exists() && file.length() > 0
-        }
+        if (inflightFiles.putIfAbsent(key, true) != null) return awaitInflight(file, key)
         try {
-            return backend.synthesize(utterance.text, voice, file).isSuccess
+            return backend.synthesize(text, voice, file).isSuccess
         } finally {
             inflightFiles.remove(key)
         }
+    }
+
+    /** 等同键在途合成结束；超时或停机则返回当前是否已可播放。 */
+    private suspend fun awaitInflight(file: File, key: String): Boolean {
+        val deadline = System.currentTimeMillis() + 60_000
+        while (
+            !shutdown && !chapterFailed && !stopped &&
+            inflightFiles.containsKey(key) &&
+            System.currentTimeMillis() < deadline
+        ) {
+            delay(100)
+        }
+        return file.exists() && file.length() > 0
     }
 
     override fun prepareBook(
@@ -342,7 +361,7 @@ class CloudTtsSynthesizer(
         }
         if (file.exists() && file.length() > 0) return true
         if (chapterFailed || shutdown || stopped) return false
-        return backend.synthesize(text, voice, file).isSuccess
+        return synthesizeOnce(file, text, voice)
     }
 
     private fun play(file: File, rate: Float, utteranceId: String) {
