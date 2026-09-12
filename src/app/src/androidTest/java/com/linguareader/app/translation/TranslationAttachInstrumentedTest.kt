@@ -63,9 +63,10 @@ class TranslationAttachInstrumentedTest {
         assertEquals(attached.translationBook.id, attached.memory.translationBookId)
         assertTrue("terms v1 恒空", attached.memory.terms.isEmpty())
 
-        // 译本落在 files/translations/ 下，且不进书架目录 files/books/
+        // 出版译本进入 files/translations/（不进书架目录 files/books/），
+        // 但方案 D1.8：档案落盘确认后正文会被主动丢弃（运行期零读取，留着白占空间）。
         val translationDir = File(application.filesDir, "translations/${attached.translationBook.id}")
-        assertTrue("译本目录应存在: $translationDir", translationDir.isDirectory)
+        assertFalse("出版译本正文应在对齐后丢弃（方案 D1.8）", translationDir.exists())
         assertFalse(
             "译本不得出现在书架目录",
             File(application.filesDir, "books/${attached.translationBook.id}").exists()
