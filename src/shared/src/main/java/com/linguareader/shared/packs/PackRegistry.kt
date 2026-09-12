@@ -107,6 +107,15 @@ data class PackRegistry(
                         (item.optJSONObject("manifest") ?: throw PackFormatException("登记表缺少 manifest"))
                             .toString()
                     )
+                    // 审查 7-8：dir 必须与内嵌 manifest 的 type/packId/version 推导值一致。
+                    // 漂移时按「登记表损坏」处理（R1 的错误位会向用户暴露），否则会静默读错目录 ——
+                    // 界面展示的版本与实际加载的内容不是同一个包。
+                    val expectedDir = PackPaths.directoryFor(manifest.type, manifest.packId, manifest.version)
+                    if (dir != expectedDir) {
+                        throw PackFormatException(
+                            "登记表第 ${index + 1} 项的目录与清单不符（登记 $dir，清单推导 $expectedDir）"
+                        )
+                    }
                     InstalledPack(
                         dir = dir,
                         installedAt = item.optLong("installedAt", 0L),

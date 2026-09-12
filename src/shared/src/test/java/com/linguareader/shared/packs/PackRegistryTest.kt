@@ -4,6 +4,7 @@ import com.linguareader.shared.importer.ImportSupport
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -94,6 +95,31 @@ class PackRegistryTest {
         // 包文件被删 → 静默回退内置（返回 null），查词不会因此哑掉
         payload.delete()
         assertNull(DictionarySource.resolve(registry, packsRoot))
+    }
+
+    /**
+     * 第四轮审查 7-8：registry 的 `dir` 必须与内嵌 manifest 推导值一致，漂移按损坏处理
+     * （否则会静默读错目录：界面显示的版本与实际加载的内容不是同一个包）。
+     */
+    @Test
+    fun `registry entry whose dir disagrees with its manifest is treated as damaged`() {
+        val good = installed("ecdict-zh")
+        // 对照：正常条目必须能解析
+        assertEquals(
+            "ecdict-zh",
+            PackRegistry.parse(PackRegistry().upsert(good).toJson()).byId("ecdict-zh")?.packId
+        )
+
+        // 把 dir 改成与清单推导不符（指向另一个版本）
+        val tampered = PackRegistry().upsert(good).toJson()
+            .replace("dictionary/ecdict-zh/1.0.0", "dictionary/ecdict-zh/9.9.9")
+        assertTrue(tampered.contains("9.9.9"), "字符串替换应生效")
+
+        val error = assertFailsWith<PackFormatException> { PackRegistry.parse(tampered) }
+        assertTrue(
+            error.message.orEmpty().contains("目录与清单不符"),
+            "拒绝原因应说明目录与清单不符：${error.message}"
+        )
     }
 
     @Test
