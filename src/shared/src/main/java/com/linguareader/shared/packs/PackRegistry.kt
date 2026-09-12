@@ -139,6 +139,11 @@ object DictionarySource {
  *
  * 同一本书可能装了多个音色/引擎的包，[relativePath] 里含引擎与音色段，所以按序
  * 试到第一个命中的文件即可；都没命中返回 null，调用方继续走缓存/现场合成。
+ *
+ * 审查 6-8：加载时原来只判 `isFile && length > 0`，文件被截断/替换也照样播。
+ * 现在**若 manifest 声明了该文件**，就额外校验实际大小与声明一致 —— 不命中即当作
+ * 缺失、继续试下一个包（最终降级现场合成），不会把坏音频交出去。只校大小不校哈希：
+ * 全量哈希会让每次取文件都变慢，逐文件哈希仍由手动「验证完整性」承担。
  */
 object AudioPackSource {
     const val PAYLOAD_DIR = "audio"
@@ -153,8 +158,13 @@ object AudioPackSource {
             pack.manifest.audioPayload?.bookId == bookId
         }
         for (pack in candidates) {
-            val file = File(pack.root(packsRoot), "$PAYLOAD_DIR/$relativePath")
-            if (file.isFile && file.length() > 0) return file
+            val payloadPath = "$PAYLOAD_DIR/$relativePath"
+            val file = File(pack.root(packsRoot), payloadPath)
+            if (!file.isFile || file.length() <= 0) continue
+            val declared = pack.manifest.files.firstOrNull { it.path == payloadPath }?.bytes
+            // declared < 0 = 清单没给字节数（旧包/合成夹具），此时保持原判据不误伤。
+            if (declared != null && declared >= 0 && file.length() != declared) continue
+            return file
         }
         return null
     }

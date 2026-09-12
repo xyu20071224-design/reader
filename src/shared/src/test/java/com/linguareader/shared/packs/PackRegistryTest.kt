@@ -101,6 +101,44 @@ class PackRegistryTest {
         assertNull(DictionarySource.resolve(PackRegistry.EMPTY, File("/nonexistent")))
     }
 
+    /**
+     * 第四轮审查 6-8：manifest 声明了某文件时，加载要校验实际大小；被截断/替换的
+     * 文件不得被当成命中（否则直接播坏音频）。
+     */
+    @Test
+    fun `audio pack resolve rejects truncated file when manifest declares size`() {
+        val packsRoot = File.createTempFile("packs-", "").let { it.delete(); it.mkdirs(); it }
+        val relative = "0/e1~v1~voice/s1-0.mp3"
+        val payloadPath = "audio/$relative"
+
+        fun packWithDeclaredBytes(declared: Long) = InstalledPack(
+            dir = PackPaths.directoryFor(PackType.AUDIO, "book1-audio", "1.0.0"),
+            installedAt = 1L,
+            manifest = manifest("book1-audio", PackType.AUDIO).copy(
+                files = listOf(PackFileEntry(payloadPath, "a".repeat(64), declared))
+            )
+        )
+
+        val file = File(packWithDeclaredBytes(3).root(packsRoot), payloadPath).apply {
+            parentFile.mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3))
+        }
+
+        // 声明 3 字节、实际 3 字节 → 命中
+        val ok = PackRegistry().upsert(packWithDeclaredBytes(3))
+        assertEquals(file, AudioPackSource.resolve(ok, packsRoot, "book1", relative))
+
+        // 声明 3 字节、实际被截断成 2 字节 → 不命中（降级现场合成）
+        file.writeBytes(byteArrayOf(1, 2))
+        assertNull(
+            AudioPackSource.resolve(ok, packsRoot, "book1", relative),
+        )
+
+        // declared < 0（清单未给字节数）时保持原判据，不误伤旧包/合成夹具
+        val legacy = PackRegistry().upsert(packWithDeclaredBytes(-1))
+        assertEquals(file, AudioPackSource.resolve(legacy, packsRoot, "book1", relative))
+    }
+
     @Test
     fun `audio pack source matches by book and relative path`() {
         val packsRoot = File.createTempFile("packs-", "").let { it.delete(); it.mkdirs(); it }
