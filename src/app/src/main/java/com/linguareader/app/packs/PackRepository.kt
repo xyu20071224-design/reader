@@ -365,12 +365,29 @@ class PackRepository(
             ?: false
 
     /** 原子写：`*.tmp` + rename，失败回退直写（与项目其余落盘纪律一致）。 */
+    /**
+     * 原子写登记表：`*.tmp` + `renameTo`。
+     *
+     * 审查 7-4：原回退分支直接覆盖 `registryFile`（非原子）——写一半被打断就会留下半截
+     * 登记表，下次读成空表（放大 7-1 的静默失败）。现在两级都走"先写临时文件再 rename"：
+     * 先把 tmp 写好；rename 失败时**重写一次 tmp**（tmp 可能已被 rename 消费）再 rename；
+     * 两次都失败才直写最终文件作为最后手段。任一环节抛错都**不更新内存缓存**，避免
+     * 「内存以为写成了、磁盘其实没有」。
+     */
     private fun writeRegistry(registry: PackRegistry) {
         packsRoot.mkdirs()
+        val json = registry.toJson()
         val temp = File(packsRoot, "$REGISTRY_NAME.tmp")
-        temp.writeText(registry.toJson())
-        if (!temp.renameTo(registryFile)) {
-            registryFile.writeText(registry.toJson())
+        temp.writeText(json)
+        var wrote = temp.renameTo(registryFile)
+        if (!wrote) {
+            // rename 失败：tmp 可能仍存在也可能已被消费，重建一份再试一次。
+            runCatching { temp.writeText(json) }
+            wrote = temp.renameTo(registryFile)
+        }
+        if (!wrote) {
+            // 最后手段：直写最终文件（非原子，但总比完全不写强）。
+            registryFile.writeText(json)
             temp.delete()
         }
         cached = registry
