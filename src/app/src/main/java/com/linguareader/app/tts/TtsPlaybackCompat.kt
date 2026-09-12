@@ -7,6 +7,8 @@ package com.linguareader.app.tts
 // Android 实现（SystemTtsSynthesizer 等）留在本包实现共享接口。
 // 新代码请直接 import com.linguareader.shared.tts.*。
 // TODO(M2): 全量替换旧引用后删除本文件。
+// ⚠️ 状态（2026-09-12 第四轮审查 R5）：**延期，本轮不做**。仍有活消费者
+// （ListeningBar / ReaderScreen / UiPreviews 显式 import，TtsPlaybackService 等同包调用）。
 // ─────────────────────────────────────────────────────────────────────────────
 
 typealias TtsPlaybackEngine = com.linguareader.shared.tts.TtsPlaybackEngine

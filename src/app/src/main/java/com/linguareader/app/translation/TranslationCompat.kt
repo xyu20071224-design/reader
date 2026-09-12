@@ -11,6 +11,9 @@ package com.linguareader.app.translation
 // 零改动通过编译——与 SharedDataCompat 同一机制。
 // 新代码请直接 import com.linguareader.shared.translation.*。
 // TODO(M2): 全量替换旧 import 后删除本文件。
+// ⚠️ 状态（2026-09-12 第四轮审查 R5）：**延期，本轮不做**。实测"零引用"不成立——
+// 清空本文件后同时编译 main+test 会报 282 处错误（跨 14 个生产文件），删除等价于
+// 一次跨模块导入迁移，非清理。删除前请先完成那些消费方的 import 替换。
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** object 不能 typealias，用同名单例 val 兼容旧包路径调用。 */

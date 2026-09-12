@@ -6,6 +6,8 @@ package com.linguareader.app.reader
 // EpubPage / ReaderController（Android WebView 宿主）经此同名 val 零改动继续工作。
 // 新代码请直接 import com.linguareader.shared.reader.ReaderScripts。
 // TODO(M4): Android/桌面各自就位后评估删除。
+// ⚠️ 状态（2026-09-12 第四轮审查 R5）：**延期，本轮不做**。仍有活消费者
+// （EpubPage / ReaderController 同包调用，ReaderScreen 显式 import），删除需先替换引用。
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** object 不能 typealias，用同名单例 val 兼容旧包路径调用。 */
