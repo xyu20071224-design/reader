@@ -128,8 +128,16 @@ object MultiVoiceSupport {
             // MiMo: the preset zh/en voices are the per-language narration
             // defaults (same rule as serverEn/zhVoice); designed/cloned voices
             // stay assignable because they exist exactly for characters.
+            //
+            // 英文预置此前漏了（第四轮审查 3-1）：MIMO 分支只保留 zh，而英文对白/兜底
+            // 走的是 mimoEnVoice，于是英文角色可能被自动分到同一个 id —— 角色与对白撞声。
             if (settings.mode == TtsEngineMode.MIMO) {
                 settings.mimoZhVoice.ifBlank { CloudTtsSettings.DEFAULT_MIMO_ZH_VOICE }
+            } else {
+                ""
+            },
+            if (settings.mode == TtsEngineMode.MIMO) {
+                settings.mimoEnVoice.ifBlank { CloudTtsSettings.DEFAULT_MIMO_EN_VOICE }
             } else {
                 ""
             }

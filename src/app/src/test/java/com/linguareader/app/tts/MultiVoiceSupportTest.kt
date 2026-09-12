@@ -65,6 +65,42 @@ class MultiVoiceSupportTest {
         assertTrue(MultiVoiceSupport.reservedVoices(CloudTtsSettings()).isEmpty())
     }
 
+    /**
+     * 第四轮审查 3-1：MiMo 模式下**中/英预置都要保留**。
+     *
+     * 此前 MIMO 分支只保留 `mimoZhVoice`，而英文对白/兜底走 `mimoEnVoice`（默认 `Mia`），
+     * 于是英文角色可能被自动分配到同一个 id —— 角色与对白撞声。
+     */
+    @Test
+    fun mimoPresetVoicesOfBothLanguagesAreReserved() {
+        val mimo = CloudTtsSettings(
+            mode = TtsEngineMode.MIMO,
+            narratorVoice = "narrator.wav",
+            dialogueVoice = "dialogue.wav"
+        )
+
+        val reserved = MultiVoiceSupport.reservedVoices(mimo)
+        assertTrue(
+            "中文预置应保留，实际：$reserved",
+            CloudTtsSettings.DEFAULT_MIMO_ZH_VOICE in reserved
+        )
+        assertTrue(
+            "英文预置（默认 ${CloudTtsSettings.DEFAULT_MIMO_EN_VOICE}）也必须保留，否则英文角色会与对白撞声",
+            CloudTtsSettings.DEFAULT_MIMO_EN_VOICE in reserved
+        )
+        assertTrue("narratorVoice 应保留", "narrator.wav" in reserved)
+        assertTrue("dialogueVoice 应保留", "dialogue.wav" in reserved)
+    }
+
+    @Test
+    fun nonMimoEnginesDoNotReserveMimoPresets() {
+        val reserved = MultiVoiceSupport.reservedVoices(CloudTtsSettings(mode = TtsEngineMode.OPENAI_COMPAT))
+        assertFalse(
+            "非 MiMo 引擎不应把 MiMo 预置音色算作已占用，实际：$reserved",
+            CloudTtsSettings.DEFAULT_MIMO_EN_VOICE in reserved
+        )
+    }
+
     @Test
     fun sampleLinesFollowTheVoiceLanguage() {
         assertEquals("Hello, I am Gandalf.", MultiVoiceSupport.sampleText("Gandalf", "en"))
