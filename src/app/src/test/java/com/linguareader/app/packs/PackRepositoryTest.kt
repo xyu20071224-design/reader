@@ -225,6 +225,37 @@ class PackRepositoryTest {
         assertFalse(repo.activeDictionaryFileMissing())
     }
 
+    /**
+     * 第四轮审查 7-12：同 packId 装更低版本应先拒并给出原因（原来直接覆盖 = 静默降级）；
+     * 升级与同版本重装仍放行。
+     */
+    @Test
+    fun `installing a lower version is rejected with a reason`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        install(repo, dictionaryPack("versioned", version = "1.10.0"))
+
+        // 降级（数字比较：1.9.0 < 1.10.0；字符串比较会误判成升级）→ 拒绝
+        val error = assertFailsWith<IllegalArgumentException> {
+            install(repo, dictionaryPack("versioned", version = "1.9.0"))
+        }
+        assertTrue(
+            "拒绝原因应说明所选版本：${error.message}",
+            error.message.orEmpty().contains("1.9.0")
+        )
+        assertEquals("被拒后登记表不得改变", "1.10.0", repo.registry().byId("versioned")?.version)
+        // 升级 → 放行
+        install(repo, dictionaryPack("versioned", version = "2.0.0"))
+        assertEquals("2.0.0", repo.registry().byId("versioned")?.version)
+    }
+
+    @Test
+    fun `reinstalling the same version is still allowed`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        install(repo, dictionaryPack("same", version = "1.0.0"))
+        install(repo, dictionaryPack("same", version = "1.0.0"))
+        assertEquals("1.0.0", repo.registry().byId("same")?.version)
+    }
+
     @Test
     fun `upgrading a pack leaves registry pointing at the installed directory`() {
         val repo = PackRepository(context, appVersionCode = 15)

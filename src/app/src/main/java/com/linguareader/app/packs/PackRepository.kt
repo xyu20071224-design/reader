@@ -139,6 +139,15 @@ class PackRepository(
                     "资源包文件超过 ${limits.maxSourceBytes / 1024 / 1024}MB 限制"
                 }
                 PackValidator.validateManifest(manifest, appVersionCode).requireOk()
+                // 审查 7-12：同 packId 装**更低版本**先拒（原来直接 upsert 覆盖 = 静默降级）；
+                // 升级与同版本重装仍放行。放在提取之前，被拒的包不会先解到临时区。
+                registry().byId(manifest.packId)?.let { existing ->
+                    require(!isVersionDowngrade(existing.version, manifest.version)) {
+                        "已安装「${existing.manifest.nameZh.ifBlank { existing.packId }}」" +
+                            "v${existing.version}，所选包是更旧的 v${manifest.version}。" +
+                            "若确实要装这个版本，请先卸载已安装的包。"
+                    }
+                }
                 staging.mkdirs()
                 SafeZip.extract(
                     zip = sourceZip,
@@ -370,6 +379,26 @@ class PackRepository(
 
     private fun PackValidationResult.requireOk() {
         if (this is PackValidationResult.Rejected) throw PackFormatException(reason)
+    }
+
+    /**
+     * 待装版本是否**低于**已装版本（审查 7-12）。
+     *
+     * 比较按点分段的数字做（`1.10.0 > 1.9.0`，而不是字符串比较的 `"1.10.0" < "1.9.0"`）；
+     * 段数不同时缺位当 0；出现非数字段（如 `1.0.0-beta`）时退化为字符串比较，
+     * 宁可放行也不要误拒升级。
+     */
+    private fun isVersionDowngrade(installed: String, incoming: String): Boolean {
+        val a = installed.split('.')
+        val b = incoming.split('.')
+        val numeric = a.all { it.toIntOrNull() != null } && b.all { it.toIntOrNull() != null }
+        if (!numeric) return incoming < installed
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrNull(i)?.toIntOrNull() ?: 0
+            val y = b.getOrNull(i)?.toIntOrNull() ?: 0
+            if (y != x) return y < x
+        }
+        return false
     }
 
     companion object {
