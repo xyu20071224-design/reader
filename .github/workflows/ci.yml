@@ -45,6 +45,19 @@ jobs:
             exit 1
           fi
 
+      # 第四轮审查 6-12：PIPELINE_VERSION 在 Kotlin 与 Python 生成器里各有一份，
+      # 任一侧 bump 忘改另一侧只会「响亮失败」（找不到目录/拒装），但没人希望踩。
+      # 键派生的一致性子由 :shared 的 AudioPackGeneratorContractTest 对拍（上面那步已跑）。
+      - name: 朗读管线版本两侧一致（Kotlin ↔ Python 生成器）
+        run: |
+          kt=$(grep -oE 'VERSION[[:space:]]*=[[:space:]]*[0-9]+' shared/src/main/java/com/linguareader/shared/tts/TtsPipelineContract.kt | grep -oE '[0-9]+' | head -1)
+          py=$(grep -oE '^PIPELINE_VERSION[[:space:]]*=[[:space:]]*[0-9]+' ../scripts/build_audio_pack.py | grep -oE '[0-9]+' | head -1)
+          echo "Kotlin TtsPipelineContract.VERSION=$kt / Python PIPELINE_VERSION=$py"
+          if [ -z "$kt" ] || [ -z "$py" ] || [ "$kt" != "$py" ]; then
+            echo "::error ::朗读管线版本两侧不一致（Kotlin=$kt，Python=$py）——改切分/片段规则必须同时 +1 并同步 build_audio_pack.py"
+            exit 1
+          fi
+
   lint:
     name: Android Lint
     runs-on: ubuntu-latest
