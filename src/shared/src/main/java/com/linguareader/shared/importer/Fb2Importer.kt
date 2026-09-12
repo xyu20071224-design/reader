@@ -131,10 +131,14 @@ fun flattenFb2Element(element: Element, depth: Int): List<String> {
                 val level = (depth + 1).coerceAtMost(4)
                 out.add("<h$level>${escapeHtml(text)}</h$level>")
             }
-            "p", "subtitle" -> child.text().trim().takeIf(String::isNotBlank)?.let { text ->
-                out.add("<p>${escapeHtml(text)}</p>")
+            "p", "subtitle" -> child.text().trim().takeIf(String::isNotBlank)?.let {
+                // 用 inlineHtml 而非纯 text()：保住 <emphasis>/<strong> 等行内格式
+                // （审查 4-4：此前 em/strong 全丢，富文本 FB2 塌成纯文本）。
+                val html = inlineHtml(child)
+                if (html.isNotBlank()) out.add("<p>$html</p>")
             }
             "section" -> out.addAll(flattenFb2Element(child, depth + 1))
+            "table" -> tableHtml(child).takeIf(String::isNotBlank)?.let(out::add)
             "poem" -> {
                 val lines = child.select("v").map { it.text().trim() }.filter(String::isNotBlank)
                 if (lines.isNotEmpty()) {
@@ -148,6 +152,61 @@ fun flattenFb2Element(element: Element, depth: Int): List<String> {
         }
     }
     return out
+}
+
+/**
+ * 把 FB2 行内标记转成 XHTML 片段。
+ *
+ * **有意不新增叶块**：FB2 的 `emphasis`/`strong`/`strikethrough` 是行内元素，只改变
+ * 字符与排版、不改变句号，所以修 4-4 不需要再动 `TtsPipelineContract.VERSION`
+ * （该版本已在同批次因分句器改动升到 2）。`BLOCK_SELECTOR` 只认 `p`/`td`/`li` 等块级
+ * 元素，行内标签进不去。
+ */
+private fun inlineHtml(element: Element): String {
+    val out = StringBuilder()
+    fun walk(node: Element) {
+        if (node.textNodes().isNotEmpty()) {
+            out.append(escapeHtml(node.textNodes().joinToString("") { textNode -> textNode.text() }))
+        }
+        for (child in node.children()) {
+            val mapped = when (child.tagName().lowercase()) {
+                "emphasis" -> "em"
+                "strong" -> "strong"
+                "strikethrough" -> "s"
+                "code" -> "code"
+                "sup" -> "sup"
+                "sub" -> "sub"
+                "a" -> "a"
+                else -> null
+            }
+            if (mapped == null) {
+                walk(child)
+            } else {
+                out.append("<").append(mapped).append(">")
+                walk(child)
+                out.append("</").append(mapped).append(">")
+            }
+        }
+    }
+    walk(element)
+    return out.toString().trim()
+}
+
+/** FB2 `<table>` → XHTML 表格（审查 4-4：此前拍平成"表格单元甲表格单元乙"，无分隔）。 */
+private fun tableHtml(table: Element): String {
+    val body = table.children().firstOrNull { it.tagName().equals("tbody", ignoreCase = true) } ?: table
+    val rows = body.children().filter { it.tagName().equals("tr", ignoreCase = true) }
+    if (rows.isEmpty()) return ""
+    val cells = rows.joinToString("") { row ->
+        val tds = row.children().filter {
+            it.tagName().equals("td", ignoreCase = true) || it.tagName().equals("th", ignoreCase = true)
+        }
+        "<tr>" + tds.joinToString("") { cell ->
+            val tag = if (cell.tagName().equals("th", ignoreCase = true)) "th" else "td"
+            "<$tag>${inlineHtml(cell).ifBlank { "&nbsp;" }}</$tag>"
+        } + "</tr>"
+    }
+    return "<table>$cells</table>"
 }
 
 fun fb2Xhtml(title: String, bodyHtml: String): String = """<?xml version="1.0" encoding="UTF-8"?>

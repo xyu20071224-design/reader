@@ -49,6 +49,32 @@ class Fb2ImporterTest {
         assertEquals("Chapter Two", parsed.chapters[1].title)
     }
 
+    /**
+     * 第四轮审查 4-4：FB2 的 `<emphasis>`/`<strong>`/`<table>` 此前全丢（em/strong/
+     * table 计数为 0），富文本塌成纯文本、表格拍成"表格单元甲表格单元乙"无分隔。
+     */
+    @Test
+    fun keepsInlineFormattingAndTables() {
+        val fb2 = """
+            <FictionBook><body><section>
+              <title><p>Rich</p></title>
+              <p>Plain <emphasis>italic</emphasis> and <strong>bold</strong> text.</p>
+              <table>
+                <tr><th>Head A</th><th>Head B</th></tr>
+                <tr><td>Cell A</td><td>Cell B</td></tr>
+              </table>
+            </section></body></FictionBook>
+        """.trimIndent()
+
+        val body = parseFb2(fb2, "x").chapters[0].bodyHtml
+        assertTrue(body.contains("<em>italic</em>"), "emphasis 应转成 <em>，实际：$body")
+        assertTrue(body.contains("<strong>bold</strong>"), "strong 应转成 <strong>，实际：$body")
+        assertTrue(body.contains("<table>"), "表格应保留 <table>，实际：$body")
+        assertTrue(body.contains("<th>Head A</th>"), "表头应保留 <th>，实际：$body")
+        assertTrue(body.contains("<td>Cell A</td>"), "单元格应保留 <td>，实际：$body")
+        assertTrue(body.contains("</td><td>"), "单元格之间必须有分隔，不能拍平成一串：$body")
+    }
+
     @Test
     fun missingBodyIsRejected() {
         assertFailsWith<IllegalArgumentException> {
