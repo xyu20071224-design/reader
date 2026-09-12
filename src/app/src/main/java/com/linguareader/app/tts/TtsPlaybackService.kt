@@ -302,15 +302,14 @@ class TtsPlaybackService : Service() {
         // panel edits exactly that mapping, so it wins over the M1 fields; those
         // remain the single-voice fallback (and the narration voice for a
         // language the mapping has no entry for).
-        activeVoiceMap
-            ?.voiceFor(speaker, TtsLanguage.of(text))
-            ?.takeIf { it.isNotBlank() }
-            ?.let { return it }
+        // 三级优先级抽在 resolveVoiceFor（有单测守着，审查 3-2）。
         val settings = voiceSettings()
-        if (speaker.equals(SpeakerRuleTagger.NARRATOR, ignoreCase = true)) {
-            return settings.narratorVoice.takeIf { it.isNotBlank() }
-        }
-        return settings.dialogueVoice.takeIf { it.isNotBlank() }
+        return resolveVoiceFor(
+            speaker = speaker,
+            mappingVoice = activeVoiceMap?.voiceFor(speaker, TtsLanguage.of(text)),
+            narratorVoice = settings.narratorVoice,
+            dialogueVoice = settings.dialogueVoice
+        )
     }
 
     /**
@@ -659,6 +658,31 @@ class TtsPlaybackService : Service() {
                 )
             }
         }
+    }
+}
+
+/**
+ * 「这条文本该用哪个音色」的**纯函数**契约（第四轮审查 3-2）。
+ *
+ * 三级优先级，从高到低：
+ * 1. **角色映射**（M2/M3 自动分配 + M4 面板手调）——存在且非空白时优先；
+ * 2. **M1 手填的旁白音色**（speaker 是 narrator）；
+ * 3. **M1 手填的对白音色**。
+ *
+ * 抽出来是为了让这条契约有测试守着：此前它只写在 `resolveVoice` 的注释里，服务本体
+ * 零测试，改优先级没有任何护栏（审查 3-2 原文）。
+ */
+internal fun resolveVoiceFor(
+    speaker: String,
+    mappingVoice: String?,
+    narratorVoice: String,
+    dialogueVoice: String
+): String? {
+    mappingVoice?.takeIf { it.isNotBlank() }?.let { return it }
+    return if (speaker.equals(SpeakerRuleTagger.NARRATOR, ignoreCase = true)) {
+        narratorVoice.takeIf { it.isNotBlank() }
+    } else {
+        dialogueVoice.takeIf { it.isNotBlank() }
     }
 }
 
