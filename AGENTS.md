@@ -123,6 +123,12 @@ source toolchain/env.sh                        # 人手调 adb / apksigner / aap
 - **PKB110（ColorOS）已知怪癖**：通知权限 `pm grant` 命令成功但检查仍 false、应用通知被 importance=NONE 压制——通知相关仪器测试 assumeTrue 跳过属预期，不是回归。
 - 验证结论写进 `VALIDATION.md`，截图放 `验证截图/`。
 - sideload 同一 `versionCode` 覆盖安装有坑，需要并存包时用 `-PverifyBuild`。
+- **单条命令超过 1 分钟，立刻自查是否卡住**：先看进程/连接还在不在、输出是否还在增长、有没有报错、是否卡在等输入/等网络/等锁；确认是卡住就终止并说明，别让它干等到超时。
+- **判据看原始输出，不看退出码**：构建/测试任务可能返回 0 但结果红、或非 0 但实际已完成——一律以测试结果 XML 与命令原始 stdout 为准；不许为了让命令「看起来成功」而吞异常、加空判断或跳过断言。
+- **结果只认实际执行层**：真机现象以设备侧输出为准（进程 pid、logcat、`uiautomator dump`、`run-as` 读盘），不许用模拟器、桌面端或单测结果顶替；设备没连上就如实记「未验证」，不许凭空补结论。
+- **失败项先复现留证，再最小定位**：一次只改一处，改完重跑该测试点及其直接相关回归点；无法定位的写明已排查范围与下一步，不许反复盲改或顺手改无关代码。
+- **断言改动的唯一依据是现行实现或既定设计**（代码位置、方案编号、项目记忆/`VALIDATION.md`）；找不到依据时先停下问，不许直接改期望值，也不许改实现去迁就旧断言。
+- **注意：`connectedDebugAndroidTest` 收尾会自动卸载 verify 包**（2026-09-12 实测）——任务结束即移除 `com.linguareader.app.verify` 与 `.verify.test`。因此事后手动 `adb uninstall com.linguareader.app.verify` 必然返回非 0（`Failure [DELETE_FAILED_INTERNAL_ERROR]`），**那不是故障、也不是没卸干净**，别据此误判；要确认是否还在，用 `pm list packages`/`pm path`/`run-as`，别用卸载命令的退出码。需要留设备现场时，趁测试任务未收尾自行取证据。
 
 ## Agent 工作区
 
