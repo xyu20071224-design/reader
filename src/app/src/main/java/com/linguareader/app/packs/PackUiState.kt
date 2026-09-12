@@ -41,7 +41,13 @@ data class PackUiItem(
 /** 资源包页面的整体状态。 */
 data class PackUiState(
     val items: List<PackUiItem> = emptyList(),
-    /** 全部包的载荷字节数（来自 manifest 清单，不扫盘）。 */
+    /**
+     * 全部包的**磁盘实测**字节数（`PackRepository.totalBytes()` 扫盘），与存储页同源。
+     *
+     * 审查 6-14 / 7-13：此前这里取「各条 manifest 声明字节之和」，而存储页取扫盘实测，
+     * 两处口径不同 ⇒ 同一批包在两个页面显示不同数字。注意它**不等于** `items.sumOf { it.bytes }`：
+     * 实测含每包的 `manifest.json` 等清单外文件，故总数会略大于各行之和，界面已注明口径。
+     */
     val totalBytes: Long = 0L,
     /** 安装中（SAF 回来到落位完成之间）；界面禁用安装按钮并显示进度。 */
     val installing: Boolean = false,

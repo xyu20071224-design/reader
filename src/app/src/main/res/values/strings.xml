@@ -459,6 +459,7 @@
     <string name="packs_cancel">取消</string>
     <string name="packs_load_warning_registry_damaged">登记表损坏，已按空表加载：已安装的包暂时不可见，重新安装即可恢复。</string>
     <string name="packs_load_warning_active_missing">活动词典包文件缺失，当前使用内置词典。请重新安装该包或恢复内置词典。</string>
+    <string name="packs_total_on_disk">磁盘实测 %1$s</string>
     <string name="tts_saved">已保存</string>
     <plurals name="tts_system_voices_loaded">
         <item quantity="other">已获取 %1$d 个系统音色</item>

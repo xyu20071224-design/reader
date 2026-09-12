@@ -464,6 +464,7 @@
     <string name="packs_cancel">Cancel</string>
     <string name="packs_load_warning_registry_damaged">The pack registry is damaged and was loaded as empty: installed packs are temporarily hidden — reinstall to recover.</string>
     <string name="packs_load_warning_active_missing">The active dictionary pack\'s files are missing, so the built-in dictionary is in use. Reinstall that pack or restore the built-in dictionary.</string>
+    <string name="packs_total_on_disk">%1$s on disk</string>
     <string name="tts_saved">Saved</string>
     <plurals name="tts_system_voices_loaded">
         <item quantity="one">Fetched %1$d system voice</item>

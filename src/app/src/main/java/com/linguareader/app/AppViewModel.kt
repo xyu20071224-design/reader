@@ -457,9 +457,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     packs.activeDictionaryFileMissing() -> LoadWarning.ACTIVE_DICTIONARY_MISSING
                     else -> null
                 }
+                // 6-14/7-13：总占用与存储页同源 —— 都用扫盘实测，避免两个页面数字不一致。
                 PackUiState(
                     items = items,
-                    totalBytes = items.sumOf { it.bytes },
+                    totalBytes = packs.totalBytes(),
                     loadWarning = warning
                 )
             }

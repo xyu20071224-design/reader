@@ -90,8 +90,9 @@ internal fun PacksSheet(
                     color = InkFaint
                 )
                 Spacer(Modifier.weight(1f))
+                // 6-14/7-13：注明这是**磁盘实测**（与存储页同源），而非各条清单声明之和。
                 Text(
-                    formatStorageBytes(state.totalBytes),
+                    stringResource(R.string.packs_total_on_disk, formatStorageBytes(state.totalBytes)),
                     style = MaterialTheme.typography.labelSmall,
                     color = InkFaint
                 )
