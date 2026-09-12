@@ -215,3 +215,16 @@ internal fun storedReaderTheme(context: Context): ReaderTheme? {
         ?: return null
     return runCatching { ReaderTheme.valueOf(stored) }.getOrNull()
 }
+
+/**
+ * 写入已保存的阅读主题（第四轮审查 5-10：书架「书架外观」弹层内也能改主题）。
+ *
+ * 与 [storedReaderTheme] 共用同一 prefs 键，阅读页下次读取即生效；调用方（书架）同时应让
+ * 外壳重组以立刻反映日夜变化。
+ */
+internal fun storeReaderTheme(context: Context, theme: ReaderTheme) {
+    context.getSharedPreferences("reader_preferences", Context.MODE_PRIVATE)
+        .edit()
+        .putString("theme", theme.name)
+        .apply()
+}

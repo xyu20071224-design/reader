@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import com.linguareader.shared.data.ReaderTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,6 +65,11 @@ internal fun ShelfAppearanceSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var imageStatus by remember { mutableStateOf<ShelfImageStatus?>(null) }
+    // 阅读主题（审查 5-10）：在书架弹层内直接可改；未设置过时按当前系统深浅推断初值。
+    val systemDark = isSystemInDarkTheme()
+    var selectedTheme by remember(systemDark) {
+        mutableStateOf(storedReaderTheme(context) ?: if (systemDark) ReaderTheme.DARK else ReaderTheme.PAPER)
+    }
     // 深色外壳下浅色预设不可读（审查 5-1），据此禁用预设并说明。
     val darkChrome = chromeIsDark(storedReaderTheme(context), isSystemInDarkTheme())
 
@@ -132,6 +138,21 @@ internal fun ShelfAppearanceSheet(
                     color = InkSoft
                 )
             }
+
+            // 审查 5-10：阅读主题入口原本只在阅读页（约 4 次点击），书架处没有入口。
+            // 这里直接给出同一个选择器（与阅读页共用 prefs 键），点击深度从 4 降到 ≤2。
+            Text(
+                stringResource(R.string.reader_theme_label),
+                style = MaterialTheme.typography.labelLarge,
+                color = InkSoft
+            )
+            ReaderThemePicker(
+                selected = selectedTheme,
+                onSelect = { theme ->
+                    selectedTheme = theme
+                    storeReaderTheme(context, theme)
+                }
+            )
 
             OutlinedButton(
                 onClick = { imageLauncher.launch(arrayOf("image/*")) },
