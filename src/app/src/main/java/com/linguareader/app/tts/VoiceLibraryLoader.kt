@@ -73,11 +73,33 @@ object ServerVoiceStore {
  */
 object VoiceLibraryLoader {
 
-    /** Identity of the音色库: a different engine or server means re-assignment. */
+    /**
+     * Identity of the音色库: a different engine or server means re-assignment.
+     *
+     * **模型与音色设计指令也算身份**（第四轮审查 R1/6-3）：同一台服务器换 `serverModel`、
+     * 或改 MiMo 的 `mimoStyleInstruction`，产出的音频完全不同；此前它们不在身份里，缓存键
+     * 与音频包路径都不变 ⇒ 继续命中旧模型/旧风格的音频，用户以为设置没生效。
+     *
+     * 改动代价：身份变了 ⇒ 存量缓存与已生成音频包按契约自然失效（这正是预期，见 D1 先例）。
+     * 系统引擎无模型概念，保持原样。哈希后缀只为把键长度收在可控范围。
+     */
     fun engineKey(settings: CloudTtsSettings): String = when (settings.mode) {
-        TtsEngineMode.OPENAI_COMPAT -> "server:" + settings.serverUrl.trim().trimEnd('/').lowercase()
+        TtsEngineMode.OPENAI_COMPAT -> {
+            val model = settings.serverModel.trim().ifBlank { "tts-1" }
+            "server:" + settings.serverUrl.trim().trimEnd('/').lowercase() + "@" + sha8(model)
+        }
+        TtsEngineMode.MIMO -> {
+            val style = settings.mimoStyleInstruction.trim()
+            if (style.isEmpty()) "mimo" else "mimo@" + sha8(style)
+        }
         else -> settings.mode.name.lowercase()
     }
+
+    private fun sha8(text: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(text.toByteArray(Charsets.UTF_8))
+            .take(4)
+            .joinToString("") { "%02x".format(it) }
 
     fun load(context: Context, settings: CloudTtsSettings): VoiceLibrary {
         val engine = engineKey(settings)

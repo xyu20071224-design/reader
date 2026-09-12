@@ -8,12 +8,16 @@
         --cache /path/to/tts_cache/<bookId> \
         --book-id <bookId> --pack-id the-hobbit-en \
         --name-zh "《霍比特人》英文听书" --name-en "The Hobbit (EN)" \
-        --engine-tag 'server:http://192.168.1.10:8000' --voice narrator.wav \
+        --engine-tag 'server:http://192.168.1.10:8000@<sha8(serverModel)>' --voice narrator.wav \
         --out the-hobbit-en.lrpack
 
 **键必须与 App 侧 TtsCacheKey 完全一致**（`e<sha256(engineTag)[:8]>~v<版本>~<voice段>/s<句>-<段>.mp3`），
 否则包永远不命中。两边任一处改动都要同步这里与 `:shared` 的 TtsCacheKey，
 `TtsPipelineContract.VERSION` 也要一起 bump。
+
+⚠️ `--engine-tag` 必须逐字复制 App 侧 `VoiceLibraryLoader.engineKey` 的输出：自 2026-09-12
+起模型与 MiMo 风格指令也算引擎身份（`server:<url>@<sha8(serverModel)>` / `mimo@<sha8(style)>`），
+用旧格式（不带 `@…`）打出来的包不会命中。
 """
 
 from __future__ import annotations
