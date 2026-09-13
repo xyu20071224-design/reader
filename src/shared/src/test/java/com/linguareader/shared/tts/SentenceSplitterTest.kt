@@ -271,4 +271,31 @@ class SentenceSplitterTest {
             }
         }
     }
+
+    /**
+     * 第四轮审查 2-4：`count()` 必须与 `split().size` 严格一致（同一入口，不复制规则）。
+     *
+     * 译本对齐的英文侧句数已改用本入口；先前它自己数终止符游程，漏掉「引号内的 ？/！不算句界」
+     * 等只在本类存在的规则，金标准语料实测英文过计 1.65%。这条用例把「计数 == 分句」钉死。
+     */
+    @Test
+    fun countMatchesSplitOnTrickyTexts() {
+        val samples = listOf(
+            "He was late. Then he ran.",
+            "他问：「你听见『谁在敲门？』了吗？」然后他走了。",
+            "他迟到了；然后他跑了起来。",
+            "Dr. Watson arrived at 5 p.m. and left.",
+            "他走了……她哭了。",
+            "First... second! third?",
+            "",
+            "完全没有终止符的一行"
+        )
+        samples.forEach { text ->
+            assertEquals(
+                SentenceSplitter.split(text).size,
+                SentenceSplitter.count(text),
+                "count 必须等于 split().size：\"$text\""
+            )
+        }
+    }
 }

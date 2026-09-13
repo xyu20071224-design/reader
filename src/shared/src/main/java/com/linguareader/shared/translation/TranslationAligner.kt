@@ -121,8 +121,8 @@ object TranslationAligner {
     private val WHITESPACE = Regex("\\s+")
     private val ZH_SENTENCE_END = Regex("(?<=[。！？；!?;])|(?<=\\n)")
 
-    /** 句级密度用的近似句数计数（只数终止符游程，不跑分句器，见 [countSentencesApprox]）。 */
-    private val EN_SENTENCE_ENDS = Regex("[.!?…]+")
+    // 英文侧的句数计数已改用真实分句（审查 2-4 口径 A），故不再需要 EN 终止符正则。
+    /** 句级密度用的近似句数计数（中文侧保留，见 [countSentencesApprox]）。 */
     private val ZH_SENTENCE_ENDS = Regex("[。！？；!?;]+")
 
     // DP 回溯用的走法编码（每格 1 字节，避免每格再分配对象）。
@@ -509,7 +509,11 @@ object TranslationAligner {
         if (enWords < MIN_ADAPTIVE_WORDS || zhChars == 0) return LengthScales(bookScale, bookScale)
         val paragraph = clampScale(zhChars.toDouble() / enWords)
 
-        val enSentences = countSentencesApprox(enParagraphs, EN_SENTENCE_ENDS)
+        // 第四轮审查 2-4（口径 A）：**英文侧改用真实分句**（SentenceSplitter.count），
+        // 其近似偏差实测 1.65% → 0%。中文侧**有意保留近似**（偏差 ~50%），已记为该条的
+        // 已知例外：把中文一起换成精确分句会移动句级密度先验，导致 Proverbs 节级覆盖率
+        // 0.674 < 既定下限 0.68（PublicDomainAlignmentGeneralizationTest），属真实权衡。
+        val enSentences = countSentencesExact(enParagraphs)
         val zhSentences = countSentencesApprox(zhParagraphs, ZH_SENTENCE_ENDS)
         if (enSentences == 0 || zhSentences == 0) return LengthScales(paragraph, paragraph)
         val sentence = clampScale(
@@ -522,11 +526,26 @@ object TranslationAligner {
         value.coerceIn(MIN_ADAPTIVE_SCALE, MAX_ADAPTIVE_SCALE)
 
     /**
+     * 句数**精确**计数：调用与句子对齐同一个 [SentenceSplitter.count]。
+     *
+     * 第四轮审查 2-4（口径 A）：英文侧走这里，偏差从近似的 1.65% 降到 0。中文侧保持
+     * [countSentencesApprox]（已知例外，原因见调用点注释）。
+     */
+    private fun countSentencesExact(texts: List<String>): Int {
+        var total = 0
+        for (text in texts) total += SentenceSplitter.count(text)
+        return total
+    }
+
+    /**
      * 章内句数的**近似**计数：只数终止符游程，不真的分句。
      *
      * 句级密度 μ_zh/μ_en 只需要一个比例；近似计数与精确分句的差异（缩写句点、
      * 引号残片、省略号）在两侧同量级，泛化集实测指标与精确计数持平或略好，
      * 而省掉了「整体先分句一遍、DP 里再分一遍」的双倍开销（基准 514→1408ms 的那部分）。
+     *
+     * **第四轮审查 2-4（口径 A）**：英文侧已改用 [countSentencesExact]；中文侧**有意保留**
+     * 本近似，是 2-4 的已知例外。
      */
     private fun countSentencesApprox(texts: List<String>, pattern: Regex): Int {
         var total = 0
