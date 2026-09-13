@@ -118,4 +118,25 @@ class WordAlignerTest {
             )
         )
     }
+
+    /**
+     * BUG-039：`MIN_CONFIDENCE`（0.40）此前恒被满足 —— 位置惩罚上限只有 0.35，
+     * 置信度理论下限 0.65，`takeIf { confidence >= MIN_CONFIDENCE }` 等于没有过滤。
+     * 单字候选（的/地/上/中…）在译句里几乎必然命中，于是「高亮与释义对不上」。
+     *
+     * 本用例构造「位置最差」的单字候选：英文词在句首（enPos≈0）、中文候选在句末
+     * （zhPos≈0.89）。修前置信度 ≈0.69 会被放行（本用例红），修后应被阈值拒绝（绿）。
+     */
+    @Test
+    fun `worst positioned single character candidate is rejected by the threshold`() {
+        val alignment = WordAligner.align(
+            enWord = "hole",
+            enSentence = "hole in the ground",
+            zhSentence = "他没有看见那个洞",
+            candidates = listOf("洞"),
+            enOffset = 0
+        )
+
+        assertNull(alignment)
+    }
 }

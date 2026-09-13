@@ -57,7 +57,13 @@ object WordAligner {
             val bonus = (prefer[term] ?: 0f).toDouble()
             for ((start, end) in occurrencesOf(term, zhSentence)) {
                 val zhPos = start.toDouble() / zhSentence.length.coerceAtLeast(1)
-                val posPenalty = abs(enPos - zhPos) * 0.35
+                // BUG-039：位置惩罚原为固定 0.35，上限就是 0.35 → 置信度理论下限 0.65，
+                // 恒大于 MIN_CONFIDENCE(0.40)，`takeIf` 等于没有过滤。单字候选
+                //（的/地/上/中…）在译句里几乎必然命中，于是「高亮与释义对不上」。
+                // 单字惩罚加倍到 0.70，让阈值对这类噪声真正生效；多字候选维持 0.35，
+                // 避免误伤中英词序差异大的正常配对（实测回归见 WordAlignerTest）。
+                val posWeight = if (term.length == 1) 0.70 else 0.35
+                val posPenalty = abs(enPos - zhPos) * posWeight
                 val lengthBonus = term.length.coerceAtMost(4) * 0.04
                 val score = 1.0 - posPenalty + lengthBonus + bonus
                 if (score > bestScore) {
