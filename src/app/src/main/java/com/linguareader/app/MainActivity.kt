@@ -155,6 +155,7 @@ private fun LinguaReaderApp(
         if (currentBook == null) {
             BookshelfScreen(
                 state = state,
+                onReaderThemeChanged = onReaderThemeChanged,
                 onImport = viewModel::importBook,
                 onOpen = viewModel::openBook,
                 onDelete = viewModel::deleteBook,

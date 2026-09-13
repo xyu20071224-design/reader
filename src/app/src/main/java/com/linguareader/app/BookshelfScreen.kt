@@ -174,7 +174,9 @@ internal fun BookshelfScreen(
     onCancelUpdateDownload: () -> Unit,
     onDismissMessage: () -> Unit,
     uiAnimSpeed: UiAnimSpeed,
-    onAnimSpeedChange: (UiAnimSpeed) -> Unit
+    onAnimSpeedChange: (UiAnimSpeed) -> Unit,
+    /** Q2-c07：书架内改阅读主题时通知外壳，整体配色即时生效。 */
+    onReaderThemeChanged: (com.linguareader.app.data.ReaderTheme) -> Unit
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         if (it != null) onImport(it)
@@ -456,6 +458,7 @@ internal fun BookshelfScreen(
             },
             animSpeed = uiAnimSpeed,
             onAnimSpeedChange = onAnimSpeedChange,
+            onReaderThemeChange = onReaderThemeChanged,
             onDismiss = { showAppearanceSheet = false }
         )
     }

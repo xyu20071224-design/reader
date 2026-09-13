@@ -60,6 +60,8 @@ internal fun ShelfAppearanceSheet(
     onAppearanceChange: (ShelfAppearance) -> Unit,
     animSpeed: UiAnimSpeed,
     onAnimSpeedChange: (UiAnimSpeed) -> Unit,
+    /** Q2-c07：主题改动要通知外壳，让整体配色立刻生效（否则只写盘、需重启才变）。 */
+    onReaderThemeChange: (ReaderTheme) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -151,6 +153,7 @@ internal fun ShelfAppearanceSheet(
                 onSelect = { theme ->
                     selectedTheme = theme
                     storeReaderTheme(context, theme)
+                    onReaderThemeChange(theme)
                 }
             )
 
