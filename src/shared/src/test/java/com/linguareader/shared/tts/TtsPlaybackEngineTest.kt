@@ -534,6 +534,79 @@ class TtsPlaybackEngineTest {
         h.engine.shutdown()
     }
 
+    /**
+     * 第四轮审查 6-6 第二项：降级到系统语音必须在状态里留下**用户可见的原因**。
+     *
+     * 报告原文症状是「音色在章中途突变，无用户可见的重试入口」—— 回退本身是对的，
+     * 但不说原因，用户只会觉得"声音突然变了"。
+     */
+    @Test
+    fun fallbackToSystemEngineReportsDegradedReason() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = Harness(
+            dispatcher = dispatcher,
+            factory = { l -> FakeCloudTtsSynthesizer(l, prepareResult = false) },
+            isSystem = { it is FakeTtsSynthesizer },
+            chapters = { _, _ -> chapter("A.") },
+            fallbackFactory = { l -> FakeTtsSynthesizer(l) },
+        )
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(
+            DegradedReason.FALLBACK_TO_SYSTEM,
+            h.state.degradedReason,
+            "回退系统语音后必须上报原因，否则用户不知道音色为何变了"
+        )
+        h.engine.shutdown()
+    }
+
+    /** 6-6：连错达阈值而暂停时，同样要给出可见原因（现状是静默暂停，最费解）。 */
+    @Test
+    fun pauseAfterRepeatedErrorsReportsDegradedReason() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val sentences = (0 until 30).map { "S" + it + "." }.toTypedArray()
+        val h = plainHarness(dispatcher, { _, _ -> chapter(*sentences) })
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+        val fake = h.synthesizer as FakeTtsSynthesizer
+
+        repeat(25) {
+            fake.emitError(fake.spoken.last().utteranceId)
+            testScheduler.advanceUntilIdle()
+        }
+
+        assertFalse(h.state.isPlaying)
+        assertEquals(
+            DegradedReason.PAUSED_AFTER_ERRORS,
+            h.state.degradedReason,
+            "连续失败暂停必须说明原因"
+        )
+        h.engine.shutdown()
+    }
+
+    /** 6-6：重新开始播放要清掉降级原因，否则提示会永远挂着。 */
+    @Test
+    fun restartingPlaybackClearsDegradedReason() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = Harness(
+            dispatcher = dispatcher,
+            factory = { l -> FakeCloudTtsSynthesizer(l, prepareResult = false) },
+            isSystem = { it is FakeTtsSynthesizer },
+            chapters = { _, _ -> chapter("A.") },
+            fallbackFactory = { l -> FakeTtsSynthesizer(l) },
+        )
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+        assertEquals(DegradedReason.FALLBACK_TO_SYSTEM, h.state.degradedReason)
+
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+
+        assertNull(h.state.degradedReason, "重新开始播放后不该还显示旧的降级提示")
+        h.engine.shutdown()
+    }
+
     // ── 阅读器入口的特征化测试 ─────────────────────────────────────────
     // M0 安全网原本钉住三个入口的当时行为，其中
     // readerPositionChangePullsPlaybackToBlockFirstSentence_BUG034 是故意记录

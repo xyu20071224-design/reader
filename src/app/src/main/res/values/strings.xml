@@ -196,6 +196,8 @@
     <string name="player_stop">停止听书</string>
     <string name="player_back_to_speaking">回到朗读处</string>
     <string name="player_offscreen_hint">朗读已跑出可视范围</string>
+    <string name="player_degraded_fallback">云端合成失败，已改用系统语音继续朗读</string>
+    <string name="player_degraded_paused">朗读连续失败，已暂停</string>
     <string name="player_more">更多</string>
 
     <!-- 多角色音色 -->

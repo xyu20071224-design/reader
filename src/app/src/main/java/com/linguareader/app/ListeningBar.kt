@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.linguareader.app.data.ReaderTheme
+import com.linguareader.shared.tts.DegradedReason
 import com.linguareader.app.tts.TtsPlaybackState
 import java.util.Locale
 
@@ -91,6 +93,13 @@ internal fun ListeningBar(
     val backToSpeakingLabel = stringResource(R.string.player_back_to_speaking)
     val stopLabel = stringResource(R.string.player_stop)
     val offscreenHint = stringResource(R.string.player_offscreen_hint)
+    // 6-6：降级/暂停原因的可见文案（null = 正常，不显示）。
+    val degradedHint = state.degradedReason?.let { reason ->
+        when (reason) {
+            DegradedReason.FALLBACK_TO_SYSTEM -> stringResource(R.string.player_degraded_fallback)
+            DegradedReason.PAUSED_AFTER_ERRORS -> stringResource(R.string.player_degraded_paused)
+        }
+    }
     val paginationLabel = stringResource(R.string.reader_pagination)
     val overflowLabel = stringResource(R.string.player_more)
 
@@ -118,6 +127,30 @@ internal fun ListeningBar(
             color = accent,
             trackColor = accent.copy(alpha = .12f)
         )
+
+        // ── 降级提示（6-6）：云合成失败回退系统语音 / 连错暂停，都要说清原因 ──
+        // 整行占宽，避免挤进控制行（与下方「跑出视口」提示同一处理方式）。
+        degradedHint?.let { hint ->
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = accent,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
+                )
+            }
+        }
 
         // ── 信息行：当前句，或「朗读已跑出视口」的提示 ──────────────────
         Row(

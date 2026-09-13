@@ -199,6 +199,8 @@
     <string name="player_stop">Stop listening</string>
     <string name="player_back_to_speaking">Back to narration</string>
     <string name="player_offscreen_hint">Narration has scrolled out of view</string>
+    <string name="player_degraded_fallback">Cloud synthesis failed — switched to the system voice</string>
+    <string name="player_degraded_paused">Narration failed repeatedly and was paused</string>
     <string name="player_more">More</string>
 
     <!-- Multi-voice -->

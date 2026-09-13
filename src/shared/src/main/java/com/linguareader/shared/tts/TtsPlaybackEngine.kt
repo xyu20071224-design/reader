@@ -120,7 +120,7 @@ class TtsPlaybackEngine(
     fun startPlayback(newBook: Book, requestedChapter: Int, requestedSentence: Int, requestedSegment: Int = 0) {
         val switchedBook = book?.id != newBook.id
         navigationVersion++
-        fallbackActive = false
+        clearFallbackState()
         synthesizer?.stop()
         if (switchedBook) {
             onBookSwitched()
@@ -152,7 +152,7 @@ class TtsPlaybackEngine(
     fun startStandby(newBook: Book, requestedChapter: Int) {
         val switchedBook = book?.id != newBook.id
         navigationVersion++
-        fallbackActive = false
+        clearFallbackState()
         synthesizer?.stop()
         if (switchedBook) {
             onBookSwitched()
@@ -312,7 +312,7 @@ class TtsPlaybackEngine(
 
     fun stop() {
         navigationVersion++
-        fallbackActive = false
+        clearFallbackState()
         saveProgressNow()
         playing = false
         synthesizer?.stop()
@@ -332,7 +332,7 @@ class TtsPlaybackEngine(
 
     fun reconfigure() {
         navigationVersion++
-        fallbackActive = false
+        clearFallbackState()
         val wasPlaying = playing
         synthesizer?.stop()
         synthesizer?.shutdown()
@@ -648,7 +648,9 @@ class TtsPlaybackEngine(
         synthesizer = created
         updateState {
             it.copy(
-                canCacheBook = canCacheWholeBook(created)
+                canCacheBook = canCacheWholeBook(created),
+                // 6-6：把"已回退系统语音"告诉用户 —— 音色会变，否则他只察觉声音突然不同。
+                degradedReason = DegradedReason.FALLBACK_TO_SYSTEM
             )
         }
         if (created.isReady) loadAndSpeakCurrent() else pendingReady += { loadAndSpeakCurrent() }
@@ -711,6 +713,8 @@ class TtsPlaybackEngine(
         consecutiveErrors++
         if (consecutiveErrors >= 25) {
             pause()
+            // 6-6：连续失败导致静默暂停是最费解的状态（"突然停了、没原因"），必须显式说明。
+            updateState { it.copy(degradedReason = DegradedReason.PAUSED_AFTER_ERRORS) }
             return
         }
         val segmentCount = chapter?.segmentsOf(sentenceIndex)?.size ?: 0
@@ -750,6 +754,17 @@ class TtsPlaybackEngine(
     private fun setState(newState: TtsPlaybackState) {
         state = newState
         onState(state)
+    }
+
+    /**
+     * 退出降级态：引擎不再用系统语音兜底，同时清掉给用户看的降级原因
+     * （第四轮审查 6-6）。开始/切换播放、待机、显式停止、重配引擎都算"重新来"。
+     */
+    private fun clearFallbackState() {
+        fallbackActive = false
+        if (state.degradedReason != null) {
+            updateState { it.copy(degradedReason = null) }
+        }
     }
 
     private fun updateState(transform: (TtsPlaybackState) -> TtsPlaybackState) {
