@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.linguareader.app.data.ReaderTheme
+import com.linguareader.app.tts.SpeechReadiness
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -246,21 +247,32 @@ private fun LinguaReaderApp(
 private fun rememberEnglishSpeaker(): (String) -> Unit {
     val context = androidx.compose.ui.platform.LocalContext.current
     var engine by remember { mutableStateOf<TextToSpeech?>(null) }
+    // Q1-t13：`TextToSpeech` 的初始化在 onInit 回调里才完成，而实例构造完就能拿到。
+    // 初始化完成前的那次点击会被系统静默丢弃（首音消失），故用门控先记账、就绪后补播。
+    val readiness = remember { SpeechReadiness() }
     DisposableEffect(context) {
         lateinit var created: TextToSpeech
         created = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) created.language = Locale.US
+            if (status == TextToSpeech.SUCCESS) {
+                created.language = Locale.US
+                readiness.onReady()?.let { queued ->
+                    created.speak(queued, TextToSpeech.QUEUE_FLUSH, null, WORD_UTTERANCE_ID)
+                }
+            }
         }
         engine = created
         onDispose {
             created.stop()
             created.shutdown()
             engine = null
+            readiness.reset()
         }
     }
     return { text ->
-        if (text.isNotBlank()) {
-            engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "lingua-reader-word")
+        if (text.isNotBlank() && readiness.request(text)) {
+            engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, WORD_UTTERANCE_ID)
         }
     }
 }
+
+private const val WORD_UTTERANCE_ID = "lingua-reader-word"
