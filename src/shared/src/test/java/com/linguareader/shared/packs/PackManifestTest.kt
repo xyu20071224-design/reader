@@ -208,4 +208,63 @@ class PackManifestTest {
         assertFailsWith<PackFormatException> { PackManifest.parse(json) }
         assertNull(PackManifest.parse(dictionaryJson()).audioPayload)
     }
+
+    // ---- Q2-c02：集合包（bundle）----
+
+    private fun bundleJson(
+        members: String = """[{"type":"dictionary","packId":"ecdict-zh","path":"members/dict.lrpack","version":"1.0.0"}]""",
+        files: String = """[{"path":"members/dict.lrpack","sha256":"${"c".repeat(64)}","bytes":123}]"""
+    ): String = """
+        {
+          "packId": "starter-bundle",
+          "type": "bundle",
+          "version": "1.0.0",
+          "nameZh": "入门集合包",
+          "nameEn": "Starter Bundle",
+          "schemaVersion": 1,
+          "minAppVersion": 0,
+          "files": $files,
+          "bundle": {"members": $members}
+        }
+    """.trimIndent()
+
+    @Test
+    fun `bundle manifest parses members and round-trips`() {
+        val manifest = PackManifest.parse(bundleJson())
+
+        assertEquals(PackType.BUNDLE, manifest.type)
+        val bundle = manifest.bundlePayload
+        assertEquals(1, bundle?.members?.size)
+        assertEquals(PackType.DICTIONARY, bundle!!.members[0].type)
+        assertEquals("ecdict-zh", bundle.members[0].packId)
+        assertEquals("members/dict.lrpack", bundle.members[0].path)
+
+        // 往返后成员不丢
+        val again = PackManifest.parse(manifest.toJson())
+        assertEquals("ecdict-zh", again.bundlePayload?.members?.get(0)?.packId)
+    }
+
+    @Test
+    fun `bundle without members is rejected`() {
+        val manifest = PackManifest.parse(bundleJson(members = "[]"))
+
+        val result = PackValidator.validateManifest(manifest, appVersionCode = 999)
+        assertTrue(result is PackValidationResult.Rejected, "空成员集合包必须被拒")
+    }
+
+    @Test
+    fun `bundle cannot nest another bundle`() {
+        val nested = """[{"type":"bundle","packId":"inner","path":"members/dict.lrpack","version":"1.0.0"}]"""
+        val manifest = PackManifest.parse(bundleJson(members = nested))
+
+        val result = PackValidator.validateManifest(manifest, appVersionCode = 999)
+        assertTrue(result is PackValidationResult.Rejected, "集合包不能嵌套集合包")
+    }
+
+    @Test
+    fun `bundle member must be declared in files`() {
+        val undeclared = """[{"type":"dictionary","packId":"x","path":"members/other.lrpack","version":"1.0.0"}]"""
+
+        assertFailsWith<PackFormatException> { PackManifest.parse(bundleJson(members = undeclared)) }
+    }
 }

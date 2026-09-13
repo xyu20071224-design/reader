@@ -27,6 +27,9 @@ class PackRegistryTest {
             PackType.DICTIONARY -> PackPayload.Dictionary("payload.bin", null, "", "")
             PackType.AUDIO -> PackPayload.Audio("book1", "engine", "voice", 1, listOf(AudioChapter(0, 1, "b".repeat(64))))
             PackType.VOICE -> PackPayload.Voice(listOf(PackVoice("k", "K", "en", "female", emptyList(), PackVoice.MODE_METADATA, null)))
+            PackType.BUNDLE -> PackPayload.Bundle(
+                listOf(BundleMember(PackType.DICTIONARY, "member-dict", "payload.bin", "1.0.0"))
+            )
         }
     )
 

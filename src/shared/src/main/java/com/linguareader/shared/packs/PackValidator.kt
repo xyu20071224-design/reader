@@ -47,6 +47,25 @@ object PackValidator {
                 "该资源包需要更高版本的应用（需要 ${manifest.minAppVersion}，当前 $appVersionCode）"
             )
         }
+        if (manifest.type == PackType.BUNDLE) {
+            val bundle = manifest.bundlePayload
+                ?: return PackValidationResult.reject("集合包缺少 bundle 载荷")
+            if (bundle.members.isEmpty()) {
+                return PackValidationResult.reject("集合包至少需要一个成员包")
+            }
+            if (bundle.members.any { it.type == PackType.BUNDLE }) {
+                return PackValidationResult.reject("集合包不能嵌套集合包")
+            }
+            val paths = bundle.members.map { it.path }
+            if (paths.size != paths.distinct().size) {
+                return PackValidationResult.reject("集合包成员路径重复")
+            }
+            val declared = manifest.files.map { it.path }.toSet()
+            val missing = paths.firstOrNull { it !in declared }
+            if (missing != null) {
+                return PackValidationResult.reject("集合包成员未在 files 中登记：$missing")
+            }
+        }
         return PackValidationResult.Ok
     }
 

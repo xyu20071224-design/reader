@@ -20,7 +20,13 @@ import java.io.File
 enum class PackType(val wire: String) {
     DICTIONARY("dictionary"),
     AUDIO("audio"),
-    VOICE("voice");
+    VOICE("voice"),
+
+    /**
+     * 集合包（Q2-c02）：一个包捆绑多个词典/音频/音色包，一次安装。
+     * 成员是**嵌套的 .lrpack 文件**，安装时逐个走既有安装管线。
+     */
+    BUNDLE("bundle");
 
     companion object {
         fun fromWire(value: String): PackType? =
@@ -48,6 +54,8 @@ data class PackLimits(
             PackType.VOICE -> PackLimits(maxSourceBytes = 500 * MB, maxEntries = 10_000, maxUnzippedBytes = 1 * GB)
             // 音频包：20 章 × 300 句 × 2 段就能超一万条，上限按整书量级放。
             PackType.AUDIO -> PackLimits(maxSourceBytes = 2 * GB, maxEntries = 200_000, maxUnzippedBytes = 4 * GB)
+            // 集合包：成员里可能有整书音频，按 AUDIO 同量级放。
+            PackType.BUNDLE -> PackLimits(maxSourceBytes = 2 * GB, maxEntries = 200_000, maxUnzippedBytes = 4 * GB)
         }
     }
 }
@@ -97,18 +105,32 @@ sealed interface PackPayload {
     ) : PackPayload
 
     data class Voice(val voices: List<PackVoice>) : PackPayload
+
+    /** 集合包载荷：成员包的引用（成员本体在 files 里，扩展名 .lrpack）。 */
+    data class Bundle(val members: List<BundleMember>) : PackPayload
 }
+
+/** 集合包里的一个成员包。 */
+data class BundleMember(
+    val type: PackType,
+    val packId: String,
+    /** 成员 `.lrpack` 在包内的相对路径（必须登记在 files 中）。 */
+    val path: String,
+    val version: String
+)
 
 /** 本应用认识的最新载荷结构版本。加字段/改语义时 bump 对应类型。 */
 object PackSchema {
     const val DICTIONARY = 1
     const val AUDIO = 1
     const val VOICE = 1
+    const val BUNDLE = 1
 
     fun supported(type: PackType): Int = when (type) {
         PackType.DICTIONARY -> DICTIONARY
         PackType.AUDIO -> AUDIO
         PackType.VOICE -> VOICE
+        PackType.BUNDLE -> BUNDLE
     }
 }
 
@@ -139,6 +161,7 @@ data class PackManifest(
 
     val audioPayload: PackPayload.Audio? get() = payload as? PackPayload.Audio
     val voicePayload: PackPayload.Voice? get() = payload as? PackPayload.Voice
+    val bundlePayload: PackPayload.Bundle? get() = payload as? PackPayload.Bundle
 
     fun fileEntry(path: String): PackFileEntry? = files.firstOrNull { it.path == path }
 
@@ -165,6 +188,7 @@ data class PackManifest(
                 is PackPayload.Dictionary -> "dictionary"
                 is PackPayload.Audio -> "audio"
                 is PackPayload.Voice -> "voice"
+                is PackPayload.Bundle -> "bundle"
             },
             payloadJson(payload)
         )
@@ -190,6 +214,17 @@ data class PackManifest(
                             .put("files", chapter.files)
                             .put("treeSha256", chapter.treeSha256)
                     )
+                }
+            })
+
+        is PackPayload.Bundle -> JSONObject()
+            .put("members", JSONArray().apply {
+                payload.members.forEach { member ->
+                    put(JSONObject()
+                        .put("type", member.type.wire)
+                        .put("packId", member.packId)
+                        .put("path", member.path)
+                        .put("version", member.version))
                 }
             })
 
@@ -286,6 +321,28 @@ data class PackManifest(
                     source = json.optString("source").trim(),
                     license = json.optString("license").trim()
                 )
+            }
+
+            PackType.BUNDLE -> {
+                val json = root.optJSONObject("bundle")
+                    ?: throw PackFormatException("集合包缺少 bundle 载荷")
+                val members = json.optJSONArray("members")?.let { array ->
+                    (0 until array.length()).mapNotNull { index ->
+                        val item = array.optJSONObject(index) ?: return@mapNotNull null
+                        val wire = item.requireString("type")
+                        val memberType = PackType.fromWire(wire)
+                            ?: throw PackFormatException("集合包成员类型不合法：$wire")
+                        val path = normalizePath(item.requireString("path"))
+                        requireDeclared(path, files, "bundle.members[].path")
+                        BundleMember(
+                            type = memberType,
+                            packId = item.requireString("packId").trim(),
+                            path = path,
+                            version = item.optString("version").trim()
+                        )
+                    }
+                }.orEmpty()
+                PackPayload.Bundle(members)
             }
 
             PackType.AUDIO -> {
