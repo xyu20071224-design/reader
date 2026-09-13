@@ -181,7 +181,49 @@ class PackRepository(
      * 全流程 fail-closed：任一步失败都清掉临时文件/目录，磁盘上不会留下半装的包，
      * registry 也不会被改。返回落位后的登记项。
      */
-    suspend fun install(uri: Uri): InstalledPack = withContext(Dispatchers.IO) {
+    /**
+     * 安装一个 `.lrpack`。
+     *
+     * 集合包（Q2-c02 / [PackType.BUNDLE]）分两步：先把集合包本身装好并登记，
+     * 再把它捆绑的成员包逐个交给同一条安装管线。成员安装放在**锁外**——
+     * [installSingle] 自己会取 `mutex`，而 Kotlin 的 Mutex 不可重入，锁内递归会死锁。
+     */
+    suspend fun install(uri: Uri): InstalledPack {
+        val installed = installSingle(uri)
+        if (installed.type == PackType.BUNDLE) {
+            installBundleMembers(installed)
+        }
+        return installed
+    }
+
+    /**
+     * 逐个安装集合包的成员包。
+     *
+     * 成员失败不回滚已成功的部分（回滚会把用户已经拿到的词典/音频删掉），
+     * 但**绝不静默**：只要有失败就抛错，把失败清单交回调用方展示。
+     */
+    private suspend fun installBundleMembers(bundle: InstalledPack) {
+        val members = bundle.manifest.bundlePayload?.members.orEmpty()
+        if (members.isEmpty()) return
+        val root = bundle.root(packsRoot)
+        val failed = mutableListOf<String>()
+        for (member in members) {
+            val file = File(root, member.path)
+            if (!file.isFile) {
+                failed += "${member.packId}（成员文件缺失）"
+                continue
+            }
+            runCatching { installSingle(Uri.fromFile(file)) }
+                .onFailure { failed += "${member.packId}：${it.message ?: "安装失败"}" }
+        }
+        if (failed.isNotEmpty()) {
+            throw PackFormatException(
+                "集合包已安装，但有 ${failed.size} 个成员失败：" + failed.joinToString("；")
+            )
+        }
+    }
+
+    private suspend fun installSingle(uri: Uri): InstalledPack = withContext(Dispatchers.IO) {
         mutex.withLock {
             packsRoot.mkdirs()
             tempRoot.mkdirs()

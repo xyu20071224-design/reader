@@ -453,6 +453,8 @@
     <string name="packs_install_failed_title">Install failed</string>
     <string name="packs_section_dictionary">Dictionary packs</string>
     <string name="packs_section_audio">Audiobook audio packs</string>
+    <string name="packs_section_bundle">Bundles</string>
+    <string name="packs_bundle_members">Bundles %1$d member packs</string>
     <string name="packs_section_voice">Voice packs</string>
     <string name="packs_active">In use</string>
     <string name="packs_set_active">Use this</string>

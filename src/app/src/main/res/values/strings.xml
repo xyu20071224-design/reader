@@ -448,6 +448,8 @@
     <string name="packs_install_failed_title">安装失败</string>
     <string name="packs_section_dictionary">词典包</string>
     <string name="packs_section_audio">听书音频包</string>
+    <string name="packs_section_bundle">集合包</string>
+    <string name="packs_bundle_members">捆绑 %1$d 个成员包</string>
     <string name="packs_section_voice">音色包</string>
     <string name="packs_active">当前使用中</string>
     <string name="packs_set_active">设为当前</string>

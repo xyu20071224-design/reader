@@ -38,7 +38,9 @@ data class PackUiItem(
     val installedAt: Long,
     val dictionary: DictionaryInfo? = null,
     val audio: AudioInfo? = null,
-    val voice: VoiceInfo? = null
+    val voice: VoiceInfo? = null,
+    /** Q2-c02：集合包捆绑的成员数（明细在清单里，这里只给列表用）。 */
+    val bundleMembers: Int? = null
 ) {
     data class DictionaryInfo(
         val wordCount: Int?,
@@ -127,6 +129,7 @@ fun InstalledPack.toUiItem(active: Boolean, bookTitle: String?): PackUiItem = Pa
             pipelineVersion = it.pipelineVersion
         )
     },
+    bundleMembers = manifest.bundlePayload?.members?.size,
     voice = manifest.voicePayload?.let { payload ->
         PackUiItem.VoiceInfo(
             count = payload.voices.size,

@@ -243,6 +243,7 @@ internal fun PacksSheet(
             val dictionary = state.items.filter { it.type == PackType.DICTIONARY }
             val audio = state.items.filter { it.type == PackType.AUDIO }
             val voice = state.items.filter { it.type == PackType.VOICE }
+            val bundle = state.items.filter { it.type == PackType.BUNDLE }
 
             if (dictionary.isNotEmpty()) {
                 SectionHeader(stringResource(R.string.packs_section_dictionary))
@@ -278,6 +279,29 @@ internal fun PacksSheet(
                             onVerify = onVerify,
                             onUninstall = { uninstallCandidate = item }
                         )
+                    }
+                }
+            }
+            // Q2-c02：集合包 —— 一个包捆绑多个成员包，安装时逐个装好。
+            if (bundle.isNotEmpty()) {
+                SectionHeader(stringResource(R.string.packs_section_bundle))
+                bundle.forEach { item ->
+                    Column(Modifier.fillMaxWidth()) {
+                        PackRow(item, state.verifying) {
+                            PackActions(
+                                item = item,
+                                onVerify = onVerify,
+                                onUninstall = { uninstallCandidate = item }
+                            )
+                        }
+                        item.bundleMembers?.let { count ->
+                            Text(
+                                stringResource(R.string.packs_bundle_members, count),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = InkFaint,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                        }
                     }
                 }
             }
