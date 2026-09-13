@@ -232,4 +232,60 @@ class CloudTtsSynthesizerTest {
             TtsAudioCache.voiceSegment("a/c")
         )
     }
+
+    /**
+     * 第四轮审查 6-6：单句合成失败要**重试 1 次**再降级（退避由参数注入，默认 1s ≤2s）。
+     *
+     * 直接驱动 `synthesizeOnce`（预生成/播放共用的那条路），并注入 0 退避避免测试真等。
+     * 三种情形：首次成功只调 1 次、首败再成调 2 次且返回真、两次都败调 2 次且返回假。
+     */
+    @Test
+    fun synthesisRetriesOnceBeforeGivingUp() = kotlinx.coroutines.runBlocking<Unit> {
+        // 情形 1：首次即成功 → 只调 1 次
+        val okFirst = RecordingBackend()
+        val s1 = CloudTtsSynthesizer(ApplicationProvider.getApplicationContext(), okFirst, RecordingListener())
+        val f1 = File(File(ApplicationProvider.getApplicationContext<android.content.Context>().filesDir, "retry1"), "a.mp3")
+        assertTrue(s1.synthesizeOnce(f1, "你好。", "default", retryDelayMs = 0L))
+        assertEquals(1, okFirst.synthesizeCalls)
+        s1.shutdown()
+
+        // 情形 2：首次失败、重试成功 → 调 2 次且最终成功
+        val flaky = FailOnceBackend()
+        val s2 = CloudTtsSynthesizer(ApplicationProvider.getApplicationContext(), flaky, RecordingListener())
+        val f2 = File(File(ApplicationProvider.getApplicationContext<android.content.Context>().filesDir, "retry2"), "a.mp3")
+        assertTrue(s2.synthesizeOnce(f2, "你好。", "default", retryDelayMs = 0L), "重试成功后应返回 true")
+        assertEquals(2, flaky.synthesizeCalls, "应恰好重试 1 次（共 2 次调用）")
+        s2.shutdown()
+
+        // 情形 3：两次都失败 → 调 2 次（不是无限重试）、返回 false 交给上层降级
+        val alwaysFail = AlwaysFailBackend()
+        val s3 = CloudTtsSynthesizer(ApplicationProvider.getApplicationContext(), alwaysFail, RecordingListener())
+        val f3 = File(File(ApplicationProvider.getApplicationContext<android.content.Context>().filesDir, "retry3"), "a.mp3")
+        assertFalse(s3.synthesizeOnce(f3, "你好。", "default", retryDelayMs = 0L))
+        assertEquals(2, alwaysFail.synthesizeCalls, "重试上限为 1 次，不得无限重试（云计费）")
+        s3.shutdown()
+    }
+
+    private class FailOnceBackend : CloudTtsBackend {
+        var synthesizeCalls = 0
+        override fun isConfigured(): Boolean = true
+        override suspend fun synthesize(text: String, voice: String, outputFile: File): Result<Unit> {
+            synthesizeCalls++
+            if (synthesizeCalls == 1) return Result.failure(IllegalStateException("模拟网络抖动"))
+            outputFile.parentFile?.mkdirs()
+            outputFile.writeBytes(byteArrayOf(1, 2, 3))
+            return Result.success(Unit)
+        }
+        override fun voiceFor(text: String): String = "default"
+    }
+
+    private class AlwaysFailBackend : CloudTtsBackend {
+        var synthesizeCalls = 0
+        override fun isConfigured(): Boolean = true
+        override suspend fun synthesize(text: String, voice: String, outputFile: File): Result<Unit> {
+            synthesizeCalls++
+            return Result.failure(IllegalStateException("模拟服务端 5xx"))
+        }
+        override fun voiceFor(text: String): String = "default"
+    }
 }

@@ -209,7 +209,7 @@ class CloudTtsSynthesizer(
             return true
         }
         if (file.exists() && file.length() > 0) return true
-        return synthesizeOnce(file, utterance.text, voice)
+        return synthesizeOnce(file, utterance.text, voice, SYNTHESIS_RETRY_DELAY_MS)
     }
 
     /**
@@ -218,11 +218,26 @@ class CloudTtsSynthesizer(
      * 预生成与现场播放（`speak`）原先各走一条路：只有预生成登记 `inflightFiles`，
      * 现场合成在等待超时后会与预生成**对同一文件重复合成**（云 TTS 双计费），
      * 并且两边并发写同一路径。现在两条路都从这里走，输者只等结果。
+     *
+     * 第四轮审查 6-6：单句失败**重试 1 次**（退避 [retryDelayMs] 默认 [SYNTHESIS_RETRY_DELAY_MS]
+     * = 1s ≤ 2s），仍失败才降级。重试上限固定为 1 次是为了控制云计费 —— 网络抖动/服务端 5xx
+     * 一次重试基本能救回，再多就是拿钱赌偶发故障。失败路径不写缓存（原子写会清掉 `.tmp`），
+     * 所以重试不会读到半成品。
+     *
+     * [retryDelayMs] 做成参数是为了让单测不必真等 1 秒（产品调用点始终传默认常量）。
      */
-    private suspend fun synthesizeOnce(file: File, text: String, voice: String): Boolean {
+    internal suspend fun synthesizeOnce(
+        file: File,
+        text: String,
+        voice: String,
+        retryDelayMs: Long = SYNTHESIS_RETRY_DELAY_MS
+    ): Boolean {
         val key = file.absolutePath
         if (inflightFiles.putIfAbsent(key, true) != null) return awaitInflight(file, key)
         try {
+            if (backend.synthesize(text, voice, file).isSuccess) return true
+            // 第一次失败：退避后重试一次（同键仍在 inflight 中，不会被别的协程插进来重复合成）。
+            delay(retryDelayMs)
             return backend.synthesize(text, voice, file).isSuccess
         } finally {
             inflightFiles.remove(key)
@@ -462,5 +477,12 @@ class CloudTtsSynthesizer(
         val segment = parts[3].toIntOrNull() ?: return null
         return UtteranceRef(parts[0], chapter, sentence, segment)
     }
-
 }
+
+/**
+ * 单句合成失败后的重试退避（第四轮审查 6-6）。
+ *
+ * 固定 1 次重试、退避 1s（≤ 口径要求的 2s）：网络抖动与服务端 5xx 基本一次能救回，
+ * 再加次数就是拿云计费赌偶发故障。放在文件级是为了让单测直接引用同一个值。
+ */
+private const val SYNTHESIS_RETRY_DELAY_MS = 1_000L
