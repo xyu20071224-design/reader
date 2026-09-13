@@ -35,9 +35,6 @@ class ReviewModeTest {
         assertEquals(2, ReviewMode.GENTLE.dailyPromptLimit)
         assertEquals(4, ReviewMode.DILIGENT.dailyPromptLimit)
 
-        assertEquals(3, ReviewMode.IMMERSIVE.sessionMaxWords)
-        assertEquals(5, ReviewMode.GENTLE.sessionMaxWords)
-        assertEquals(10, ReviewMode.DILIGENT.sessionMaxWords)
 
         assertEquals(5_000L, ReviewMode.IMMERSIVE.dwellMillis)
         assertEquals(10_000L, ReviewMode.GENTLE.dwellMillis)
@@ -115,7 +112,6 @@ class ReviewModeTest {
         assertEquals(ReviewMode.GENTLE.firstDelayMillis, custom.firstDelayMillis)
         assertEquals(ReviewMode.GENTLE.intervalMultiplier, custom.intervalMultiplier)
         assertEquals(ReviewMode.GENTLE.dailyPromptLimit, custom.dailyPromptLimit)
-        assertEquals(ReviewMode.GENTLE.sessionMaxWords, custom.sessionMaxWords)
     }
 
     @Test
@@ -126,7 +122,6 @@ class ReviewModeTest {
             intervalMultiplier = 1.25,
             minIntervalMillis = 30 * 60_000L,
             dailyPromptLimit = 3,
-            sessionMaxWords = 8,
             dwellMillis = 10_000L
         )
 

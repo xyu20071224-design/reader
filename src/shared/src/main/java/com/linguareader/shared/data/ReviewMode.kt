@@ -21,7 +21,6 @@ enum class ReviewMode(
     val intervalMultiplier: Double,
     val minIntervalMillis: Long,
     val dailyPromptLimit: Int,
-    val sessionMaxWords: Int,
     val dwellMillis: Long
 ) {
     IMMERSIVE(
@@ -32,7 +31,6 @@ enum class ReviewMode(
         intervalMultiplier = 1.5,
         minIntervalMillis = 30 * 60 * 1_000L,
         dailyPromptLimit = 1,
-        sessionMaxWords = 3,
         dwellMillis = 5 * 1_000L
     ),
     GENTLE(
@@ -43,7 +41,6 @@ enum class ReviewMode(
         intervalMultiplier = 1.0,
         minIntervalMillis = 30 * 60 * 1_000L,
         dailyPromptLimit = 2,
-        sessionMaxWords = 5,
         dwellMillis = 10 * 1_000L
     ),
     DILIGENT(
@@ -54,7 +51,6 @@ enum class ReviewMode(
         intervalMultiplier = 0.75,
         minIntervalMillis = 30 * 60 * 1_000L,
         dailyPromptLimit = 4,
-        sessionMaxWords = 10,
         dwellMillis = 10 * 1_000L
     );
 
@@ -71,7 +67,6 @@ enum class ReviewMode(
         intervalMultiplier = intervalMultiplier,
         minIntervalMillis = minIntervalMillis,
         dailyPromptLimit = dailyPromptLimit,
-        sessionMaxWords = sessionMaxWords,
         dwellMillis = dwellMillis
     )
 
@@ -106,7 +101,6 @@ data class ReviewPace(
     val intervalMultiplier: Double,
     val minIntervalMillis: Long,
     val dailyPromptLimit: Int,
-    val sessionMaxWords: Int,
     val dwellMillis: Long
 ) {
     fun toJson(): String = JSONObject()
@@ -115,7 +109,6 @@ data class ReviewPace(
         .put("intervalMultiplier", intervalMultiplier)
         .put("minIntervalMillis", minIntervalMillis)
         .put("dailyPromptLimit", dailyPromptLimit)
-        .put("sessionMaxWords", sessionMaxWords)
         .put("dwellMillis", dwellMillis)
         .toString()
 
@@ -140,7 +133,6 @@ data class ReviewPace(
             intervalMultiplier = 1.0,
             minIntervalMillis = DEFAULT_MIN_INTERVAL_MILLIS,
             dailyPromptLimit = 2,
-            sessionMaxWords = 5,
             dwellMillis = DEFAULT_DWELL_MILLIS
         )
 
@@ -152,7 +144,6 @@ data class ReviewPace(
                 intervalMultiplier = o.optDouble("intervalMultiplier", 1.0),
                 minIntervalMillis = o.optLong("minIntervalMillis", DEFAULT_MIN_INTERVAL_MILLIS),
                 dailyPromptLimit = o.optInt("dailyPromptLimit", 2),
-                sessionMaxWords = o.optInt("sessionMaxWords", 5),
                 dwellMillis = o.optLong("dwellMillis", DEFAULT_DWELL_MILLIS)
             )
         }.getOrNull()

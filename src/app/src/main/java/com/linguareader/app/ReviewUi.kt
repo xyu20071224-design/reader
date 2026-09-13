@@ -23,7 +23,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -32,6 +34,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
@@ -584,24 +587,42 @@ private fun CustomReviewEditor(
             if (showMore) {
                 Text(stringResource(R.string.review_daily_limit_label), color = InkSoft, style = MaterialTheme.typography.labelMedium)
                 Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(1, 2, 4).forEach { limit ->
-                        OptionChip(
-                            label = pluralStringResource(R.plurals.review_count_times, limit, limit),
-                            selected = draft.dailyPromptLimit == limit,
-                            onClick = { draft = draft.copy(dailyPromptLimit = limit) }
+                // Q2-c06：每日提醒上限改为可自定义（原先只有 1/2/4 三档）。
+                // 原「单次最多复习」档位已随 Q1-t05 的修复失去作用（牌组改为给全部到期词），
+                // 按裁决删除，不再保留无效控件。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            if (draft.dailyPromptLimit > MIN_DAILY_PROMPT_LIMIT) {
+                                draft = draft.copy(dailyPromptLimit = draft.dailyPromptLimit - 1)
+                            }
+                        },
+                        enabled = draft.dailyPromptLimit > MIN_DAILY_PROMPT_LIMIT
+                    ) {
+                        Icon(
+                            Icons.Filled.Remove,
+                            contentDescription = stringResource(R.string.review_daily_limit_decrease)
                         )
                     }
-                }
-                Spacer(Modifier.height(10.dp))
-                Text(stringResource(R.string.review_session_max_label), color = InkSoft, style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(3, 5, 10).forEach { maxWords ->
-                        OptionChip(
-                            label = pluralStringResource(R.plurals.review_count_words, maxWords, maxWords),
-                            selected = draft.sessionMaxWords == maxWords,
-                            onClick = { draft = draft.copy(sessionMaxWords = maxWords) }
+                    Text(
+                        pluralStringResource(
+                            R.plurals.review_count_times,
+                            draft.dailyPromptLimit,
+                            draft.dailyPromptLimit
+                        ),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    IconButton(
+                        onClick = {
+                            if (draft.dailyPromptLimit < MAX_DAILY_PROMPT_LIMIT) {
+                                draft = draft.copy(dailyPromptLimit = draft.dailyPromptLimit + 1)
+                            }
+                        },
+                        enabled = draft.dailyPromptLimit < MAX_DAILY_PROMPT_LIMIT
+                    ) {
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = stringResource(R.string.review_daily_limit_increase)
                         )
                     }
                 }
@@ -741,6 +762,10 @@ private fun PacePreview(pace: ReviewPace) {
         Text(stringResource(R.string.review_pace_preview_nth, 4, formatApproxDuration(ReviewScheduler.intervalFor(3, pace))))
     }
 }
+
+/** Q2-c06：每日提醒上限的可调范围（越界由按钮禁用拦住）。 */
+private const val MIN_DAILY_PROMPT_LIMIT = 1
+private const val MAX_DAILY_PROMPT_LIMIT = 10
 
 @Composable
 private fun OptionChip(label: String, selected: Boolean, onClick: () -> Unit) {

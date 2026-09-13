@@ -535,8 +535,9 @@
     <string name="review_pace_preview_nth">Review %1$d: %2$s</string>
     <string name="review_more_options">More options</string>
     <string name="review_fewer_options">Hide options</string>
+    <string name="review_daily_limit_decrease">Fewer daily reminders</string>
+    <string name="review_daily_limit_increase">More daily reminders</string>
     <string name="review_daily_limit_label">Daily prompt limit</string>
-    <string name="review_session_max_label">Max words per session</string>
     <string name="review_reset_default">Reset to default</string>
     <string name="review_save_enable">Save &amp; enable</string>
     <string name="review_save_enable_hint">Pace changes apply only after you tap “Save &amp; enable”.</string>
@@ -546,10 +547,6 @@
     <plurals name="review_count_times">
         <item quantity="one">%1$d time</item>
         <item quantity="other">%1$d times</item>
-    </plurals>
-    <plurals name="review_count_words">
-        <item quantity="one">%1$d word</item>
-        <item quantity="other">%1$d words</item>
     </plurals>
     <plurals name="review_banner_due">
         <item quantity="one">%1$d word ready for a quick review</item>

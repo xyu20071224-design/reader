@@ -58,7 +58,7 @@ fun SettingsPane(reviewPrefs: PreferencesStore, home: File) {
                     Text(mode.label, style = MaterialTheme.typography.bodyLarge)
                     Text(
                         "首隔 ${mode.firstDelayMillis / 60_000} 分钟 · 倍率 ×${mode.intervalMultiplier} · " +
-                            "每次 ${mode.sessionMaxWords} 词",
+                            "每日 ${mode.dailyPromptLimit} 次",
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
