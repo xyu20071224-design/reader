@@ -10,7 +10,7 @@
 | 1 | `Q1-t09` | 词级高亮与释义不匹配（BUG-039） | ✅ **本轮已修** | 提交 `524f454`。**先红后绿**：新用例 `worst positioned single character candidate is rejected by the threshold` 修前红（`confidence=0.69375` 放行位置最差候选）→ 修法：单字候选位置惩罚 0.35→0.70（多字不动）→ 修后绿。`WordAlignerTest` 8 例 0 失败；`:shared` 307 例 0 失败 |
 | 2 | `Q2-c08` | 生词本非独立页面 | ✅ **已修**（真机待验） | 提交 `1efc523`：`if (!showVocabulary)` 包住书架专属动作 + `BackHandler` 回书架。`:app` 427 例 0 失败。⚠️ 手势类须真机，设备未连 → 待验 |
 | 3 | `Q1-t03` | 一句译多句只显示第一句 | ✅ **已修（上游 V3）** | 句级 `allowMerge = true` + `mergeGate`（`TranslationAligner.kt:181-187`、`sentenceMergeAllowed:722`）；测试 `sentenceLevelMergeJoinsSplitTranslation` 绿；`TranslationAlignerTest` 18 例 0 失败 |
-| 4 | `Q1-t01` | 段落对上但句子没对上 | ✅ **已缓解（上游 V4）** | 段级兜底改为**显示整段译文**并带粒度标识（`ReaderScreen.kt:1528-1537` 段级文案「未定位到句」；第四轮审查 1-4 亦确认）。金标准重放实测：句级句对=0 的段落现在返回 `PARAGRAPH/整段`，不再给空/半句 |
+| 4 | `Q1-t01` | 段落对上但句子没对上 | ✅ **已缓解（上游 V4）** | 段级兜底改为**显示整段译文**并带粒度标识：`TranslationMemoryIndex.kt:89-105` 返回 `chinese = pair.zhParagraph`（整段，注释说明「残句比整段更误导」，即 BUG-031 的主张已修）；UI 侧 `ReaderScreen.kt:1528-1537` 段级文案「未定位到句」（第四轮审查 1-4 亦确认）。金标准重放实测：句级句对=0 的段落现在返回 `PARAGRAPH/整段`，不再给空/半句 |
 | 5 | `Q1-t04` | B 句返回 A 句意思 | ✅ **已缓解（上游 V4/V5）** | 低置信句对**不落盘**（`TranslationAligner.kt:189-204`，V4）+ 句对长度比硬门槛（V5 `fb323b1`）。金标准重放：**契约样本 66/66 保持、变化 0**；`bad/skip` 28 保持、未定位 1、垃圾 5 |
 | 6 | `Q2-c04a` | 听书降级不显示级别 | ✅ **本就已实现** | `ad7cb05`：`TtsPlaybackState.degradedReason` → `ListeningBar.kt:97/128/348-351`；引擎 `:653/:717` 置位 |
 | 7 | `Q1-t02` | 划线只画原型部分 | ✅ **本就已修** | `5c36f2c` CVC 双写（`ReaderScripts.kt:929-936`）+ `ReaderScriptsTest.kt:600-603` |
