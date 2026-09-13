@@ -560,7 +560,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.value = mutableState.value.copy(
                 packs = mutableState.value.packs.copy(
                     remote = result.fold(
-                        onSuccess = { RemotePacksState(assets = it) },
+                        onSuccess = { RemotePacksState(assets = it, fetched = true) },
                         onFailure = { RemotePacksState(error = it.message ?: "获取失败") }
                     )
                 )

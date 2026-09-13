@@ -203,7 +203,10 @@ internal fun PacksSheet(
             if (!state.remote.loading && state.remote.error == null && state.remote.assets.isEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    stringResource(R.string.packs_remote_none_yet),
+                    stringResource(
+                        if (state.remote.fetched) R.string.packs_remote_empty
+                        else R.string.packs_remote_none_yet
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = InkFaint
                 )

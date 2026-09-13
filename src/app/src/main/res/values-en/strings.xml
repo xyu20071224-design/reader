@@ -436,6 +436,7 @@
     <!-- Resource packs (.lrpack: dictionary / audiobook audio / voices) -->
     <string name="packs_remote_title">Get from GitHub</string>
     <string name="packs_remote_hint">Download resource packs from the project\'s latest GitHub Release. Not needed offline — nothing connects until you tap.</string>
+    <string name="packs_remote_empty">The release has no .lrpack assets.</string>
     <string name="packs_remote_load">Fetch online packs</string>
     <string name="packs_remote_loading">Fetching…</string>
     <string name="packs_remote_failed">Fetch failed: %1$s</string>

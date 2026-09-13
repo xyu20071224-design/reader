@@ -144,5 +144,7 @@ data class RemotePacksState(
     val assets: List<GitHubReleaseParser.PackAsset> = emptyList(),
     val error: String? = null,
     /** 正在下载的资产名；非空时其它下载按钮禁用。 */
-    val downloading: String? = null
+    val downloading: String? = null,
+    /** 是否已经成功取过一次列表（用于区分「还没取」与「取到了 0 项」）。 */
+    val fetched: Boolean = false
 )
