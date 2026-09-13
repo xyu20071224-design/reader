@@ -3,6 +3,7 @@ package com.linguareader.app.packs
 import com.linguareader.shared.packs.InstalledPack
 import com.linguareader.shared.packs.PackPayload
 import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.update.GitHubReleaseParser
 
 /**
  * 未被登记表认领的残留（第四轮审查 7-9）。
@@ -87,7 +88,9 @@ data class PackUiState(
      * [LoadWarning.REGISTRY_DAMAGED]（登记表损坏 → 按空表加载）与
      * [LoadWarning.ACTIVE_DICTIONARY_MISSING]（活动词典包文件缺失 → 当前用内置词典）。
      */
-    val loadWarning: LoadWarning? = null
+    val loadWarning: LoadWarning? = null,
+    /** Q2-c03：从 GitHub Releases 获取资源包的状态（用户显式触发后才有内容）。 */
+    val remote: RemotePacksState = RemotePacksState()
 ) {
     val dictionaryPack: PackUiItem? get() = items.firstOrNull { it.type == PackType.DICTIONARY && it.active }
 }
@@ -130,4 +133,13 @@ fun InstalledPack.toUiItem(active: Boolean, bookTitle: String?): PackUiItem = Pa
             cloneCount = payload.voices.count { it.mode == com.linguareader.shared.packs.PackVoice.MODE_CLONE }
         )
     }
+)
+
+/** Q2-c03：GitHub Releases 资源包获取状态；离线优先不变——不点就不联网。 */
+data class RemotePacksState(
+    val loading: Boolean = false,
+    val assets: List<GitHubReleaseParser.PackAsset> = emptyList(),
+    val error: String? = null,
+    /** 正在下载的资产名；非空时其它下载按钮禁用。 */
+    val downloading: String? = null
 )

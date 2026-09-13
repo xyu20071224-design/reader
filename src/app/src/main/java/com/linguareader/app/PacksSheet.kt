@@ -37,6 +37,7 @@ import com.linguareader.app.packs.LoadWarning
 import com.linguareader.app.packs.PackUiItem
 import com.linguareader.app.packs.PackUiState
 import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.update.GitHubReleaseParser
 
 /** 资源包文件选择器的 MIME 白名单（`.lrpack` 是 zip，但各家文件管理器报的 MIME 不一）。 */
 private val PACK_MIME_TYPES = arrayOf(
@@ -63,6 +64,10 @@ internal fun PacksSheet(
     onVerify: (String) -> Unit,
     /** 7-9：清理未登记目录 / `.tmp` 残留。 */
     onCleanResiduals: () -> Unit,
+    /** Q2-c03：从 GitHub Releases 拉取可用资源包列表（用户显式触发，离线时不点即可）。 */
+    onLoadRemotePacks: () -> Unit,
+    /** Q2-c03：下载并安装选中的远端资源包。 */
+    onInstallRemotePack: (GitHubReleaseParser.PackAsset) -> Unit,
     onDismiss: () -> Unit
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -166,6 +171,74 @@ internal fun PacksSheet(
                 }
                 Spacer(Modifier.height(10.dp))
             }
+
+            // Q2-c03：从 GitHub Releases 获取资源包。离线优先不破 —— 不点这个按钮
+            // 就不会联网；下载完成后复用同一条安装管线。
+            SectionHeader(stringResource(R.string.packs_remote_title))
+            Text(
+                stringResource(R.string.packs_remote_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = InkFaint
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onLoadRemotePacks,
+                enabled = !state.remote.loading && state.remote.downloading == null
+            ) {
+                Text(
+                    stringResource(
+                        if (state.remote.loading) R.string.packs_remote_loading
+                        else R.string.packs_remote_load
+                    )
+                )
+            }
+            state.remote.error?.let { error ->
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    stringResource(R.string.packs_remote_failed, error),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Danger
+                )
+            }
+            if (!state.remote.loading && state.remote.error == null && state.remote.assets.isEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    stringResource(R.string.packs_remote_none_yet),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkFaint
+                )
+            }
+            state.remote.assets.forEach { asset ->
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(asset.name, style = MaterialTheme.typography.bodyMedium, color = Ink)
+                        if (asset.bytes > 0) {
+                            Text(
+                                formatStorageBytes(asset.bytes),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = InkFaint
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = { onInstallRemotePack(asset) },
+                        enabled = state.remote.downloading == null && !state.installing
+                    ) {
+                        Text(
+                            stringResource(
+                                if (state.remote.downloading == asset.name) {
+                                    R.string.packs_remote_downloading
+                                } else {
+                                    R.string.packs_remote_download
+                                }
+                            ),
+                            color = Accent
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
 
             val dictionary = state.items.filter { it.type == PackType.DICTIONARY }
             val audio = state.items.filter { it.type == PackType.AUDIO }

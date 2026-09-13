@@ -434,6 +434,14 @@
     <string name="storage_store_packs">Resource packs</string>
     <string name="storage_packs_manage">Manage packs</string>
     <!-- Resource packs (.lrpack: dictionary / audiobook audio / voices) -->
+    <string name="packs_remote_title">Get from GitHub</string>
+    <string name="packs_remote_hint">Download resource packs from the project\'s latest GitHub Release. Not needed offline — nothing connects until you tap.</string>
+    <string name="packs_remote_load">Fetch online packs</string>
+    <string name="packs_remote_loading">Fetching…</string>
+    <string name="packs_remote_failed">Fetch failed: %1$s</string>
+    <string name="packs_remote_none_yet">Nothing fetched yet.</string>
+    <string name="packs_remote_download">Download &amp; install</string>
+    <string name="packs_remote_downloading">Downloading…</string>
     <string name="packs_title">Resource packs</string>
     <string name="packs_count">%1$d installed</string>
     <string name="packs_empty">No resource packs installed</string>

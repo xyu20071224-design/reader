@@ -156,6 +156,8 @@ private fun LinguaReaderApp(
             BookshelfScreen(
                 state = state,
                 onReaderThemeChanged = onReaderThemeChanged,
+                onLoadRemotePacks = viewModel::loadRemotePacks,
+                onInstallRemotePack = viewModel::installRemotePack,
                 onImport = viewModel::importBook,
                 onOpen = viewModel::openBook,
                 onDelete = viewModel::deleteBook,

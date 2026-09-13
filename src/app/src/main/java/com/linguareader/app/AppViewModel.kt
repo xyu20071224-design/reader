@@ -51,6 +51,8 @@ import com.linguareader.app.packs.LoadWarning
 import com.linguareader.app.packs.PackRepository
 import com.linguareader.app.packs.PackUiItem
 import com.linguareader.app.packs.PackUiState
+import com.linguareader.app.packs.RemotePacksState
+import com.linguareader.shared.update.GitHubReleaseParser
 import com.linguareader.app.packs.toUiItem
 import com.linguareader.app.tts.MultiVoiceSupport
 import com.linguareader.app.tts.TtsAudioCache
@@ -540,6 +542,62 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** 卸载资源包；若是当前词典包则自动回退内置。 */
+    /**
+     * Q2-c03：从 GitHub Releases 拉取可用资源包列表。
+     *
+     * 只在用户点了「获取在线资源包」时联网；失败原因留在 `remote.error` 上，
+     * 不弹对话框（可重试，且不打断正在看的包列表）。
+     */
+    fun loadRemotePacks() {
+        if (mutableState.value.packs.remote.loading) return
+        viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(
+                packs = mutableState.value.packs.copy(
+                    remote = mutableState.value.packs.remote.copy(loading = true, error = null)
+                )
+            )
+            val result = updateRepository.fetchPackAssets()
+            mutableState.value = mutableState.value.copy(
+                packs = mutableState.value.packs.copy(
+                    remote = result.fold(
+                        onSuccess = { RemotePacksState(assets = it) },
+                        onFailure = { RemotePacksState(error = it.message ?: "获取失败") }
+                    )
+                )
+            )
+        }
+    }
+
+    /**
+     * Q2-c03：下载选中的远端资源包并交给同一条安装管线。
+     *
+     * 复用 [installPack]：安装中的禁用、成功提示、失败对话框、词典包换源都在那里，
+     * 这里只负责「下载到本地文件」这一步。
+     */
+    fun installRemotePack(asset: GitHubReleaseParser.PackAsset) {
+        if (mutableState.value.packs.remote.downloading != null) return
+        viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(
+                packs = mutableState.value.packs.copy(
+                    remote = mutableState.value.packs.remote.copy(
+                        downloading = asset.name,
+                        error = null
+                    )
+                )
+            )
+            val outcome = updateRepository.downloadPack(asset) { _, _ -> }
+            mutableState.value = mutableState.value.copy(
+                packs = mutableState.value.packs.copy(
+                    remote = mutableState.value.packs.remote.copy(
+                        downloading = null,
+                        error = outcome.exceptionOrNull()?.message
+                    )
+                )
+            )
+            outcome.getOrNull()?.let { file -> installPack(Uri.fromFile(file)) }
+        }
+    }
+
     fun uninstallPack(packId: String) {
         viewModelScope.launch {
             val item = mutableState.value.packs.items.firstOrNull { it.packId == packId }

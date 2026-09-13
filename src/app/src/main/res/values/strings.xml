@@ -429,6 +429,14 @@
     <string name="storage_store_packs">资源包</string>
     <string name="storage_packs_manage">管理资源包</string>
     <!-- 资源包（.lrpack：词典 / 听书音频 / 音色） -->
+    <string name="packs_remote_title">从 GitHub 获取</string>
+    <string name="packs_remote_hint">从项目最新的 GitHub Release 下载资源包。离线时不必使用，不点就不会联网。</string>
+    <string name="packs_remote_load">获取在线资源包</string>
+    <string name="packs_remote_loading">正在获取…</string>
+    <string name="packs_remote_failed">获取失败：%1$s</string>
+    <string name="packs_remote_none_yet">还没有获取列表。</string>
+    <string name="packs_remote_download">下载并安装</string>
+    <string name="packs_remote_downloading">下载中…</string>
     <string name="packs_title">资源包</string>
     <string name="packs_count">已安装 %1$d 个</string>
     <string name="packs_empty">还没有安装资源包</string>
