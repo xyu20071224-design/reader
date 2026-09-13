@@ -591,4 +591,84 @@ class PackRepositoryTest {
         assertEquals(0L, repo.cleanResiduals())
         assertNotNull(repo.registry().byId("only"))
     }
+
+    // ---- Q2-c02：集合包（bundle）安装管线 ----
+
+    /** 造一个合法集合包 zip：内含成员 .lrpack 本体 + 声明成员的 manifest。 */
+    private fun bundlePack(
+        member: File,
+        memberPackId: String,
+        memberPath: String = "members/$memberPackId.lrpack",
+        brokenMemberHash: Boolean = false
+    ): File {
+        val staging = tempDir("stage-")
+        val sha = if (brokenMemberHash) "0".repeat(64) else sha256(member)
+        val manifest = JSONObject()
+            .put("packId", "starter-bundle")
+            .put("type", "bundle")
+            .put("version", "1.0.0")
+            .put("nameZh", "入门集合包")
+            .put("schemaVersion", 1)
+            .put("minAppVersion", 0)
+            .put(
+                "files",
+                JSONArray().put(
+                    JSONObject().put("path", memberPath).put("sha256", sha)
+                        .put("bytes", member.length())
+                )
+            )
+            .put(
+                "bundle",
+                JSONObject().put(
+                    "members",
+                    JSONArray().put(
+                        JSONObject().put("type", "dictionary").put("packId", memberPackId)
+                            .put("path", memberPath).put("version", "1.0.0")
+                    )
+                )
+            )
+        val zip = File(staging, "starter-bundle.lrpack")
+        ZipOutputStream(zip.outputStream()).use { out ->
+            out.putNextEntry(ZipEntry(PackManifest.FILE_NAME))
+            out.write(manifest.toString().toByteArray())
+            out.closeEntry()
+            out.putNextEntry(ZipEntry(memberPath))
+            out.write(member.readBytes())
+            out.closeEntry()
+        }
+        return zip
+    }
+
+    @Test
+    fun `installing a bundle also installs its member packs`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        val member = dictionaryPack("member-dict")
+
+        val installed = install(repo, bundlePack(member, "member-dict"))
+
+        assertEquals(PackType.BUNDLE, installed.type)
+        val ids = repo.registry().packs.map { it.packId }
+        assertTrue("集合包本身应当登记：$ids", ids.contains("starter-bundle"))
+        assertTrue("成员包也应当被装上：$ids", ids.contains("member-dict"))
+        // 成员目录按类型/包 id/版本落位
+        assertTrue(File(repo.packsRoot, "dictionary/member-dict/1.0.0").isDirectory)
+    }
+
+    @Test
+    fun `bundle reports member failure instead of failing silently`() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        // 集合包对成员**文件**的哈希是对的（所以集合包能装上是为验证下面这步），
+        // 但成员包**自身内部**哈希不符 —— 于是成员安装失败。
+        val member = dictionaryPack("member-dict", brokenHash = true)
+        val broken = bundlePack(member, "member-dict")
+
+        val error = runCatching { install(repo, broken) }.exceptionOrNull()
+
+        assertNotNull("成员失败必须抛错而非静默：$error", error)
+        assertTrue("错误里要指名失败成员：${error?.message}", error!!.message!!.contains("member-dict"))
+        // 集合包本身已登记（不回滚），成员没装上
+        val ids = repo.registry().packs.map { it.packId }
+        assertTrue(ids.contains("starter-bundle"))
+        assertTrue(ids.none { it == "member-dict" })
+    }
 }
