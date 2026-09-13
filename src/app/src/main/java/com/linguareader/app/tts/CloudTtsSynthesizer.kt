@@ -177,7 +177,12 @@ class CloudTtsSynthesizer(
                 if (!ready && !stopped) mainHandler.post { listener.onError(utteranceId) }
                 return@launch
             }
-            if (!stopped) mainHandler.post { play(file, rate, utteranceId) }
+            if (!stopped) {
+                // 第四轮审查 6-13：命中缓存并真的拿去播放时，记下「最近访问」，
+                // 让 TtsAudioCache 的淘汰按真 LRU 走（音频包命中的文件不在缓存根下，会被忽略）。
+                cache.markAccessed(file)
+                mainHandler.post { play(file, rate, utteranceId) }
+            }
         }
     }
 
