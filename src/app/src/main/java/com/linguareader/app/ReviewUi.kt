@@ -443,8 +443,7 @@ internal fun ReviewSettingsSheet(
                                     R.string.review_pace_summary,
                                     presetMode.firstDelayMillis / 60_000,
                                     presetMode.intervalMultiplier,
-                                    presetMode.dailyPromptLimit,
-                                    presetMode.sessionMaxWords
+                                    presetMode.dailyPromptLimit
                                 ),
                                 color = InkSoft,
                                 style = MaterialTheme.typography.labelSmall

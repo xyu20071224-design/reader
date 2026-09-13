@@ -227,6 +227,14 @@
     <string name="pos_verb">verb</string>
     <string name="pos_adjective">adjective</string>
     <string name="pos_adverb">adverb</string>
+    <string name="pos_pronoun">pronoun</string>
+    <string name="pos_preposition">preposition</string>
+    <string name="pos_conjunction">conjunction</string>
+    <string name="pos_numeral">numeral</string>
+    <string name="pos_article">article</string>
+    <string name="pos_interjection">interjection</string>
+    <string name="pos_auxiliary">auxiliary verb</string>
+    <string name="pos_abbreviation">abbreviation</string>
     <string name="pos_unknown">undetermined</string>
 
     <!-- Review paces (model-layer labels and descriptions) -->
@@ -505,7 +513,7 @@
     <string name="review_pace_section">Review pace</string>
     <string name="review_preset_hint">Picking a preset restores its classic reminder combination; you can still adjust each one afterwards.</string>
     <string name="review_default_badge">Default</string>
-    <string name="review_pace_summary">First review in %1$d min · interval ×%2$s · %3$d prompts a day · %4$d words a session</string>
+    <string name="review_pace_summary">First review in %1$d min · interval ×%2$s · %3$d prompts a day</string>
     <string name="review_custom_desc">Pick how much you still want to remember at review time on the memory curve, then tune the first delay and reminders.</string>
     <string name="review_custom_in_use">In use · tap to edit</string>
     <string name="review_custom_start">Tap to adjust</string>

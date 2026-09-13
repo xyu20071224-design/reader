@@ -605,7 +605,10 @@ internal fun ReaderScreen(
                         fontWeight = FontWeight.Medium
                     )
                     if (reminders.toolbarBadge && dueWords.isNotEmpty()) {
-                        TextButton(onClick = { reviewDeckIds = dueWords.take(reviewPace.sessionMaxWords).map { it.id } }) {
+                        // BUG-032 余项（Q1-t05）：复习牌组给**全部**到期词。
+                        // 原先 take(sessionMaxWords) 让卡片分母恒为 5，用户看到「1/5」
+                        // 却不知道还有更多待复习；sessionMaxWords 不再截断牌组。
+                        TextButton(onClick = { reviewDeckIds = dueWords.map { it.id } }) {
                             Text(
                                 pluralStringResource(R.plurals.reader_review_badge, dueWords.size, dueWords.size),
                                 color = Accent,
@@ -780,7 +783,8 @@ internal fun ReaderScreen(
                     dwellMillis = reviewPace.dwellMillis,
                     onStart = {
                         overlays = overlays.startReviewFromPrompt()
-                        reviewDeckIds = dueWords.take(reviewPace.sessionMaxWords).map { it.id }
+                        // 同工具栏入口：一次复习全部到期词，不再按 sessionMaxWords 截断。
+                        reviewDeckIds = dueWords.map { it.id }
                     },
                     onDismiss = {
                         val dismissal = overlays.dismissReviewPrompt()

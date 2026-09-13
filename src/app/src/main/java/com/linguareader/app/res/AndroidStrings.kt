@@ -16,6 +16,14 @@ fun SharedString.resolve(): Int = when (this) {
     SharedString.POS_VERB -> R.string.pos_verb
     SharedString.POS_ADJECTIVE -> R.string.pos_adjective
     SharedString.POS_ADVERB -> R.string.pos_adverb
+    SharedString.POS_PRONOUN -> R.string.pos_pronoun
+    SharedString.POS_PREPOSITION -> R.string.pos_preposition
+    SharedString.POS_CONJUNCTION -> R.string.pos_conjunction
+    SharedString.POS_NUMERAL -> R.string.pos_numeral
+    SharedString.POS_ARTICLE -> R.string.pos_article
+    SharedString.POS_INTERJECTION -> R.string.pos_interjection
+    SharedString.POS_AUXILIARY -> R.string.pos_auxiliary
+    SharedString.POS_ABBREVIATION -> R.string.pos_abbreviation
     SharedString.POS_UNKNOWN -> R.string.pos_unknown
     SharedString.THEME_PAPER -> R.string.reader_theme_paper
     SharedString.THEME_WHITE -> R.string.reader_theme_white

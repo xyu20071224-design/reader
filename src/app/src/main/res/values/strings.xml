@@ -224,6 +224,14 @@
     <string name="pos_verb">动词</string>
     <string name="pos_adjective">形容词</string>
     <string name="pos_adverb">副词</string>
+    <string name="pos_pronoun">代词</string>
+    <string name="pos_preposition">介词</string>
+    <string name="pos_conjunction">连词</string>
+    <string name="pos_numeral">数词</string>
+    <string name="pos_article">冠词</string>
+    <string name="pos_interjection">感叹词</string>
+    <string name="pos_auxiliary">助动词</string>
+    <string name="pos_abbreviation">缩写</string>
     <string name="pos_unknown">未判定</string>
 
     <!-- 复习节奏（模型层显示名与说明） -->
@@ -499,7 +507,7 @@
     <string name="review_pace_section">复习节奏</string>
     <string name="review_preset_hint">选择预设会恢复其经典提醒组合，之后仍可单独调整。</string>
     <string name="review_default_badge">默认</string>
-    <string name="review_pace_summary">首次 %1$d 分钟 · 间隔 ×%2$s · 每日 %3$d 次 · 单次 %4$d 词</string>
+    <string name="review_pace_summary">首次 %1$d 分钟 · 间隔 ×%2$s · 每日 %3$d 次</string>
     <string name="review_custom_desc">在记忆曲线上选择复习时还想记住多少，并调整首次复习与提醒方式。</string>
     <string name="review_custom_in_use">正在使用 · 点击编辑</string>
     <string name="review_custom_start">点击开始调整</string>

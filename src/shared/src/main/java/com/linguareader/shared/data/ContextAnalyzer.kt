@@ -7,6 +7,14 @@ enum class PartOfSpeech(val labelRes: SharedString) {
     VERB(SharedString.POS_VERB),
     ADJECTIVE(SharedString.POS_ADJECTIVE),
     ADVERB(SharedString.POS_ADVERB),
+    PRONOUN(SharedString.POS_PRONOUN),
+    PREPOSITION(SharedString.POS_PREPOSITION),
+    CONJUNCTION(SharedString.POS_CONJUNCTION),
+    NUMERAL(SharedString.POS_NUMERAL),
+    ARTICLE(SharedString.POS_ARTICLE),
+    INTERJECTION(SharedString.POS_INTERJECTION),
+    AUXILIARY(SharedString.POS_AUXILIARY),
+    ABBREVIATION(SharedString.POS_ABBREVIATION),
     UNKNOWN(SharedString.POS_UNKNOWN)
 }
 
@@ -227,14 +235,30 @@ object ContextAnalyzer {
         .removeSuffix("'s")
         .removeSuffix("’s")
 
+    /**
+     * 从 ECDICT 释义行首的缩写标记判定词性（BUG-038）。
+     *
+     * 原实现只认 `n./v./vt./vi./a./adj./ad./adv.`，`prep./conj./pron.` 等一律落
+     * `UNKNOWN`——既不显示词性，也不参与语境排序，表现为「标注不完全」。
+     * 现在取「首个句点前的缩写」并兼容不带句点的写法（如 `prep` / `n`），
+     * 便于单测直接覆盖；识别不了的仍返回 [PartOfSpeech.UNKNOWN]。
+     */
     private fun sensePartOfSpeech(line: String): PartOfSpeech {
-        val marker = line.lowercase().trimStart()
-        return when {
-            marker.startsWith("n.") || marker.startsWith("n ") -> PartOfSpeech.NOUN
-            marker.startsWith("vt.") || marker.startsWith("vi.") ||
-                marker.startsWith("v.") || marker.startsWith("v ") -> PartOfSpeech.VERB
-            marker.startsWith("a.") || marker.startsWith("adj.") -> PartOfSpeech.ADJECTIVE
-            marker.startsWith("ad.") || marker.startsWith("adv.") -> PartOfSpeech.ADVERB
+        val head = line.lowercase().trimStart()
+        val marker = head.substringBefore('.').trim()
+        return when (marker) {
+            "a", "adj" -> PartOfSpeech.ADJECTIVE
+            "ad", "adv" -> PartOfSpeech.ADVERB
+            "n" -> PartOfSpeech.NOUN
+            "v", "vt", "vi" -> PartOfSpeech.VERB
+            "prep" -> PartOfSpeech.PREPOSITION
+            "conj" -> PartOfSpeech.CONJUNCTION
+            "pron" -> PartOfSpeech.PRONOUN
+            "num" -> PartOfSpeech.NUMERAL
+            "art" -> PartOfSpeech.ARTICLE
+            "int" -> PartOfSpeech.INTERJECTION
+            "aux" -> PartOfSpeech.AUXILIARY
+            "abbr" -> PartOfSpeech.ABBREVIATION
             else -> PartOfSpeech.UNKNOWN
         }
     }

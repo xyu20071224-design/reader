@@ -18,6 +18,14 @@ enum class SharedString {
     POS_VERB,
     POS_ADJECTIVE,
     POS_ADVERB,
+    POS_PRONOUN,
+    POS_PREPOSITION,
+    POS_CONJUNCTION,
+    POS_NUMERAL,
+    POS_ARTICLE,
+    POS_INTERJECTION,
+    POS_AUXILIARY,
+    POS_ABBREVIATION,
     POS_UNKNOWN,
 
     // 阅读主题显示名（ReaderTheme.labelRes，原 R.string.reader_theme_*）

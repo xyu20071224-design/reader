@@ -141,4 +141,42 @@ class ContextAnalyzerTest {
 
         assertEquals("go", tokens[target].text)
     }
+
+    /**
+     * BUG-038：ECDICT 的缩写标记要全部映射到词性，不能落 UNKNOWN。
+     * 前 8 行是原实现就认的，后 8 行是本次补上的（prep/conj/pron/num/art/int/aux/abbr）。
+     */
+    @Test
+    fun senseMarkersMapToEveryDeclaredPartOfSpeech() {
+        val cases = listOf(
+            "n." to PartOfSpeech.NOUN,
+            "v." to PartOfSpeech.VERB,
+            "vt." to PartOfSpeech.VERB,
+            "vi." to PartOfSpeech.VERB,
+            "a." to PartOfSpeech.ADJECTIVE,
+            "adj." to PartOfSpeech.ADJECTIVE,
+            "ad." to PartOfSpeech.ADVERB,
+            "adv." to PartOfSpeech.ADVERB,
+            "prep." to PartOfSpeech.PREPOSITION,
+            "conj." to PartOfSpeech.CONJUNCTION,
+            "pron." to PartOfSpeech.PRONOUN,
+            "num." to PartOfSpeech.NUMERAL,
+            "art." to PartOfSpeech.ARTICLE,
+            "int." to PartOfSpeech.INTERJECTION,
+            "aux." to PartOfSpeech.AUXILIARY,
+            "abbr." to PartOfSpeech.ABBREVIATION
+        )
+
+        for ((marker, expected) in cases) {
+            val senses = ContextAnalyzer.senses("$marker 测试释义", PartOfSpeech.UNKNOWN)
+            assertEquals(expected, senses.single().partOfSpeech, "marker=$marker")
+        }
+    }
+
+    @Test
+    fun unknownMarkerStillFallsBackToUnknown() {
+        val senses = ContextAnalyzer.senses("zz. 没有这种词性", PartOfSpeech.UNKNOWN)
+
+        assertEquals(PartOfSpeech.UNKNOWN, senses.single().partOfSpeech)
+    }
 }
