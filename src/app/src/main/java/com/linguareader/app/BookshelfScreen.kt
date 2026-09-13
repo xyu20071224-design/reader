@@ -1,6 +1,7 @@
 package com.linguareader.app
 
 import android.graphics.BitmapFactory
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -212,6 +213,8 @@ internal fun BookshelfScreen(
         manualExportLauncher.launch(pending.fileName)
     }
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
+    // Q2-c08：生词本是次级视图，系统返回/左滑应回书架，而不是直接退出应用。
+    BackHandler(enabled = showVocabulary) { showVocabulary = false }
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var showUpdateSheet by rememberSaveable { mutableStateOf(false) }
     var showStorageSheet by rememberSaveable { mutableStateOf(false) }
@@ -254,6 +257,10 @@ internal fun BookshelfScreen(
                         )
                     },
                     actions = {
+                        // Q2-c08：生词本是独立的次级视图，不再显示书架专属动作
+                        // （存储占用 / 外观 / 检查更新）。此前这些图标在生词本里照旧渲染，
+                        // 用户看到的是「生词本还有一部分书架的顶部图标」。
+                        if (!showVocabulary) {
                         // 存储占用：打开即扫盘（不在启动时扫，那会拖慢冷启动）。
                         IconButton(onClick = {
                             showStorageSheet = true
@@ -292,6 +299,8 @@ internal fun BookshelfScreen(
                                 }
                             }
                         }
+                        }
+
                         // 生词本/书架切换：只留图标，名字在标题（次级视图）与无障碍描述里。
                         IconButton(
                             onClick = { showVocabulary = !showVocabulary },
