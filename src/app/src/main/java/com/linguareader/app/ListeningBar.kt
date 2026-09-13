@@ -94,12 +94,7 @@ internal fun ListeningBar(
     val stopLabel = stringResource(R.string.player_stop)
     val offscreenHint = stringResource(R.string.player_offscreen_hint)
     // 6-6：降级/暂停原因的可见文案（null = 正常，不显示）。
-    val degradedHint = state.degradedReason?.let { reason ->
-        when (reason) {
-            DegradedReason.FALLBACK_TO_SYSTEM -> stringResource(R.string.player_degraded_fallback)
-            DegradedReason.PAUSED_AFTER_ERRORS -> stringResource(R.string.player_degraded_paused)
-        }
-    }
+    val degradedHint = degradedHintRes(state.degradedReason)?.let { stringResource(it) }
     val paginationLabel = stringResource(R.string.reader_pagination)
     val overflowLabel = stringResource(R.string.player_more)
 
@@ -343,3 +338,15 @@ private fun rateLabel(rate: Float): String =
     } else {
         String.format(Locale.ROOT, "%.2f", rate).trimEnd('0').trimEnd('.') + "×"
     }
+
+/**
+ * 降级原因 → 文案资源（第四轮审查 6-6）。null = 一切正常，不显示任何提示。
+ *
+ * 抽成纯函数是为了能在 JVM 单测里直接断言"哪种状态显示哪句"—— Compose 渲染本身
+ * 需要设备（本仓库的 compose ui-test 依赖只在 androidTest classpath）。
+ */
+internal fun degradedHintRes(reason: DegradedReason?): Int? = when (reason) {
+    null -> null
+    DegradedReason.FALLBACK_TO_SYSTEM -> R.string.player_degraded_fallback
+    DegradedReason.PAUSED_AFTER_ERRORS -> R.string.player_degraded_paused
+}
