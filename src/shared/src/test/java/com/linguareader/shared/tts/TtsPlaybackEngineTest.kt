@@ -689,7 +689,8 @@ class TtsPlaybackEngineTest {
         testScheduler.advanceUntilIdle()
         fake.emitStart(fake.spoken.last().utteranceId)
         fake.emitDone(fake.spoken.last().utteranceId)
-        testScheduler.runCurrent()
+        // 句末停顿（Q2-c04b）后才会推进到下一章，故这里要推进虚拟时间。
+        testScheduler.advanceUntilIdle()
 
         assertTrue(h.chapterRequests.contains(1))
         h.engine.onReaderChapterLoaded("b1", 0)   // 不是在等的那一章：应被忽略
@@ -718,5 +719,30 @@ class TtsPlaybackEngineTest {
         assertEquals("A.", fake.spoken[0].text)
         h.engine.shutdown()
     }
-}
 
+    @Test
+    fun sentenceEndGetsAFixedPauseBeforeTheNextSentence() = runTest {
+        // Q2-c04b：用户反馈「一句同速读到底、没有应有的停顿」。
+        // 整句读完到下一句之间应有固定停顿；句内片段之间不应停。
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val h = plainHarness(dispatcher, { _, _ -> chapter("Hello.", "World.") })
+        h.engine.startPlayback(book(), 0, 0)
+        testScheduler.advanceUntilIdle()
+        val fake = h.synthesizer as FakeTtsSynthesizer
+        assertEquals(1, fake.spoken.size)
+
+        fake.emitDone("b1:0:0:0:1")
+
+        // 停顿未走完：第二句还没开始。
+        testScheduler.advanceTimeBy(SENTENCE_END_PAUSE_MILLIS - 1)
+        testScheduler.runCurrent()
+        assertEquals(1, fake.spoken.size)
+
+        // 跨过停顿后进入第二句。
+        testScheduler.advanceTimeBy(1)
+        testScheduler.runCurrent()
+        assertEquals(2, fake.spoken.size)
+        assertEquals("World.", fake.spoken[1].text)
+        h.engine.shutdown()
+    }
+}
