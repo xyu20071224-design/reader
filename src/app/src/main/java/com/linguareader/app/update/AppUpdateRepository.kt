@@ -3,6 +3,7 @@ package com.linguareader.app.update
 import android.content.Context
 import com.linguareader.app.BuildConfig
 import com.linguareader.shared.update.AppUpdateInfo
+import com.linguareader.shared.update.GitHubReleaseParser
 import com.linguareader.shared.update.GitHubUpdateChecker
 import com.linguareader.shared.update.UpdatePolicy
 import kotlinx.coroutines.CancellationException
@@ -111,6 +112,73 @@ class AppUpdateRepository(context: Context) {
             }
         }.also { result ->
             // runCatching 会把取消吞成 failure；取消不是失败，原样抛回结构化并发。
+            result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+        }
+    }
+
+    /** Q2-c03：列出远端 Release 里的资源包资产。只在用户显式点击「从 GitHub 获取」时调用。 */
+    suspend fun fetchPackAssets(): Result<List<GitHubReleaseParser.PackAsset>> =
+        checker.checkLatestPacks()
+
+    /**
+     * Q2-c03：把资源包资产下载到应用专属目录，随后交给
+     * `PackRepository.install(Uri.fromFile(file))`。与 APK 下载同纪律：进度回调，
+     * 失败/取消都删掉半截文件（半截包解压只会误导）。
+     */
+    suspend fun downloadPack(
+        asset: GitHubReleaseParser.PackAsset,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
+    ): Result<File> = withContext(Dispatchers.IO) {
+        val activeContext = coroutineContext
+        runCatching {
+            val dir = appContext.getExternalFilesDir("packs-download")
+                ?: error("外部存储不可用")
+            dir.mkdirs()
+            val target = File(dir, asset.name)
+            if (target.exists()) target.delete()
+
+            val connection = URL(asset.downloadUrl).openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 10_000
+                connection.readTimeout = 30_000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "LinguaReader")
+                if (connection.responseCode !in 200..299) {
+                    error("下载失败（HTTP ${connection.responseCode}）")
+                }
+                val total = connection.contentLengthLong
+                val buffer = ByteArray(BUFFER_SIZE)
+                var written = 0L
+                var lastReported = -1
+                connection.inputStream.use { input ->
+                    target.outputStream().use { output ->
+                        while (true) {
+                            activeContext.ensureActive()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            written += read
+                            if (total > 0) {
+                                val percent = (written * 100 / total).toInt()
+                                if (percent != lastReported) {
+                                    lastReported = percent
+                                    onProgress(written, total)
+                                }
+                            }
+                        }
+                    }
+                }
+                activeContext.ensureActive()
+                check(written > 0) { "下载内容为空" }
+                target
+            } catch (t: Throwable) {
+                if (target.exists()) target.delete()
+                throw t
+            } finally {
+                connection.disconnect()
+            }
+        }.also { result ->
             result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         }
     }
