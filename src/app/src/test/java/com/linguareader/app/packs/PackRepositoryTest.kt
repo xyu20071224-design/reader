@@ -543,4 +543,52 @@ class PackRepositoryTest {
         assertFalse(File(repo.packsRoot, "escape.txt").exists())
         assertFalse(File(repo.packsRoot.parentFile, "escape.txt").exists())
     }
+
+    /**
+     * 第四轮审查 7-9：未登记目录与 `.tmp` 崩溃残留**被 totalBytes 计入占用**，
+     * 却既不在包列表也不进孤儿对账 —— 用户看得到占用、找不到可删的东西。
+     */
+    @Test
+    fun unregisteredLeftoversAreListedAndCleanable() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        install(repo, dictionaryPack("registered"))
+        val before = repo.totalBytes()
+
+        val ghost = File(context.filesDir, "packs/dictionary/ghost/9.9.9")
+        ghost.mkdirs()
+        File(ghost, "payload.bin").writeBytes(ByteArray(500))
+
+        val staging = File(context.filesDir, "packs/.tmp/staging-123")
+        staging.mkdirs()
+        File(staging, "half.zip").writeBytes(ByteArray(300))
+
+        val residuals = repo.residuals()
+        val hasUnregistered = residuals.any { it.kind == PackResidual.Kind.UNREGISTERED && it.path == ghost }
+        val hasTemp = residuals.any { it.kind == PackResidual.Kind.TEMP && it.path == staging }
+        val residualBytes = residuals.sumOf { it.bytes }
+
+        assertEquals(2, residuals.size)
+        assertTrue(hasUnregistered)
+        assertTrue(hasTemp)
+        assertEquals(800L, residualBytes)
+        assertEquals(before + 800L, repo.totalBytes())
+
+        val freed = repo.cleanResiduals()
+        assertEquals(800L, freed)
+        assertFalse(ghost.exists())
+        assertFalse(staging.exists())
+        assertEquals(before, repo.totalBytes())
+        assertTrue(repo.residuals().isEmpty())
+    }
+
+    /** 没有残留时两个方法都应是安全的空操作（不抛、不误删）。 */
+    @Test
+    fun noLeftoversMeansNoOpCleanup() {
+        val repo = PackRepository(context, appVersionCode = 15)
+        install(repo, dictionaryPack("only"))
+        val residuals = repo.residuals()
+        assertTrue(residuals.isEmpty())
+        assertEquals(0L, repo.cleanResiduals())
+        assertNotNull(repo.registry().byId("only"))
+    }
 }

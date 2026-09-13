@@ -61,6 +61,8 @@ internal fun PacksSheet(
     onSetActiveDictionary: (String?) -> Unit,
     onUninstall: (String) -> Unit,
     onVerify: (String) -> Unit,
+    /** 7-9：清理未登记目录 / `.tmp` 残留。 */
+    onCleanResiduals: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -140,6 +142,30 @@ internal fun PacksSheet(
                 )
             }
             Spacer(Modifier.height(18.dp))
+
+            // 7-9：未登记目录 / .tmp 残留 —— 它们已计入上方「磁盘实测」占用，
+            // 但不在包列表里，用户看得到占用却找不到可删的东西。这里显式列出 + 给清理入口。
+            if (state.residuals.isNotEmpty()) {
+                SectionHeader(stringResource(R.string.packs_residuals_title))
+                Text(
+                    stringResource(
+                        R.string.packs_residuals_found,
+                        state.residuals.size,
+                        formatStorageBytes(state.residuals.sumOf { it.bytes })
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Ink
+                )
+                Text(
+                    stringResource(R.string.packs_residuals_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkFaint
+                )
+                TextButton(onClick = onCleanResiduals) {
+                    Text(stringResource(R.string.packs_residuals_clean), color = Danger)
+                }
+                Spacer(Modifier.height(10.dp))
+            }
 
             val dictionary = state.items.filter { it.type == PackType.DICTIONARY }
             val audio = state.items.filter { it.type == PackType.AUDIO }

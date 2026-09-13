@@ -153,6 +153,8 @@ internal fun BookshelfScreen(
     onSetActiveDictionary: (String?) -> Unit = {},
     onUninstallPack: (String) -> Unit = {},
     onVerifyPack: (String) -> Unit = {},
+    /** 资源包（7-9）：清理未登记目录 / `.tmp` 残留。 */
+    onCleanPackResiduals: () -> Unit = {},
     onLoadGlossary: suspend (String) -> BookGlossary,
     onAddGlossary: suspend (String, String, String) -> BookGlossary,
     onUpdateGlossary: suspend (String, GlossaryEntry) -> BookGlossary,
@@ -431,6 +433,7 @@ internal fun BookshelfScreen(
             onSetActiveDictionary = onSetActiveDictionary,
             onUninstall = onUninstallPack,
             onVerify = onVerifyPack,
+            onCleanResiduals = onCleanPackResiduals,
             onDismiss = { showPacksSheet = false }
         )
     }

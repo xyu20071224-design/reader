@@ -174,6 +174,7 @@ private fun LinguaReaderApp(
                 onAiSettingsChange = viewModel::setAiSettings,
                 onRefreshStorage = viewModel::refreshStorageReport,
                 onCleanOrphans = viewModel::deleteOrphans,
+                onCleanPackResiduals = viewModel::cleanPackResiduals,
                 onInstallPack = viewModel::installPack,
                 onSetActiveDictionary = viewModel::setActiveDictionary,
                 onUninstallPack = viewModel::uninstallPack,

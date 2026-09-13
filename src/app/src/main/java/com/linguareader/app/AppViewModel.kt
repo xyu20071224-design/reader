@@ -461,6 +461,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 PackUiState(
                     items = items,
                     totalBytes = packs.totalBytes(),
+                    // 7-9：把未登记目录与 .tmp 残留一并带出去，供包列表页显式列出 + 清理。
+                    residuals = packs.residuals(),
                     loadWarning = warning
                 )
             }
@@ -468,6 +470,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 packs = mutableState.value.packs.copy(
                     items = snapshot.items,
                     totalBytes = snapshot.totalBytes,
+                    residuals = snapshot.residuals,
                     loadWarning = snapshot.loadWarning
                 )
             )
@@ -587,6 +590,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun packName(item: PackUiItem): String =
         item.nameZh.ifBlank { item.nameEn }
+
+    /**
+     * 清理未登记目录 / `.tmp` 残留（第四轮审查 7-9）。
+     *
+     * 与 `deleteOrphans` 同一纪律：删的是**报告里那些路径**，删除结果按实际释放量统计，
+     * 完成后刷新包列表（占用数字随之下降）。
+     */
+    fun cleanPackResiduals() {
+        if (mutableState.value.packs.residuals.isEmpty()) return
+        viewModelScope.launch {
+            val freed = withContext(Dispatchers.IO) { packs.cleanResiduals() }
+            mutableState.value = mutableState.value.copy(
+                notice = string(R.string.packs_residuals_cleared, formatStorageBytes(freed)),
+                noticeTone = StatusTone.SUCCESS
+            )
+            refreshPacks()
+        }
+    }
 
     fun deleteBook(book: Book) {
         viewModelScope.launch {

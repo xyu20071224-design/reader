@@ -4,6 +4,26 @@ import com.linguareader.shared.packs.InstalledPack
 import com.linguareader.shared.packs.PackPayload
 import com.linguareader.shared.packs.PackType
 
+/**
+ * 未被登记表认领的残留（第四轮审查 7-9）。
+ *
+ * 报告原文：未登记目录与崩溃残留的 `.tmp` 既不在包列表、也不进孤儿对账，却被占用统计
+ * 计入 —— 用户看得到占用却找不到可删的东西。界面据此显式列出并给清理入口。
+ */
+data class PackResidual(
+    val path: java.io.File,
+    val kind: Kind,
+    val bytes: Long
+) {
+    enum class Kind {
+        /** `packsRoot/<type>/<packId>/<version>/` 不在登记表里（安装过半、外部拷贝、登记表损坏后遗留）。 */
+        UNREGISTERED,
+
+        /** `.tmp/` 下的安装临时区（正常收尾会被消费，崩溃才留）。 */
+        TEMP
+    }
+}
+
 /** 资源包页面的一行。载荷差异用可空子对象表达，界面按类型分支渲染。 */
 data class PackUiItem(
     val packId: String,
@@ -49,6 +69,13 @@ data class PackUiState(
      * 实测含每包的 `manifest.json` 等清单外文件，故总数会略大于各行之和，界面已注明口径。
      */
     val totalBytes: Long = 0L,
+    /**
+     * 未被登记表认领的残留（第四轮审查 7-9）：未登记目录 + `.tmp` 崩溃残留。
+     *
+     * 它们被 [totalBytes] 计入占用，所以必须显式列出来并给清理入口 ——
+     * 否则用户看得见占用、找不到东西可删。
+     */
+    val residuals: List<PackResidual> = emptyList(),
     /** 安装中（SAF 回来到落位完成之间）；界面禁用安装按钮并显示进度。 */
     val installing: Boolean = false,
     /** 正在重哈希校验的包 id（手动「验证完整性」）。 */

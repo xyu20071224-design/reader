@@ -106,6 +106,63 @@ class PackRepository(
 
     fun totalBytes(): Long = PackValidator.directoryBytes(packsRoot)
 
+    /**
+     * 未被登记表认领的残留（第四轮审查 7-9）。
+     *
+     * 报告原文：未登记目录与崩溃残留的 `.tmp` **既不在包列表、也不进孤儿对账**，却被
+     * [totalBytes] 计入占用 —— 用户看到占用却找不到东西可删。
+     *
+     * 判定是**推导式**而非猜目录名：登记表里每个包按
+     * [PackPaths.directoryFor] 得到一个应有的相对路径，`packsRoot/<type>/` 下即
+     * `<packId>/<version>/`；不在该集合里的目录、以及 `.tmp` 下的任何临时物，
+     * 都是残留。
+     */
+    fun residuals(): List<PackResidual> {
+        val out = mutableListOf<PackResidual>()
+        if (!packsRoot.isDirectory) return out
+        // 已登记的目录（相对 packsRoot），例如 dictionary/ecdict-zh/1.0.0
+        val registered = registry().packs.map {
+            PackPaths.directoryFor(it.type, it.packId, it.version)
+        }.toSet()
+        for (type in PackType.entries) {
+            val typeDir = File(packsRoot, type.wire)
+            if (!typeDir.isDirectory) continue
+            for (packDir in typeDir.listFiles().orEmpty().filter { it.isDirectory }) {
+                for (versionDir in packDir.listFiles().orEmpty().filter { it.isDirectory }) {
+                    val rel = "${type.wire}/${packDir.name}/${versionDir.name}"
+                    if (rel !in registered) {
+                        out += PackResidual(
+                            path = versionDir,
+                            kind = PackResidual.Kind.UNREGISTERED,
+                            bytes = PackValidator.directoryBytes(versionDir)
+                        )
+                    }
+                }
+            }
+        }
+        // 安装/写登记表崩溃留下的临时区（正常收尾时会被消费掉）
+        if (tempRoot.isDirectory) {
+            for (leftover in tempRoot.listFiles().orEmpty()) {
+                out += PackResidual(
+                    path = leftover,
+                    kind = PackResidual.Kind.TEMP,
+                    bytes = PackValidator.directoryBytes(leftover)
+                )
+            }
+        }
+        return out
+    }
+
+    /** 删除 [residuals] 列出的全部残留，返回**实际**释放的字节数（删成功才计入）。 */
+    fun cleanResiduals(): Long {
+        var freed = 0L
+        for (residual in residuals()) {
+            val bytes = residual.bytes
+            if (runCatching { residual.path.deleteRecursively() }.getOrDefault(false)) freed += bytes
+        }
+        return freed
+    }
+
     fun verify(packId: String): PackValidationResult {
         val pack = registry().byId(packId)
             ?: return PackValidationResult.reject("资源包不存在：$packId")

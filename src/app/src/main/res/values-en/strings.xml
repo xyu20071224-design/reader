@@ -465,6 +465,11 @@
     <string name="packs_load_warning_registry_damaged">The pack registry is damaged and was loaded as empty: installed packs are temporarily hidden — reinstall to recover.</string>
     <string name="packs_load_warning_active_missing">The active dictionary pack\'s files are missing, so the built-in dictionary is in use. Reinstall that pack or restore the built-in dictionary.</string>
     <string name="packs_total_on_disk">%1$s on disk</string>
+    <string name="packs_residuals_title">Unregistered leftovers</string>
+    <string name="packs_residuals_found">%1$d items, %2$s</string>
+    <string name="packs_residuals_hint">Directories from interrupted installs or manual copies, plus temp files left by crashes. They are already counted in the usage above. Listed only — press the button below to clean up.</string>
+    <string name="packs_residuals_clean">Clean these leftovers</string>
+    <string name="packs_residuals_cleared">Cleaned %1$s</string>
     <string name="tts_saved">Saved</string>
     <plurals name="tts_system_voices_loaded">
         <item quantity="one">Fetched %1$d system voice</item>
