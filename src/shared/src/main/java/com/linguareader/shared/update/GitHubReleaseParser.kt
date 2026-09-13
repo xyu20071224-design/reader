@@ -25,6 +25,38 @@ data class AppUpdateInfo(
  */
 object GitHubReleaseParser {
 
+    /** Release 里的一个资源包资产（`.lrpack`）。 */
+    data class PackAsset(
+        val name: String,
+        val downloadUrl: String,
+        /** 资产字节数；GitHub 未给时为 0。 */
+        val bytes: Long
+    )
+
+    /**
+     * 纯逻辑：列出 Release JSON 里的全部 `.lrpack` 资产（Q2-c03：把 GitHub Releases
+     * 当作资源包分发源）。
+     *
+     * 与 [parse] 一样只解析文本、**不联网**——离线优先的边界由调用方守住：不配置
+     * 更新源就永远不会走到这里。没有 `.lrpack`（或字段不全）的资产被跳过。
+     */
+    fun parsePackAssets(body: String): List<PackAsset> = runCatching {
+        val json = JSONObject(body)
+        val assets = json.optJSONArray("assets") ?: return@runCatching emptyList()
+        (0 until assets.length())
+            .mapNotNull { assets.optJSONObject(it) }
+            .filter { it.optString("name").endsWith(PACK_EXTENSION, ignoreCase = true) }
+            .mapNotNull { asset ->
+                val name = asset.optString("name")
+                val url = asset.optString("browser_download_url")
+                if (name.isBlank() || url.isBlank()) {
+                    null
+                } else {
+                    PackAsset(name = name, downloadUrl = url, bytes = asset.optLong("size", 0L))
+                }
+            }
+    }.getOrDefault(emptyList())
+
     fun parse(body: String): AppUpdateInfo? = runCatching {
         val json = JSONObject(body)
         val tag = json.optString("tag_name")
@@ -46,3 +78,6 @@ object GitHubReleaseParser {
         )
     }.getOrNull()
 }
+
+/** 资源包资产扩展名（Q2-c03）。 */
+private const val PACK_EXTENSION = ".lrpack"

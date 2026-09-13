@@ -58,4 +58,41 @@ class GitHubReleaseParserTest {
         assertNull(GitHubReleaseParser.parse("{\"tag_name\":\"v1.6.0\"}"))
         assertNull(GitHubReleaseParser.parse(""))
     }
+
+    // ---- Q2-c03：Release 里的资源包资产 ----
+
+    private val packSample = """
+        {
+          "tag_name": "v1.6.0",
+          "assets": [
+            {"name": "LinguaReader-v1.6.0.apk", "browser_download_url": "https://x/apk", "size": 11},
+            {"name": "dictionary-en.lrpack", "browser_download_url": "https://x/dict", "size": 1024},
+            {"name": "audio-hobbit.LRPACK", "browser_download_url": "https://x/audio", "size": 2048},
+            {"name": "notes.txt", "browser_download_url": "https://x/txt", "size": 3},
+            {"name": "broken.lrpack", "size": 5}
+          ]
+        }
+    """.trimIndent()
+
+    @Test
+    fun `lists only lrpack assets with url and size`() {
+        val packs = GitHubReleaseParser.parsePackAssets(packSample)
+
+        assertEquals(2, packs.size)
+        assertEquals("dictionary-en.lrpack", packs[0].name)
+        assertEquals("https://x/dict", packs[0].downloadUrl)
+        assertEquals(1024L, packs[0].bytes)
+        // 扩展名大小写不敏感
+        assertEquals("audio-hobbit.LRPACK", packs[1].name)
+        // 缺 browser_download_url 的资产被跳过，不会产出坏链接
+        assertTrue(packs.none { it.name == "broken.lrpack" })
+    }
+
+    @Test
+    fun `pack assets parsing degrades to empty list on bad input`() {
+        assertTrue(GitHubReleaseParser.parsePackAssets("not json").isEmpty())
+        assertTrue(GitHubReleaseParser.parsePackAssets("{}").isEmpty())
+        assertTrue(GitHubReleaseParser.parsePackAssets(sample).isEmpty())
+        assertTrue(GitHubReleaseParser.parsePackAssets("").isEmpty())
+    }
 }
