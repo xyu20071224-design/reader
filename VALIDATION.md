@@ -1416,3 +1416,30 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
 - **发布验收**：GitHub Release `v1.7.0`（非 prerelease / 非 draft，故 `/releases/latest` 返回它，应用内更新可见）附 `LinguaReader-v1.7.0.apk`；回下载资产 SHA-256 `5a48ed90…75eba6` 与本地 `cmp` 逐字节一致。
 - **上传坑（可复用）**：首次用 python `urllib` 传 35 MB 资产在 write 阶段超时，GitHub 侧留下 `state=starter` 的半截资产——同名会挡住重传，须先 `DELETE /releases/assets/<id>` 再传；改用 `curl --data-binary -H "Expect:"` 成功（约 340 KB/s）。**下次发版直接 curl，别用 urllib。**
 - **未做真机验证**：本机当前无设备连接（`adb devices` 空），本次未走真机 smoke；R8 风险面（点词查词 / 翻页回报 / PDF 导入 / 复习节奏 / 自动更新）按 Release 页「建议验证」清单待补。
+
+## 2026-09-13 发版 v1.8.0（versionCode 17）
+
+**范围**：issue #2「体验」6 条功能需求全量落地 + 第四轮审查遗留的 bug 修复线轮次收口。
+
+### 本次交付
+
+| 项 | 内容 | 提交 |
+| --- | --- | --- |
+| 每日提醒上限可自定义 | 上限由 1/2/4 档位改步进器 1–10；删除因 `Q1-t05` 修复而失效的 `sessionMaxWords`（模型/JSON/预设/桌面显示/测试/文案全链） | `f206a54` |
+| 书架整体主题 | 根因＝`ShelfAppearanceSheet` 只写盘不通知外壳；加回调接通 `readerTheme` 状态 | `34ecf1d` |
+| release 改动展示 | 核实更新弹层已含「当前版本 → 新版本 + 更新说明」，无需改码 | — |
+| 句末固定停顿 | `SENTENCE_END_PAUSE_MILLIS = 250L`，仅整句读完处 `delay`；虚拟时间用例锁定 | `8eddf55` |
+| GitHub Releases 作资源包分发源 | 三层：`.lrpack` 资产解析 → 只在用户点击时联网的下载层 → 资源包页入口；下载层另补 JVM 测试（本地 HTTP 服务器）；空态文案区分「未获取 / 远端无资产」 | `4977a60`/`88ed08d`/`c63dc28`/`4b0ee75`/`de130ed` |
+| 集合包（bundle） | `PackType.BUNDLE` 契约（清单往返 + 4 条校验）+ 安装管线（`install` 拆分，成员**锁外**逐个装以免 Mutex 不可重入；失败不静默、不回滚）+ 资源包页分区 + app 层管线测试 2 例 | `9762060`/`1f06a78`/`10712b4` |
+| 生词本非独立页面（bug 轮遗留） | 生词本视图不再渲染书架专属动作；`BackHandler` 回书架 | `1efc523` |
+| 词级对齐阈值生效（bug 轮遗留） | 单字候选位置惩罚 0.35→0.70，先红后绿 | `524f454` |
+| 单词发音首音（bug 轮遗留） | TTS 初始化门控 `SpeechReadiness`，未就绪先记账、就绪后补播 | `de9785c`/`91b2a20` |
+
+### 验证
+
+- 单测：`:app` 435 例 / `:shared` 314 例，0 失败 0 错误；双语资源 key 697/697 一致。
+- 真机（PKB110 / Android 16，verify 并存包）：`Q2-c07` 切主题后书架亮度 0.916→0.355（RMSE 0.725）、`Q2-c08` 生词本视图顶栏只剩「书架」且 BACK 回书架 pid 不变、`Q2-c02` 集合包端到端（已装 2 个、registry 双登记、成员 sqlite 落盘）、`Q2-c03` 入口+联网路径（发起 `api.github.com` 请求）、`Q2-c04b` 逐句播放推进（52 个句级缓存 + MediaPlayer 依次创建）、`Q2-c06` 摘要已是「每日 N 次」口径。
+- 未验：`Q2-c03` 下载+安装真机端到端（远端 Release 无 `.lrpack` 资产）；`Q2-c01` 的 release notes 区块（本机已是最新故不渲染）；`Q2-c06` 自定义编辑器步进器；`Q1-t13` 听感（本机 `tts_default_synth=null`、无 Google TTS，单词发音走系统 TTS 无法出声）。
+
+详细证据见 `议题整理/真机验证报告-2026-09-13.md`。
+
