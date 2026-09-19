@@ -1,0 +1,25 @@
+[Unit]
+Description=LinguaReader sync server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=linguareader
+Group=linguareader
+Environment=LR_SYNC_DB=/var/lib/linguareader-sync/sync.db
+Environment=LR_SYNC_BLOB_DIR=/var/lib/linguareader-sync/blobs
+Environment=LR_SYNC_HOST=0.0.0.0
+Environment=LR_SYNC_PORT=443
+Environment=LR_SYNC_TLS_CERT=/etc/linguareader-sync/server.crt
+Environment=LR_SYNC_TLS_KEY=/etc/linguareader-sync/server.key
+Environment=LR_SYNC_BLOB_QUOTA_MB=2048
+Environment=LR_SYNC_ALLOW_REGISTER=0
+ExecStart=/usr/bin/python3 /opt/linguareader-sync/server.py serve
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
