@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -300,5 +301,77 @@ class PythonServerE2ETest {
 
         assertEquals("白袍（重生后）", a.local["glossary/book-1::Gandalf"]!!.payload.getString("note"))
         assertEquals("白袍（重生后）", b.local["glossary/book-1::Gandalf"]!!.payload.getString("note"))
+    }
+
+    // ---------- 书籍正文（blob）：真实 Python 服务端 ----------
+
+    private fun tempFile(bytes: ByteArray): File {
+        val file = File.createTempFile("lr-blob-", ".bin")
+        file.writeBytes(bytes)
+        return file
+    }
+
+    private fun loginApi(base: String): HttpSyncApi {
+        val api = HttpSyncApi(base)
+        runBlocking { api.login("e2e", "e2e-password-123") }
+        return api
+    }
+
+    @Test
+    fun uploadsAndDownloadsBookContent() {
+        val api = loginApi(startServer())
+        val payload = ByteArray(300_000) { (it % 251).toByte() }
+        val source = tempFile(payload)
+        try {
+            val status = runBlocking { api.uploadBlob("book-blob-1", source, chunkSize = 64 * 1024) }
+            assertTrue(status.complete)
+            assertEquals(payload.size.toLong(), status.uploaded)
+
+            val listed = runBlocking { api.listBlobs() }
+            assertEquals(1, listed.size)
+            assertEquals("book-blob-1", listed.single().bookId)
+            assertEquals(HttpSyncApi.sha256Hex(payload), listed.single().sha256)
+
+            val target = File.createTempFile("lr-download-", ".bin").apply { delete() }
+            val written = runBlocking { api.downloadBlob("book-blob-1", target, chunkSize = 64 * 1024) }
+            assertEquals(payload.size.toLong(), written)
+            assertTrue(payload.contentEquals(target.readBytes()))
+            target.delete()
+        } finally {
+            source.delete()
+        }
+    }
+
+    @Test
+    fun resumesAPartialUpload() {
+        val base = startServer()
+        val api = loginApi(base)
+        val payload = ByteArray(200_000) { (it % 97).toByte() }
+        val source = tempFile(payload)
+        try {
+            // 手工先传前 50_000 字节，模拟上次中断留下的 .part
+            val first = payload.copyOfRange(0, 50_000)
+            val connection = (URL(base + "/api/v1/blobs/book-blob-2?offset=0&total=" + payload.size)
+                .openConnection() as HttpURLConnection)
+            connection.requestMethod = "PUT"
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer " + api.currentToken())
+            connection.outputStream.use { it.write(first) }
+            assertEquals(200, connection.responseCode)
+            connection.disconnect()
+
+            val status = runBlocking { api.uploadBlob("book-blob-2", source, chunkSize = 32 * 1024) }
+            assertTrue(status.complete, "应从服务端已有 offset 续传并完成")
+        } finally {
+            source.delete()
+        }
+    }
+
+    @Test
+    fun downloadingMissingBlobFailsLoudly() {
+        val api = loginApi(startServer())
+        val target = File.createTempFile("lr-missing-", ".bin").apply { delete() }
+        val error = assertFailsWith<SyncException> { runBlocking { api.downloadBlob("no-such-book", target) } }
+        assertEquals(404, error.status)
     }
 }

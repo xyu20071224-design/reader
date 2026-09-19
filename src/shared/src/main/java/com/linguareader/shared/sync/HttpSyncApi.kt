@@ -4,8 +4,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.security.cert.CertificateException
@@ -30,7 +33,7 @@ class HttpSyncApi(
     private val pinnedCertSha256: String = "",
     private val connectTimeoutMs: Int = 10_000,
     private val readTimeoutMs: Int = 20_000
-) : SyncApi {
+) : SyncApi, SyncBlobApi {
 
     private val base = baseUrl.trim().trimEnd('/')
 
@@ -68,6 +71,132 @@ class HttpSyncApi(
     override suspend fun fullState(): PullPage {
         val json = request("GET", "/api/v1/state", null)
         return parsePage(json)
+    }
+
+    // ---------- 书籍正文（blob）----------
+
+    override suspend fun listBlobs(): List<BlobInfo> {
+        val json = request("GET", "/api/v1/books", null)
+        val array = json.optJSONArray("books") ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            array.optJSONObject(index)?.let {
+                BlobInfo(it.optString("bookId"), it.optLong("size"), it.optString("sha256"))
+            }
+        }
+    }
+
+    override suspend fun blobStatus(bookId: String): BlobStatus {
+        val response = sendRaw("HEAD", blobPath(bookId), null, emptyMap())
+        ensureSuccess(response)
+        return BlobStatus(
+            complete = response.headers["x-blob-complete"] == "1",
+            uploaded = response.headers["x-blob-size"]?.toLongOrNull() ?: 0L
+        )
+    }
+
+    override suspend fun uploadBlob(bookId: String, file: File, chunkSize: Int): BlobStatus {
+        val path = blobPath(bookId)
+        val digest = sha256HexOf(file)
+        var status = blobStatus(bookId)
+        if (status.complete) return status
+        val total = file.length()
+        RandomAccessFile(file, "r").use { handle ->
+            handle.seek(status.uploaded)
+            val buffer = ByteArray(chunkSize)
+            while (status.uploaded < total) {
+                val read = handle.read(buffer)
+                if (read <= 0) break
+                val chunk = if (read == buffer.size) buffer else buffer.copyOf(read)
+                val query = "?offset=" + status.uploaded + "&total=" + total + "&sha256=" + digest
+                val response = sendRaw(
+                    "PUT",
+                    path + query,
+                    chunk,
+                    mapOf("Content-Type" to "application/octet-stream")
+                )
+                ensureSuccess(response)
+                status = parseUploadStatus(response)
+            }
+        }
+        return blobStatus(bookId)
+    }
+
+    override suspend fun downloadBlob(bookId: String, target: File, chunkSize: Int): Long {
+        val path = blobPath(bookId)
+        val remote = blobStatus(bookId)
+        if (!remote.complete) throw SyncException("服务端没有完整的书籍正文：" + bookId, 404)
+        target.parentFile?.mkdirs()
+        var offset = if (target.isFile) target.length() else 0L
+        if (offset > remote.uploaded) {
+            // 本地残留比服务端还长（上次失败留下），从头重来。
+            target.delete()
+            offset = 0L
+        }
+        while (offset < remote.uploaded) {
+            val response = sendRaw("GET", path, null, mapOf("Range" to "bytes=" + offset + "-"))
+            ensureSuccess(response)
+            if (response.body.isEmpty()) break
+            target.appendBytes(response.body)
+            offset += response.body.size
+        }
+        return offset
+    }
+
+    override suspend fun deleteBlob(bookId: String) {
+        val response = sendRaw("DELETE", blobPath(bookId), null, emptyMap())
+        ensureSuccess(response, setOf(204))
+    }
+
+    private fun blobPath(bookId: String): String = "/api/v1/blobs/" + URLEncoder.encode(bookId, "UTF-8")
+
+    private class RawResponse(val status: Int, val body: ByteArray, val headers: Map<String, String>)
+
+    private suspend fun sendRaw(
+        method: String,
+        path: String,
+        body: ByteArray?,
+        headers: Map<String, String>
+    ): RawResponse = withContext(Dispatchers.IO) {
+        val connection = URL(base + path).openConnection() as HttpURLConnection
+        try {
+            applyPinning(connection)
+            connection.requestMethod = method
+            connection.connectTimeout = connectTimeoutMs
+            connection.readTimeout = readTimeoutMs
+            for ((key, value) in headers) connection.setRequestProperty(key, value)
+            if (token.isNotBlank()) connection.setRequestProperty("Authorization", "Bearer " + token)
+            if (body != null) {
+                connection.doOutput = true
+                connection.setFixedLengthStreamingMode(body.size)
+                connection.outputStream.use { it.write(body) }
+            }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+            val headerMap = LinkedHashMap<String, String>()
+            for ((key, value) in connection.headerFields) {
+                if (key != null && value.isNotEmpty()) headerMap[key.lowercase()] = value.first()
+            }
+            RawResponse(status, bytes, headerMap)
+        } catch (error: SyncException) {
+            throw error
+        } catch (error: Exception) {
+            throw SyncException(error.message ?: error.javaClass.simpleName, 0)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun ensureSuccess(response: RawResponse, allow: Set<Int> = emptySet()) {
+        if (response.status in 200..299 || response.status in allow) return
+        val text = response.body.toString(Charsets.UTF_8)
+        val code = runCatching { JSONObject(text).optJSONObject("error")?.optString("code") }.getOrNull()
+        throw SyncException(code ?: ("HTTP " + response.status), response.status)
+    }
+
+    private fun parseUploadStatus(response: RawResponse): BlobStatus {
+        val json = runCatching { JSONObject(response.body.toString(Charsets.UTF_8)) }.getOrElse { JSONObject() }
+        return BlobStatus(json.optBoolean("complete"), json.optLong("uploaded"))
     }
 
     private fun parsePage(json: JSONObject): PullPage = PullPage(
@@ -140,10 +269,26 @@ class HttpSyncApi(
 
     companion object {
         fun sha256Hex(bytes: ByteArray): String =
-            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte ->
-                val value = byte.toInt() and 0xFF
-                if (value < 16) "0" + value.toString(16) else value.toString(16)
+            toHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+
+        /** 流式计算文件 SHA-256（书籍文件可能很大，不能整读进内存）。 */
+        fun sha256HexOf(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    digest.update(buffer, 0, read)
+                }
             }
+            return toHex(digest.digest())
+        }
+
+        private fun toHex(bytes: ByteArray): String = bytes.joinToString("") { byte ->
+            val value = byte.toInt() and 0xFF
+            if (value < 16) "0" + value.toString(16) else value.toString(16)
+        }
 
         /** 兼容 openssl -fingerprint 的 AA:BB:... 形式与裸 hex。 */
         fun normalizeFingerprint(raw: String): String =
