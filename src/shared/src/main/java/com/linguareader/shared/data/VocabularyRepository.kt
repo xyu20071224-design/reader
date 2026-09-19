@@ -106,6 +106,18 @@ class VocabularyRepository(private val appContext: AppContext) : BookScopedStore
         }
     }
 
+    /**
+     * 同步落地：按 id 覆盖/插入一条生词，**保留传入的 updatedAt**（不改成 now），
+     * 供远端版本原样落盘；新旧取舍由调用方（同步适配层）先做 LWW。
+     */
+    suspend fun upsert(word: SavedWord): List<SavedWord> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val updated = read().filterNot { it.id == word.id } + word
+            write(updated)
+            sorted(updated)
+        }
+    }
+
     suspend fun remove(id: String): List<SavedWord> = withContext(Dispatchers.IO) {
         mutex.withLock {
             val updated = read().filterNot { it.id == id }

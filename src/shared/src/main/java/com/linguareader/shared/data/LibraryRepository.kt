@@ -98,6 +98,46 @@ class LibraryRepository(private val appContext: AppContext) : BookScopedStore {
         }
     }
 
+    /**
+     * 同步落地：把远端位置向量写入本机，并**保留远端的版本戳**（不能取本机 now）。
+     * 仅当远端严格更新时生效（LWW），返回是否真的写入。书籍正文不同步，本机没有这本书时
+     * 由调用方跳过。
+     */
+    suspend fun saveProgressFromRemote(
+        book: Book,
+        chapterIndex: Int,
+        pageIndex: Int,
+        progress: Float,
+        locusBlockIndex: Int,
+        locusCharOffset: Int,
+        locusAnchor: String,
+        ttsChapterIndex: Int,
+        ttsSentenceIndex: Int,
+        updatedAt: Long
+    ): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val latest = readMetadata(book.id) ?: book
+            if (updatedAt <= latest.progressUpdatedAt) {
+                false
+            } else {
+                writeMetadata(
+                    latest.copy(
+                        chapterIndex = chapterIndex,
+                        pageIndex = pageIndex,
+                        progress = progress.coerceIn(0f, 1f),
+                        locusBlockIndex = locusBlockIndex,
+                        locusCharOffset = locusCharOffset.coerceAtLeast(0),
+                        locusAnchor = locusAnchor,
+                        ttsChapterIndex = ttsChapterIndex.coerceAtLeast(0),
+                        ttsSentenceIndex = ttsSentenceIndex.coerceAtLeast(0),
+                        progressUpdatedAt = updatedAt
+                    )
+                )
+                true
+            }
+        }
+    }
+
     suspend fun saveListeningProgress(book: Book, chapterIndex: Int, sentenceIndex: Int) =
         withContext(Dispatchers.IO) {
             mutex.withLock {

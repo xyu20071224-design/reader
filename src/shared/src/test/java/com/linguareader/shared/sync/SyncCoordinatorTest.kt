@@ -64,7 +64,7 @@ class SyncCoordinatorTest {
     }
 
     private class FakeSource(private val objects: MutableMap<String, SyncRecord> = LinkedHashMap()) : SyncSource {
-        override fun snapshot(): List<SyncRecord> = objects.values.toList()
+        override suspend fun snapshot(): List<SyncRecord> = objects.values.toList()
 
         override suspend fun apply(remote: List<SyncRecord>) {
             for (record in remote) {

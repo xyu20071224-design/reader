@@ -6,7 +6,7 @@ package com.linguareader.shared.sync
  */
 interface SyncSource {
     /** 当前本机全部可同步记录（快照语义，幂等）。 */
-    fun snapshot(): List<SyncRecord>
+    suspend fun snapshot(): List<SyncRecord>
 
     /** 应用远端记录；实现方负责用 [SyncMerger] 与本地版本合并后落盘。 */
     suspend fun apply(remote: List<SyncRecord>)
