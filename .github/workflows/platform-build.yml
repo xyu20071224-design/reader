@@ -1,0 +1,58 @@
+# 三平台（Windows / Linux / macOS）桌面端构建与产物归档。
+# jpackage 只能为宿主 OS 打包，所以必须用三个 OS 的 runner 矩阵；Android 单测仍在 ci.yml。
+name: Platform Build
+
+on:
+  push:
+    branches: [main, feat/**, ci/**]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: 桌面构建 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: src
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17（temurin）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: 共享内核与桌面壳单测
+        run: |
+          chmod +x gradlew || true
+          ./gradlew :shared:test :desktopApp:test --stacktrace
+
+      - name: 构建可分发目录（app-image，三平台通用）
+        run: ./gradlew :desktopApp:createDistributable --stacktrace
+
+      - name: 构建当前平台安装包（Windows=Exe / macOS=Dmg / Linux=Deb）
+        run: ./gradlew :desktopApp:packageDistributionForCurrentOS --stacktrace
+
+      - name: 列出构建产物
+        run: find desktopApp/build/compose/binaries -type f | grep -E '[.](deb|rpm|AppImage|msi|exe|dmg|pkg)$' || true
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinguaReader-${{ matrix.os }}
+          path: src/desktopApp/build/compose/binaries/main/**
+          if-no-files-found: error

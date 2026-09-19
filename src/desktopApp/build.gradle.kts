@@ -1,3 +1,5 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
 plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -43,15 +45,34 @@ dependencies {
 // compose.desktop.application 同时提供 run（带 JCEF 的 JetBrains Runtime，JCEF 阅读器必需）
 // 与 packageAppImage / packageDistributionForCurrentOS（M5 打包）。
 // 注意：jpackage 的 @args 文件按系统码表（GBK）解码，元数据必须是 ASCII，否则 "Input length = 1"。
+// jpackage 只能为**构建机所在 OS** 打包，所以目标格式按宿主 OS 选择。
+// 选择依据（2026-09-20 实测）：
+// - Linux：AppImage 在这个 Compose/JDK 组合下只落 app-image 目录、不产出 .AppImage
+//   （jpackage 日志 "Input length = 1"），故不列为目标格式；Deb 需要宿主有 dpkg-deb
+//   （开发机没有、GitHub ubuntu-latest 有）。app-image（createDistributable）三平台都可用，
+//   始终作为可分发产物之一。
+// - Windows：Exe（不依赖 WiX；Msi 需要 WiX，本机无法验证）。
+// - macOS：Dmg。
+// 三平台产物必须由对应 OS（或对应 CI runner）构建，见 .github/workflows/platform-build.yml。
+val hostOs = System.getProperty("os.name").lowercase()
+val desktopFormats = when {
+    hostOs.contains("win") -> listOf(TargetFormat.Exe)
+    hostOs.contains("mac") || hostOs.contains("darwin") -> listOf(TargetFormat.Dmg)
+    else -> listOf(TargetFormat.Deb)
+}
+
 compose.desktop.application {
     mainClass = providers.gradleProperty("mainClass")
         .orElse("com.linguareader.desktop.LinguaReaderAppKt")
         .get()
     nativeDistributions {
-        targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage)
+        targetFormats(*desktopFormats.toTypedArray())
         packageName = "LinguaReader"
         packageVersion = "1.0.0"
         description = "LinguaReader Desktop"
         vendor = "LinguaReader"
+        macOS {
+            bundleID = "com.linguareader.desktop"
+        }
     }
 }
