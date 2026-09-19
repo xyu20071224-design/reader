@@ -29,7 +29,7 @@ import java.io.File
  * 两端配置语义互通。自定义节奏（F-138 JSON）在本屏只读展示，编辑后续再上。
  */
 @Composable
-fun SettingsPane(reviewPrefs: PreferencesStore, home: File) {
+fun SettingsPane(reviewPrefs: PreferencesStore, home: File, sync: DesktopSyncController) {
     var selected by remember {
         mutableStateOf(
             runCatching { ReviewMode.valueOf(reviewPrefs.getString(ReviewMode.PREFERENCE_KEY) ?: "") }
@@ -64,6 +64,8 @@ fun SettingsPane(reviewPrefs: PreferencesStore, home: File) {
                 }
             }
         }
+
+        SyncSettingsSection(sync)
 
         Text("数据目录", style = MaterialTheme.typography.titleMedium)
         Text(

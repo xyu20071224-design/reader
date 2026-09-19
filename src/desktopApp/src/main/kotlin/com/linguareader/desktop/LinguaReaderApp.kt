@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -93,6 +94,8 @@ fun AppScaffold(
     var pane by remember { mutableStateOf(Pane.Library) }
     var reading by remember { mutableStateOf<Book?>(null) }
     val reviewPrefs = remember { context.prefs("review_settings") }
+    val syncScope = rememberCoroutineScope()
+    val sync = remember { DesktopSyncController(context, library, vocabulary, home, syncScope) }
 
     Scaffold { padding ->
         if (reading != null) {
@@ -135,7 +138,7 @@ fun AppScaffold(
                         Pane.Review -> ReviewPane(vocabulary, reviewPrefs)
                         Pane.Listening -> ListeningPane(context, library, engine, ttsState)
                         Pane.Vocabulary -> VocabularyPane(vocabulary)
-                        Pane.Settings -> SettingsPane(reviewPrefs, home)
+                        Pane.Settings -> SettingsPane(reviewPrefs, home, sync)
                     }
                 }
             }
