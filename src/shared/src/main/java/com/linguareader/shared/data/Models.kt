@@ -48,6 +48,11 @@ data class Book(
     val locusCharOffset: Int = 0,
     /** 语义锚：exact / chapter-start / chapter-end。末页不再用哨兵页码表达。 */
     val locusAnchor: String = ANCHOR_EXACT,
+    /**
+     * 阅读/听书位置最后一次变更的墙钟时间（毫秒）。同步冲突裁决用，见
+     * `com.linguareader.shared.sync.ConflictResolver`。0 = 从未记录（老数据）。
+     */
+    val progressUpdatedAt: Long = 0L,
     val sourceFormat: String = "epub",
     /** Last listened position: chapter and sentence index inside that chapter. */
     val ttsChapterIndex: Int = 0,
@@ -84,6 +89,7 @@ data class Book(
         .put("locusBlockIndex", locusBlockIndex)
         .put("locusCharOffset", locusCharOffset)
         .put("locusAnchor", locusAnchor)
+        .put("progressUpdatedAt", progressUpdatedAt)
         .put("sourceFormat", sourceFormat)
         .put("ttsChapterIndex", ttsChapterIndex)
         .put("ttsSentenceIndex", ttsSentenceIndex)
@@ -124,6 +130,8 @@ data class Book(
                 locusBlockIndex = json.optInt("locusBlockIndex", NO_LOCUS),
                 locusCharOffset = json.optInt("locusCharOffset", 0),
                 locusAnchor = json.optString("locusAnchor").ifBlank { ANCHOR_EXACT },
+                // 老 metadata.json 没有这个键：0 = 无版本信息（同步时按 tie-break 保守处理）。
+                progressUpdatedAt = json.optLong("progressUpdatedAt"),
                 sourceFormat = json.optString("sourceFormat", "epub").ifBlank { "epub" },
                 ttsChapterIndex = json.optInt("ttsChapterIndex"),
                 ttsSentenceIndex = json.optInt("ttsSentenceIndex"),
@@ -166,7 +174,12 @@ data class SavedWord(
      * 阅读页整词高亮要用：只按原型做子串匹配会漏掉变形，又会误伤 apple 里的 app。
      * 老数据没有这个字段，读取时回退为空列表。
      */
-    val surfaceForms: List<String> = emptyList()
+    val surfaceForms: List<String> = emptyList(),
+    /**
+     * 该记录最后一次修改的墙钟时间（毫秒）。同步冲突裁决用，见
+     * `com.linguareader.shared.sync.ConflictResolver`。0 = 从未记录（老数据）。
+     */
+    val updatedAt: Long = 0L
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -185,6 +198,7 @@ data class SavedWord(
         .put("nextReviewAt", nextReviewAt)
         .put("reviewCount", reviewCount)
         .put("surfaceForms", JSONArray().apply { surfaceForms.forEach { put(it) } })
+        .put("updatedAt", updatedAt)
 
     companion object {
         fun fromJson(json: JSONObject) = SavedWord(
@@ -207,7 +221,9 @@ data class SavedWord(
                 (0 until array.length())
                     .map { array.optString(it) }
                     .filter { it.isNotBlank() }
-            }.orEmpty()
+            }.orEmpty(),
+            // 老 vocabulary.json 没有这个键：0 = 无版本信息。
+            updatedAt = json.optLong("updatedAt")
         )
     }
 }

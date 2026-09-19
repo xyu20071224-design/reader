@@ -256,4 +256,73 @@ class ModelsTest {
 
         assertEquals(emptyList<String>(), restored.surfaceForms)
     }
+
+    // ── 阶段 2：同步版本戳（纯加法字段，老数据必须照旧可读）────────────────
+
+    @Test
+    fun bookJsonRoundTripPreservesProgressUpdatedAt() {
+        val original = Book(
+            id = "book-sync",
+            title = "Sync",
+            author = "",
+            extractedDir = "/tmp/sync",
+            coverRelativePath = null,
+            chapters = listOf(Chapter("One", "OPS/one.xhtml")),
+            addedAt = 1L,
+            progressUpdatedAt = 123456789L
+        )
+
+        assertEquals(original, Book.fromJson(original.toJson()))
+    }
+
+    @Test
+    fun booksWithoutProgressUpdatedAtReadAsZero() {
+        // 老 metadata.json 没有该键：读成 0（无版本信息），不能崩、也不能当成有效新版本。
+        val legacy = Book(
+            id = "book-old",
+            title = "Old",
+            author = "",
+            extractedDir = "/tmp/old",
+            coverRelativePath = null,
+            chapters = listOf(Chapter("One", "OPS/one.xhtml")),
+            addedAt = 1L
+        ).toJson().apply { remove("progressUpdatedAt") }
+
+        assertEquals(0L, Book.fromJson(legacy).progressUpdatedAt)
+    }
+
+    @Test
+    fun savedWordJsonRoundTripPreservesUpdatedAt() {
+        val original = SavedWord(
+            id = "study",
+            headword = "study",
+            phonetic = "",
+            meaning = "n. 学习",
+            sentence = "He studied hard.",
+            bookId = "book-1",
+            bookTitle = "A Test Book",
+            chapterTitle = "One",
+            addedAt = 42L,
+            updatedAt = 777L
+        )
+
+        assertEquals(original, SavedWord.fromJson(original.toJson()))
+    }
+
+    @Test
+    fun savedWordsWithoutUpdatedAtReadAsZero() {
+        val legacy = SavedWord(
+            id = "apple",
+            headword = "apple",
+            phonetic = "",
+            meaning = "n. 苹果",
+            sentence = "An apple a day.",
+            bookId = "book-1",
+            bookTitle = "A Test Book",
+            chapterTitle = "One",
+            addedAt = 1L
+        ).toJson().apply { remove("updatedAt") }
+
+        assertEquals(0L, SavedWord.fromJson(legacy).updatedAt)
+    }
 }

@@ -90,7 +90,9 @@ class LibraryRepository(private val appContext: AppContext) : BookScopedStore {
                     progress = progress.coerceIn(0f, 1f),
                     locusBlockIndex = if (hasNewLocus || chapterChanged) locusBlockIndex else latest.locusBlockIndex,
                     locusCharOffset = if (hasNewLocus || chapterChanged) locusCharOffset.coerceAtLeast(0) else latest.locusCharOffset,
-                    locusAnchor = if (hasNewLocus || chapterChanged) locusAnchor else latest.locusAnchor
+                    locusAnchor = if (hasNewLocus || chapterChanged) locusAnchor else latest.locusAnchor,
+                    // 同步冲突裁决的版本戳：本次位置变更的时间。
+                    progressUpdatedAt = System.currentTimeMillis()
                 )
             )
         }
@@ -103,7 +105,9 @@ class LibraryRepository(private val appContext: AppContext) : BookScopedStore {
                 writeMetadata(
                     latest.copy(
                         ttsChapterIndex = chapterIndex.coerceAtLeast(0),
-                        ttsSentenceIndex = sentenceIndex.coerceAtLeast(0)
+                        ttsSentenceIndex = sentenceIndex.coerceAtLeast(0),
+                        // 听书进度也算位置变更，与阅读进度共用一个版本戳。
+                        progressUpdatedAt = System.currentTimeMillis()
                     )
                 )
             }

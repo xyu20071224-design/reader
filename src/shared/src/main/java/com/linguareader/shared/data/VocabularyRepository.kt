@@ -64,7 +64,9 @@ class VocabularyRepository(private val appContext: AppContext) : BookScopedStore
                 reviewLevel = existing?.reviewLevel ?: 0,
                 nextReviewAt = existing?.nextReviewAt ?: now + pace.firstDelayMillis,
                 reviewCount = existing?.reviewCount ?: 0,
-                surfaceForms = surfaceForms
+                surfaceForms = surfaceForms,
+                // 同步冲突裁决的版本戳：本次保存的时间。
+                updatedAt = now
             )
             val updated = current.filterNot { it.id == id } + saved
             write(updated)
