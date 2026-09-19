@@ -36,6 +36,10 @@ class HttpSyncApi(
 
     fun currentToken(): String = token
 
+    override fun setToken(token: String) {
+        this.token = token
+    }
+
     override suspend fun login(username: String, password: String): String {
         val body = JSONObject().put("username", username).put("password", password)
         val json = request("POST", "/api/v1/auth/login", body)
