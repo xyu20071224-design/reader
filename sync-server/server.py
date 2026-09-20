@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import secrets
+import socketserver
 import sqlite3
 import ssl
 import sys
@@ -559,9 +560,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
+class SyncHttpServer(ThreadingHTTPServer):
+    """覆盖 server_bind。
+
+    ThreadingHTTPServer.server_bind 会调用 socket.getfqdn(host) 做反向解析；
+    **macOS 上这一步可能阻塞十几秒到几十秒**，导致服务端在客户端的健康检查窗口内
+    根本没有开始 accept（Linux 上通常瞬时返回，所以只在 macOS 暴露）。
+    这里跳过 getfqdn，直接用绑定地址。
+    """
+
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
+
 def make_server(config: Config, store: Store) -> ThreadingHTTPServer:
     handler = type("BoundHandler", (Handler,), {"store": store, "config": config})
-    httpd = ThreadingHTTPServer((config.host, config.port), handler)
+    httpd = SyncHttpServer((config.host, config.port), handler)
     if config.tls_cert and config.tls_key:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(certfile=config.tls_cert, keyfile=config.tls_key)
@@ -614,8 +634,9 @@ def main(argv=None) -> int:
 
     httpd = make_server(config, store)
     scheme = "https" if (config.tls_cert and config.tls_key) else "http"
-    print("LinguaReader sync server listening on %s://%s:%d" % (scheme, config.host, config.port))
-    print("db=%s blobs=%s register=%s" % (config.db_path, config.blob_dir, config.allow_register))
+    # flush=True：stdout 被重定向到文件时是块缓冲，不刷会导致排障时日志为空。
+    print("LinguaReader sync server listening on %s://%s:%d" % (scheme, config.host, config.port), flush=True)
+    print("db=%s blobs=%s register=%s" % (config.db_path, config.blob_dir, config.allow_register), flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

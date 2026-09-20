@@ -53,7 +53,13 @@ jobs:
         run: |
           set +e
           cat > report_failures.py <<'PYEOF'
-          import glob, xml.etree.ElementTree as ET
+          import glob, sys, xml.etree.ElementTree as ET
+          # Windows 的 stdout 默认 cp1252，断言消息里的中文会让 print 抛 UnicodeEncodeError，
+          # 于是诊断步骤自己失败、注解丢失。强制 UTF-8。
+          try:
+              sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+          except Exception:
+              pass
           bad = 0
           for path in glob.glob('**/build/test-results/**/*.xml', recursive=True):
               try:
