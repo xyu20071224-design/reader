@@ -68,7 +68,8 @@ class AudioPackGeneratorContractTest {
         val segment = TtsCacheKey.segmentDir(engineTag, voice, version)
 
         val root = File.createTempFile("audio-pack-e2e-", "").let { it.delete(); it.mkdirs(); it }
-        val cache = File(root, "cache/<book>").apply { mkdirs() }
+        // 目录名任意；不能用 <book> —— '<' '>' 在 Windows 上是非法文件名字符
+        val cache = File(root, "cache/book-1").apply { mkdirs() }
         val payloadFiles = linkedMapOf<String, ByteArray>()
         listOf(0, 1, 2).forEach { chapter ->
             val voiceDir = File(cache, "$chapter/$segment").apply { mkdirs() }

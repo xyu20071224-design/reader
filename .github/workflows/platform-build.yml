@@ -47,6 +47,31 @@ jobs:
       - name: 构建当前平台安装包（Windows=Exe / macOS=Dmg / Linux=Deb）
         run: ./gradlew :desktopApp:packageDistributionForCurrentOS --stacktrace
 
+      - name: 失败时汇总失败用例（无日志环境也能定位）
+        if: failure()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          bad = 0
+          for path in glob.glob('**/build/test-results/**/*.xml', recursive=True):
+              try:
+                  root = ET.parse(path).getroot()
+              except Exception:
+                  continue
+              for tc in root.iter('testcase'):
+                  node = tc.find('failure') if tc.find('failure') is not None else tc.find('error')
+                  if node is None:
+                      continue
+                  bad += 1
+                  text = (node.text or '').strip().splitlines()
+                  first = text[0][:220] if text else ''
+                  name = (tc.get('classname') or '') + '.' + (tc.get('name') or '')
+                  print('::error title=测试失败::%s | %s' % (name, first))
+          if bad == 0:
+              print('::error title=测试失败::没有失败用例 XML（可能是编译或环境错误）')
+          PY
+
       - name: 列出构建产物
         run: find desktopApp/build/compose/binaries -type f | grep -E '[.](deb|rpm|AppImage|msi|exe|dmg|pkg)$' || true
 
