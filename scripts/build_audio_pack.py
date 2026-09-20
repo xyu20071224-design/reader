@@ -31,6 +31,14 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+# Windows 控制台默认不是 UTF-8（常见 cp1252），脚本里的中文输出会让 print 抛
+# UnicodeEncodeError 并以非 0 退出（CI/本地都会踩）。这里强制 UTF-8。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 # 与 :shared TtsPipelineContract.VERSION 对齐；不匹配的包会被 App 拒装。
 # 2026-09-12 随分句器三处修正（审查 2-1/2-2/2-3）由 1 提到 2。
 PIPELINE_VERSION = 2
