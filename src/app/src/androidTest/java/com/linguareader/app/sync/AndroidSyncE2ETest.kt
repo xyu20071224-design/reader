@@ -6,8 +6,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.linguareader.shared.data.Book
 import com.linguareader.shared.data.Chapter
+import com.linguareader.shared.sync.HttpSyncApi
+import com.linguareader.shared.sync.SyncCollections
+import com.linguareader.shared.sync.SyncRecord
 import com.linguareader.shared.sync.SyncSettings
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -75,5 +79,28 @@ class AndroidSyncE2ETest {
         val finalReport = controller.sync(settings)
         assertTrue("冲突应已收敛", finalReport.unresolved.isEmpty())
         assertEquals("推送队列应清空", 0, finalReport.pending)
+
+        // 第三个冲突场景：术语备注（先拉到 Linux 版本，再写更晚的版本）
+        val api = HttpSyncApi(base)
+        api.login(user, pass)
+        val remoteNote = api.pull(0).records.firstOrNull {
+            it.collection == SyncCollections.GLOSSARY && it.id == "book-1::lantern"
+        }
+        assertTrue("Android 应拉到 Linux 的术语备注", remoteNote != null)
+        assertEquals("备注应与 Linux 端一致", "Linux 备注", remoteNote!!.payload.getString("note"))
+
+        val notePush = api.push(
+            listOf(
+                SyncRecord(
+                    collection = SyncCollections.GLOSSARY,
+                    id = "book-1::lantern",
+                    updatedAt = System.currentTimeMillis(),
+                    payload = JSONObject()
+                        .put("bookId", "book-1").put("term", "lantern").put("kind", "word")
+                        .put("note", "Android 备注（更晚）")
+                )
+            )
+        )
+        assertTrue("更晚的术语备注应被服务端接受", notePush.conflicts.isEmpty())
     }
 }

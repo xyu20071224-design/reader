@@ -8,6 +8,7 @@ import com.linguareader.shared.data.LibraryRepository
 import com.linguareader.shared.data.SavedWord
 import com.linguareader.shared.data.VocabularyRepository
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.Assume.assumeTrue
 import java.io.File
 import kotlin.test.Test
@@ -93,6 +94,20 @@ class HostSideSyncStepTest {
                     val report = coordinator.sync()
                     println("[seed] uploaded=" + report.uploaded + " pending=" + report.pending)
                     assertEquals(0, report.pending, "seed 阶段不应残留待推送")
+
+                    // 第三个冲突场景：术语备注（Linux 先写一条较早的）
+                    val api = HttpSyncApi(base)
+                    api.login(user, pass)
+                    val note = SyncRecord(
+                        collection = SyncCollections.GLOSSARY,
+                        id = "book-1::lantern",
+                        updatedAt = now,
+                        payload = JSONObject()
+                            .put("bookId", "book-1").put("term", "lantern").put("kind", "word")
+                            .put("note", "Linux 备注")
+                    )
+                    val pushed = api.push(listOf(note))
+                    assertEquals(1, pushed.applied.size, "seed 的术语备注应被服务端接受")
                 }
             }
 
@@ -118,6 +133,17 @@ class HostSideSyncStepTest {
                 assertTrue(lantern != null, "Linux 端应看到 Android 合并后的生词")
                 assertEquals("n. 灯笼；提灯", lantern!!.meaning, "文本取更晚的 Android 版本")
                 assertTrue(lantern.reviewLevel >= 3, "复习等级取较大的 Android 版本")
+
+                // 第三个冲突场景：Linux 应看到 Android 更晚的术语备注
+                val api = HttpSyncApi(base)
+                val note = runBlocking {
+                    api.login(user, pass)
+                    api.pull(0).records.firstOrNull {
+                        it.collection == SyncCollections.GLOSSARY && it.id == "book-1::lantern"
+                    }
+                }
+                assertTrue(note != null, "Linux 应拉到术语备注记录")
+                assertEquals("Android 备注（更晚）", note!!.payload.getString("note"), "备注取更晚的 Android 版本")
             }
 
             else -> throw IllegalArgumentException("未知 step: " + step)
