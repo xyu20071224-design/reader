@@ -36,22 +36,23 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: 共享内核与桌面壳单测
+      # 拆成两步：无日志环境下也能从步骤结论判断是内核还是桌面壳失败。
+      - name: 共享内核单测
         run: |
           chmod +x gradlew || true
-          ./gradlew :shared:test :desktopApp:test --stacktrace
+          ./gradlew :shared:test --stacktrace
 
-      - name: 构建可分发目录（app-image，三平台通用）
-        run: ./gradlew :desktopApp:createDistributable --stacktrace
+      - name: 桌面壳单测
+        run: ./gradlew :desktopApp:test --stacktrace
 
-      - name: 构建当前平台安装包（Windows=Exe / macOS=Dmg / Linux=Deb）
-        run: ./gradlew :desktopApp:packageDistributionForCurrentOS --stacktrace
-
+      # 用 ::error 注解输出失败用例名：注解可通过 check-runs API 匿名读取，
+      # 而 job 日志需要 token。诊断步骤自身永不失败（exit 0）。
       - name: 失败时汇总失败用例（无日志环境也能定位）
         if: failure()
         shell: bash
         run: |
-          python3 - <<'PY'
+          set +e
+          cat > report_failures.py <<'PYEOF'
           import glob, xml.etree.ElementTree as ET
           bad = 0
           for path in glob.glob('**/build/test-results/**/*.xml', recursive=True):
@@ -60,17 +61,28 @@ jobs:
               except Exception:
                   continue
               for tc in root.iter('testcase'):
-                  node = tc.find('failure') if tc.find('failure') is not None else tc.find('error')
+                  node = tc.find('failure')
+                  if node is None:
+                      node = tc.find('error')
                   if node is None:
                       continue
                   bad += 1
                   text = (node.text or '').strip().splitlines()
-                  first = text[0][:220] if text else ''
+                  first = text[0][:200] if text else (node.get('message') or '')[:200]
                   name = (tc.get('classname') or '') + '.' + (tc.get('name') or '')
-                  print('::error title=测试失败::%s | %s' % (name, first))
+                  print('::error title=TESTFAIL::' + name + ' | ' + first)
           if bad == 0:
-              print('::error title=测试失败::没有失败用例 XML（可能是编译或环境错误）')
-          PY
+              print('::error title=TESTFAIL::no failing testcase xml found')
+          PYEOF
+          if command -v python3 >/dev/null 2>&1; then python3 report_failures.py; else python report_failures.py; fi
+          rm -f report_failures.py
+          exit 0
+
+      - name: 构建可分发目录（app-image，三平台通用）
+        run: ./gradlew :desktopApp:createDistributable --stacktrace
+
+      - name: 构建当前平台安装包（Windows=Exe / macOS=Dmg / Linux=Deb）
+        run: ./gradlew :desktopApp:packageDistributionForCurrentOS --stacktrace
 
       - name: 列出构建产物
         run: find desktopApp/build/compose/binaries -type f | grep -E '[.](deb|rpm|AppImage|msi|exe|dmg|pkg)$' || true
