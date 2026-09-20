@@ -158,9 +158,14 @@ class AudioPackGeneratorContractTest {
         val version = TtsPipelineContract.VERSION
         val chapterIndex = 3
 
-        // 不要把路径/取值内嵌进 Python 源码：Windows 的命令行解析会吃掉内嵌双引号，
-        // raw 字符串前缀会和路径黏在一起导致 SyntaxError。改为经 argv 传入。
-        val script = """
+        // Windows 的命令行参数解析会破坏 -c 里的引号与换行（实测 NameError/SyntaxError）；
+        // 改成写一个临时脚本文件再执行，参数经 argv 传入，彻底绕开引号与换行。
+        val runner = File(
+            System.getProperty("java.io.tmpdir"),
+            "lr-pack-derive-" + System.nanoTime() + ".py"
+        )
+        runner.writeText(
+            """
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("gen", sys.argv[1])
 gen = importlib.util.module_from_spec(spec)
@@ -168,15 +173,18 @@ spec.loader.exec_module(gen)
 print(gen.segment_dir(sys.argv[2], sys.argv[3], int(sys.argv[4])))
 print(gen.voice_segment(sys.argv[3]))
 """.trimIndent()
+        )
 
         val process = ProcessBuilder(
-            python, "-c", script,
+            python, runner.absolutePath,
             generator.absolutePath, engineTag, voice, version.toString()
         )
             .redirectErrorStream(true)
             .start()
         val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
-        assertEquals(0, process.waitFor(), "生成器调用失败：$output")
+        val exitCode = process.waitFor()
+        runner.delete()
+        assertEquals(0, exitCode, "生成器调用失败：$output")
 
         val lines = output.lines()
         val kotlinSegment = TtsCacheKey.segmentDir(engineTag, voice, version)
