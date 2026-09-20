@@ -89,7 +89,18 @@ class PythonServerE2ETest {
                 Thread.sleep(150)
             }
         }
-        throw AssertionError("服务端 20 秒内未就绪")
+        // 失败时把服务端日志与进程状态带进断言消息：GitHub 的 ::error 注解会带上它，
+        // 无日志环境也能定位（macOS 上曾出现「20 秒未就绪」但看不到原因）。
+        val serverLog = File(dir, "server.log")
+        val tail = if (serverLog.isFile) serverLog.readText().takeLast(800) else "(无 server.log)"
+        val alive = process?.isAlive == true
+        val exit = runCatching { process?.exitValue() }.getOrNull()
+        val version = runCatching {
+            val probe = ProcessBuilder("python3", "--version").redirectErrorStream(true).start()
+            probe.waitFor(10, TimeUnit.SECONDS)
+            probe.inputStream.bufferedReader().readText().trim()
+        }.getOrDefault("?")
+        throw AssertionError("服务端 20 秒内未就绪（alive=$alive exit=$exit python=$version）日志尾部：$tail")
     }
 
     @AfterTest

@@ -67,10 +67,10 @@ jobs:
                   if node is None:
                       continue
                   bad += 1
-                  text = (node.text or '').strip().splitlines()
-                  first = text[0][:200] if text else (node.get('message') or '')[:200]
+                  msg = (node.get('message') or '') or (node.text or '')
+                  flat = ' '.join(msg.strip().split())
                   name = (tc.get('classname') or '') + '.' + (tc.get('name') or '')
-                  print('::error title=TESTFAIL::' + name + ' | ' + first)
+                  print('::error title=TESTFAIL::' + name + ' | ' + flat[:400])
           if bad == 0:
               print('::error title=TESTFAIL::no failing testcase xml found')
           PYEOF
