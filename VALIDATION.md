@@ -1513,12 +1513,17 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
 - 跨语言 E2E（PythonServerE2ETest，测试内起真实 Python 服务端）：8/8 PASS——两客户端收敛、离线写入后合并、三个冲突场景（同书进度 / 同生词并发编辑 / 同术语备注并发编辑）、书籍正文上传下载、断点续传、缺失书报错。
 - 跨平台 E2E（bash sync-server/e2e-cross-platform.sh）：SCRIPT_EXIT=0。一端是 Android 模拟器（system-images;android-35;google_apis;x86_64），另一端是 Linux JVM 客户端，共用同一自托管服务端；Android 仪器测试 1/1 PASS、Linux verify 步骤 PASS。跨平台覆盖进度冲突与生词并发编辑，术语备注走协议层。
 - 三平台构建（GitHub Actions Platform Build，commit 05d4a3f）：ubuntu / macOS / windows 三个 job 全 success，产物分别为 linguareader_1.0.0-1_amd64.deb、LinguaReader-1.0.0.dmg、LinguaReader-1.0.0.exe，artifact 158.9 / 171.9 / 155.5 MB。
+- 三平台「可运行」冒烟（GitHub Actions，commit 690b385）：新增步骤直接运行**打包产物**（--selftest：不建窗口，做 prefs 往返 + 书库读取 + 词典解析），三个 job 该步骤全 success，原始输出：
+  - ubuntu：launcher=.../app/LinguaReader/bin/LinguaReader；SELFTEST OK home=/home/runner/work/_temp/lr-selftest-smoke books=0 dictionary=ecdict.sqlite java=17.0.20.1 os=Linux
+  - macOS：launcher=.../app/LinguaReader.app/Contents/MacOS/LinguaReader；SELFTEST OK home=/Users/runner/work/_temp/lr-selftest-smoke books=0 dictionary=ecdict.sqlite java=17.0.20.1 os=Mac OS X
+  - windows：launcher=.../app/LinguaReader/LinguaReader.exe；SELFTEST OK home=D:\\a\\_temp\\lr-selftest-smoke books=0 dictionary=ecdict.sqlite java=17.0.20.1 os=Windows Server 2025
+  即三个平台的自带运行时、应用类加载与数据目录读写均已在真实产物上验证通过。
 - Android 同步入口 UI（模拟器实机 uiautomator dump）：顶栏 Cloud sync 入口存在且可点开；弹层内 9 项（服务器地址 / 用户名 / 密码 / 证书指纹 / 保存设置 / 登录 / 立即同步 / 登出 / 标题）齐全，滚动后四个按钮均可达。据此修掉两个真实布局 bug：一行四按钮在 1080 宽下溢出、内容超一屏把第二行按钮顶到屏幕外（37fb9cf → e1eb459）。
 - 反向验证（失败即回退）：跨平台脚本首次运行时 Linux verify 因 harness 建了第二个临时 context 而失败，修正后重跑通过；Windows 单测失败逐条定位为「<book> 是 Windows 非法文件名 / cp1252 编码崩溃 / python -c 参数被命令行破坏」三类，分别修复后 CI 转绿。
 
 ### 未验证
 
-- 三平台「可运行」只在本机 Linux 验证过（app-image 产出 ELF 启动器）；Windows / macOS 仅到「产物产出」，未做 GUI 启动冒烟。
+- 三平台「可运行」现到「打包产物在该 OS 上能起来」这一步（见验证节的 --selftest 三平台输出）；但 **GUI 渲染仍未验证**——无头自检不创建窗口，需要有人在有显示会话的环境里目视或截图确认（历史真机流程只覆盖 Android）。
 - Android 端的真机登录与一次真实同步未跑（需要已部署的服务端地址与账号）；本轮只验证 UI 可达与渲染正确。
 - 跨平台脚本里的「离线」是逻辑离线（一端先不同步），没有真断网；HTTPS 自签证书 + 指纹固定的路径有单测覆盖，但未在模拟器上做真证书联调。
 - 术语备注的跨平台链路走协议层（测试直接调 HttpSyncApi），未串到 Android 的术语表存储。
