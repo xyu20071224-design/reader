@@ -1518,12 +1518,17 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
   - macOS：launcher=.../app/LinguaReader.app/Contents/MacOS/LinguaReader；SELFTEST OK home=/Users/runner/work/_temp/lr-selftest-smoke books=0 dictionary=ecdict.sqlite java=17.0.20.1 os=Mac OS X
   - windows：launcher=.../app/LinguaReader/LinguaReader.exe；SELFTEST OK home=D:\\a\\_temp\\lr-selftest-smoke books=0 dictionary=ecdict.sqlite java=17.0.20.1 os=Windows Server 2025
   即三个平台的自带运行时、应用类加载与数据目录读写均已在真实产物上验证通过。
+- 三平台 GUI 冒烟（GitHub Actions，commit 8e98bfe）：新增「GUI 冒烟（真实拉起窗口）」步骤，应用真正走 application{} 创建窗口、首帧渲染后自行 exit 0；三个 job 该步骤全 success，原始输出：
+  - ubuntu（在 xvfb 虚拟屏下）：GUISMOKE OK os=Linux java=17.0.20.1
+  - macOS：GUISMOKE OK os=Mac OS X java=17.0.20.1
+  - windows：GUISMOKE OK os=Windows Server 2025 java=17.0.20.1
+  即「三平台可运行」现已有**构建产物 → 二进制能起来 → 窗口能渲染**三层证据。
 - Android 同步入口 UI（模拟器实机 uiautomator dump）：顶栏 Cloud sync 入口存在且可点开；弹层内 9 项（服务器地址 / 用户名 / 密码 / 证书指纹 / 保存设置 / 登录 / 立即同步 / 登出 / 标题）齐全，滚动后四个按钮均可达。据此修掉两个真实布局 bug：一行四按钮在 1080 宽下溢出、内容超一屏把第二行按钮顶到屏幕外（37fb9cf → e1eb459）。
 - 反向验证（失败即回退）：跨平台脚本首次运行时 Linux verify 因 harness 建了第二个临时 context 而失败，修正后重跑通过；Windows 单测失败逐条定位为「<book> 是 Windows 非法文件名 / cp1252 编码崩溃 / python -c 参数被命令行破坏」三类，分别修复后 CI 转绿。
 
 ### 未验证
 
-- 三平台「可运行」现到「打包产物在该 OS 上能起来」这一步（见验证节的 --selftest 三平台输出）；但 **GUI 渲染仍未验证**——无头自检不创建窗口，需要有人在有显示会话的环境里目视或截图确认（历史真机流程只覆盖 Android）。
+- 三平台「可运行」已有两层 CI 证据（--selftest 与 GUI 冒烟，见验证节）；但 GUI 冒烟只断言「窗口创建 + 首帧渲染完成」，**没有人工目视核对布局/主题/交互**；且 Linux 跑在 xvfb 虚拟屏、Windows/macOS 跑在 CI runner 会话，与真实桌面环境仍有差异。本机（开发机）无 xvfb、无 DISPLAY、无免密 sudo，故本轮 GUI 冒烟**未在本地验证**、全部依赖 CI。
 - Android 端的真机登录与一次真实同步未跑（需要已部署的服务端地址与账号）；本轮只验证 UI 可达与渲染正确。
 - 跨平台脚本里的「离线」是逻辑离线（一端先不同步），没有真断网；HTTPS 自签证书 + 指纹固定的路径有单测覆盖，但未在模拟器上做真证书联调。
 - 术语备注的跨平台链路走协议层（测试直接调 HttpSyncApi），未串到 Android 的术语表存储。
