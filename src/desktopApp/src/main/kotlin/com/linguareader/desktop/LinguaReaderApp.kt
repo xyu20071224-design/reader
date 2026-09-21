@@ -43,7 +43,40 @@ fun resolveHomeDir(): File {
     return File(File(System.getProperty("user.home"), ".linguareader"), "home")
 }
 
-fun main() {
+/**
+ * 打包产物冒烟入口（CI 用）：不建窗口，只验证「这个平台上的可执行文件能起来、
+ * 自带运行时可用、能读写数据目录、能加载词典」。
+ *
+ * 用法：LinguaReader --selftest [数据目录]；省略目录时用 resolveHomeDir()。
+ * 通过时打印 SELFTEST OK 并以 0 退出。
+ *
+ * 注意：它**不**证明 GUI 渲染正常（那需要在有显示会话的环境里人工/截图验证）。
+ */
+private fun runSelfTest(target: File?): Int {
+    val home = (target ?: resolveHomeDir()).apply { mkdirs() }
+    val context: AppContext = DesktopAppContext(home)
+    val prefs = context.prefs("selftest")
+    prefs.putString("stamp", "ok")
+    if (prefs.getString("stamp") != "ok") {
+        System.err.println("SELFTEST FAIL: prefs 往返失败")
+        return 1
+    }
+    val books = kotlinx.coroutines.runBlocking { LibraryRepository(context).loadBooks() }
+    val dictionary = DesktopDictionaryDatabase.resolve(home)
+    println(
+        "SELFTEST OK home=" + home.absolutePath +
+            " books=" + books.size +
+            " dictionary=" + (dictionary?.name ?: "absent") +
+            " java=" + System.getProperty("java.version") +
+            " os=" + System.getProperty("os.name")
+    )
+    return 0
+}
+
+fun main(args: Array<String>) {
+    if (args.isNotEmpty() && args[0] == "--selftest") {
+        kotlin.system.exitProcess(runSelfTest(args.getOrNull(1)?.let { File(it) }))
+    }
     val home = resolveHomeDir().apply { mkdirs() }
     val context: AppContext = DesktopAppContext(home)
     val vocabulary = VocabularyRepository(context)

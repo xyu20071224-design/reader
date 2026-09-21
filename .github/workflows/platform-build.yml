@@ -119,6 +119,25 @@ jobs:
           done
           [ "$ok" = "1" ]
 
+      # 「可运行」冒烟：直接跑打包产物（自带运行时 + 应用类 + 数据目录读写）。
+      # 无头自检，不建窗口；它证明二进制能在该 OS 起来，不证明 GUI 渲染。
+      - name: 运行冒烟（打包产物 --selftest）
+        run: |
+          APP=desktopApp/build/compose/binaries/main/app/LinguaReader
+          if [ -d "$APP.app" ]; then
+            LAUNCHER="$APP.app/Contents/MacOS/LinguaReader"
+          elif [ -x "$APP/bin/LinguaReader" ]; then
+            LAUNCHER="$APP/bin/LinguaReader"
+          elif [ -x "$APP/LinguaReader.exe" ]; then
+            LAUNCHER="$APP/LinguaReader.exe"
+          else
+            echo "找不到打包启动器；目录内容："
+            find "$APP" -maxdepth 3 | head -30
+            exit 1
+          fi
+          echo "launcher=$LAUNCHER"
+          "$LAUNCHER" --selftest "$RUNNER_TEMP/lr-selftest-smoke"
+
       - name: 列出构建产物
         run: find desktopApp/build/compose/binaries -type f | grep -E '[.](deb|rpm|AppImage|msi|exe|dmg|pkg)$' || true
 
