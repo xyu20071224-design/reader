@@ -1539,4 +1539,49 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
 - 协议权威：全平台与同步(新目标)/阶段2-同步协议与部署-提案.md
 - 证据：阶段2-跨平台端到端-证据.md、阶段2-证据汇总.md、阶段3-三平台构建-进度与产物.md、改动入口地图.md
 - 部署：sync-server/README.md（腾讯云/阿里云、自签证书、systemd）
+---
+
+## 2026-09-21 发版 v1.9.0（versionCode 18）
+
+**范围**：三平台收敛（Windows / Linux / macOS，Android 保留）+ 自托管云同步首次发版。tag v1.9.0 指向 b2d9ee0。
+
+### 交付
+
+| 项 | 内容 | 提交 |
+| --- | --- | --- |
+| 版本号 | versionCode 17→18、versionName 1.8.0→1.9.0 | b2d9ee0 |
+| tag | v1.9.0（annotated），已 push | — |
+| GitHub Release | https://github.com/xyu20071224-design/reader/releases/tag/v1.9.0 （draft=False / prerelease=False） | — |
+
+资产（发布后经 GitHub API 复核）：
+
+| 文件 | 大小 | 来源 |
+| --- | --- | --- |
+| LinguaReader-v1.9.0.apk | 33.5 MB | 本机 assembleRelease + apksigner 手工签名 |
+| LinguaReader-1.0.0-linux-amd64.deb | 74.5 MB | CI Platform Build（ubuntu）产物 |
+| LinguaReader-1.0.0-macos.dmg | 87.8 MB | CI Platform Build（macOS）产物 |
+| LinguaReader-1.0.0-windows-x64.exe | 78.8 MB | CI Platform Build（Windows）产物 |
+
+### 验证
+
+- 构建：./toolchain/build.sh assembleRelease → BUILD SUCCESSFUL，产物 app-release-unsigned.apk（35.1 MB）。
+- 签名：apksigner sign 走 toolchain/guser-linux/.android/debug.keystore（别名 androiddebugkey）；apksigner verify --print-certs 复核：
+  - Signer #1 SHA-1 = ae54b5aafd049816a1d0de0b494a3ccd4ed620b7
+  - Signer #1 SHA-256 = ff9db6e100b067e199382025bb9c860cffd8f481aecf992b75cf8421a155836f
+  两者均与本仓库历史发行（v1.6.x / v1.7.0 / v1.8.0）记录的签名一致，可直接覆盖安装旧版本。
+- 版本：aapt2 dump badging 显示 package com.linguareader.app versionCode=18 versionName=1.9.0。
+- 桌面安装包取自 commit 8e98bfe 的 Platform Build 成功产物（该 run 三个 job 全 success，含 --selftest 与 GUI 冒烟两步）。
+- 发布后复核：四个资产全部存在、大小与上传值一致。
+
+### 未验证
+
+- 未在真机上安装本 APK 并做一次实际使用（本轮只到「构建 + 签名 + 版本核对 + 上传」）。
+- 桌面安装包未在真实 Windows / macOS 桌面上人工安装体验（只经 CI 的无头自检与 GUI 冒烟）。
+- 云同步端到端仍需用户自己的服务端与账号才能真正联调。
+
+### 相关文档
+
+- 三平台与云同步全过程：本文件上一节「2026-09-21 全平台收敛 + 自托管云同步」
+- 部署：sync-server/README.md
+
 
