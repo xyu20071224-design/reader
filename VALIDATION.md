@@ -1619,5 +1619,12 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
 - 部署步骤与 systemd 单元：sync-server/README.md、sync-server/linguareader-sync.service
 - 跨平台脚本与两端测试（本轮新增 pin 支持）：sync-server/e2e-cross-platform.sh、HostSideSyncStepTest、AndroidSyncE2ETest
 
+### 部署后的加固与运维（同日补充）
+
+- 备份：装 systemd timer linguareader-sync-backup.timer（每日 04:00、Persistent=true）+ deploy/backup.sh；手动触发 ExecMainStatus=0，连续两次备份文件名不冲突（秒级时间戳），保留最近 7 份。注意：该机 crontab 为空——首次尝试写 crontab 未生效，改 systemd timer 后正常（部署产物已入库 sync-server/deploy/）。
+- 同步账号口令已轮换：旧口令登录返回 401、新口令可取 token（新口令按纪律不写入仓库）。
+- 观察：journald 占用 683 MB（systemd 默认轮转，本轮未改动）；根分区 21G/59G（36%）。
+- 未做：journald 容量上限、TLS 续签演练、SSH 口令改密/密钥登录（涉及访问方式变更，留给用户在控制台执行）。
+
 
 

@@ -1,0 +1,9 @@
+[Unit]
+Description=LinguaReader sync server backup (sqlite + blobs)
+After=linguareader-sync.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/home/ubuntu/linguareader-sync/backup.sh

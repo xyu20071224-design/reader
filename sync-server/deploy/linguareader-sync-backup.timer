@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily LinguaReader sync backup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+Unit=linguareader-sync-backup.service
+
+[Install]
+WantedBy=timers.target

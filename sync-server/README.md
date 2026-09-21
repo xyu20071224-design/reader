@@ -57,9 +57,20 @@ systemd 单元见本目录 [linguareader-sync.service](linguareader-sync.service
 
 ## 备份
 
-    sqlite3 /var/lib/linguareader-sync/sync.db ".backup '/var/backups/lr-sync-DATE.db'"
+推荐直接用仓库里的 deploy/（systemd timer + 脚本，保留最近 7 份；不依赖 sqlite3 CLI）：
 
-书籍正文在 LR_SYNC_BLOB_DIR，按需一并打包。建议 cron 每日执行、保留 7 份。
+    sudo cp deploy/backup.sh /home/ubuntu/linguareader-sync/backup.sh
+    sudo cp deploy/linguareader-sync-backup.service deploy/linguareader-sync-backup.timer /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now linguareader-sync-backup.timer
+    systemctl list-timers linguareader-sync-backup.timer
+
+脚本做两件事：用 Python 的 sqlite3.Connection.backup 做一致性快照，再把 blobs 目录打包；
+文件名带秒级时间戳（sync-<YYYY-MM-DD-HHMMSS>.db / blobs-<...>.tar.gz），超出 7 份自动删旧。
+
+若偏好 cron：
+
+    sqlite3 /var/lib/linguareader-sync/sync.db ".backup '/var/backups/lr-sync-DATE.db'"
 
 ## 安全须知
 
