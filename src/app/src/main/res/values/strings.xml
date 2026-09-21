@@ -771,4 +771,24 @@
     <string name="update_notes_title">更新说明</string>
     <string name="update_found_notice">发现新版本 %1$s，可在书架右上角「检查更新」里下载</string>
     <string name="update_open_release_page">在浏览器打开发布页</string>
+
+    <!-- 云同步（自托管服务端，F-160） -->
+    <string name="sync_title">云同步</string>
+    <string name="sync_entry">云同步</string>
+    <string name="sync_server_label">服务器地址（https://IP:端口）</string>
+    <string name="sync_username_label">用户名</string>
+    <string name="sync_password_label">密码</string>
+    <string name="sync_fingerprint_label">服务端证书 SHA-256 指纹（自签证书必填）</string>
+    <string name="sync_save">保存设置</string>
+    <string name="sync_login">登录</string>
+    <string name="sync_now">立即同步</string>
+    <string name="sync_logout">登出</string>
+    <string name="sync_need_credentials">请先填写服务器地址与用户名</string>
+    <string name="sync_logging_in">登录中…</string>
+    <string name="sync_syncing">同步中…</string>
+    <string name="sync_logged_in">已登录：%1$s</string>
+    <string name="sync_logged_out">已登出</string>
+    <string name="sync_done">同步完成：上传 %1$d，下载 %2$d，待推送 %3$d</string>
+    <string name="sync_done_unresolved">同步完成：上传 %1$d，下载 %2$d，待推送 %3$d，未收敛 %4$d 条</string>
+    <string name="sync_failed">失败：%1$s</string>
 </resources>

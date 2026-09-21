@@ -54,6 +54,7 @@ import com.linguareader.app.packs.PackUiState
 import com.linguareader.app.packs.RemotePacksState
 import com.linguareader.shared.update.GitHubReleaseParser
 import com.linguareader.app.packs.toUiItem
+import com.linguareader.app.sync.AndroidSyncController
 import com.linguareader.app.tts.MultiVoiceSupport
 import com.linguareader.app.tts.TtsAudioCache
 import com.linguareader.app.update.AppUpdateRepository
@@ -61,6 +62,7 @@ import com.linguareader.app.update.UpdateCheckOutcome
 import com.linguareader.shared.update.AppUpdatePhase
 import com.linguareader.shared.update.AppUpdateUiState
 import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.sync.SyncSettings
 import com.linguareader.shared.packs.PackValidationResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -164,7 +166,11 @@ data class AppUiState(
     val storage: StorageReport? = null,
     val storageScanning: Boolean = false,
     /** 资源包（词典/预生成音频/音色）列表与安装状态。 */
-    val packs: PackUiState = PackUiState()
+    val packs: PackUiState = PackUiState(),
+    /** 云同步（自托管服务端）：设置、最近一次状态文案、是否正在跑。 */
+    val syncSettings: SyncSettings = SyncSettings(),
+    val syncStatus: String? = null,
+    val syncBusy: Boolean = false
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -188,6 +194,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Multi-voice M2: per-chapter speaker tag cache (invalidated with the profile). */
     private val speakerTagRepository =
         SpeakerTagRepository(application, aiSettingsStore, glossaryRepository)
+    /** 云同步：装配 :shared 的 SyncCoordinator（令牌走 Android Keystore）。 */
+    private val sync = AndroidSyncController(application)
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
     /** AI 整本翻译的在跑任务，按书 id 取消用。 */
@@ -262,7 +270,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             reminders = reminders,
             launchPrompt = prompt,
             aiSettings = aiSettingsStore.load(),
-            update = AppUpdateUiState(autoCheckEnabled = updateRepository.loadSettings().autoCheckEnabled)
+            update = AppUpdateUiState(autoCheckEnabled = updateRepository.loadSettings().autoCheckEnabled),
+            syncSettings = sync.settings()
         )
         if (updateRepository.loadSettings().autoCheckEnabled) {
             // 出厂默认关；用户开了开关才在启动时静默查一次，失败不打扰。
@@ -804,6 +813,69 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearMessage() {
         mutableState.value = mutableState.value.copy(message = null)
+    }
+
+    // --- 云同步（自托管服务端，F-160）-----------------------------------------
+
+    /** 设置页改动后落盘；令牌不放这里（走 Android Keystore）。 */
+    fun saveSyncSettings(settings: SyncSettings) {
+        sync.saveSettings(settings)
+        mutableState.value = mutableState.value.copy(syncSettings = settings)
+    }
+
+    fun syncLogin(password: String) {
+        val settings = mutableState.value.syncSettings
+        if (settings.serverUrl.isBlank() || settings.username.isBlank()) {
+            mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_need_credentials))
+            return
+        }
+        mutableState.value = mutableState.value.copy(syncBusy = true, syncStatus = string(R.string.sync_logging_in))
+        viewModelScope.launch {
+            val outcome = runCatching { sync.login(settings, password) }
+            mutableState.value = mutableState.value.copy(
+                syncBusy = false,
+                syncSettings = outcome.getOrElse { settings },
+                syncStatus = outcome.fold(
+                    onSuccess = { string(R.string.sync_logged_in, it.username) },
+                    onFailure = { string(R.string.sync_failed, it.message ?: it.javaClass.simpleName) }
+                )
+            )
+        }
+    }
+
+    fun syncNow() {
+        val settings = mutableState.value.syncSettings
+        if (settings.serverUrl.isBlank()) {
+            mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_need_credentials))
+            return
+        }
+        mutableState.value = mutableState.value.copy(syncBusy = true, syncStatus = string(R.string.sync_syncing))
+        viewModelScope.launch {
+            val outcome = runCatching { sync.sync(settings) }
+            mutableState.value = mutableState.value.copy(
+                syncBusy = false,
+                syncStatus = outcome.fold(
+                    onSuccess = { report ->
+                        if (report.unresolved.isEmpty()) {
+                            string(R.string.sync_done, report.uploaded, report.downloaded, report.pending)
+                        } else {
+                            string(
+                                R.string.sync_done_unresolved,
+                                report.uploaded, report.downloaded, report.pending, report.unresolved.size
+                            )
+                        }
+                    },
+                    onFailure = { string(R.string.sync_failed, it.message ?: it.javaClass.simpleName) }
+                )
+            )
+            // 同步会改动书库/生词本落盘内容，刷新界面数据。
+            refresh()
+        }
+    }
+
+    fun syncLogout() {
+        sync.logout(mutableState.value.syncSettings)
+        mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_logged_out))
     }
 
     // --- 自动更新（GitHub Release）-------------------------------------------

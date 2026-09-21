@@ -200,6 +200,10 @@ private fun LinguaReaderApp(
                 onDownloadUpdate = viewModel::downloadUpdate,
                 onCancelUpdateDownload = viewModel::cancelUpdateDownload,
                 onDismissMessage = viewModel::clearMessage,
+                onSaveSyncSettings = viewModel::saveSyncSettings,
+                onSyncLogin = viewModel::syncLogin,
+                onSyncNow = viewModel::syncNow,
+                onSyncLogout = viewModel::syncLogout,
                 uiAnimSpeed = uiAnimSpeed,
                 onAnimSpeedChange = onAnimSpeedChange
             )

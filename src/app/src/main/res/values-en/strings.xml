@@ -780,4 +780,24 @@
     <string name="update_notes_title">Release notes</string>
     <string name="update_found_notice">New version %1$s found — download it from “Check for updates” on the bookshelf</string>
     <string name="update_open_release_page">Open the release page in browser</string>
+
+    <!-- Cloud sync (self-hosted server, F-160) -->
+    <string name="sync_title">Cloud sync</string>
+    <string name="sync_entry">Cloud sync</string>
+    <string name="sync_server_label">Server URL (https://IP:port)</string>
+    <string name="sync_username_label">Username</string>
+    <string name="sync_password_label">Password</string>
+    <string name="sync_fingerprint_label">Server certificate SHA-256 fingerprint (required for self-signed)</string>
+    <string name="sync_save">Save settings</string>
+    <string name="sync_login">Sign in</string>
+    <string name="sync_now">Sync now</string>
+    <string name="sync_logout">Sign out</string>
+    <string name="sync_need_credentials">Enter the server URL and username first</string>
+    <string name="sync_logging_in">Signing in…</string>
+    <string name="sync_syncing">Syncing…</string>
+    <string name="sync_logged_in">Signed in: %1$s</string>
+    <string name="sync_logged_out">Signed out</string>
+    <string name="sync_done">Sync complete: %1$d uploaded, %2$d downloaded, %3$d pending</string>
+    <string name="sync_done_unresolved">Sync complete: %1$d uploaded, %2$d downloaded, %3$d pending, %4$d unresolved</string>
+    <string name="sync_failed">Failed: %1$s</string>
 </resources>

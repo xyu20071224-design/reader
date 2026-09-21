@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Palette
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Translate
+import com.linguareader.shared.sync.SyncSettings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Button
@@ -178,6 +180,11 @@ internal fun BookshelfScreen(
     onDismissMessage: () -> Unit,
     uiAnimSpeed: UiAnimSpeed,
     onAnimSpeedChange: (UiAnimSpeed) -> Unit,
+    /** 云同步（F-160）：设置保存、登录、立即同步、登出。 */
+    onSaveSyncSettings: (SyncSettings) -> Unit = {},
+    onSyncLogin: (String) -> Unit = {},
+    onSyncNow: () -> Unit = {},
+    onSyncLogout: () -> Unit = {},
     /** Q2-c07：书架内改阅读主题时通知外壳，整体配色即时生效。 */
     onReaderThemeChanged: (com.linguareader.app.data.ReaderTheme) -> Unit
 ) {
@@ -224,6 +231,7 @@ internal fun BookshelfScreen(
     var showUpdateSheet by rememberSaveable { mutableStateOf(false) }
     var showStorageSheet by rememberSaveable { mutableStateOf(false) }
     var showPacksSheet by rememberSaveable { mutableStateOf(false) }
+    var showSyncSheet by rememberSaveable { mutableStateOf(false) }
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
     var rosterBook by remember { mutableStateOf<Book?>(null) }
 
@@ -266,6 +274,15 @@ internal fun BookshelfScreen(
                         // （存储占用 / 外观 / 检查更新）。此前这些图标在生词本里照旧渲染，
                         // 用户看到的是「生词本还有一部分书架的顶部图标」。
                         if (!showVocabulary) {
+                        // 云同步（F-160）：自托管服务端的登录与手动同步入口。
+                        IconButton(onClick = { showSyncSheet = true }) {
+                            Icon(
+                                Icons.Default.Cloud,
+                                contentDescription = stringResource(R.string.sync_entry),
+                                modifier = Modifier.size(20.dp),
+                                tint = InkSoft
+                            )
+                        }
                         // 存储占用：打开即扫盘（不在启动时扫，那会拖慢冷启动）。
                         IconButton(onClick = {
                             showStorageSheet = true
@@ -437,6 +454,19 @@ internal fun BookshelfScreen(
                 showPacksSheet = true
             },
             onDismiss = { showStorageSheet = false }
+        )
+    }
+
+    if (showSyncSheet) {
+        SyncSheet(
+            settings = state.syncSettings,
+            status = state.syncStatus,
+            busy = state.syncBusy,
+            onSave = onSaveSyncSettings,
+            onLogin = onSyncLogin,
+            onSyncNow = onSyncNow,
+            onLogout = onSyncLogout,
+            onDismiss = { showSyncSheet = false }
         )
     }
 
