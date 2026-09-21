@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -51,8 +53,14 @@ internal fun SyncSheet(
     var fingerprint by remember { mutableStateOf(settings.pinnedCertSha256) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+        // 内容（4 个输入框 + 两行按钮 + 状态）在手机屏高下超出一屏，不给滚动会把
+        // 下面那行按钮顶到屏幕外（Pixel 5 实机 dump 实测）。故整块可纵向滚动。
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
@@ -91,6 +99,8 @@ internal fun SyncSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            // 四个按钮排一行会在手机宽度下溢出（实机 dump 时「登出」跑到屏幕外），
+            // 因此拆成两行。
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
@@ -108,6 +118,8 @@ internal fun SyncSheet(
                 Button(onClick = { onLogin(password) }, enabled = !busy) {
                     Text(stringResource(R.string.sync_login))
                 }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onSyncNow, enabled = !busy) {
                     Text(stringResource(R.string.sync_now))
                 }
