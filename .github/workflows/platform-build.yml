@@ -138,6 +138,37 @@ jobs:
           echo "launcher=$LAUNCHER"
           "$LAUNCHER" --selftest "$RUNNER_TEMP/lr-selftest-smoke"
 
+      # GUI 冒烟：真正创建窗口、首帧渲染后由应用自行 exit 0（打印 GUISMOKE OK）；
+      # 45 秒看门狗兜底，避免无显示会话时挂死。Linux 在 xvfb 虚拟屏下跑。
+      - name: 准备虚拟显示（仅 Linux，GUI 冒烟用）
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq xvfb
+          fi
+          command -v xvfb-run
+
+      - name: GUI 冒烟（真实拉起窗口）
+        run: |
+          APP=desktopApp/build/compose/binaries/main/app/LinguaReader
+          if [ -d "$APP.app" ]; then
+            LAUNCHER="$APP.app/Contents/MacOS/LinguaReader"
+          elif [ -x "$APP/bin/LinguaReader" ]; then
+            LAUNCHER="$APP/bin/LinguaReader"
+          elif [ -x "$APP/LinguaReader.exe" ]; then
+            LAUNCHER="$APP/LinguaReader.exe"
+          else
+            echo "找不到打包启动器"
+            exit 1
+          fi
+          echo "launcher=$LAUNCHER"
+          if command -v xvfb-run >/dev/null 2>&1; then
+            xvfb-run -a --server-args="-screen 0 1280x1024x24" "$LAUNCHER" --guismoke
+          else
+            "$LAUNCHER" --guismoke
+          fi
+
       - name: 列出构建产物
         run: find desktopApp/build/compose/binaries -type f | grep -E '[.](deb|rpm|AppImage|msi|exe|dmg|pkg)$' || true
 

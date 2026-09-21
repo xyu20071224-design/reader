@@ -77,6 +77,15 @@ fun main(args: Array<String>) {
     if (args.isNotEmpty() && args[0] == "--selftest") {
         kotlin.system.exitProcess(runSelfTest(args.getOrNull(1)?.let { File(it) }))
     }
+    val guiSmoke = args.isNotEmpty() && args[0] == "--guismoke"
+    if (guiSmoke) {
+        // 看门狗：没有显示会话时窗口起不来，别把 CI 挂死。
+        Thread {
+            Thread.sleep(45_000)
+            System.err.println("GUISMOKE FAIL: 45 秒内没有完成首帧（缺显示会话？）")
+            kotlin.system.exitProcess(1)
+        }.apply { isDaemon = true }.start()
+    }
     val home = resolveHomeDir().apply { mkdirs() }
     val context: AppContext = DesktopAppContext(home)
     val vocabulary = VocabularyRepository(context)
@@ -91,7 +100,20 @@ fun main(args: Array<String>) {
     application {
         Window(onCloseRequest = ::exitApplication, title = "语境阅读 · 桌面版") {
             LinguaReaderTheme {
-                AppScaffold(context, vocabulary, library, engine, ttsState, dictionary, home)
+                AppScaffold(
+                    context, vocabulary, library, engine, ttsState, dictionary, home,
+                    onReady = if (guiSmoke) {
+                        {
+                            println(
+                                "GUISMOKE OK os=" + System.getProperty("os.name") +
+                                    " java=" + System.getProperty("java.version")
+                            )
+                            kotlin.system.exitProcess(0)
+                        }
+                    } else {
+                        null
+                    }
+                )
             }
         }
     }
@@ -122,8 +144,16 @@ fun AppScaffold(
     engine: TtsPlaybackEngine,
     ttsState: androidx.compose.runtime.MutableState<TtsPlaybackState>,
     dictionary: DictionaryDatabase?,
-    home: File
+    home: File,
+    /** 首帧就绪回调（--guismoke 用）：窗口真正渲染出来后执行。 */
+    onReady: (() -> Unit)? = null
 ) {
+    if (onReady != null) {
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay(800)
+            onReady()
+        }
+    }
     var pane by remember { mutableStateOf(Pane.Library) }
     var reading by remember { mutableStateOf<Book?>(null) }
     val reviewPrefs = remember { context.prefs("review_settings") }
