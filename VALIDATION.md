@@ -1488,3 +1488,45 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
 - 口径与逐条状态：`审查报告-第四轮-未给建议项-验收口径草案.md`（21 条状态列）
 - 问题抽取与组合方案 + 指代约定（写法 A）：`审查报告-第四轮-问题抽取与组合方案.md`
 - 报告本体与实验台：`审查报告-第四轮.md`、`审查附件-第四轮/`
+
+## 2026-09-21 全平台收敛 + 自托管云同步（阶段 0–3）
+
+**范围**：把项目收敛为 Windows / Linux / macOS 三平台（Android 保留），并实现可自托管、可换后端的云同步；iOS/Web 不做（实测本仓库从无这两个构建目标）。此前「不做云同步」的既定边界由本次显式取代。
+
+### 本次交付
+
+| 项 | 内容 | 提交 |
+| --- | --- | --- |
+| 阶段 0 事实 | 平台目标清单 + 云同步现状清单 + 计划草案 | 09ce955 |
+| 协议提案 | REST+JSON、账号密码换令牌、进度/生词/术语备注/偏好、书籍正文纳入同步、自签证书 + 指纹固定 | 1bcceb9 |
+| 服务端 | sync-server/（Python 标准库零依赖）：账号与令牌、serverSeq 变更流、书籍正文 blob（分片 + 断点续传 + Range + 配额） | 4ecaac3 |
+| 客户端内核 | :shared/sync 15 个文件：引擎 / 冲突裁决 / 水位 / HTTP（证书指纹固定）/ 正文分片续传 / 本地接缝 | 14a1445、41eed3e |
+| 应用接线 | 桌面设置页同步区块 + 系统凭据存储；Android Keystore 凭据 + 书架同步入口 UI | a504666、37fb9cf |
+| 三平台打包 | 桌面按宿主 OS 选格式（Win=Exe / macOS=Dmg / Linux=Deb）+ 三平台 CI 矩阵 | 29b6b9e |
+| CI 可诊断/稳定 | 失败用例写成可匿名读取的 ::error 注解；Gradle 步骤有限重试（阿里云镜像偶发 502） | c0a9f2f、7fd1bae |
+| 跨平台修复 | 音频包生成器 Windows 中文输出崩溃（强制 UTF-8）；对拍测试改临时脚本文件；服务端 server_bind 跳过 socket.getfqdn（macOS 反向解析阻塞） | f85d229、05d4a3f、ad57090 |
+| 入口地图 | 以后改动该动哪些文件的索引 | 8d9e69c |
+
+### 验证
+
+- 单测（./toolchain/build.sh :shared:test testDebugUnitTest :desktopApp:test，实测）：:app 435 例 / :shared 373 例（1 skipped = 未配置 env 时跳过的跨平台宿主步骤）/ :desktopApp 5 例，0 失败 0 错误。服务端 python3 -m unittest discover -s sync-server：14 例 OK。
+- 跨语言 E2E（PythonServerE2ETest，测试内起真实 Python 服务端）：8/8 PASS——两客户端收敛、离线写入后合并、三个冲突场景（同书进度 / 同生词并发编辑 / 同术语备注并发编辑）、书籍正文上传下载、断点续传、缺失书报错。
+- 跨平台 E2E（bash sync-server/e2e-cross-platform.sh）：SCRIPT_EXIT=0。一端是 Android 模拟器（system-images;android-35;google_apis;x86_64），另一端是 Linux JVM 客户端，共用同一自托管服务端；Android 仪器测试 1/1 PASS、Linux verify 步骤 PASS。跨平台覆盖进度冲突与生词并发编辑，术语备注走协议层。
+- 三平台构建（GitHub Actions Platform Build，commit 05d4a3f）：ubuntu / macOS / windows 三个 job 全 success，产物分别为 linguareader_1.0.0-1_amd64.deb、LinguaReader-1.0.0.dmg、LinguaReader-1.0.0.exe，artifact 158.9 / 171.9 / 155.5 MB。
+- Android 同步入口 UI（模拟器实机 uiautomator dump）：顶栏 Cloud sync 入口存在且可点开；弹层内 9 项（服务器地址 / 用户名 / 密码 / 证书指纹 / 保存设置 / 登录 / 立即同步 / 登出 / 标题）齐全，滚动后四个按钮均可达。据此修掉两个真实布局 bug：一行四按钮在 1080 宽下溢出、内容超一屏把第二行按钮顶到屏幕外（37fb9cf → e1eb459）。
+- 反向验证（失败即回退）：跨平台脚本首次运行时 Linux verify 因 harness 建了第二个临时 context 而失败，修正后重跑通过；Windows 单测失败逐条定位为「<book> 是 Windows 非法文件名 / cp1252 编码崩溃 / python -c 参数被命令行破坏」三类，分别修复后 CI 转绿。
+
+### 未验证
+
+- 三平台「可运行」只在本机 Linux 验证过（app-image 产出 ELF 启动器）；Windows / macOS 仅到「产物产出」，未做 GUI 启动冒烟。
+- Android 端的真机登录与一次真实同步未跑（需要已部署的服务端地址与账号）；本轮只验证 UI 可达与渲染正确。
+- 跨平台脚本里的「离线」是逻辑离线（一端先不同步），没有真断网；HTTPS 自签证书 + 指纹固定的路径有单测覆盖，但未在模拟器上做真证书联调。
+- 术语备注的跨平台链路走协议层（测试直接调 HttpSyncApi），未串到 Android 的术语表存储。
+
+### 相关文档
+
+- 现状与计划：全平台与同步(新目标)/阶段0-清单①-平台相关代码与构建目标.md、阶段0-清单②-云同步现状.md、阶段0-执行计划草案与待确认问题.md
+- 协议权威：全平台与同步(新目标)/阶段2-同步协议与部署-提案.md
+- 证据：阶段2-跨平台端到端-证据.md、阶段2-证据汇总.md、阶段3-三平台构建-进度与产物.md、改动入口地图.md
+- 部署：sync-server/README.md（腾讯云/阿里云、自签证书、systemd）
+
