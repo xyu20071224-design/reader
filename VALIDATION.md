@@ -1584,4 +1584,40 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
 - 三平台与云同步全过程：本文件上一节「2026-09-21 全平台收敛 + 自托管云同步」
 - 部署：sync-server/README.md
 
+---
+
+## 2026-09-21 腾讯云部署 + 公网跨平台端到端（真实服务器）
+
+**范围**：把 sync-server 部署到用户的腾讯云主机，并用两个平台的真实客户端经公网验证。
+
+### 部署事实
+
+- 主机：62.234.28.97（Ubuntu 24.04.4 LTS / kernel 6.8 / x86_64 / Python 3.12.3），SSH 用户 ubuntu。
+- 服务：systemd 单元 linguareader-sync.service（User=ubuntu），监听 0.0.0.0:25000，HTTPS + 自签证书。
+- 数据：/home/ubuntu/linguareader-sync/data/{sync.db,blobs}；书籍配额 4096 MB；注册关闭（账号由 CLI 建）。
+- 自签证书 SHA-256 指纹：D8:E8:C3:8E:2E:8E:45:49:0D:37:E1:3D:40:07:EC:60:BF:E3:A7:7B:55:0C:DB:5B:37:87:19:6E:B8:67:99:70（客户端按此指纹固定，不依赖 CA）。
+- 防火墙：主机 ufw 原本只放行 22；已 ufw allow 25000:26000/tcp 与 /udp，之后公网可达性实测通过。
+- 同步账号：reader（口令由部署者保管，按项目纪律不写入仓库）。
+
+### 验证
+
+- 公网协议冒烟（curl -k）：health 200；登录得 43 字符 token；progress 记录推送/拉取成功；书籍正文分片上传（6 字节 → 完整 11 字节）与下载逐字节一致（hello world）。
+- 远端跨平台 E2E（bash sync-server/e2e-cross-platform.sh，LR_E2E_BASE=https://62.234.28.97:25000 且 LR_E2E_PIN=上述指纹）：**SCRIPT_EXIT=0**，三段均 BUILD SUCCESSFUL：
+  - Linux 客户端 seed：写入进度 chapterIndex=3、生词 lantern、术语备注「Linux 备注」；
+  - Android 模拟器客户端：经公网拉取上述数据后，把进度改到 9、把该词改释义并复习到 level 3、写更晚的术语备注并推送；
+  - Linux 客户端 verify：拉到 chapterIndex=9、释义「n. 灯笼；提灯」且 reviewLevel>=3、备注为「Android 备注（更晚）」。
+- 客户端 TLS：两端均用 LR_SYNC_PIN 固定自签证书 SHA-256（不是跳过校验），指纹不符会直接连接失败。
+
+### 未验证
+
+- 未做真实断网/弱网下的重试观察（离线仍是逻辑离线）。
+- 未做多设备长期并发压测；reset-password 轮换流程未实测。
+- 自签证书未做续签演练（当前 3650 天）。
+
+### 相关文档
+
+- 部署步骤与 systemd 单元：sync-server/README.md、sync-server/linguareader-sync.service
+- 跨平台脚本与两端测试（本轮新增 pin 支持）：sync-server/e2e-cross-platform.sh、HostSideSyncStepTest、AndroidSyncE2ETest
+
+
 

@@ -22,6 +22,7 @@ import kotlin.test.assertTrue
  * - LR_SYNC_BASE 服务端地址（如 http://127.0.0.1:8799）
  * - LR_SYNC_STEP seed | verify
  * - LR_SYNC_USER / LR_SYNC_PASS 账号
+ * - LR_SYNC_PIN 可选：服务端自签证书的 SHA-256 指纹（远端 HTTPS 部署时必填）
  *
  * 未设置 LR_SYNC_BASE 时整体跳过（不影响常规测试与 CI）。
  */
@@ -67,6 +68,7 @@ class HostSideSyncStepTest {
         val step = System.getenv("LR_SYNC_STEP") ?: "seed"
         val user = System.getenv("LR_SYNC_USER") ?: "e2e"
         val pass = System.getenv("LR_SYNC_PASS") ?: "e2e-password-123"
+        val pin = System.getenv("LR_SYNC_PIN").orEmpty()
 
         when (step) {
             "seed" -> {
@@ -85,7 +87,7 @@ class HostSideSyncStepTest {
                         )
                     )
                     val coordinator = SyncCoordinator(
-                        HttpSyncApi(base),
+                        HttpSyncApi(base, pinnedCertSha256 = pin),
                         LocalSyncSource(library, vocabulary),
                         FileSyncStateStore(File(context.filesDir, "sync")),
                         InMemorySecretStore()
@@ -96,7 +98,7 @@ class HostSideSyncStepTest {
                     assertEquals(0, report.pending, "seed 阶段不应残留待推送")
 
                     // 第三个冲突场景：术语备注（Linux 先写一条较早的）
-                    val api = HttpSyncApi(base)
+                    val api = HttpSyncApi(base, pinnedCertSha256 = pin)
                     api.login(user, pass)
                     val note = SyncRecord(
                         collection = SyncCollections.GLOSSARY,
@@ -119,7 +121,7 @@ class HostSideSyncStepTest {
                     // 本机先有这本书，远端进度才落得下来（正文不同步）
                     seedBook(library, chapterIndex = 0, progress = 0f, updatedAt = 0L)
                     val coordinator = SyncCoordinator(
-                        HttpSyncApi(base),
+                        HttpSyncApi(base, pinnedCertSha256 = pin),
                         LocalSyncSource(library, vocabulary),
                         FileSyncStateStore(File(context.filesDir, "sync")),
                         InMemorySecretStore()
@@ -135,7 +137,7 @@ class HostSideSyncStepTest {
                 assertTrue(lantern.reviewLevel >= 3, "复习等级取较大的 Android 版本")
 
                 // 第三个冲突场景：Linux 应看到 Android 更晚的术语备注
-                val api = HttpSyncApi(base)
+                val api = HttpSyncApi(base, pinnedCertSha256 = pin)
                 val note = runBlocking {
                     api.login(user, pass)
                     api.pull(0).records.firstOrNull {

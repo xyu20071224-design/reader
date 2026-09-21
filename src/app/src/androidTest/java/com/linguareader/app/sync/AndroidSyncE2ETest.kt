@@ -41,6 +41,8 @@ class AndroidSyncE2ETest {
         val base: String = rawBase!!
         val user = args.getString("user") ?: "e2e"
         val pass = args.getString("pass") ?: "e2e-password-123"
+        // 远端 HTTPS（自签证书）部署时传入证书 SHA-256 指纹。
+        val pin = args.getString("pin") ?: ""
 
         val context = ApplicationProvider.getApplicationContext<Context>()
         val controller = AndroidSyncController(context)
@@ -56,7 +58,7 @@ class AndroidSyncE2ETest {
             )
         )
 
-        val settings = SyncSettings(enabled = true, serverUrl = base, username = user, pinnedCertSha256 = "")
+        val settings = SyncSettings(enabled = true, serverUrl = base, username = user, pinnedCertSha256 = pin)
         controller.login(settings, pass)
 
         // 第一轮：应拉到 Linux 端写入的数据
@@ -81,7 +83,7 @@ class AndroidSyncE2ETest {
         assertEquals("推送队列应清空", 0, finalReport.pending)
 
         // 第三个冲突场景：术语备注（先拉到 Linux 版本，再写更晚的版本）
-        val api = HttpSyncApi(base)
+        val api = HttpSyncApi(base, pinnedCertSha256 = pin)
         api.login(user, pass)
         val remoteNote = api.pull(0).records.firstOrNull {
             it.collection == SyncCollections.GLOSSARY && it.id == "book-1::lantern"
