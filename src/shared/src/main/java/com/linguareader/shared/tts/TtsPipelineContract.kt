@@ -28,8 +28,13 @@ object TtsPipelineContract {
      * v2（2026-09-12，第四轮审查 2-1/2-2/2-3 合并为一次 bump）：分句器改三处 ——
      * 中文引号嵌套不再误切、`a.m./p.m./i.e./e.g./Ph.D.` 纳入总是保护档、U+3000 归一化。
      * 三者都改变句号，故按并法合并为**一次**版本变更；存量缓存与 v1 音频包按契约自然失效。
+     *
+     * v3（2026-09-25，issue #2 评论4 段3）：[QuoteSpans] 不再把**词内** U+2019 撇号折成引号
+     * （`her’s` / `don’t` 曾被凭空开出一个未闭合引语区间，令 `TtsChapter` 在撇号处裂段、
+     * `SpeakerRuleTagger` 把后半段判成 dialogue）。片段划分随之变化，故按契约 +1；
+     * 存量缓存与 v2 音频包自然失效。
      */
-    const val VERSION = 2
+    const val VERSION = 3
 }
 
 /**

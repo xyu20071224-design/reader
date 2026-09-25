@@ -41,7 +41,8 @@ except Exception:
 
 # 与 :shared TtsPipelineContract.VERSION 对齐；不匹配的包会被 App 拒装。
 # 2026-09-12 随分句器三处修正（审查 2-1/2-2/2-3）由 1 提到 2。
-PIPELINE_VERSION = 2
+# 2026-09-25 随 QuoteSpans 词内 U+2019 撇号修正（issue #2 评论4 段3）由 2 提到 3。
+PIPELINE_VERSION = 3
 MANIFEST_NAME = "manifest.json"
 PAYLOAD_DIR = "audio"
 

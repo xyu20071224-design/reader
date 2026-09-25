@@ -16,14 +16,28 @@ package com.linguareader.shared.tts
 object QuoteSpans {
 
     /** Curly double/single quotes collapse onto ASCII `"`; ASCII 撇号有意保留
-     *  （所有格/缩写 don't、'tis 不能被当成引号）。 */
+     *  （所有格/缩写 don't、'tis 不能被当成引号）。
+     *
+     *  **词内 U+2019 与 ASCII `'` 同等对待**：`her’s` / `don’t` / `O’Brien` 里的 `’`
+     *  是撇号、不是引号，折成 `"` 会凭空开出一个未闭合引语区间（issue #2：
+     *  引语区间内 [TtsChapter] 裂句 + `SpeakerRuleTagger` 误判 dialogue → 撇号处断读，
+     *  未闭合状态还会 carry 进下一块、污染下一段的引号配对）。
+     *  词尾的 `’` 保留引号语义（`‘Stop’` 要成对），所以成对弯单引号行为不变。
+     *  本函数仍是**逐字符等长替换**——坐标不变量不受影响。 */
     fun normalizeQuotes(block: String): String {
         val out = StringBuilder(block.length)
-        for (char in block) {
-            out.append(if (char == '‘' || char == '’' || char == '“' || char == '”') '"' else char)
+        for ((index, char) in block.withIndex()) {
+            val quote = char == '‘' || char == '“' || char == '”' ||
+                (char == '’' && !isWordInternalApostrophe(block, index))
+            out.append(if (quote) '"' else char)
         }
         return out.toString()
     }
+
+    /** `’` 两侧都是词字符（`her’s`、`don’t`）时它是撇号，不是引号。 */
+    private fun isWordInternalApostrophe(block: String, index: Int): Boolean =
+        index > 0 && index < block.lastIndex &&
+            block[index - 1].isLetterOrDigit() && block[index + 1].isLetterOrDigit()
 
     /**
      * 每个块的引语区间（原块文本坐标，闭区间）。

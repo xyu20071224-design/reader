@@ -61,6 +61,9 @@ class TtsCacheKeyTest {
         // 1 → 2（2026-09-12，第四轮审查 2-1/2-2/2-3 合并为一次 bump）：
         // 中文引号嵌套不再误切、a.m./p.m./i.e./e.g./Ph.D. 纳入总是保护档、U+3000 归一化。
         // 已同步 `scripts/build_audio_pack.py` 的 PIPELINE_VERSION（该副本无自动比对）。
-        assertEquals(2, TtsPipelineContract.VERSION)
+        //
+        // 2 → 3（2026-09-25，issue #2 评论4 段3）：QuoteSpans 词内 U+2019 撇号不再折成引号，
+        // 片段划分变化（`her’s` 从 2 段变回 1 段），存量缓存与 v2 音频包按契约失效。
+        assertEquals(3, TtsPipelineContract.VERSION)
     }
 }
