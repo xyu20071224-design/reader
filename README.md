@@ -25,4 +25,4 @@ cd src
 - `VALIDATION.md` — 滚动验证日志：每轮验证结论与真机记录
 - `AGENTS.md` — 仓库工作约定（构建事实、Git 工作流、验证纪律）
 
-当前版本 1.9.0（versionCode 18），minSdk 23 / targetSdk 35，Kotlin 2.1 / Jetpack Compose。词典数据来自 [ECDICT](https://github.com/skywind3000/ECDICT)。
+当前版本 1.10.0（versionCode 19），minSdk 23 / targetSdk 35，Kotlin 2.1 / Jetpack Compose。词典数据来自 [ECDICT](https://github.com/skywind3000/ECDICT)。

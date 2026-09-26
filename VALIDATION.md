@@ -1713,3 +1713,41 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 | └ `TranslationGoldenReplayTest` | **1 / 0 / 0**（上一阶段 bless 后应绿，本轮确认仍绿 → 本轮改动未影响句级展示） |
 | └ 译本相关 | `TranslationRealignTest` 6/0、`TranslationBodyDiscardTest` 2/0、`AiTranslationRepositoryTest` 16/0、`AppViewModelRealignTest` 2/0、`StringResourcesTest` 3/0（新增文案 key 两侧齐备） |
 | 真机 | **未验**——高亮↔义项的 UI 指认、装词典包后「对齐候选与面板同源」、点词多一次词典查询的耗时都只在单测/JVM 上量过 |
+
+## 2026-09-26 发版 v1.10.0（versionCode 19）
+
+**范围**：译本对照对齐 v7（`Q1-t04`）+ 档案版本闸门与「重新对齐」入口（`Q1-t01` 进展）+ 词级高亮与释义互指（`Q1-t09`）+ 听书管线版本 2→3（`Q2-c04c`）。tag `v1.10.0` 指向本次发版提交。
+
+### 交付
+
+| 项 | 内容 | 提交 |
+| --- | --- | --- |
+| 版本号 | versionCode 18→19、versionName 1.9.0→1.10.0 | （本次发版提交） |
+| tag | `v1.10.0`（annotated），已 push | — |
+| GitHub Release | https://github.com/xyu20071224-design/reader/releases/tag/v1.10.0 （draft=False / prerelease=False） | — |
+
+资产：
+
+| 文件 | 大小 | 来源 |
+| --- | --- | --- |
+| LinguaReader-v1.10.0.apk | 33.5 MB（35,141,037 B） | 本机 `assembleRelease`（R8 + 资源裁剪）+ `apksigner` 手工签名 |
+
+### 验证
+
+- **构建**：`toolchain/build.ps1 assembleRelease --offline` → BUILD SUCCESSFUL，产物 `app-release-unsigned.apk`（35,113,254 B）。
+  ⚠️ **现象留档**：Windows 上该脚本会出现「外层假挂」（外层命令不再返回），**构建其实已完成**——判据取产物而非作业状态（与 `.agents/memory/build-test-verify.md` 记的铁律一致）。本次实测：产物版本号与新增资源键都对得上，确认不是旧包。
+- **产物新鲜度**（排除「拿旧 APK 发版」）：`aapt2 dump resources` 能查到本轮新增资源键 `reader_sense_aligned`、`shelf_translation_realign`、`shelf_translation_realign_hint`、`shelf_translation_realign_outdated`、`shelf_translation_outdated`、`notice_translation_realigning`。
+- **签名**：`apksigner sign` 走 `toolchain/guser/.android/debug.keystore`（别名 `androiddebugkey`，`--ks-pass/--key-pass pass:android`；需先设 `JAVA_HOME`，并把 `TEMP` 指到工作区内——默认临时目录在本机沙箱下会 `IOException: 拒绝访问`）。
+  - Signer #1 SHA-256 = `ff9db6e100b067e199382025bb9c860cffd8f481aecf992b75cf8421a155836f`
+  - Signer #1 SHA-1 = `ae54b5aafd049816a1d0de0b494a3ccd4ed620b7`
+  两者与 v1.6.1–v1.9.0 发布资产**同指纹** → 可直接覆盖安装旧版本。
+- **对齐**：签名后 `zipalign -c 4` 通过。
+- **版本**：`aapt2 dump badging` = `com.linguareader.app` versionCode=19 versionName=1.10.0 / minSdk 23 / target 35。
+- **资产 SHA-256（文件级）**：`2b2ef3207159c3809c1c0a6c3f1fbb33af2f7e00c1b95195b18613f63ba67b62`
+- **发版前单测**（本版代码）：`:shared` **392 / 0 失败**；`:app` **443 / 1**（唯一红是既有的 `CloudTtsSynthesizerTest.audioPackIsResolvedWithoutSynthesizing`，Windows 路径分隔符）；`TranslationGoldenReplayTest` **1/0**（金标准基线 bless 后转绿）。
+- **发布后复核**：资产存在、大小与上传值一致（见下方「发布后复核」）。
+
+### 未验证
+
+- **未在真机上安装本 APK**：v7 后「点被并掉的第二句英文落到段级兜底」的观感、书架「重新对齐」入口与进度反馈、「高亮来源」标号、整本真实档案重对齐的耗时与内存峰值——四项都需设备。**验收步骤见 `议题整理/验收清单-v1.10.0.md`**（用户执行，结论回填本文档与台账）。
+- 本版只发 Android：桌面三平台安装包未纳入本次 Release（本版改动集中在 Android 侧与 `:shared`）；如需桌面包，可取 Platform Build 的 CI 产物另附。
