@@ -1745,7 +1745,17 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 - **版本**：`aapt2 dump badging` = `com.linguareader.app` versionCode=19 versionName=1.10.0 / minSdk 23 / target 35。
 - **资产 SHA-256（文件级）**：`2b2ef3207159c3809c1c0a6c3f1fbb33af2f7e00c1b95195b18613f63ba67b62`
 - **发版前单测**（本版代码）：`:shared` **392 / 0 失败**；`:app` **443 / 1**（唯一红是既有的 `CloudTtsSynthesizerTest.audioPackIsResolvedWithoutSynthesizing`，Windows 路径分隔符）；`TranslationGoldenReplayTest` **1/0**（金标准基线 bless 后转绿）。
-- **发布后复核**：资产存在、大小与上传值一致（见下方「发布后复核」）。
+- **发布后复核**：见下方「发布后复核」。
+
+### 发布后复核（发布完成后经 GitHub API 读取）
+
+| 项 | 值 |
+| --- | --- |
+| Release | tag `v1.10.0` / draft=false / prerelease=false / target `main` / published 2026-09-26 10:11 |
+| 资产 | `LinguaReader-v1.10.0.apk`，35,141,037 B |
+| 资产 digest | `sha256:2b2ef3207159c3809c1c0a6c3f1fbb33af2f7e00c1b95195b18613f63ba67b62`（与本地 `Get-FileHash` 逐字一致） |
+| Release 正文 | 4,267 字符，含 A–G 全部验收清单段（已逐段断言存在） |
+| `/releases/latest` | 返回 **v1.10.0** → 应用内「检查更新」可发现本版 |
 
 ### 未验证
 
