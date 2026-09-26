@@ -1684,3 +1684,32 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 
 
 
+
+
+## 2026-09-26 Q1-t09 词级对齐：共用候选 + prefer 加成 + 阈值分档 + 来源义项
+
+**背景（已核实的两个病因）**：① `TranslationMemoryRepository.dictionarySenses(word)` 用 `WordLookup(word, "", "", 0, 0f, 0f)` 查词典 —— **空句** → `ContextAnalyzer.inferPartOfSpeech` 返回 `UNKNOWN` → `DictionarySense.contextPreferred` 恒 false；而面板展示的义项是**带真实句子**算出来并标「本句优先」的。两条路径的候选**结构上不同源**，这就是「词级高亮与单词释义不匹配」。② `WordAligner` 里多字候选的位置惩罚上限只有 0.35 → `confidence` 理论下限 0.65 > `MIN_CONFIDENCE(0.40)`，`takeIf` 对多字候选**恒真**，等于没有过滤。
+
+**实现（只动点名文件，未碰 `TranslationAligner` 与查询侧 1–5 级匹配）**：
+
+| # | 改动 | 位置 |
+| --- | --- | --- |
+| ① 共用候选 | 用点词时的真实 `WordLookup`（句子/段落/偏移）查**同一套**词典逻辑，`contextPreferred` 与面板同一判据；词典来源也接到活动词典包（`dictionarySource` 默认 `{ null }` = 内置），与 `AppViewModel.dictionary` 同一来源 | `TranslationMemoryRepository`（+ `AppViewModel` 一行接线） |
+| ② prefer 加成 | 语境优选义项的候选词以 `WordAligner.CONTEXT_PREFERRED_BONUS = 0.30f` 传入既有 `prefer` 钩子（此前 v1 恒传空）；切词用对齐器自己的 `candidateTerms`，两边候选集合逐字相同 | `TranslationMemoryRepository` / `WordAligner` |
+| ③ 阈值分档 | `minConfidenceFor(len)`：1 字 0.40（Δ>0.86 可拒）/ 2 字 0.72（Δ>0.80）/ ≥3 字 0.68（Δ>0.91）；**先过闸、再排序**，取代原「先按 score 选第一名、最后 `takeIf`」 | `WordAligner` |
+| ④ 来源义项 | `WordAlignment` 新增 `sourceSense`（产出该词的义项原文，与面板 `DictionarySense.text` 同一个串）与 `sourceSensePreferred`；`LookupSheet` 用同一套 Accent+Bold 标出该行，非优选来源再显示「高亮来源」 | `TranslationModels` / `WordAligner` / `ReaderScreen` + `strings.xml` 两侧 |
+
+**加成只进排序分、不进置信度（有意设计）**：`confidence` 答「这个出现点可不可信」（位置偏差 × 长度权重），`prefer` 答「同一批候选取哪个译法」。若把 0.30 的加成并进 `confidence`，单字候选在最差位置（1 − 0.70 = 0.30）加一次就回到 0.60 ≥ 0.40，BUG-039 的位置护栏被重新打开 —— `WordAlignerTest` 里有专门用例钉住这一点。
+
+**来源义项不落盘**（第 4 条要求的前置确认）：`WordAlignment` / `TranslationLookupResult` 只活在查询结果里，`TranslationMemory.toJson/fromJson` 序列化的是段落表 + `AlignedSentencePair` + `BookTerm`，共享层与 app 层都没有 `WordAlignment` 的 JSON 读写 → 新增字段无需格式兼容或版本迁移。
+
+| 项 | 证据（判据均为原始 XML 的 tests/failures/errors） |
+| --- | --- |
+| `:shared:test` | 49 个 XML 汇总 **392 / 0 / 0 / 9 skipped** |
+| └ `WordAlignerTest` | **15 / 0 / 0**（8 条既有 + 7 条新增）；保住了两条「先红后绿」用例：`worst positioned single character candidate is rejected by the threshold`、`single character senses align too` |
+| └ `TranslationAlignerTest` / `SyntheticAlignmentTruthTest` / `TranslationMemoryIndexTest` / benchmark | 18 / 0、8 / 0、17 / 0、1 / 0（4.16s） |
+| └ `PythonServerE2ETest` | 8 / 0 / 0 / **7 skipped**（本机 python3 不可用，assumeTrue / exit=9009，环境噪声） |
+| `:app:testDebugUnitTest`（全量） | 60 个 XML 汇总 **443 / 1 / 0 / 2 skipped**；唯一红是 `CloudTtsSynthesizerTest.audioPackIsResolvedWithoutSynthesizing`（Windows 路径分隔符断言，既有红） |
+| └ `TranslationGoldenReplayTest` | **1 / 0 / 0**（上一阶段 bless 后应绿，本轮确认仍绿 → 本轮改动未影响句级展示） |
+| └ 译本相关 | `TranslationRealignTest` 6/0、`TranslationBodyDiscardTest` 2/0、`AiTranslationRepositoryTest` 16/0、`AppViewModelRealignTest` 2/0、`StringResourcesTest` 3/0（新增文案 key 两侧齐备） |
+| 真机 | **未验**——高亮↔义项的 UI 指认、装词典包后「对齐候选与面板同源」、点词多一次词典查询的耗时都只在单测/JVM 上量过 |

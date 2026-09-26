@@ -192,7 +192,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val aiSettingsStore = AiSettingsStore(application)
     private val aiRepository = BookContextRepository(application, aiSettingsStore)
     private val glossaryRepository = BookGlossaryRepository(application)
-    private val translationRepository = TranslationMemoryRepository(application)
+    private val translationRepository =
+        TranslationMemoryRepository(application) { packs.dictionarySource() }
     /** AI 整本翻译（生成译本对照）。 */
     private val aiTranslationRepository =
         AiTranslationRepository(application, aiSettingsStore, glossaryRepository)

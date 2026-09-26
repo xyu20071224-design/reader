@@ -599,6 +599,7 @@
     <string name="reader_ai_context_title">本书语境释义（%1$s）</string>
     <string name="reader_ai_phrase">短语：%1$s</string>
     <string name="reader_sense_preferred">本句优先</string>
+    <string name="reader_sense_aligned">高亮来源</string>
     <string name="reader_no_senses">该词条暂无中文释义。</string>
     <string name="reader_word_not_found">本地词典中暂未收录该词。</string>
     <string name="reader_current_context">当前语境</string>

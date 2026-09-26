@@ -12,13 +12,33 @@ enum class WordAlignmentSource { DICTIONARY, ANCHOR }
 /**
  * 中文句内「对应词/短语」的定位结果。
  * [start] / [endExclusive] 是中文字符偏移（相对于 [TranslationLookupResult.chinese]）。
+ *
+ * [source] 只到「哪一类匹配」；要回答「面板上那条释义为什么会高亮这个词」还需要
+ * [sourceSense]（Q1-t09 ④）。两者正交，故不做成同一个枚举。
+ *
+ * **本结构不落盘**（新增字段无需格式兼容）：`WordAlignment` 与
+ * [TranslationLookupResult] 只活在查询结果里，[TranslationMemory.toJson] /
+ * `fromJson` 序列化的是段落表 + `AlignedSentencePair` + [BookTerm]，没有任何字段
+ * 引用 `WordAlignment`（共享层与 app 层均无 `WordAlignment` 的 JSON 读写）。
  */
 data class WordAlignment(
     val word: String,
     val start: Int,
     val endExclusive: Int,
     val confidence: Float,
-    val source: WordAlignmentSource
+    val source: WordAlignmentSource,
+    /**
+     * 命中来源义项：产出 [word] 的那条词典义项原文。
+     *
+     * 与单词释义面板里的 `DictionarySense.text` 是**同一个串**（同一次
+     * `DictionaryRepository.lookup` 的产物），所以 UI 拿它做等值比较就能把
+     * 中文句里高亮的词指回面板上具体那一行，反之亦然 —— 这是「词级高亮与单词
+     * 释义不匹配」唯一可验证的判据。锚点命中（[WordAlignmentSource.ANCHOR]）、
+     * 或候选只来自 `prefer` 加成而不来自任何义项行时为 null。
+     */
+    val sourceSense: String? = null,
+    /** [sourceSense] 那条义项是否被语境判为优选（与面板「本句优先」同一判据）。 */
+    val sourceSensePreferred: Boolean = false
 )
 
 /**

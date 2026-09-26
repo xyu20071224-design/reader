@@ -24,11 +24,19 @@ import java.io.RandomAccessFile
  * 用与听书相同的叶级选择器 [TtsTextExtractor] 抽取段落、读写对齐档案，并把
  * **查询索引按书缓存**（否则每次点词都要重读整份档案）。
  */
-class TranslationMemoryRepository(private val application: Application) : BookScopedStore {
+class TranslationMemoryRepository(
+    private val application: Application,
+    /**
+     * 活动词典包的文件；null = 用内置。必须与查词面板（`AppViewModel.dictionary`）
+     * **同一来源**：Q1-t09 ① 的病因就是「对齐候选」与「面板义项」是两条不同源的
+     * 候选集合，剩下最后这一点差异（同一份词典）不齐，装了词典包的用户仍会错配。
+     */
+    dictionarySource: () -> File? = { null }
+) : BookScopedStore {
 
     private val translationsDir = File(application.filesDir, "translations")
     private val memoryDir = File(application.filesDir, "translation-memory")
-    private val dictionary = DictionaryRepository(application)
+    private val dictionary = DictionaryRepository(application, dictionarySource)
 
     private val cacheLock = Mutex()
     private var cachedBookId: String? = null
@@ -146,12 +154,24 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
             ?: return@withContext null
         // 只有句子级命中才做词级定位；段落级命中宁可不高亮，避免错标。
         if (result.matchLevel != TranslationMatchLevel.SENTENCE) return@withContext result
+        // 与单词释义面板**同源**的候选：用点词时的真实 `WordLookup`（句子/段落/偏移）
+        // 查同一套词典逻辑，`ContextAnalyzer.inferPartOfSpeech` 才拿得到上下文，
+        // `DictionarySense.contextPreferred` 才与面板上那枚「本句优先」标一致。
+        // 旧实现传 `WordLookup(word, "", "", 0, 0f, 0f)`：空句 → 词性 UNKNOWN →
+        // contextPreferred 恒 false，两条路径的候选结构上不同源（Q1-t09 ①）。
+        val senses = dictionary.lookup(lookup).entry?.senses.orEmpty()
         val alignment = WordAligner.align(
             enWord = lookup.word,
             enSentence = lookup.sentence,
             zhSentence = result.chinese,
-            candidates = dictionarySenses(lookup.word),
-            enOffset = lookup.sentenceOffset
+            candidates = senses.map { it.text },
+            enOffset = lookup.sentenceOffset,
+            // 语境优选义项的候选词正加成：面板标「本句优先」的那条义项，同时决定
+            // 中文句里高亮哪个词（Q1-t09 ②）。切词用对齐器自己的实现，保证两边候选
+            // 集合逐字相同。
+            prefer = WordAligner
+                .candidateTerms(senses.filter { it.contextPreferred }.map { it.text })
+                .associateWith { WordAligner.CONTEXT_PREFERRED_BONUS }
         )
         result.copy(wordAlignment = alignment)
     }
@@ -208,11 +228,6 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
             cachedBookId = bookId
             cachedIndex = it
         }
-    }
-
-    private suspend fun dictionarySenses(word: String): List<String> {
-        val result = dictionary.lookup(WordLookup(word, "", "", 0, 0f, 0f))
-        return result.entry?.senses?.map { it.text }.orEmpty()
     }
 
     /**

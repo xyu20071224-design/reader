@@ -607,6 +607,7 @@
     <string name="reader_ai_context_title">In-book contextual meaning (%1$s)</string>
     <string name="reader_ai_phrase">Phrase: %1$s</string>
     <string name="reader_sense_preferred">In this sentence</string>
+    <string name="reader_sense_aligned">Highlighted</string>
     <string name="reader_no_senses">No Chinese meaning for this entry yet.</string>
     <string name="reader_word_not_found">Not in the offline dictionary.</string>
     <string name="reader_current_context">Current context</string>

@@ -1709,29 +1709,39 @@ private fun LookupSheet(
                 )
             }
             Spacer(Modifier.height(14.dp))
+            // 中文句里高亮那个词来自哪条义项（`WordAligner` 记下的 `sourceSense`，与
+            // 面板 `sense.text` 是同一个串）：标出该行、并用与高亮词完全相同的
+            // 强调色 + 粗体，用户才能把「高亮的词」与「具体义项」互相指认（Q1-t09 ④）。
+            val alignedSense = translation?.wordAlignment?.sourceSense
             when {
                 loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent)
                 entry != null -> {
                     entry.senses.take(8).forEachIndexed { index, sense ->
+                        val preferred = sense.contextPreferred && index == 0
+                        // 是来源义项但不是「本句优先」时才占用标号位：两枚标记都不丢。
+                        val aligned = alignedSense != null && sense.text == alignedSense
                         Row(
                             Modifier.fillMaxWidth().padding(vertical = 3.dp),
                             verticalAlignment = Alignment.Top
                         ) {
                             Text(
-                                if (sense.contextPreferred && index == 0) {
-                                    stringResource(R.string.reader_sense_preferred)
-                                } else {
-                                    "•"
+                                when {
+                                    aligned && !preferred -> stringResource(R.string.reader_sense_aligned)
+                                    preferred -> stringResource(R.string.reader_sense_preferred)
+                                    else -> "•"
                                 },
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (sense.contextPreferred && index == 0) Accent
+                                color = if (aligned || preferred) Accent
                                 // 5-6：项目符号也是文字，原 .38 在浅/深最弱表面仅 2.27/3.01:1
                                 else InkFaint,
-                                modifier = Modifier.width(if (sense.contextPreferred && index == 0) 64.dp else 20.dp)
+                                modifier = Modifier.width(if (aligned || preferred) 64.dp else 20.dp)
                             )
                             Text(
                                 sense.text,
                                 style = MaterialTheme.typography.bodyLarge,
+                                // 与中文句里被着色的词同一套样式（Accent + Bold）。
+                                color = if (aligned) Accent else Color.Unspecified,
+                                fontWeight = if (aligned) FontWeight.Bold else null,
                                 modifier = Modifier.weight(1f)
                             )
                         }
