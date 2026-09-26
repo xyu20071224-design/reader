@@ -157,9 +157,18 @@ class TranslationMemoryRepository(
         // 与单词释义面板**同源**的候选：用点词时的真实 `WordLookup`（句子/段落/偏移）
         // 查同一套词典逻辑，`ContextAnalyzer.inferPartOfSpeech` 才拿得到上下文，
         // `DictionarySense.contextPreferred` 才与面板上那枚「本句优先」标一致。
-        // 旧实现传 `WordLookup(word, "", "", 0, 0f, 0f)`：空句 → 词性 UNKNOWN →
+        // 旧实现只传 `WordLookup(word, "", "", 0, 0f, 0f)`：空句 → 词性 UNKNOWN →
         // contextPreferred 恒 false，两条路径的候选结构上不同源（Q1-t09 ①）。
-        val senses = dictionary.lookup(lookup).entry?.senses.orEmpty()
+        val contextEntry = dictionary.lookup(lookup).entry
+        // ⚠️ 候选必须**并上点的那词自己的义项**：上下文查询在「点的词是某条短语的语义核心」
+        // 时会返回**短语词条**（如 walked out → 「罢工/退场」，wait for → 「等待」，且不再带
+        // 单词条目），只取它就会把点的那词自己的义项整片挤掉 —— v1.10.0 的「点词完全没有
+        // 高亮」回归就是这么来的（真实档案实测：旧 111/207 可高亮 → 新 101，且丢的多数是
+        // 单字，因为 等/写/书/走/海/夜 这些只出现在单词条目里）。并集对两边都不丢：
+        // 短语词条带来的更好候选（脱下/放弃/照顾/推迟）保住，单词条目的覆盖也保住。
+        val wordEntry = dictionary.lookup(WordLookup(lookup.word, "", "", 0, 0f, 0f)).entry
+        val senses = (contextEntry?.senses.orEmpty() + wordEntry?.senses.orEmpty())
+            .distinctBy { it.text }
         val alignment = WordAligner.align(
             enWord = lookup.word,
             enSentence = lookup.sentence,

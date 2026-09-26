@@ -1761,3 +1761,38 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 
 - **未在真机上安装本 APK**：v7 后「点被并掉的第二句英文落到段级兜底」的观感、书架「重新对齐」入口与进度反馈、「高亮来源」标号、整本真实档案重对齐的耗时与内存峰值——四项都需设备。**验收步骤见 `议题整理/验收清单-v1.10.0.md`**（用户执行，结论回填本文档与台账）。
 - 本版只发 Android：桌面三平台安装包未纳入本次 Release（本版改动集中在 Android 侧与 `:shared`）；如需桌面包，可取 Platform Build 的 CI 产物另附。
+
+## 2026-09-26 热修 v1.10.1（versionCode 20）——点词完全没有高亮
+
+**触发**：v1.10.0 发布后用户实测「只有一个问题：完全没有高亮」——译文里的中文词不高亮、查词面板里的义项行也没标出（两处都依赖同一个 `wordAlignment`），且**上一版（v1.9.0）是有的** → 确认回归。
+
+### 定位（先复现、再最小定位，未盲改）
+
+- 复现：新增诊断探针（临时，已删）走**仓库级** `lookup` 真路径（真词典 + 真对齐器 + Robolectric），确认 `lantern`/`carried` 这类「词典义项与译者用词对不上」的固有局限**两版都一样**，不是回归。
+- 排除：① 段落级命中按设计不高亮（用户看到的是句级标注）；② 词典来源（面板与仓库同为 `packs.dictionarySource()`，且 `openDatabase()` 会静默回内置）；③ 繁简/归一化（第 4 阶段未动）；④ 位置分档（探针里命中候选的 conf 0.977~0.979 远高于阈值）。
+- **锁定**：`c4708fe` 把候选从「`dictionarySenses(word)`（空句查询 → 永远是单词词条）」改成「点词时的上下文查询词条」。该查询在「点词是某条短语的语义核心」时返回**短语词条**（`DictionaryRepository.lookup` 第 71 行 `phraseCore` 分支），把单词词条**整片挤掉** → 单词自己的义项一个都不在候选里 → `WordAligner` 无候选可匹配 → 两处高亮同时消失。
+- 量化（真实简体档案 `artifacts/ai-translation-memory-device.json`，35 句对 / 207 个实词）：**旧 111 可高亮 → 新 101，回归 12 条**；回归样例中 6/12 是**单字**（`walked out` 丢「走」、`waiting for` 丢「等」、`wrote in` 丢「写」…），与「短语词条不含单词义项」完全一致。
+
+### 修复
+
+`TranslationMemoryRepository.lookup`：候选改为**并集**——`上下文词条 ∪ WordLookup(word,"","",0,0f,0f) 的单词词条`（按 `sense.text` 去重）。原文与依据写在该处注释里。**查询侧改动，老档案不需要重新对齐。**
+
+同时评估过「放宽 2 字档阈值 0.72→0.68」：量化显示只影响 1/207（0.5%），却要改动两条钉着真实不变量的用例（`worst positioned two character candidate is rejected by its own tier`、`a rejected far candidate does not shadow a viable near one`），**故未采纳**，门槛维持 0.72/0.68。余下那 1 条回归（`pocket` Δ=0.899/conf=0.686）即分档有意拒绝的极端错位。
+
+### 验证（判据为原始 XML）
+
+| 项 | 结果 |
+| --- | --- |
+| 修复后重测（同一真实档案） | 旧 111 / **新 112** / 回归 **1**（并集还多救回 1 条） |
+| `:shared:test` | **BUILD SUCCESSFUL**（回退门槛后该模块源码与上一版一致，测试 up-to-date） |
+| `:app:testDebugUnitTest` | 445 / **1** / 0 / 2 —— 唯一红是既有的 `CloudTtsSynthesizerTest.audioPackIsResolvedWithoutSynthesizing`（Windows 路径分隔符） |
+| 新增 `TranslationLookupHighlightTest` | **2 / 0 / 0**：① 正常情形产出词级高亮并指回义项；② **短语劫持**用例先断言上下文词条确实不含「走」，再断言并集仍能高亮出「走」 |
+
+### 教训（已写进本文件与提交信息）
+
+全仓**没有任何 JVM 测试覆盖「仓库级 lookup 产出 wordAlignment」**——只有一条需要设备的仪器测试 `TranslationAttachInstrumentedTest`，且它只覆盖 ANCHOR 路径。改候选来源这类「跨层契约」时，单元测试全绿也说明不了集成路径没坏。已补上集成用例。
+
+### 未验证
+
+- 未在真机复测（本机无设备）：修复后的高亮率与观感需用户重装 v1.10.1 后确认。
+- 仍属固有局限的部分未变：词典义项与译者用词对不上、段落级命中按设计不高亮、繁体译本（词典是简体义项）匹配不到 —— 这些**两版都一样**，不在本次修复范围。
