@@ -125,8 +125,13 @@ class TranslationAlignerTest {
             "不得出现纯引号残渣句对：${pairs.map { it.zhSentence }}",
             pairs.none { it.zhSentence.isNotBlank() && it.zhSentence.none { c -> c.isLetterOrDigit() } }
         )
-        val joined = pairs.map { it.zhSentence }.joinToString("")
-        assertTrue(joined.contains("然後他走了"))
+        val joined = pairs.map { it.zhSentence.ifBlank { it.zhParagraph } }.joinToString("")
+        // v7 起（见 TranslationAligner.VERSION v7）：本输入只有 1 个中文段、整段引文并为
+        // 1 个不可再分的中文句，唯一候选句对被长度比 2.6 门一票否决（实测 ratio≈3.14），
+        // 该文本改由**段级兜底**承载（enSentence=""/zhSentence=""，译文落在 zhParagraph）。
+        // 所以这里不再只看 zhSentence，而是「句级或段级任一路径都能看到该文本」——
+        // 守住的仍是同一条：分句修复后这段译文没有被丢掉。
+        assertTrue("句级或段级任一路径都应能看到该文本：${pairs.map { it.zhSentence.ifBlank { it.zhParagraph } }}", joined.contains("然後他走了"))
     }
 
     @Test

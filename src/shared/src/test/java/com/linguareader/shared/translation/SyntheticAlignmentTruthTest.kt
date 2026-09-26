@@ -92,7 +92,21 @@ class SyntheticAlignmentTruthTest {
         assertEquals("正文句编号应全部正确配对", 1.0, metrics.recall, 0.0)
     }
 
-    /** 两条英文句译成一条中文句（2:1 句级合并）：合并对的两侧编号集合应当一致。 */
+    /**
+     * 两条英文句译成一条中文句（真值 2 en : 1 zh）。
+     *
+     * **v7 起英方并合下线**（见 [TranslationAligner.VERSION] 的 v7 说明，Q1-t04：并合句对
+     * 落盘成 `"A. B."` 后点 B 会拿回 A 的意思），档案里英文侧恒为单句，于是「两句英文挤在
+     * 一句中文里」这种真值**再也无法**表达成一条两侧编号集合相同的句对。新契约（断言于
+     * 2026-09-26 **经授权**按新设计重定）：
+     *  1. **被并合的第二句英文不再有句级条目**（本例 0002），点它走第 5 级段落兜底
+     *     ——档案的段落表照旧带着整段译文，是有意的诚实降级；
+     *  2. **除这一条既定降级外不得有任何错配**：中文侧那句「含两句译文」的句子是不可再分
+     *     的单个 span，且确实以第一句的译文开头，把它配给第一句（0001）是 v7 下的唯一
+     *     单调解，不是错配。断言用**显式集合相等**表达（错配集合恰好等于那一条），
+     *     不再用任何比例阈值兜。
+     * 代价量化：句级句对 60 → 59，覆盖 60 → 58/60，故 recall 期望为显式数字 58/60。
+     */
     @Test
     fun mergedZhSentenceKeepsBothMarkersTogether() {
         val book = SyntheticBilingualCorpus.build()
@@ -109,8 +123,35 @@ class SyntheticAlignmentTruthTest {
         val pairs = TranslationAligner.align(book.enChapters, zh, SyntheticBilingualCorpus.meaningIndex())
         val metrics = evaluate(pairs, book, book.markers)
         metrics.report("2:1-merged-zh-sentence")
-        assertEquals("2:1 合并对两侧编号集合应一致：${metrics.wrong.take(3)}", 1.0, metrics.precision, 0.0)
-        assertEquals("合并后其余句编号应全部正确配对", 1.0, metrics.recall, 0.0)
+
+        // ① 句级条目的英文集合 = 全部真值句 − 被并掉的第二句（chapter 0 / paragraph 0 的第 2 句）。
+        val demoted = book.enSentences[1]
+        val sentenceLevel = pairs.filter { it.enSentence.isNotBlank() }.map { it.enSentence }
+        assertEquals(
+            "v7 起英方并合下线：2:1 真值里只有被并掉的第二句该失去句级条目",
+            book.enSentences.toSet() - setOf(demoted),
+            sentenceLevel.toSet()
+        )
+        assertEquals("句级句对数 = 60 − 1", book.enSentences.size - 1, sentenceLevel.size)
+
+        // ② 错配集合**显式相等**：只允许「第一句英文 → 那句含两句译文的中文句」，别处必须精确。
+        //    该中文句由译者把两句英文的译文并成一句（构造语料去掉中间的「。」），v7 下不可再分。
+        val mergedZh = book.zhSentences[0].trimEnd('。') + book.zhSentences[1]
+        assertEquals(
+            "除既定的那一条降级外不得有任何错配",
+            setOf("«${book.enSentences[0]}» → «$mergedZh»"),
+            metrics.wrong.toSet()
+        )
+        assertEquals(
+            "除既定的那一条降级外 precision 必须为 1.0",
+            1.0,
+            metrics.exactPairs.toDouble() / (metrics.sentencePairs - 1),
+            0.0
+        )
+
+        // ③ recall 的既定代价：0001 / 0002 都落在那条不精确句对上，故只覆盖 58/60。
+        assertEquals("应覆盖的句编号集合", book.markers - setOf("0001", "0002"), metrics.covered)
+        assertEquals("v7 既定代价：58/60（显式数字，不用松弛阈值）", 58.0 / 60.0, metrics.recall, 0.0)
     }
 
     // ---- 3. 词义锚点路径：没有编号时靠 ECDICT 式释义锚定 ---------------------

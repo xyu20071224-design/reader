@@ -36,8 +36,23 @@ interface MeaningIndex {
  */
 object TranslationAligner {
 
-    /** 档案里把多少号对齐器写入 alignerVersion；算法/分句规则变化时必须 +1。 */
-    const val VERSION = 6
+    /**
+     * 档案里把多少号对齐器写入 alignerVersion；算法/分句规则变化时必须 +1。
+     *
+     * v7（相对 v6）：
+     *  1. **禁止英方合并**（Q1-t04）：句级 DP 不再走 2 en : 1 zh，任何落盘句对的英文
+     *     下标数组长度恒为 1。原因是并合句对把 [join] 成 `"A. B."` 写进档案后，用户点
+     *     B 句做精确匹配必然失败，命中查询侧第 3 级的子串匹配，拿回整条**并合**译文
+     *     ——表现为「A 句后的 B 句返回 A 句的意思」。被并掉的第二句英文不再有句级条目，
+     *     点它会走第 5 级段落兜底（整段译文 + 「段级（未定位到句）」），是有意的诚实降级。
+     *     中文侧 1 : 2 不下线（译文拆句是真实形态，且没有「并合英文串」的对应病灶）。
+     *  2. 邻近段落兜底的句级 DP 与主路径对齐：`allowMerge` 由写死的 false 改为 true，
+     *     并套同一个 [sentenceMergeAllowed] 门槛（此路径拿得到 meanings，非无证据回退）。
+     *  3. 中文侧 [joinChinese] 改用空串拼接（英文侧保持空格）：中文并合译文不该出现
+     *     「他說。 她笑了。」这种夹空格形态。
+     * 旧档案（alignerVersion < 7）靠版本闸门判旧，由书架「重新对齐」入口重跑。
+     */
+    const val VERSION = 7
 
     /** 词义锚点每次命中的加分上限与单点权重（与「数字/拉丁锚点」同量级、略高）。 */
     private const val MEANING_MAX_HITS = 4
@@ -167,7 +182,7 @@ object TranslationAligner {
 
             for (paragraphPair in alignSpans(enSpans, zhSpans, allowMerge = true, scale = scales.paragraph)) {
                 val enParagraph = join(enParagraphs, paragraphPair.a)
-                val zhParagraph = join(zhParagraphs, paragraphPair.b)
+                val zhParagraph = joinChinese(zhParagraphs, paragraphPair.b)
                 if (enParagraph.isBlank() || zhParagraph.isBlank()) continue
                 for (index in paragraphPair.a) zhForEn[index] = paragraphPair.b[0]
 
@@ -180,6 +195,10 @@ object TranslationAligner {
                     if (enSentences.isEmpty() || zhSentences.isEmpty()) emptyList()
                     else alignSpans(
                         enSentenceSpans, zhSentenceSpans, allowMerge = true,
+                        // Q1-t04：英方合并（2 en : 1 zh）下线——并合句对写进档案后，
+                        // 点其中第二句做精确匹配会失败并命中子串匹配，拿回 A 句的意思。
+                        // 中文侧 1 : 2 保留（译文拆句是真实形态）。
+                        allowEnMerge = false,
                         mergeGate = { e1, e2, z1, z2 ->
                             sentenceMergeAllowed(e1, e2, z1, z2, scales.sentence)
                         },
@@ -218,7 +237,7 @@ object TranslationAligner {
                         enParagraph = enParagraph,
                         zhParagraph = zhParagraph,
                         enSentence = join(enSentences, sentencePair.a),
-                        zhSentence = join(zhSentences, sentencePair.b),
+                        zhSentence = joinChinese(zhSentences, sentencePair.b),
                         confidence = confidence
                     )
                 }
@@ -325,8 +344,19 @@ object TranslationAligner {
                 val enSentenceSpans = enSentences.map { englishSpan(it, meaning) }
                 val zhSentenceSpans = zhSentences.map { chineseSpan(it) }
                 for (sentencePair in alignSpans(
-                    enSentenceSpans, zhSentenceSpans, allowMerge = false, scale = scales.sentence
+                    enSentenceSpans, zhSentenceSpans, allowMerge = true,
+                    // 与主路径同一套句级门槛（V7 起；此前这里写死 allowMerge=false，
+                    // 覆盖全书的被跳过段落只能整段一锅端）。此路径已在
+                    // [neighbourFallbacks] 入参里拿到 meanings，走的是有词义证据的
+                    // 正常分支，不是 [sentenceMergeAllowed] 的无证据保守回退。
+                    // 英方合并同样下线（Q1-t04）。
+                    allowEnMerge = false,
+                    mergeGate = { e1, e2, z1, z2 ->
+                        sentenceMergeAllowed(e1, e2, z1, z2, scales.sentence)
+                    },
+                    scale = scales.sentence
                 )) {
+                    val merged = sentencePair.a.size > 1 || sentencePair.b.size > 1
                     val cost = pairCost(
                         enSentenceSpans[sentencePair.a[0]],
                         sentencePair.a.getOrNull(1)?.let { enSentenceSpans[it] },
@@ -334,23 +364,28 @@ object TranslationAligner {
                         sentencePair.b.getOrNull(1)?.let { zhSentenceSpans[it] },
                         scales.sentence
                     )
-                    val confidence = ((1.0 - cost) * NEIGHBOUR_CONFIDENCE_SCALE / distance)
+                    // 合并对置信度折扣与主路径一致（真配对，粒度跳）。
+                    val scaleFactor = if (merged) SENTENCE_MERGE_SCALE.toDouble() else 1.0
+                    val confidence = ((1.0 - cost) * scaleFactor * NEIGHBOUR_CONFIDENCE_SCALE / distance)
                         .coerceIn(0.0, 1.0)
                         .toFloat()
                     if (confidence < TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE) continue
                     // V5：兜底句对同样受长度比硬门槛约束（s78/s79 型：71 词英文
                     // 配 13 字中文、置信度 0.35 过了门槛——长度比 0.11 一票否决）。
+                    // 合并对的比例上限沿用放宽一档的口径，与主路径一致。
                     val ratio = lengthRatioOf(
                         enSentenceSpans, sentencePair.a, zhSentenceSpans, sentencePair.b, scales.sentence
                     )
-                    if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > SENTENCE_MAX_LENGTH_RATIO) continue
+                    val maxRatio =
+                        if (merged) SENTENCE_MAX_MERGED_LENGTH_RATIO else SENTENCE_MAX_LENGTH_RATIO
+                    if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > maxRatio) continue
                     fallbacks += AlignedSentencePair(
                         enChapter = enChapter,
                         zhChapter = zhChapter,
                         enParagraph = enParagraph,
                         zhParagraph = zhParagraph,
                         enSentence = join(enSentences, sentencePair.a),
-                        zhSentence = join(zhSentences, sentencePair.b),
+                        zhSentence = joinChinese(zhSentences, sentencePair.b),
                         confidence = confidence
                     )
                 }
@@ -560,7 +595,9 @@ object TranslationAligner {
 
     /**
      * 用 DP 把两个片段序列单调对齐。允许 1:0 / 0:1 / 1:1，[allowMerge] 时额外允许
-     * 2:1 / 1:2。[mergeGate] 非空时，每个合并走法还要过一道准入检查（句级 1:N 的
+     * 2:1 / 1:2。[allowEnMerge] 单独控制 2:1（两 a : 一 b）——句级路径把它关掉，
+     * 保证落盘句对的英文侧恒为单句（Q1-t04，理由见 [VERSION] 的 v7 说明）。
+     * [mergeGate] 非空时，每个合并走法还要过一道准入检查（句级 1:N 的
      * 语义/尺寸/边际门槛；段落级合并不设门槛）。
      * 返回「已对齐的下标对」（跳过项不产出）。
      *
@@ -572,6 +609,7 @@ object TranslationAligner {
         b: List<Span>,
         allowMerge: Boolean,
         mergeGate: ((Span, Span?, Span, Span?) -> Boolean)? = null,
+        allowEnMerge: Boolean = true,
         scale: Double
     ): List<SpanPair> {
         if (a.isEmpty() || b.isEmpty()) return emptyList()
@@ -613,7 +651,7 @@ object TranslationAligner {
                     }
                 }
                 if (allowMerge) {
-                    if (i > 1 && j > 0 && prev2[j - 1] < Double.POSITIVE_INFINITY &&
+                    if (allowEnMerge && i > 1 && j > 0 && prev2[j - 1] < Double.POSITIVE_INFINITY &&
                         (mergeGate == null || mergeGate(a[i - 2], a[i - 1], b[j - 1], null))
                     ) {
                         val cost = prev2[j - 1] + pairCost(a[i - 2], a[i - 1], b[j - 1], null, scale)
@@ -672,10 +710,24 @@ object TranslationAligner {
         return pairs.asReversed()
     }
 
-    /** 单下标时返回原 String 实例本身（共享引用，避免复制整段文本）。 */
+    /**
+     * 英文侧并合：单下标时返回原 String 实例本身（共享引用，避免复制整段文本），
+     * 多下标用空格拼（`"A. B."`，与 [SentenceSplitter] 的分句口径一致）。
+     */
     private fun join(source: List<String>, indices: IntArray): String =
         if (indices.size == 1) source[indices[0]]
         else indices.joinToString(" ") { source[it] }
+
+    /**
+     * 中文侧并合：单下标共享引用，多下标**空串**拼接（Q1-t04）。
+     *
+     * 中文没有词间空格，夹一个空格拼出来的是「他說。 她笑了。」这种现实中不存在的
+     * 形态：既不像原文，也会让下游按空格切词的展示/复读出现多余断点。落盘文本必须
+     * 与译文原文一致地连续。
+     */
+    private fun joinChinese(source: List<String>, indices: IntArray): String =
+        if (indices.size == 1) source[indices[0]]
+        else indices.joinToString("") { source[it] }
 
     // --- 中文分句 -----------------------------------------------------------
 

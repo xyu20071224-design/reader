@@ -1626,5 +1626,61 @@ eader`——自 M1 起挂账的「历史遗留脏项」清零，工作树从此�
 - 日志：写 journald drop-in /etc/systemd/journald.conf.d/99-linguareader-cap.conf（SystemMaxUse=200M、SystemMaxFileSize=50M）并重启 systemd-journald；journalctl --vacuum-size=200M 后占用 682.9M → 165.6M（配置经 systemd-analyze cat-config 核对生效）。根分区 21G → 20G/59G（35%）。
 - 未做：TLS 续签演练、SSH 口令改密/密钥登录（涉及访问方式变更，留给用户在控制台执行）。
 
+---
+
+## 2026-09-26 译本对齐 v7：禁止英方并合（Q1-t04）+ 邻近兜底对齐主路径；两处断言**经授权**按新设计重定
+
+**背景**：`Q1-t04`「A 句后的 B 句返回 A 句意思」。根因是句级 DP 允许 **2 en : 1 zh** 并合，档案里英文侧存成 `"A. B."`；用户点 B 句做精确匹配必然失败，落到查询侧第 3 级子串匹配，拿回整条**并合**译文。本阶段落地 v7（阶段 3），并按其新契约重定两处因旧设计而失效的断言（上层已裁决：选项 a）。
+
+### v7 改了哪四处（`src/shared/src/main/java/com/linguareader/shared/translation/TranslationAligner.kt`，`VERSION` 6→7）
+
+1. **禁止英方合并**：`alignSpans` 新增 `allowEnMerge`，句级主路径与邻近兜底路径都传 `false`，任何落盘句对的英文下标数组长度恒为 1。
+2. **邻近段落兜底的句级 DP 与主路径对齐**：`allowMerge` 由写死的 `false` 改为 `true`，并套同一套 `sentenceMergeAllowed` 门槛、合并对置信度折扣 `SENTENCE_MERGE_SCALE`、放宽一档的合并长度比上限 `SENTENCE_MAX_MERGED_LENGTH_RATIO`（此前被跳过的段落只能整段一锅端）。该路径在 `neighbourFallbacks` 入参里已拿到 meanings，属有词义证据的正常分支，不是无证据保守回退。
+3. **中文侧 `joinChinese` 改空串拼接**（英文侧 `join` 保持空格）：段落并合与句并合都改；中文没有词间空格，「他說。 她笑了。」是现实中不存在的形态，落盘文本必须与译文原文一致地连续。
+4. **`VERSION` 6→7**：档案 `alignerVersion` 落 7，旧档案由阶段 2 的版本闸门判旧，用户走书架「重新对齐」重跑。
+
+**为什么要禁英方合并**：并合句对是「点击 B 拿回 A 的译文」的唯一来源。禁掉后，被并掉的**第二句**英文不再有句级条目，点它走第 5 级段落兜底（档案段落表照旧带整段译文 + 「段级（未定位到句）」）——这是有意的诚实降级，不是漏配。中文侧 1 : 2 **不下线**：译文拆句是真实形态，且没有「并合英文串」的对应病灶。
+
+### 错配=1 的归因（一次性只读插桩，已删干净；工作树文件与 stash 逐字节相同 `e5f70ca`）
+
+`SyntheticAlignmentTruthTest.mergedZhSentenceKeepsBothMarkersTogether` 的场景是「两条英文句被译者并成一条中文句」（真值 2 en : 1 zh）。插桩输出的对齐结果（ch0/p0，en 3 句 vs zh 2 句）：
+
+```
+enS = the elder spoke of the river 0001. || the hunter spoke of the harbour 0002. || the smith spoke of the city 0003.
+zhS = 那长者说起了那条河，编号0001那猎人说起了那处港口，编号0002。 || 那歌者说起了那座城，编号0003。
+dpPairs = a=[0]/b=[0]  ;  a=[2]/b=[1]        // EN 0002 被跳过（MOVE_SKIP_A）
+EMIT a=[0] b=[0] conf=1.0    ratio=1.960  merged=false
+EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
+[dbg][fallback] ch=0 enParas=4 covered=[0, 1, 2, 3]   // 邻近兜底一条都没产出
+[synthetic] 2:1-merged-zh-sentence 句级句对=59 完全正确=58 precision=0.983 recall=0.967 (覆盖 58/60) 错配=1
+```
+
+**判定：可解释，不是真回归。** 依据三条：
+
+- 那条「错配」`«…0001.» → «…编号0001…编号0002。»` **来自主路径**（一条 1:1、conf=1.0、ratio=1.96 过门的正常句对），**不是**邻近兜底新开的合并走法引入的跨句错配——`covered=[0,1,2,3]` 说明该章没有任何段落落到兜底里，v7 第 2 处改动在本例中根本没参与；
+- 中文侧那句是**不可再分的单个 span**（译者去掉了中间的「。」），且确实以第一句的译文开头：v7 禁掉 2:1 后，把它配给 0001 是唯一单调解，把 0001 也算成「配错」是合成语料「两侧编号集合必须相同」这一真值口径在「2 en : 1 zh」形态下的必然残差；
+- 与 v7 自己的契约一致：**被并掉的第二句（0002）没有句级条目**（正好就是「第二句降级」），没有出现「点 B 拿回 A」的病灶。故按裁决进入断言重定，实现保持 v7 不动（不做新的「锚点不对称就拒落盘」门槛——那等于新加一道未经实验台拟合的门槛，违反「改门槛必须回实验台重拟合」的纪律）。
+
+### 两处断言按新设计重定（**经授权**；只动这两个测试方法）
+
+- `SyntheticAlignmentTruthTest.mergedZhSentenceKeepsBothMarkersTogether`：旧断言（precision=1.0 且 recall=1.0）在 v7 下**不可达**——英方并合下线后，「两句英文挤在一句中文里」的真值再也无法表达成两侧编号集合相同的句对。新契约改为：① 句级条目的英文集合 = 全部真值句 − 被并掉的第二句（**显式集合**相等，句对数 59）；② **错配集合显式相等**，恰好只允许「第一句英文 → 那句含两句译文的中文句」这一条，其余 precision 恒为 1.0（对 58 条不含该降级的句对做精确断言，不用任何 `>0.9` 之类的松弛）；③ recall 用**显式数字 58/60** + 覆盖编号集合 `markers − {0001, 0002}`。注释里写明这是 v7 的既定代价并引用 `TranslationAligner.VERSION`。
+- `TranslationAlignerTest.closing quotes after a chinese terminator are never orphaned`：`pairs` 非空、`pairs.none { 纯引号残渣 }`（:123-127）**原样保留**；只重定 :128-129「整段文本可见」。插桩证实本输入只有 1 个中文句（整段引文并为不可再分的一句），唯一候选句对被长度比 2.6 门一票否决（`DROP conf=0.5219 ratio=3.137 max=2.6`），文本改由**段级兜底**承载（`enSentence=""`/`zhSentence=""`，译文在 `zhParagraph`），所以断言改成「句级或段级任一路径都能看到该文本」（`zhSentence.ifBlank { zhParagraph }`）。
+
+### 验证（判据为原始 XML）
+
+| 项 | 证据 |
+| --- | --- |
+| `:shared:test` 全量 | **385 用例 / 0 failures / 0 errors / 8 skipped**（49 个 XML 汇总） |
+| └ `TranslationAlignerTest` | 18 / 0 / 0 |
+| └ `SyntheticAlignmentTruthTest` | 8 / 0 / 0（含重定后的 2:1 场景） |
+| └ `TranslationMemoryIndexTest` | 17 / 0 / 0 |
+| └ `WordAlignerTest` | 8 / 0 / 0 |
+| └ `TranslationAlignerBenchmarkTest` | 1 / 0 / 0（4.05s） |
+| └ `PythonServerE2ETest` | 8 / 0 / 0 / **5 skipped**（本机 python3 不可用走 assumeTrue；本轮无 CreateProcess 红） |
+| `:app:testDebugUnitTest --tests com.linguareader.app.translation.*` | 13 用例 / **1 failed** / 2 skipped：`TranslationGoldenReplayTest.goldenSamplesStayApproved` 报「缺 approved，先跑一次 bless 建立基线」（66 条）——**基线尚未 bless，属下一阶段**，按要求原样报告未动；其余 `TranslationRealignTest` 6/0、`TranslationBodyDiscardTest` 2/0、`TranslationGoldenFixtureTool` 1/0、`TranslationJudgmentCardTool` 1/0、`TranslationProxyBibleValidationTest` 1/0(1 skipped)、`TranslationSemanticProxyTool` 1/0(1 skipped) |
+| 真机 | **未验**——本轮只动对齐器纯逻辑与两处断言；档案版本闸门 + 书架「重新对齐」入口的真机链路（点「重新对齐」后旧档案刷新、耗时与内存峰值）留给真机阶段复测 |
+
+**未验证 / 已知代价**：v7 让真值 2:1 的段落里第一句的句对含上第二句的译文（中文句不可再分），第二句降级到第 5 级段落兜底；整本书层面的命中率/耗时变化未在真机量（PC 侧只在单测语料上跑过）。金标准重放的 bless（66 条契约样本 + bad/skip）是下一阶段的事。
+
 
 
