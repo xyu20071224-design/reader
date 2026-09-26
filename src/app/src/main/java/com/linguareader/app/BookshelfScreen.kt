@@ -132,6 +132,8 @@ internal fun BookshelfScreen(
     onDelete: (Book) -> Unit,
     onAttachTranslation: (Book, android.net.Uri) -> Unit,
     onDetachTranslation: (Book) -> Unit,
+    /** 用当前对齐器重跑该书档案（不重新翻译）；档案过期时菜单会主动提示。 */
+    onRealignTranslation: (Book) -> Unit = {},
     onPrepareAiTranslation: (Book) -> Unit,
     onStartAiTranslation: (Book, String, String) -> Unit,
     onCancelAiTranslation: (Book) -> Unit,
@@ -405,6 +407,7 @@ internal fun BookshelfScreen(
                                 aiStatus = state.aiStatuses[book.id],
                                 attachingTranslation = book.id in state.attachingTranslation,
                                 aiTranslationProgress = state.aiTranslationProgress[book.id],
+                                translationOutdated = book.id in state.outdatedTranslations,
                                 containerAlpha = if (shelfAppearance.isCustomized) 0.9f else 1f,
                                 onOpen = { onOpen(book) },
                                 onGlossary = { glossaryBook = book },
@@ -558,7 +561,18 @@ internal fun BookshelfScreen(
                 }
             },
             title = { Text(stringResource(R.string.shelf_translation_remove_title, book.title)) },
-            text = { Text(stringResource(R.string.shelf_translation_remove_body)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.shelf_translation_remove_body))
+                    RealignTranslationEntry(
+                        outdated = book.id in state.outdatedTranslations,
+                        onRealign = {
+                            detachTranslationCandidate = null
+                            onRealignTranslation(book)
+                        }
+                    )
+                }
+            },
             containerColor = CardSurface,
             shape = CardShape
         )
@@ -583,6 +597,13 @@ internal fun BookshelfScreen(
             text = {
                 Column {
                     Text(stringResource(R.string.shelf_translation_manage_body))
+                    RealignTranslationEntry(
+                        outdated = book.id in state.outdatedTranslations,
+                        onRealign = {
+                            aiTranslationManageCandidate = null
+                            onRealignTranslation(book)
+                        }
+                    )
                     // 手动补翻/修正入口：agent 返工后的新结果文件从这里导入
                     //（检查点按批覆盖，齐批自动重新生成），不必删掉译本重来。
                     TextButton(onClick = {
@@ -877,6 +898,27 @@ internal fun BookshelfScreen(
 }
 
 /**
+ * 译本菜单里的「重新对齐」入口（出版译本、AI 译本两个管理对话框共用）。
+ *
+ * 档案由旧版对齐器写出时换成过期提示（[R.string.shelf_translation_realign_outdated]）；
+ * 动作在 ViewModel 里跑，期间书卡显示「对齐中…」，完成后出全局 Snackbar。
+ */
+@Composable
+private fun RealignTranslationEntry(outdated: Boolean, onRealign: () -> Unit) {
+    TextButton(onClick = onRealign) {
+        Text(stringResource(R.string.shelf_translation_realign))
+    }
+    Text(
+        stringResource(
+            if (outdated) R.string.shelf_translation_realign_outdated
+            else R.string.shelf_translation_realign_hint
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        color = if (outdated) Accent else InkSoft
+    )
+}
+
+/**
  * 书架自定义背景层：自定义图片（Crop 铺满）优先，否则用预设渐变；
  * 最上面统一盖一层当前调色板纸色蒙版（浓度可在弹层调），保证顶栏与文字可读。
  */
@@ -1011,6 +1053,8 @@ private fun BookCard(
     aiStatus: AiBookStatus?,
     attachingTranslation: Boolean,
     aiTranslationProgress: AiTranslationProgress?,
+    /** 对齐档案由更旧版对齐器写出：书卡上要看得见（入口在译本菜单里）。 */
+    translationOutdated: Boolean = false,
     containerAlpha: Float = 1f,
     onOpen: () -> Unit,
     onGlossary: () -> Unit,
@@ -1149,6 +1193,16 @@ private fun BookCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            // 版本闸门（阶段 2）：档案由更旧版对齐器写出。这里只是可见提示，
+            // 动作入口在译本菜单里（书卡不放第二个按钮）。
+            if (translationOutdated && !attachingTranslation && aiProgress == null) {
+                Text(
+                    stringResource(R.string.shelf_translation_outdated),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Accent,
+                    maxLines = 1
+                )
+            }
         }
         Row {
             TextButton(onClick = onGlossary, modifier = Modifier.height(30.dp)) {

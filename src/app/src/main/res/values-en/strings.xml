@@ -122,6 +122,14 @@
     <string name="notice_translation_ready_partial">Translation aligned: %1$d sentence pairs in %2$d s; %3$d paragraphs kept the original text — regenerate from the bookshelf to fill them in (finished batches are not retranslated)</string>
     <string name="notice_translation_failed">Alignment failed. Make sure you picked the Chinese translation of the same book.</string>
     <string name="notice_translation_removed">Removed the paired translation of \"%1$s\"</string>
+    <!-- Realign: re-run the pairing with the current aligner, no retranslation (stage 2 version gate) -->
+    <string name="shelf_translation_realign">Realign</string>
+    <string name="shelf_translation_realign_hint">Re-run the pairing with the current aligner. No retranslation needed; a whole book takes tens of seconds.</string>
+    <string name="shelf_translation_realign_outdated">This archive was produced by an older aligner. Realigning improves sentence-level pairing — still no retranslation.</string>
+    <string name="shelf_translation_outdated">Pairing outdated</string>
+    <string name="notice_translation_realigning">Realigning the translation of \"%1$s\"…</string>
+    <string name="notice_translation_realigned">Realigned: %1$d sentence pairs in %2$d s</string>
+    <string name="notice_translation_realign_failed">Realignment failed; the existing archive is unchanged</string>
     <string name="shelf_translation_choice_title">Add a Chinese translation</string>
     <string name="shelf_translation_choice_body">Choose the source: import an existing Chinese translation file and align it with the original, or let AI translate the whole book online (configure a provider and key in the AI center first; uses the network and costs API credits).</string>
     <string name="shelf_translation_choice_import">Import translation file</string>

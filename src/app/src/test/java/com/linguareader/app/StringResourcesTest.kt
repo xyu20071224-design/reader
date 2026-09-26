@@ -40,6 +40,17 @@ class StringResourcesTest {
             "全部 12 批译文已就绪，开始生成译本对照…",
             context.getString(R.string.notice_translation_manual_imported_done, 12)
         )
+        // 阶段 2：档案版本闸门——重新对齐入口与反馈
+        assertEquals("重新对齐", context.getString(R.string.shelf_translation_realign))
+        assertEquals("对照待更新", context.getString(R.string.shelf_translation_outdated))
+        assertEquals(
+            "正在重新对齐《雾都孤儿》的译本对照…",
+            context.getString(R.string.notice_translation_realigning, "雾都孤儿")
+        )
+        assertEquals(
+            "重新对齐完成：11005 个句对（耗时 12 秒）",
+            context.getString(R.string.notice_translation_realigned, 11005, 12)
+        )
         // 资源包（M1）：装/切/卸的文案两侧都要能取到
         assertEquals("资源包", context.getString(R.string.packs_title))
         assertEquals("导入资源包", context.getString(R.string.packs_install))
@@ -74,6 +85,17 @@ class StringResourcesTest {
         assertEquals(
             "All 12 batches ready — generating the translation…",
             context.getString(R.string.notice_translation_manual_imported_done, 12)
+        )
+        // Stage 2: archive version gate — realign entry and feedback
+        assertEquals("Realign", context.getString(R.string.shelf_translation_realign))
+        assertEquals("Pairing outdated", context.getString(R.string.shelf_translation_outdated))
+        assertEquals(
+            "Realigning the translation of \"Oliver Twist\"…",
+            context.getString(R.string.notice_translation_realigning, "Oliver Twist")
+        )
+        assertEquals(
+            "Realigned: 11005 sentence pairs in 12 s",
+            context.getString(R.string.notice_translation_realigned, 11005, 12)
         )
         // Resource packs (M1)
         assertEquals("Resource packs", context.getString(R.string.packs_title))

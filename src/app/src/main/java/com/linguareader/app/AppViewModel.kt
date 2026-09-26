@@ -150,6 +150,11 @@ data class AppUiState(
     val aiStatuses: Map<String, AiBookStatus> = emptyMap(),
     /** 正在对齐中文译本的书 id（对齐是数十秒级操作，界面据此显示进度并防重复触发）。 */
     val attachingTranslation: Set<String> = emptySet(),
+    /**
+     * 对齐档案已旧于当前对齐器版本的书 id（阶段 2 的版本闸门）。
+     * 书架据此提示「对照待更新」并在译本菜单里显示「重新对齐」。
+     */
+    val outdatedTranslations: Set<String> = emptySet(),
     /** AI 整本翻译进行中的书 → 进度（含准备中），界面据此显示进度/取消并防重复触发。 */
     val aiTranslationProgress: Map<String, AiTranslationProgress> = emptyMap(),
     /** 非空时显示「AI 生成译本」确认框（术语已备齐、规模已估算）。 */
@@ -304,11 +309,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         else AiBookStatus(ready = true)
                         )
                 }.toMap()
+            // 版本闸门：已配译本的书里，档案由更旧版对齐器写出的挑出来（尾部快读，
+            // 不解析整份 JSON）。没有这一步，对齐器的改进永远触达不到既有档案。
+            val outdated = books.filter { it.hasTranslation }
+                .filter { translationRepository.isMemoryOutdated(it.id) }
+                .map { it.id }
+                .toSet()
             mutableState.value = mutableState.value.copy(
                 books = books,
                 savedWords = savedWords,
                 loading = false,
-                aiStatuses = mutableState.value.aiStatuses + seeded
+                aiStatuses = mutableState.value.aiStatuses + seeded,
+                outdatedTranslations = outdated
             )
             rescheduleReviewReminders()
         }
@@ -1042,6 +1054,64 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 notice = string(R.string.notice_translation_removed, book.title)
             )
             refresh()
+        }
+    }
+
+    /**
+     * 用当前对齐器重跑该书档案的对齐（**不重新翻译、不重新导入译本**）。
+     *
+     * 进度与反馈沿用 [attachTranslation] 那一套，不新造机制：
+     * [AppUiState.attachingTranslation] 让书卡显示「对齐中…」并在期间禁用按钮
+     * （整本重对齐是 CPU 密集的数十秒级操作，全程在 IO 上跑，界面不卡）；
+     * 结果无论成败都出一条全局 Snackbar —— 「保存/长任务无反馈」是这个项目
+     * 吃过的亏（AI 保存无反馈）。
+     */
+    fun realignTranslation(book: Book) {
+        if (book.id in mutableState.value.attachingTranslation) return
+        // 整本翻译在跑时档案正要被它重建，重对齐只会白跑一遍：让翻译那条路先收尾。
+        if (book.id in mutableState.value.aiTranslationProgress) return
+        viewModelScope.launch {
+            mutableState.value = mutableState.value.copy(
+                attachingTranslation = mutableState.value.attachingTranslation + book.id,
+                notice = string(R.string.notice_translation_realigning, book.title)
+            )
+            val startedAt = System.currentTimeMillis()
+            runCatching { translationRepository.realign(book) }
+                .onSuccess { memory ->
+                    if (memory == null) {
+                        // 档案不存在/没有可还原的中文段落：一个字节都没写，如实报失败。
+                        mutableState.value = mutableState.value.copy(
+                            attachingTranslation = mutableState.value.attachingTranslation - book.id,
+                            notice = string(R.string.notice_translation_realign_failed),
+                            noticeTone = StatusTone.DANGER
+                        )
+                    } else {
+                        library.saveTranslation(
+                            book,
+                            memory.translationBookId,
+                            memory.translationTitle,
+                            memory.alignedAt
+                        )
+                        val seconds = ((System.currentTimeMillis() - startedAt) / 1000).toInt()
+                        mutableState.value = mutableState.value.copy(
+                            attachingTranslation = mutableState.value.attachingTranslation - book.id,
+                            notice = string(
+                                R.string.notice_translation_realigned,
+                                memory.pairs.size,
+                                seconds
+                            ),
+                            noticeTone = StatusTone.SUCCESS
+                        )
+                        refresh()
+                    }
+                }
+                .onFailure {
+                    mutableState.value = mutableState.value.copy(
+                        attachingTranslation = mutableState.value.attachingTranslation - book.id,
+                        notice = string(R.string.notice_translation_realign_failed),
+                        noticeTone = StatusTone.DANGER
+                    )
+                }
         }
     }
 

@@ -163,6 +163,7 @@ private fun LinguaReaderApp(
                 onDelete = viewModel::deleteBook,
                 onAttachTranslation = viewModel::attachTranslation,
                 onDetachTranslation = viewModel::detachTranslation,
+                onRealignTranslation = viewModel::realignTranslation,
                 onPrepareAiTranslation = viewModel::prepareAiTranslation,
                 onStartAiTranslation = viewModel::startAiTranslation,
                 onCancelAiTranslation = viewModel::cancelAiTranslation,

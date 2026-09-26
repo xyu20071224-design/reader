@@ -119,6 +119,14 @@
     <string name="notice_translation_ready_partial">译本对齐完成：%1$d 个句对（耗时 %2$d 秒）；%3$d 段未能翻译，已保留原文，回书架重新生成可补齐（已完成批次不会重翻）</string>
     <string name="notice_translation_failed">译本对齐失败，请确认选的是同一本书的中文译本</string>
     <string name="notice_translation_removed">已移除《%1$s》的译本对照</string>
+    <!-- 重新对齐：用当前对齐器重跑对照，不需要重新翻译（阶段 2 版本闸门） -->
+    <string name="shelf_translation_realign">重新对齐</string>
+    <string name="shelf_translation_realign_hint">用当前版本的对齐器重跑对照；不需要重新翻译，整本约十几秒。</string>
+    <string name="shelf_translation_realign_outdated">当前档案由旧版对齐器生成，重新对齐可改善句级对照（同样不需要重新翻译）。</string>
+    <string name="shelf_translation_outdated">对照待更新</string>
+    <string name="notice_translation_realigning">正在重新对齐《%1$s》的译本对照…</string>
+    <string name="notice_translation_realigned">重新对齐完成：%1$d 个句对（耗时 %2$d 秒）</string>
+    <string name="notice_translation_realign_failed">重新对齐失败，原有对照档案保持不变</string>
     <string name="shelf_translation_choice_title">添加中文译本</string>
     <string name="shelf_translation_choice_body">选择译本来源：已有中文译本文件可导入并与原文对齐；也可以让 AI 在线翻译整本书生成中文译文（需要先在 AI 中心配置服务商与 Key，联网并产生 API 费用）。</string>
     <string name="shelf_translation_choice_import">导入译本文件</string>

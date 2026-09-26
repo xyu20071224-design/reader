@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
+import java.io.RandomAccessFile
 
 /**
  * 译本对齐仓库（Android 平台层）。
@@ -34,6 +35,22 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
     private var cachedIndex: TranslationMemoryIndex? = null
 
     fun hasMemory(bookId: String): Boolean = memoryFile(bookId).isFile
+
+    /**
+     * 该书的对齐档案是否由更旧的对齐器写出（[TranslationMemory.isOutdated]）。
+     *
+     * 书架每次刷新都要对**每一本有译本的书**问一次，所以走**尾部快读**：
+     * `toJson` 把 `alignerVersion` 写成最后一个键，读文件末尾几百字节即可判定，
+     * 不必为一本书解析整份 JSON（单本 5 MB 量级，见 translation-alignment-module）。
+     * 快读不成立（文件缺失、字段今后被挪走）时退回 [load]，由
+     * [TranslationMemory.isOutdated] 给最终答案 —— 慢但正确，绝不会给出错判。
+     */
+    suspend fun isMemoryOutdated(bookId: String): Boolean = withContext(Dispatchers.IO) {
+        val file = memoryFile(bookId)
+        if (!file.isFile) return@withContext false
+        trailingAlignerVersion(file)?.let { return@withContext it < TranslationAligner.VERSION }
+        load(bookId)?.isOutdated() ?: false
+    }
 
     /** 导入中文译本并与英文书对齐；耗时较长（整本小说量级为数十秒），在 IO 上跑。 */
     suspend fun attach(book: Book, uri: Uri): AttachTranslationResult = withContext(Dispatchers.IO) {
@@ -198,16 +215,106 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
         return result.entry?.senses?.map { it.text }.orEmpty()
     }
 
+    /**
+     * 用**当前对齐器**重跑该书档案的对齐（不重新翻译，也不重新导入译本）。
+     *
+     * 中文侧不读译本正文，而是从**旧档案**还原「章 → 段落」：
+     * - 出版译本对齐后正文即被丢弃（D1.8，[discardTranslationBodyIfRedundant]），
+     *   盘上已经没有了；档案自带译文全文（`zhParagraphs` + `pairs[].zs`），是
+     *   **出版译本与 AI 译本都成立**的唯一中文源；
+     * - 顺序可信：对齐器按 (zhChapter, 段序) 单调产出句对，所以「按首次出现顺序
+     *   去重」还原出的段序与译本原文一致。去重按**引用**判等：`fromJson` 让同段落
+     *   的多条句对共享同一个 String 实例，引用去重恰好等价于还原档案的段落表，
+     *   不会把两处文本相同的段落并成一条。
+     *
+     * 代价（如实记在案，不是缺陷）：旧档案里**从来没配上对**的段落本来就不在档案
+     * 里，重对齐也无从恢复（实测未对齐约 3%）；英文侧读原书正文，不受影响。
+     *
+     * @return 新档案（已落盘 + 已刷新 [cachedIndex]）。以下情形返回 null 且
+     *   **一个字节都不写**——绝不把用户手上现存的对照清空：档案不存在；档案里没有
+     *   可还原的中文段落；重跑结果为空而旧档案非空。
+     */
+    suspend fun realign(book: Book): TranslationMemory? = withContext(Dispatchers.IO) {
+        val existing = load(book.id) ?: return@withContext null
+        val zhChapters = archivedZhChapters(existing)
+        if (zhChapters.isEmpty()) return@withContext null
+        val updated = buildMemory(
+            source = book,
+            zhChapters = zhChapters,
+            translationBookId = existing.translationBookId,
+            translationTitle = existing.translationTitle
+        )
+        if (updated.pairs.isEmpty() && existing.pairs.isNotEmpty()) return@withContext null
+        save(updated)
+        cacheLock.withLock {
+            cachedBookId = updated.sourceBookId
+            cachedIndex = TranslationMemoryIndex(updated)
+        }
+        updated
+    }
+
+    /**
+     * 从档案还原中文侧「章 → 段落」序列（[realign] 的输入）。
+     * 空的中间章保留占位，章节下标才继续与 `pairs[].zhChapter` 对得上。
+     */
+    private fun archivedZhChapters(memory: TranslationMemory): List<List<String>> {
+        val byChapter = sortedMapOf<Int, MutableList<String>>()
+        val seen: MutableSet<String> =
+            java.util.Collections.newSetFromMap(java.util.IdentityHashMap<String, Boolean>())
+        for (pair in memory.pairs) {
+            if (pair.zhChapter < 0) continue
+            val paragraph = pair.zhParagraph
+            if (paragraph.isBlank()) continue
+            if (!seen.add(paragraph)) continue
+            byChapter.getOrPut(pair.zhChapter) { ArrayList() }.add(paragraph)
+        }
+        if (byChapter.isEmpty()) return emptyList()
+        return (0..byChapter.lastKey()).map { byChapter[it].orEmpty() }
+    }
+
+    /**
+     * 只读档案尾部的 `alignerVersion`；文件缺失、截断或字段被挪出尾部时返回 null
+     * （调用方退回整份 [load]）。取**最后一次**匹配：该字段是 `toJson` 写下的最后
+     * 一个键，尾片里它必然排在所有正文之后；正文里出现的同名字面量在 JSON 里带转义
+     * （`\"alignerVersion\"`），反斜杠挡在引号前，本正则不会误命中。
+     */
+    private fun trailingAlignerVersion(file: File): Int? = runCatching {
+        val length = file.length()
+        if (length <= 0L) return@runCatching null
+        val tailSize = minOf(length, TRAILING_VERSION_BYTES).toInt()
+        val buffer = ByteArray(tailSize)
+        RandomAccessFile(file, "r").use { reader ->
+            reader.seek(length - tailSize)
+            reader.readFully(buffer)
+        }
+        // 尾片可能从多字节字符中间开始，解码用的替换字符只影响片首，无碍匹配。
+        TAILING_ALIGNER_VERSION.findAll(String(buffer, Charsets.UTF_8))
+            .lastOrNull()?.groupValues?.get(1)?.toIntOrNull()
+    }.getOrNull()
+
     private fun buildMemory(source: Book, translation: Book): TranslationMemory {
-        val enExtractor = TtsTextExtractor()
         val zhExtractor = TtsTextExtractor()
-        val enChapters = source.chapters.indices.map { enExtractor.chapter(source, it).blocks }
         val zhChapters = translation.chapters.indices.map { zhExtractor.chapter(translation, it).blocks }
+        return buildMemory(source, zhChapters, translation.id, translation.title)
+    }
+
+    /**
+     * 对齐构建的公共部分：英文侧始终读原书正文；中文侧由调用方给——首次对齐来自
+     * 译本正文（[buildMemory] 的译本重载），重对齐来自旧档案（[realign]）。
+     */
+    private fun buildMemory(
+        source: Book,
+        zhChapters: List<List<String>>,
+        translationBookId: String,
+        translationTitle: String
+    ): TranslationMemory {
+        val enExtractor = TtsTextExtractor()
+        val enChapters = source.chapters.indices.map { enExtractor.chapter(source, it).blocks }
         return TranslationMemory(
             sourceBookId = source.id,
             sourceTitle = source.title,
-            translationBookId = translation.id,
-            translationTitle = translation.title,
+            translationBookId = translationBookId,
+            translationTitle = translationTitle,
             alignedAt = System.currentTimeMillis(),
             pairs = TranslationAligner.align(enChapters, zhChapters, meaningIndex),
             alignerVersion = TranslationAligner.VERSION
@@ -235,6 +342,17 @@ class TranslationMemoryRepository(private val application: Application) : BookSc
     }
 
     private fun memoryFile(sourceBookId: String) = File(memoryDir, "$sourceBookId.json")
+
+    private companion object {
+        /**
+         * 尾部快读的字节数：`alignerVersion` 是 `toJson` 写下的最后一个键，
+         * 这点字节足够读到它，且用量不随档案（5 MB 量级）增长。
+         */
+        const val TRAILING_VERSION_BYTES = 512L
+
+        /** 尾部 `"alignerVersion":<int>` 的匹配式；语义与兜底见 [trailingAlignerVersion]。 */
+        val TAILING_ALIGNER_VERSION = Regex("\"alignerVersion\"\\s*:\\s*(\\d+)")
+    }
 }
 
 /**
