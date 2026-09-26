@@ -11,7 +11,7 @@ package com.linguareader.shared.translation
  * 匹配顺序（与 [TranslationMemorySearch] 文档一致）：
  *  1. 精确段落 + 精确句子（句子级，最高置信）
  *  2. 段落候选内的精确句子（句子级）
- *  3. 句子重叠（同一段落内、英文句互相包含）→ 句子级
+ *  3. 句子重叠（同一段落内、英文句互相包含，**且两侧同粒度**）→ 句子级
  *  4. 句子级模糊（同章内相似度达阈值的句子）→ 句子级
  *  5. 兜底：对应段落（段落级）
  *
@@ -58,11 +58,17 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
         (bySentence.firstOrNull { it.paragraph == nParagraph } ?: bySentence.firstOrNull())
             ?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
 
-        // 3) 句子重叠（同一段落内互相包含）
+        // 3) 句子重叠（同一段落内互相包含），但必须是**同粒度**的重叠。
+        //    档案里存在「2 句英文并成 1 条句对」（enSentence = "A. B."）时，
+        //    用户点 B 也会命中 contains —— 但那条译文是并合句的译文，整条按
+        //    SENTENCE 返回就是错标（「长句只翻译了其中一句」的主诉之一）。
+        //    查询句只是并合句的片段时不算第 3 级命中，放它继续走第 4/5 级：
+        //    第 5 级给整段 + PARAGRAPH，UI 有「段级（未定位到句）」文案。
         entries.firstOrNull {
             it.sentence.isNotBlank() && nSentence.isNotBlank() &&
                 it.paragraph == nParagraph &&
-                (it.sentence.contains(nSentence) || nSentence.contains(it.sentence))
+                (it.sentence.contains(nSentence) || nSentence.contains(it.sentence)) &&
+                !TranslationMemorySearch.isCrossSentenceFragment(it.pair.enSentence, sentence)
         }?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
 
         // 4) 句子级模糊：同章内相似度最高且达阈值的句子。
@@ -198,4 +204,51 @@ object TranslationMemorySearch {
         .mapNotNullTo(LinkedHashSet()) { token ->
             token.trim('\'').takeIf { it.isNotBlank() }
         }
+
+    /**
+     * 英文句末终止符，与 [com.linguareader.shared.tts.SentenceSplitter] 的
+     * `terminators` 英文子集**保持一致**（`.` `!` `?` `…`）：
+     * 那边是分句权威，改动终止符集合时必须同步这里，别另立一套。
+     */
+    private val ENGLISH_TERMINATORS = setOf('.', '!', '?', '…')
+
+    /**
+     * 终止符**游程**数。连续终止符算一个句界（`?!` 是一个句界、`...` 是一个省略号），
+     * 口径与 [com.linguareader.shared.tts.SentenceSplitter] 的「a run of terminators
+     * is one boundary」一致——否则 `"Go?!"` 会被数成两句。
+     */
+    internal fun terminatorRuns(text: String): Int {
+        var runs = 0
+        var inRun = false
+        for (char in text) {
+            if (char in ENGLISH_TERMINATORS) {
+                if (!inRun) {
+                    runs++
+                    inRun = true
+                }
+            } else {
+                inRun = false
+            }
+        }
+        return runs
+    }
+
+    /**
+     * 第 3 级（同段落内 `contains` 重叠）的**同粒度护栏**：库中句本身是并合句
+     * （`"A. B."` 这类由 ≥2 个句界组成的 enSentence），而查询句只覆盖其中一部分
+     * （`"B."`）时返回 true —— 查询句只是并合句的片段，不能拿并合译文按句级返回。
+     *
+     * 判据是「终止符游程数」而非「真实分句数」：后者会把 `"A. B."` 当成一个
+     * 缩写点号串（`SentenceSplitter` 的 spaced-initials 保护）而漏掉正是本护栏要挡的
+     * 形态。代价是 `"Mr. Smith left."` 这类含缩写的单句也会被数成 2 —— 但这类误判
+     * 只在查询句本身是**真子串**时才会发生，结果是降级为整段译文，符合本类
+     * 「宁可不高亮，不可错标」的取舍。
+     *
+     * 纯函数，参数都应当是**未归一化**的原文（[normalize] 会把终止符抹成空格）。
+     */
+    fun isCrossSentenceFragment(stored: String, query: String): Boolean {
+        val storedRuns = terminatorRuns(stored)
+        if (storedRuns < 2) return false
+        return terminatorRuns(query) < storedRuns
+    }
 }

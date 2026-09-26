@@ -1,8 +1,10 @@
 package com.linguareader.shared.translation
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TranslationMemoryIndexTest {
@@ -25,6 +27,24 @@ class TranslationMemoryIndexTest {
     )
 
     private val index = TranslationMemoryIndex(memory)
+
+    // 并合句对：档案里 2 句英文并成 1 条（enSentence = "Alpha left. Beta stayed."）。
+    private val mergedParagraph = "Alpha left. Beta stayed."
+    private val mergedZhParagraph = "阿尔法离开了。贝塔留下了。"
+    private val mergedMemory = TranslationMemory(
+        sourceBookId = "s",
+        sourceTitle = "Source",
+        translationBookId = "z",
+        translationTitle = "译本",
+        alignedAt = 0L,
+        pairs = listOf(
+            AlignedSentencePair(
+                0, 0, mergedParagraph, mergedZhParagraph,
+                "Alpha left. Beta stayed.", "阿尔法离开了。贝塔留下了。", 0.9f
+            )
+        )
+    )
+    private val mergedIndex = TranslationMemoryIndex(mergedMemory)
 
     @Test
     fun `exact sentence hit is sentence level and carries the translation title`() {
@@ -66,6 +86,107 @@ class TranslationMemoryIndexTest {
 
         assertEquals(TranslationMatchLevel.SENTENCE, result?.matchLevel)
         assertEquals("他迟到了。", result?.chinese)
+    }
+
+    @Test
+    fun `a query covering only part of a merged stored sentence is not sentence level`() {
+        // 档案里「2 句英文并成 1 条句对」时，点第二句也会命中第 3 级的 contains；
+        // 但那条译文是并合句的译文，按句级整条返回就是错标 —— 必须放它继续走
+        // 第 5 级，拿整段译文 + 段级标签。
+        val result = mergedIndex.lookup(0, "Beta stayed.", mergedParagraph)
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.PARAGRAPH, result!!.matchLevel)
+        assertEquals(mergedZhParagraph, result.chinese)
+        assertEquals(mergedZhParagraph, result.chineseParagraph)
+
+        // 任务书里的原样形态：并合句 "A. B."，用户点 B 查 "B."。
+        val abIndex = TranslationMemoryIndex(
+            TranslationMemory(
+                sourceBookId = "s",
+                sourceTitle = "Source",
+                translationBookId = "z",
+                translationTitle = "译本",
+                alignedAt = 0L,
+                pairs = listOf(
+                    AlignedSentencePair(0, 0, "A. B.", "甲。乙。", "A. B.", "甲。乙。", 0.9f)
+                )
+            )
+        )
+        val ab = abIndex.lookup(0, "B.", "A. B.")
+        assertEquals(TranslationMatchLevel.PARAGRAPH, ab?.matchLevel)
+        assertEquals("甲。乙。", ab?.chinese)
+    }
+
+    @Test
+    fun `the merged sentence itself and single sentence substrings stay sentence level`() {
+        // 护栏只管「库中句是并合句、查询句只覆盖其中一部分」这一形态：
+        // 并合句整条查仍是句级，单句库里的真子串（库中句只有 1 个句界）也仍是句级。
+        val whole = mergedIndex.lookup(0, mergedParagraph, mergedParagraph)
+        assertEquals(TranslationMatchLevel.SENTENCE, whole?.matchLevel)
+        assertEquals(mergedZhParagraph, whole?.chinese)
+
+        val substring = index.lookup(0, "was late", paragraph)
+        assertEquals(TranslationMatchLevel.SENTENCE, substring?.matchLevel)
+        assertEquals("他迟到了。", substring?.chinese)
+        assertEquals(
+            TranslationMatchLevel.SENTENCE,
+            index.lookup(0, "Then he", paragraph)?.matchLevel
+        )
+    }
+
+    @Test
+    fun `cross sentence fragment guard boundaries`() {
+        // 库中句是并合句、查询只覆盖其中一部分 → 片段。
+        assertTrue(TranslationMemorySearch.isCrossSentenceFragment("A. B.", "B."))
+        assertTrue(TranslationMemorySearch.isCrossSentenceFragment("A. B.", "A."))
+        assertTrue(
+            TranslationMemorySearch.isCrossSentenceFragment("Alpha left. Beta stayed.", "left")
+        )
+        assertTrue(
+            TranslationMemorySearch.isCrossSentenceFragment(
+                "Alpha left. Beta stayed.", "Beta stayed."
+            )
+        )
+        // 两侧都是同粒度多句 → 不是片段。
+        assertFalse(TranslationMemorySearch.isCrossSentenceFragment("A. B.", "A. B."))
+        assertFalse(
+            TranslationMemorySearch.isCrossSentenceFragment(
+                "Alpha left. Beta stayed.", "Beta stayed. Gamma came."
+            )
+        )
+        // 库中句凑不出 ≥2 个句界（空串 / 无标点）→ 永远不是片段。
+        assertFalse(TranslationMemorySearch.isCrossSentenceFragment("", ""))
+        assertFalse(TranslationMemorySearch.isCrossSentenceFragment("", "B."))
+        assertFalse(
+            TranslationMemorySearch.isCrossSentenceFragment(
+                "no punctuation here", "punctuation"
+            )
+        )
+        // 查询句为空：覆盖的句界（0）比库中句少，按最保守口径判为片段；
+        // 调用侧另有「归一化查询非空」门槛，这里只是不给出错标的机会。
+        assertTrue(TranslationMemorySearch.isCrossSentenceFragment("A. B.", ""))
+        // 库中句本身只有一句 → 真子串不算片段。
+        assertFalse(TranslationMemorySearch.isCrossSentenceFragment("He was late.", "was late"))
+        // 连续终止符按一个句界算（与 SentenceSplitter 的游程口径一致）。
+        assertEquals(1, TranslationMemorySearch.terminatorRuns("Go?!"))
+        assertEquals(1, TranslationMemorySearch.terminatorRuns("Wait... what"))
+        assertEquals(2, TranslationMemorySearch.terminatorRuns("Wait... what?"))
+        assertEquals(2, TranslationMemorySearch.terminatorRuns("Alpha left… Beta stayed."))
+    }
+
+    @Test
+    fun `aligner version staleness flags archives an older aligner wrote`() {
+        // alignerVersion 默认 0：没有该字段的旧档案天然判旧。
+        assertTrue(memory.isOutdated())
+        assertTrue(memory.copy(alignerVersion = TranslationAligner.VERSION - 1).isOutdated())
+        // 版本相等或更新 → 不旧。
+        assertFalse(memory.copy(alignerVersion = TranslationAligner.VERSION).isOutdated())
+        assertFalse(memory.copy(alignerVersion = TranslationAligner.VERSION + 1).isOutdated())
+        // 显式传入当前版本（阶段 2 接线时由调用方决定）。
+        assertTrue(memory.copy(alignerVersion = 0).isOutdated(current = 7))
+        assertFalse(memory.copy(alignerVersion = 7).isOutdated(current = 7))
+        assertFalse(memory.copy(alignerVersion = 8).isOutdated(current = 7))
     }
 
     @Test

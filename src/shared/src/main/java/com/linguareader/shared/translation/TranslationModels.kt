@@ -88,6 +88,14 @@ data class TranslationMemory(
      */
     val alignerVersion: Int = 0
 ) {
+    /**
+     * 该档案的对齐器版本是否已旧于 [current]（默认当前 [TranslationAligner.VERSION]）。
+     *
+     * 旧档案没有 `alignerVersion` 字段，读出即 0，天然判旧。**纯判定，不做重对齐**：
+     * 调用方（阶段 2 的接线）据此决定是否提示/触发重跑。
+     */
+    fun isOutdated(current: Int = TranslationAligner.VERSION): Boolean = alignerVersion < current
+
     fun toJson(): JSONObject {
         val enParagraphs = ArrayList<String>()
         val zhParagraphs = ArrayList<String>()
