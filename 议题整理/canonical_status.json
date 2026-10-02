@@ -8,8 +8,8 @@
  [
   "Q1-b02",
   "bug",
-  "未修复",
-  "09-25 复验：09-13 后 AI 整本翻译链路零提交；超长段成批无上限（14e2828 实测单批 258890 字符），AiBookTranslatorTest 锁为设计；用户 09-12 仍报失败"
+  "已修复",
+  "10-02 路线 A 根治：groupIntoBatches 对超长段按句切译块（复用 SentenceSplitter，每批 ≤ 上限）+ 新增 mergeBatchTranslations 按原段回写合并（失败批整段回退英文）。main 线工作区未提交；真机+真 Key 端到端待验"
  ],
  [
   "Q1-b03",

@@ -14,8 +14,10 @@ import org.json.JSONObject
  * - **结果文件**（[parseResults]）：逐批的 segments JSON（与在线响应同一格式），
  *   导入侧校验后写成翻译检查点。
  *
- * 编号约定与在线链路完全一致：segments 里的 `i` 是**章内段落号**
+ * 编号约定与在线链路完全一致：segments 里的 `i` 是**章内译块号**
  * （[TranslationBatch.paragraphIndices]），不是批内序号——对齐质量依赖这条 1:1 契约。
+ * 未发生超长段拆分的章里译块与段落 1:1，译块号即段落下标；含超长段的章里同一段落
+ * 会拆成多个译块、依次占号，回写时由 [AiBookTranslator.mergeBatchTranslations] 合并。
  */
 object ManualTranslationIo {
 
@@ -155,8 +157,9 @@ object ManualTranslationIo {
             "词条在译文中保持英文不译。\n" +
             "4. 只翻译 hasCheckpoint 为 false 的批次；hasCheckpoint 为 true 的批次已有译文，" +
             "直接跳过，不要输出。\n" +
-            "5. 每个批次 paragraphs 里的每个段落都要翻译；segments 里的编号 i 必须使用该批次 " +
-            "paragraphIndices 里对应的原始编号（章内段落号），一一对应，不得遗漏、不得新增。\n" +
+            "5. 每个批次 paragraphs 里的每个译块都要翻译；segments 里的编号 i 必须使用该批次 " +
+            "paragraphIndices 里对应的编号（章内译块号，未拆分的章里即段落号），" +
+            "一一对应，不得遗漏、不得新增。\n" +
             "6. 结果文件是一个 JSON 文件，结构如下（bookId、chapterIndex、batchIndex、" +
             "sourceHash 都从任务文件原样带回）：\n" +
             "{\"kind\":\"$RESULT_KIND\",\"version\":$FORMAT_VERSION,\"bookId\":\"…\"," +

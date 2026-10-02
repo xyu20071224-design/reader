@@ -212,7 +212,8 @@ class AiTranslationRepository(
             val extractor = TtsTextExtractor()
             val translatedChapters = book.chapters.indices.map { chapterIndex ->
                 val blocks = extractor.chapter(book, chapterIndex).blocks
-                AiBookTranslator.groupIntoBatches(chapterIndex, blocks).flatMap { batch ->
+                val batches = AiBookTranslator.groupIntoBatches(chapterIndex, blocks)
+                val translationsByBatch: List<List<String>?> = batches.map { batch ->
                     val hash = AiBookTranslator.sourceHash(batch.paragraphs)
                     readCheckpoint(checkpoints, batch, hash)
                         ?: throw ManualTranslationIncompleteException(
@@ -220,6 +221,12 @@ class AiTranslationRepository(
                                 "请先在「手动 AI 翻译」里补齐并导入"
                         )
                 }
+                // 超长段被拆成多个译块，这里按原段合并回「一段一条」，与英文侧 1:1。
+                AiBookTranslator.mergeBatchTranslations(
+                    batches = batches,
+                    translationsByBatch = translationsByBatch,
+                    englishParagraphs = blocks
+                )
             }
             writeTranslationBook(
                 book,
@@ -255,9 +262,12 @@ class AiTranslationRepository(
         val extractor = TtsTextExtractor()
         val checkpoints = File(checkpointDir, book.id)
 
-        // 先做全书的批次规划（纯本地），进度才有确定的总数。
-        val chapterBatches = book.chapters.indices.map { chapterIndex ->
-            val blocks = extractor.chapter(book, chapterIndex).blocks
+        // 先做全书的批次规划（纯本地），进度才有确定的总数。blocks 与批次同源，
+        // 失败批整段回退英文原文时按它取原文（见 mergeBatchTranslations）。
+        val chapterBlocks = book.chapters.indices.map { chapterIndex ->
+            extractor.chapter(book, chapterIndex).blocks
+        }
+        val chapterBatches = chapterBlocks.mapIndexed { chapterIndex, blocks ->
             AiBookTranslator.groupIntoBatches(chapterIndex, blocks)
         }
         val totalBatches = chapterBatches.sumOf { it.size }.coerceAtLeast(1)
@@ -269,7 +279,9 @@ class AiTranslationRepository(
 
         val translatedChapters = chapterBatches.mapIndexed { chapterIndex, batches ->
             val chapter = book.chapters[chapterIndex]
-            val paragraphs = batches.flatMap { batch ->
+            // 逐批译文；null = 该批失败，合并时它覆盖到的段落整段回退英文原文
+            // （段落数与英文侧严格 1:1，xhtmlFor 又滤空串，所以不能留空占位）。
+            val translationsByBatch: List<List<String>?> = batches.map { batch ->
                 val translations = try {
                     val done = restoreOrTranslate(
                         client, checkpoints, book, chapter, glossary, keepOriginalTerms,
@@ -290,15 +302,17 @@ class AiTranslationRepository(
                                 "（最后错误：${error.message}），已中止整本；已完成进度已保留"
                         )
                     }
-                    // 用英文原文占位：段落数必须与英文侧严格 1:1，否则整章对照错位；
-                    // 且 xhtmlFor 会滤掉空串，空占位会直接改变段数。
-                    batch.paragraphs
+                    null
                 }
                 finishedBatches++
                 onProgress(finishedBatches * 100 / totalBatches)
                 translations
             }
-            paragraphs
+            AiBookTranslator.mergeBatchTranslations(
+                batches = batches,
+                translationsByBatch = translationsByBatch,
+                englishParagraphs = chapterBlocks[chapterIndex]
+            )
         }
         writeTranslationBook(book, translatedChapters, settings.providerDisplayName)
     }

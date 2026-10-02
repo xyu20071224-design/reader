@@ -535,7 +535,8 @@ class AiTranslationRepositoryTest {
 
     @Test
     fun `estimate reports oversized paragraphs and injected glossary count`() = runBlocking {
-        // 两章：第一章 = 超长段（独立成批）+ 普通段（1 批），第二章 = 普通段（1 批）。
+        // 两章：第一章 = 超长段（15,100 字符，按上限切成 3 个译块）+ 普通段，
+        // 第二章 = 普通段（1 批）。
         val dir = File(context.filesDir, "books-src/$sourceBookId-estimate")
         dir.deleteRecursively()
         dir.mkdirs()
@@ -559,7 +560,9 @@ class AiTranslationRepositoryTest {
 
         val estimate = repository(FakeChat()).estimate(book)
         assertEquals(1, estimate.oversizedParagraphs)
-        assertEquals(3, estimate.batches)
+        // 超长段不再整段独占一批：15,100 字符 = 6000 + 6000 + 3100 三个译块，
+        // 普通段与最后一块合成一批 → 第一章 3 批、全书 4 批。
+        assertEquals(4, estimate.batches)
         // 空术语表：规模 0，注入 0。
         assertEquals(0, estimate.glossaryTerms)
         assertEquals(0, estimate.glossaryInjected)

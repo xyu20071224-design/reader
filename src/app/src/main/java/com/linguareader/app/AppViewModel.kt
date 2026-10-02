@@ -1207,14 +1207,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.value = mutableState.value.copy(
                 notice = string(R.string.notice_translation_ai_started, book.title)
             )
-            // 单批用尽重试后不再中止整本书：该批保留英文原文继续跑，末尾汇总告知用户。
-            var untranslatedParagraphs = 0
+            // 单批用尽重试后不再中止整本书：该批整段保留英文原文继续跑，末尾汇总告知用户。
+            // 一个段落可能被拆成多个译块、跨多批（超长段），所以按「章 + 原段」去重计数；
+            // 不能拿 batch.paragraphs.size（那是译块数）累加。
+            val untranslatedParagraphs = mutableSetOf<Pair<Int, Int>>()
             try {
                 val translationBook = aiTranslationRepository.translateBook(
                     book,
                     mode = safeMode,
                     styleNotes = styleNotes.trim().ifBlank { null },
-                    onBatchFailed = { batch, _ -> untranslatedParagraphs += batch.paragraphs.size }
+                    onBatchFailed = { batch, _ ->
+                        batch.sourceParagraphIndices.forEach { index ->
+                            untranslatedParagraphs += batch.chapterIndex to index
+                        }
+                    }
                 ) { percent ->
                     setAiTranslationProgress(book.id, AiTranslationProgress(percent = percent, polish = polish))
                 }
@@ -1231,17 +1237,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 val seconds = ((System.currentTimeMillis() - startedAt) / 1000).toInt()
                 mutableState.value = mutableState.value.copy(
-                    notice = if (untranslatedParagraphs > 0) {
+                    notice = if (untranslatedParagraphs.isNotEmpty()) {
                         string(
                             R.string.notice_translation_ready_partial,
                             result.memory.pairs.size,
                             seconds,
-                            untranslatedParagraphs
+                            untranslatedParagraphs.size
                         )
                     } else {
                         string(R.string.notice_translation_ready, result.memory.pairs.size, seconds)
                     },
-                    noticeTone = if (untranslatedParagraphs > 0) StatusTone.NEUTRAL else StatusTone.SUCCESS
+                    noticeTone = if (untranslatedParagraphs.isNotEmpty()) StatusTone.NEUTRAL else StatusTone.SUCCESS
                 )
                 refresh()
             } catch (cancelled: CancellationException) {

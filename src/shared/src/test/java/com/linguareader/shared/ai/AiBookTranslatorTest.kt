@@ -36,12 +36,49 @@ class AiBookTranslatorTest {
     }
 
     @Test
-    fun `oversized paragraph gets its own batch instead of being cut`() {
+    fun `oversized paragraph is split so no batch exceeds the limit`() {
+        // 200 字符、上限 50、无句末标点 → 在词/字符边界硬切成 4 个 50 字符译块，
+        // 各自成批；随后两段合成一批。
         val paragraphs = listOf("x".repeat(200), "short", "y".repeat(10))
         val batches = AiBookTranslator.groupIntoBatches(1, paragraphs, maxCharsPerBatch = 50)
-        assertEquals(listOf(0), batches[0].paragraphIndices)
-        assertEquals(listOf(1, 2), batches[1].paragraphIndices)
-        assertEquals(200, batches[0].charCount)
+        assertTrue(batches.all { it.charCount <= 50 })
+        assertEquals(listOf(0, 0, 0, 0, 1, 2), batches.flatMap { it.sourceParagraphIndices })
+        assertEquals(listOf(0, 1, 2, 3, 4, 5), batches.flatMap { it.paragraphIndices })
+        assertEquals(listOf("short", "y".repeat(10)), batches.last().paragraphs)
+        assertEquals(listOf(1, 2), batches.last().sourceParagraphIndices)
+    }
+
+    @Test
+    fun `oversized paragraph is cut at sentence boundaries first`() {
+        // 10 句、每句 60 字符、上限 200 → 每块装 3 句（182 ≤ 200），绝不切在句中。
+        val sentence = "a".repeat(59) + "."
+        val paragraph = (0 until 10).joinToString(" ") { sentence }
+        val batches = AiBookTranslator.groupIntoBatches(0, listOf(paragraph), maxCharsPerBatch = 200)
+        assertTrue(batches.all { it.charCount <= 200 })
+        assertEquals(listOf(182, 182, 182, 60), batches.flatMap { it.paragraphs }.map { it.length })
+        assertEquals(paragraph, batches.flatMap { it.paragraphs }.joinToString(" "))
+    }
+
+    @Test
+    fun `a single sentence longer than the limit is hard cut at word boundaries`() {
+        val paragraph = ("word ".repeat(200)).trim()
+        val batches = AiBookTranslator.groupIntoBatches(0, listOf(paragraph), maxCharsPerBatch = 100)
+        assertTrue(batches.all { it.charCount <= 100 })
+        assertEquals(paragraph, batches.flatMap { it.paragraphs }.joinToString(" "))
+    }
+
+    @Test
+    fun `blank-line-free chapter becomes one paragraph and still fits every batch`() {
+        // 无空行 TXT 的真实形态：整章 = 一个巨大段落（实测过的 258,890 字符量级）。
+        val sentence = "The year 1926 changed everything. "
+        val paragraph = sentence.repeat(258_890 / sentence.length + 1).trim()
+        assertTrue(paragraph.length > 258_000)
+        val batches = AiBookTranslator.groupIntoBatches(0, listOf(paragraph))
+        assertTrue(batches.size > 1)
+        assertTrue(batches.all { it.charCount <= AiBookTranslator.MAX_CHARS_PER_BATCH })
+        // 覆盖全部内容、无重叠：拼回即原段；所有块都归属唯一的原段 0。
+        assertEquals(paragraph, batches.flatMap { it.paragraphs }.joinToString(" "))
+        assertEquals(setOf(0), batches.flatMap { it.sourceParagraphIndices }.toSet())
     }
 
     @Test
@@ -365,6 +402,69 @@ class AiBookTranslatorTest {
             listOf("我在这里。"),
             AiBookTranslator.extractValidated(segmentsJson(0 to "我在这里。"), batch, listOf("I"))
         )
+    }
+
+    // --- 超长段译文的回写合并 --------------------------------------------------
+
+    @Test
+    fun `chunks of one paragraph merge back in order without loss`() {
+        // 段 0 被拆成 2 块（跨批），段 1 整段。
+        val batches = listOf(
+            TranslationBatch(0, 0, listOf(0), listOf("First half."), sourceParagraphIndices = listOf(0)),
+            TranslationBatch(
+                0, 1, listOf(1, 2), listOf("Second half.", "Another."),
+                sourceParagraphIndices = listOf(0, 1)
+            )
+        )
+        val merged = AiBookTranslator.mergeBatchTranslations(
+            batches = batches,
+            translationsByBatch = listOf(listOf("前半。"), listOf("后半。", "另一段。")),
+            englishParagraphs = listOf("First half. Second half.", "Another.")
+        )
+        assertEquals(listOf("前半。后半。", "另一段。"), merged)
+    }
+
+    @Test
+    fun `a failed batch falls back to the whole english paragraph`() {
+        val batches = listOf(
+            TranslationBatch(0, 0, listOf(0), listOf("First half."), sourceParagraphIndices = listOf(0)),
+            TranslationBatch(0, 1, listOf(1), listOf("Second half."), sourceParagraphIndices = listOf(0))
+        )
+        val merged = AiBookTranslator.mergeBatchTranslations(
+            batches = batches,
+            translationsByBatch = listOf(listOf("前半。"), null),
+            englishParagraphs = listOf("First half. Second half.")
+        )
+        // 段 0 有译块落在失败批里 → 整段回退英文原文，而不是「前半。Second half.」。
+        assertEquals(listOf("First half. Second half."), merged)
+    }
+
+    @Test
+    fun `paragraphs entirely inside a failed batch keep the paragraph count`() {
+        val batches = listOf(
+            TranslationBatch(
+                0, 0, listOf(0, 1), listOf("One.", "Two."), sourceParagraphIndices = listOf(0, 1)
+            )
+        )
+        val merged = AiBookTranslator.mergeBatchTranslations(
+            batches = batches,
+            translationsByBatch = listOf(null),
+            englishParagraphs = listOf("One.", "Two.")
+        )
+        assertEquals(listOf("One.", "Two."), merged)
+    }
+
+    @Test
+    fun `grouping then merging a split chapter restores one entry per paragraph`() {
+        val paragraphs = listOf("s".repeat(120), "Second paragraph.")
+        val batches = AiBookTranslator.groupIntoBatches(0, paragraphs, maxCharsPerBatch = 50)
+        // 段 0 → 3 块（50/50/20），段 1 → 1 块；批规划 [0] [1] [2,3]。
+        assertEquals(listOf(0, 1, 2, 3), batches.flatMap { it.paragraphIndices })
+        val translationsByBatch = batches.map { batch ->
+            batch.paragraphIndices.map { id -> "T" + batch.batchIndex + "_" + id }
+        }
+        val merged = AiBookTranslator.mergeBatchTranslations(batches, translationsByBatch, paragraphs)
+        assertEquals(listOf("T0_0T1_1T2_2", "T2_3"), merged)
     }
 
     // --- 检查点指纹 -----------------------------------------------------------
