@@ -955,7 +955,10 @@ internal fun ReaderScreen(
                     )
                     lookupSession = lookupSession.setStatus(
                         SettingsStatus.success(
-                            context.getString(R.string.notice_word_saved, currentLookup.word)
+                            context.getString(
+                                R.string.notice_word_saved,
+                                entry.matchedPhrase ?: entry.headword
+                            )
                         )
                     )
                 }

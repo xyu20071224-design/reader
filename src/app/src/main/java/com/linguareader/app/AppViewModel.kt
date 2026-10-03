@@ -1646,7 +1646,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             mutableState.value = mutableState.value.copy(
                 savedWords = words,
-                notice = string(R.string.notice_word_saved, lookup.word),
+                notice = string(R.string.notice_word_saved, entry.matchedPhrase ?: entry.headword),
                 noticeTone = StatusTone.SUCCESS
             )
             rescheduleReviewReminders()
