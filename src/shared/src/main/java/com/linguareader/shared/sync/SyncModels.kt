@@ -62,5 +62,36 @@ data class SyncReport(
     val pending: Int
 )
 
-/** 传输或协议层错误。status=0 表示本地/网络失败（如离线）。 */
-class SyncException(message: String, val status: Int = 0) : Exception(message)
+/**
+ * 同步失败类别。UI 据此映射可读文案，不必解析 message 或自己猜 [SyncException.status]。
+ * 分类在 :shared 完成（见 HttpSyncApi），三个平台共用同一套语义。
+ */
+enum class SyncErrorKind {
+    /** 连不上服务器：DNS 失败、连接被拒、超时、证书不符等本地网络失败（status=0）。 */
+    NETWORK,
+
+    /** 用户名或密码错误（HTTP 401）。 */
+    AUTH,
+
+    /** 其他服务端错误：4xx/5xx、协议响应异常（如登录响应缺 token）。 */
+    SERVER;
+
+    companion object {
+        /** 由 HTTP 状态码推断类别；status=0 一律视为本地网络失败。 */
+        fun fromStatus(status: Int): SyncErrorKind = when {
+            status == 401 -> AUTH
+            status == 0 -> NETWORK
+            else -> SERVER
+        }
+    }
+}
+
+/**
+ * 传输或协议层错误。status=0 表示本地/网络失败（如离线）。
+ * [kind] 缺省按 [status] 推断；协议异常等无状态码场景由抛出方显式指定。
+ */
+class SyncException(
+    message: String,
+    val status: Int = 0,
+    val kind: SyncErrorKind = SyncErrorKind.fromStatus(status)
+) : Exception(message)

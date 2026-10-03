@@ -784,9 +784,11 @@
     <!-- 云同步（自托管服务端，F-160） -->
     <string name="sync_title">云同步</string>
     <string name="sync_entry">云同步</string>
-    <string name="sync_server_label">服务器地址（https://IP:端口）</string>
+    <string name="sync_server_label">服务器地址（IPv4）</string>
     <string name="sync_username_label">用户名</string>
     <string name="sync_password_label">密码</string>
+    <string name="sync_advanced_toggle">高级设置</string>
+    <string name="sync_full_url_label">完整服务器 URL（可选，填写后覆盖上方地址）</string>
     <string name="sync_fingerprint_label">服务端证书 SHA-256 指纹（自签证书必填）</string>
     <string name="sync_save">保存设置</string>
     <string name="sync_login">登录</string>
@@ -800,4 +802,11 @@
     <string name="sync_done">同步完成：上传 %1$d，下载 %2$d，待推送 %3$d</string>
     <string name="sync_done_unresolved">同步完成：上传 %1$d，下载 %2$d，待推送 %3$d，未收敛 %4$d 条</string>
     <string name="sync_failed">失败：%1$s</string>
+    <string name="sync_error_empty">请填写服务器地址</string>
+    <string name="sync_error_bad_ipv4">请输入合法的 IPv4 地址，如 192.168.1.5</string>
+    <string name="sync_error_bad_port">端口需在 1-65535 之间</string>
+    <string name="sync_error_bad_url">完整 URL 需以 http:// 或 https:// 开头</string>
+    <string name="sync_error_auth">用户名或密码错误</string>
+    <string name="sync_error_network">连不上服务器，请检查地址与网络</string>
+    <string name="sync_error_server">服务端错误：%1$s</string>
 </resources>

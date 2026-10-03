@@ -47,7 +47,7 @@ class HttpSyncApi(
         val body = JSONObject().put("username", username).put("password", password)
         val json = request("POST", "/api/v1/auth/login", body)
         token = json.optString("token")
-        if (token.isBlank()) throw SyncException("登录响应缺少 token", 0)
+        if (token.isBlank()) throw SyncException("登录响应缺少 token", 0, SyncErrorKind.SERVER)
         return token
     }
 
@@ -229,7 +229,20 @@ class HttpSyncApi(
                     val code = runCatching { JSONObject(text).optJSONObject("error")?.optString("code") }.getOrNull()
                     throw SyncException(code ?: "HTTP $status", status)
                 }
-                if (text.isBlank()) JSONObject() else JSONObject(text)
+                if (text.isBlank()) {
+                    JSONObject()
+                } else {
+                    // 200 但响应不是 JSON 属于服务端/协议异常，不能当成「连不上服务器」。
+                    try {
+                        JSONObject(text)
+                    } catch (error: Exception) {
+                        throw SyncException(
+                            "服务端响应不是 JSON",
+                            status,
+                            SyncErrorKind.SERVER
+                        )
+                    }
+                }
             } catch (error: SyncException) {
                 throw error
             } catch (error: Exception) {

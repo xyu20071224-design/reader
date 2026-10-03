@@ -184,7 +184,7 @@ internal fun BookshelfScreen(
     onAnimSpeedChange: (UiAnimSpeed) -> Unit,
     /** 云同步（F-160）：设置保存、登录、立即同步、登出。 */
     onSaveSyncSettings: (SyncSettings) -> Unit = {},
-    onSyncLogin: (String) -> Unit = {},
+    onSyncLogin: (SyncSettings, String) -> Unit = { _, _ -> },
     onSyncNow: () -> Unit = {},
     onSyncLogout: () -> Unit = {},
     /** Q2-c07：书架内改阅读主题时通知外壳，整体配色即时生效。 */

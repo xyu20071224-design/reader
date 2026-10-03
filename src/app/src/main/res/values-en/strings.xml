@@ -793,9 +793,11 @@
     <!-- Cloud sync (self-hosted server, F-160) -->
     <string name="sync_title">Cloud sync</string>
     <string name="sync_entry">Cloud sync</string>
-    <string name="sync_server_label">Server URL (https://IP:port)</string>
+    <string name="sync_server_label">Server address (IPv4)</string>
     <string name="sync_username_label">Username</string>
     <string name="sync_password_label">Password</string>
+    <string name="sync_advanced_toggle">Advanced</string>
+    <string name="sync_full_url_label">Full server URL (optional, overrides the address above)</string>
     <string name="sync_fingerprint_label">Server certificate SHA-256 fingerprint (required for self-signed)</string>
     <string name="sync_save">Save settings</string>
     <string name="sync_login">Sign in</string>
@@ -809,4 +811,11 @@
     <string name="sync_done">Sync complete: %1$d uploaded, %2$d downloaded, %3$d pending</string>
     <string name="sync_done_unresolved">Sync complete: %1$d uploaded, %2$d downloaded, %3$d pending, %4$d unresolved</string>
     <string name="sync_failed">Failed: %1$s</string>
+    <string name="sync_error_empty">Enter the server address</string>
+    <string name="sync_error_bad_ipv4">Enter a valid IPv4 address, e.g. 192.168.1.5</string>
+    <string name="sync_error_bad_port">Port must be 1-65535</string>
+    <string name="sync_error_bad_url">Full URL must start with http:// or https://</string>
+    <string name="sync_error_auth">Incorrect username or password</string>
+    <string name="sync_error_network">Cannot reach the server — check the address and network</string>
+    <string name="sync_error_server">Server error: %1$s</string>
 </resources>

@@ -62,6 +62,8 @@ import com.linguareader.app.update.UpdateCheckOutcome
 import com.linguareader.shared.update.AppUpdatePhase
 import com.linguareader.shared.update.AppUpdateUiState
 import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.sync.SyncErrorKind
+import com.linguareader.shared.sync.SyncException
 import com.linguareader.shared.sync.SyncSettings
 import com.linguareader.shared.packs.PackValidationResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -836,8 +838,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.value = mutableState.value.copy(syncSettings = settings)
     }
 
-    fun syncLogin(password: String) {
-        val settings = mutableState.value.syncSettings
+    /**
+     * 登录用界面传来的**当前输入**设置（不是已保存的旧值）：改了地址没点保存也能登录。
+     * 落库由 AndroidSyncController.login 在成功后完成（失败不写设置）。
+     */
+    fun syncLogin(settings: SyncSettings, password: String) {
         if (settings.serverUrl.isBlank() || settings.username.isBlank()) {
             mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_need_credentials))
             return
@@ -850,7 +855,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 syncSettings = outcome.getOrElse { settings },
                 syncStatus = outcome.fold(
                     onSuccess = { string(R.string.sync_logged_in, it.username) },
-                    onFailure = { string(R.string.sync_failed, it.message ?: it.javaClass.simpleName) }
+                    onFailure = { syncFailureText(it) }
                 )
             )
         }
@@ -878,7 +883,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                             )
                         }
                     },
-                    onFailure = { string(R.string.sync_failed, it.message ?: it.javaClass.simpleName) }
+                    onFailure = { syncFailureText(it) }
                 )
             )
             // 同步会改动书库/生词本落盘内容，刷新界面数据。
@@ -889,6 +894,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun syncLogout() {
         sync.logout(mutableState.value.syncSettings)
         mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_logged_out))
+    }
+
+    /**
+     * 同步失败文案：错误类别由 :shared 的 [SyncException.kind] 给出，这里只做文案映射。
+     * 未知类别（非同步异常）才回落到「失败：<原因>」。
+     */
+    private fun syncFailureText(error: Throwable): String = when ((error as? SyncException)?.kind) {
+        SyncErrorKind.AUTH -> string(R.string.sync_error_auth)
+        SyncErrorKind.NETWORK -> string(R.string.sync_error_network)
+        SyncErrorKind.SERVER -> string(R.string.sync_error_server, error.message ?: error.javaClass.simpleName)
+        null -> string(R.string.sync_failed, error.message ?: error.javaClass.simpleName)
     }
 
     // --- 自动更新（GitHub Release）-------------------------------------------

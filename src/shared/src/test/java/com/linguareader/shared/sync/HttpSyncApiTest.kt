@@ -98,6 +98,29 @@ class HttpSyncApiTest {
     }
 
     @Test
+    fun badCredentialsAreClassifiedAsAuth() = runBlocking {
+        startServer { _, _, _ -> 401 to "{\"error\":{\"code\":\"bad_credentials\",\"message\":\"no\"}}" }
+        val api = HttpSyncApi(baseUrl())
+        val error = assertFailsWith<SyncException> { api.login("alice", "wrong") }
+        assertEquals(SyncErrorKind.AUTH, error.kind)
+    }
+
+    @Test
+    fun unreachableHostIsClassifiedAsNetwork() = runBlocking {
+        val api = HttpSyncApi("http://127.0.0.1:1")
+        val error = assertFailsWith<SyncException> { api.pull(0) }
+        assertEquals(SyncErrorKind.NETWORK, error.kind)
+    }
+
+    @Test
+    fun serverErrorIsClassifiedAsServer() = runBlocking {
+        startServer { _, _, _ -> 500 to "{\"error\":{\"code\":\"internal\",\"message\":\"boom\"}}" }
+        val api = HttpSyncApi(baseUrl())
+        val error = assertFailsWith<SyncException> { api.pull(0) }
+        assertEquals(SyncErrorKind.SERVER, error.kind)
+    }
+
+    @Test
     fun fingerprintHelpersMatchOpensslFormat() {
         val hex = HttpSyncApi.sha256Hex("abc".toByteArray())
         assertEquals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", hex)
