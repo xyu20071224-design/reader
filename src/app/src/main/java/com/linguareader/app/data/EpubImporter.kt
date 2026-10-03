@@ -16,7 +16,10 @@ class EpubImporter(
     fun import(uri: Uri): Book {
         val source = ImportSupport.copySource(context, uri)
         try {
-            return com.linguareader.shared.importer.EpubImporter(booksDir).import(source)
+            val book = com.linguareader.shared.importer.EpubImporter(booksDir).import(source)
+            // 留存原始文件供云同步上传（老逻辑只留解析产物；失败不影响导入）。
+            ImportSupport.retainSource(book, source)
+            return book
         } finally {
             source.delete()
         }

@@ -16,8 +16,10 @@ class TextImporter(
     fun import(uri: Uri): Book {
         val source = ImportSupport.copySource(context, uri)
         try {
-            return com.linguareader.shared.importer.TextImporter(booksDir)
+            val book = com.linguareader.shared.importer.TextImporter(booksDir)
                 .import(source, ImportSupport.baseName(context, uri).ifBlank { "未命名图书" })
+            ImportSupport.retainSource(book, source)
+            return book
         } finally {
             source.delete()
         }

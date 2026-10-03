@@ -13,6 +13,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,11 +22,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.linguareader.shared.data.formatStorageBytes
+import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.ServerAddress
 import com.linguareader.shared.sync.ServerAddressError
 import com.linguareader.shared.sync.ServerAddressResult
@@ -52,7 +56,13 @@ internal fun SyncSheet(
     onLogin: (SyncSettings, String) -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** 云端书单（书籍正文 blob）：远端有、本机没有的书。 */
+    cloudBooks: List<CloudBook> = emptyList(),
+    cloudBooksLoaded: Boolean = false,
+    cloudBooksLoading: Boolean = false,
+    onRefreshCloudBooks: () -> Unit = {},
+    onDownloadCloudBook: (CloudBook) -> Unit = {}
 ) {
     val simpleAddress = remember(settings.serverUrl) { ServerAddress.toInput(settings.serverUrl) }
     var address by remember { mutableStateOf(simpleAddress ?: "") }
@@ -197,6 +207,64 @@ internal fun SyncSheet(
             if (status != null) {
                 Spacer(Modifier.height(2.dp))
                 Text(status, style = MaterialTheme.typography.bodySmall, color = InkSoft)
+            }
+
+            // 云端书单：书籍正文（blob）按内容寻址存在服务端，这里列「远端有、本机没有」的书，
+            // 点「下载」重跑导入器落到本地书库。没登录/没拉过显示引导文案。
+            Spacer(Modifier.height(2.dp))
+            Text(
+                stringResource(R.string.sync_cloud_books_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = Ink
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onRefreshCloudBooks,
+                    enabled = !busy && !cloudBooksLoading
+                ) {
+                    Text(
+                        stringResource(
+                            if (cloudBooksLoaded) R.string.sync_cloud_refresh else R.string.sync_cloud_load
+                        )
+                    )
+                }
+            }
+            when {
+                cloudBooksLoading -> Text(
+                    stringResource(R.string.sync_cloud_loading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSoft
+                )
+                !cloudBooksLoaded -> Text(
+                    stringResource(R.string.sync_cloud_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSoft
+                )
+                cloudBooks.isEmpty() -> Text(
+                    stringResource(R.string.sync_cloud_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSoft
+                )
+                else -> cloudBooks.forEach { cloud ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            cloud.displayName + " · " + formatStorageBytes(cloud.sizeBytes),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Ink
+                        )
+                        TextButton(
+                            onClick = { onDownloadCloudBook(cloud) },
+                            enabled = !busy
+                        ) {
+                            Text(stringResource(R.string.sync_cloud_download))
+                        }
+                    }
+                }
             }
         }
     }

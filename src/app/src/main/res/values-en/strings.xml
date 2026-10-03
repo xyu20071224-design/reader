@@ -818,4 +818,18 @@
     <string name="sync_error_auth">Incorrect username or password</string>
     <string name="sync_error_network">Cannot reach the server — check the address and network</string>
     <string name="sync_error_server">Server error: %1$s</string>
+    <string name="sync_error_quota">Cloud storage quota exceeded</string>
+    <string name="sync_cloud_books_title">Cloud books</string>
+    <string name="sync_cloud_load">Load cloud books</string>
+    <string name="sync_cloud_refresh">Refresh cloud books</string>
+    <string name="sync_cloud_loading">Loading cloud books…</string>
+    <string name="sync_cloud_hint">Sign in to list book files backed up in the cloud.</string>
+    <string name="sync_cloud_empty">No books are missing from this device.</string>
+    <string name="sync_cloud_download">Download</string>
+    <string name="sync_cloud_downloading">Downloading %1$s…</string>
+    <string name="sync_cloud_downloaded">Downloaded %1$s from the cloud</string>
+    <string name="sync_cloud_unknown_format">The cloud file is not a recognized book (EPUB/TXT/FB2/PDF)</string>
+    <string name="sync_download_failed">Cloud download failed: %1$s</string>
+    <string name="sync_need_login_for_cloud">Sign in first to load cloud books</string>
+    <string name="sync_upload_failed">Failed to upload %1$s: %2$s</string>
 </resources>

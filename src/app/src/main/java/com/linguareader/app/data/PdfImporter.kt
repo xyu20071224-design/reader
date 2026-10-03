@@ -18,16 +18,32 @@ class PdfImporter(
     private val context: Context,
     private val booksDir: File
 ) {
+    /** SAF 入口：拷临时文件 → [importFile] → 留存源文件 → 删临时文件。 */
     fun import(uri: Uri): Book {
         PDFBoxResourceLoader.init(context)
         val source = ImportSupport.copySource(context, uri)
+        try {
+            val book = importFile(source, ImportSupport.baseName(context, uri))
+            ImportSupport.retainSource(book, source)
+            return book
+        } finally {
+            source.delete()
+        }
+    }
+
+    /**
+     * File 级入口（云端下载重导入与 SAF 共用同一套解析）。
+     * 不负责源文件生命周期、不负责留存——由调用方决定（SAF 传真件的临时拷件）。
+     */
+    fun importFile(source: File, fallbackTitle: String): Book {
+        PDFBoxResourceLoader.init(context)
         val id = ImportSupport.sha256(source).take(20)
         val destination = File(booksDir, id)
         if (destination.exists()) destination.deleteRecursively()
         destination.mkdirs()
         try {
             val parsed = extractPdf(source, scratchDir = context.cacheDir)
-            val title = parsed.title.ifBlank { ImportSupport.baseName(context, uri).ifBlank { "未命名图书" } }
+            val title = parsed.title.ifBlank { fallbackTitle.trim() }.ifBlank { "未命名图书" }
             val chapters = parsed.chapters.mapIndexed { index, chapter ->
                 val file = File(destination, "chapter_%03d.xhtml".format(index + 1))
                 file.writeText(textToXhtml(chapter.title, chapter.body), Charsets.UTF_8)
@@ -52,8 +68,6 @@ class PdfImporter(
                 "无法导入该 PDF，请确认它是未加密、带文字层的 PDF：${error.message}",
                 error
             )
-        } finally {
-            source.delete()
         }
     }
 }

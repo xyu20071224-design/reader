@@ -16,8 +16,10 @@ class Fb2Importer(
     fun import(uri: Uri): Book {
         val source = ImportSupport.copySource(context, uri)
         try {
-            return com.linguareader.shared.importer.Fb2Importer(booksDir)
+            val book = com.linguareader.shared.importer.Fb2Importer(booksDir)
                 .import(source, ImportSupport.baseName(context, uri))
+            ImportSupport.retainSource(book, source)
+            return book
         } finally {
             source.delete()
         }

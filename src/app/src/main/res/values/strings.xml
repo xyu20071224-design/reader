@@ -809,4 +809,18 @@
     <string name="sync_error_auth">用户名或密码错误</string>
     <string name="sync_error_network">连不上服务器，请检查地址与网络</string>
     <string name="sync_error_server">服务端错误：%1$s</string>
+    <string name="sync_error_quota">云端存储空间不足</string>
+    <string name="sync_cloud_books_title">云端书单</string>
+    <string name="sync_cloud_load">拉取云端书单</string>
+    <string name="sync_cloud_refresh">刷新云端书单</string>
+    <string name="sync_cloud_loading">正在拉取云端书单…</string>
+    <string name="sync_cloud_hint">登录后可拉取云端已备份的书籍正文。</string>
+    <string name="sync_cloud_empty">云端没有本机缺少的书籍。</string>
+    <string name="sync_cloud_download">下载</string>
+    <string name="sync_cloud_downloading">正在下载《%1$s》…</string>
+    <string name="sync_cloud_downloaded">已从云端下载《%1$s》</string>
+    <string name="sync_cloud_unknown_format">云端文件不是可识别的电子书（支持 EPUB/TXT/FB2/PDF）</string>
+    <string name="sync_download_failed">云端下载失败：%1$s</string>
+    <string name="sync_need_login_for_cloud">请先登录再拉取云端书单</string>
+    <string name="sync_upload_failed">《%1$s》上传到云端失败：%2$s</string>
 </resources>

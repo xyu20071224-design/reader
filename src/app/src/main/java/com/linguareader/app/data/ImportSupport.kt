@@ -3,6 +3,7 @@ package com.linguareader.app.data
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import com.linguareader.shared.sync.BookSourceFile
 import java.io.File
 import java.security.MessageDigest
 
@@ -77,6 +78,27 @@ object ImportSupport {
     fun baseName(context: Context, uri: Uri): String {
         val name = displayName(context, uri)
         return name.substringBeforeLast('.').trim().ifBlank { name.trim() }
+    }
+
+    /**
+     * 把导入用的临时源文件留存到书目录（`booksDir/<id>/source.<ext>`），供云同步上传书籍正文。
+     *
+     * 尽力而为：留存失败（如存储不足）只影响「能否上传」，**绝不能让导入失败**。
+     * 文件在书目录内，删书时随 [com.linguareader.shared.data.BookScopedStore] 整体清理。
+     */
+    fun retainSource(book: Book, source: File): Boolean {
+        if (!source.isFile || source.length() == 0L) return false
+        return runCatching {
+            val dir = File(book.extractedDir)
+            if (!dir.isDirectory) return@runCatching false
+            val target = File(dir, BookSourceFile.fileNameFor(book.sourceFormat))
+            val temp = File(dir, target.name + ".tmp")
+            source.copyTo(temp, overwrite = true)
+            var moved = temp.renameTo(target)
+            if (!moved && target.delete()) moved = temp.renameTo(target)
+            if (!moved) temp.delete()
+            moved
+        }.getOrDefault(false)
     }
 
     fun sha256(file: File): String {

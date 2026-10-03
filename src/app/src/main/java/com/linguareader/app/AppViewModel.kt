@@ -54,6 +54,7 @@ import com.linguareader.app.packs.PackUiState
 import com.linguareader.app.packs.RemotePacksState
 import com.linguareader.shared.update.GitHubReleaseParser
 import com.linguareader.app.packs.toUiItem
+import com.linguareader.app.data.UnsupportedBookFormatException
 import com.linguareader.app.sync.AndroidSyncController
 import com.linguareader.app.tts.MultiVoiceSupport
 import com.linguareader.app.tts.TtsAudioCache
@@ -62,6 +63,8 @@ import com.linguareader.app.update.UpdateCheckOutcome
 import com.linguareader.shared.update.AppUpdatePhase
 import com.linguareader.shared.update.AppUpdateUiState
 import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.sync.CloudBook
+import com.linguareader.shared.sync.CloudBookList
 import com.linguareader.shared.sync.SyncErrorKind
 import com.linguareader.shared.sync.SyncException
 import com.linguareader.shared.sync.SyncSettings
@@ -177,7 +180,12 @@ data class AppUiState(
     /** 云同步（自托管服务端）：设置、最近一次状态文案、是否正在跑。 */
     val syncSettings: SyncSettings = SyncSettings(),
     val syncStatus: String? = null,
-    val syncBusy: Boolean = false
+    val syncBusy: Boolean = false,
+    /** 云端书单：远端有完整正文、本机没有的书（书籍正文 blob）。 */
+    val cloudBooks: List<CloudBook> = emptyList(),
+    /** 是否已成功拉取过一次云端书单（区分「没拉过」与「拉过但为空」）。 */
+    val cloudBooksLoaded: Boolean = false,
+    val cloudBooksLoading: Boolean = false
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -353,6 +361,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         noticeTone = StatusTone.SUCCESS
                     )
                     rescheduleReviewReminders()
+                    // 云同步开启时后台自动上传源文件；不阻塞导入，失败只发 Snackbar。
+                    uploadBookSourceInBackground(book)
                 }
                 .onFailure {
                     mutableState.value = mutableState.value.copy(
@@ -888,6 +898,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             // 同步会改动书库/生词本落盘内容，刷新界面数据。
             refresh()
+            // 同步成功后顺手刷新云端书单（规格：同步成功或弹窗内主动刷新）。
+            if (outcome.isSuccess) refreshCloudBooks()
         }
     }
 
@@ -903,8 +915,109 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun syncFailureText(error: Throwable): String = when ((error as? SyncException)?.kind) {
         SyncErrorKind.AUTH -> string(R.string.sync_error_auth)
         SyncErrorKind.NETWORK -> string(R.string.sync_error_network)
-        SyncErrorKind.SERVER -> string(R.string.sync_error_server, error.message ?: error.javaClass.simpleName)
+        SyncErrorKind.SERVER -> when ((error as? SyncException)?.status) {
+            // 上传 blob 超服务端配额是 413，给专门文案而不是笼统「服务端错误」。
+            413 -> string(R.string.sync_error_quota)
+            else -> string(R.string.sync_error_server, error.message ?: error.javaClass.simpleName)
+        }
         null -> string(R.string.sync_failed, error.message ?: error.javaClass.simpleName)
+    }
+
+    // --- 云同步 · 书籍正文（blob，task-3）--------------------------------------
+
+    /**
+     * 导入成功后自动上传源文件。未启用/未登录/老书没有留存源文件都静默跳过；
+     * 只有真正的网络/服务端失败才发 Snackbar（规格：失败必须可见）。
+     */
+    private fun uploadBookSourceInBackground(book: Book) {
+        val settings = mutableState.value.syncSettings
+        if (!settings.enabled || !sync.hasSession()) return
+        viewModelScope.launch {
+            runCatching { sync.uploadSource(settings, book) }
+                .onFailure { error ->
+                    mutableState.value = mutableState.value.copy(
+                        notice = string(R.string.sync_upload_failed, book.title, syncFailureText(error)),
+                        noticeTone = StatusTone.DANGER
+                    )
+                }
+        }
+    }
+
+    /**
+     * 拉取云端书单：远端有完整正文、本机书库没有的书。
+     * 书名轻量增强（远端进度记录里的 title）失败时静默回退 bookId 前 8 位。
+     */
+    fun refreshCloudBooks() {
+        val settings = mutableState.value.syncSettings
+        if (!settings.enabled || !sync.hasSession()) {
+            mutableState.value = mutableState.value.copy(
+                cloudBooks = emptyList(),
+                cloudBooksLoaded = true,
+                cloudBooksLoading = false,
+                syncStatus = string(R.string.sync_need_login_for_cloud)
+            )
+            return
+        }
+        mutableState.value = mutableState.value.copy(cloudBooksLoading = true)
+        viewModelScope.launch {
+            val outcome = runCatching {
+                val blobs = sync.listRemoteBlobs(settings)
+                val titles = runCatching { sync.remoteBookTitles(settings) }.getOrDefault(emptyMap())
+                CloudBookList.missing(blobs, mutableState.value.books.map { it.id }.toSet(), titles)
+            }
+            mutableState.value = mutableState.value.copy(
+                cloudBooksLoading = false,
+                cloudBooksLoaded = true,
+                cloudBooks = outcome.getOrElse { mutableState.value.cloudBooks },
+                syncStatus = outcome.exceptionOrNull()?.let { syncFailureText(it) } ?: mutableState.value.syncStatus
+            )
+        }
+    }
+
+    /** 下载云端书籍正文 → 临时文件 → 重跑导入器 → 刷新书库/书单。 */
+    fun downloadCloudBook(cloud: CloudBook) {
+        val settings = mutableState.value.syncSettings
+        if (!settings.enabled || !sync.hasSession()) {
+            mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_need_login_for_cloud))
+            return
+        }
+        mutableState.value = mutableState.value.copy(
+            syncBusy = true,
+            syncStatus = string(R.string.sync_cloud_downloading, cloud.displayName)
+        )
+        viewModelScope.launch {
+            val target = library.downloadScratchFile()
+            val outcome = runCatching {
+                sync.downloadBlob(settings, cloud.bookId, target)
+                library.importDownloadedFile(target, cloud.displayName)
+            }
+            target.delete()
+            outcome.fold(
+                onSuccess = { book ->
+                    refresh()
+                    mutableState.value = mutableState.value.copy(
+                        syncBusy = false,
+                        syncStatus = null,
+                        cloudBooks = mutableState.value.cloudBooks.filterNot { it.bookId == cloud.bookId },
+                        notice = string(R.string.sync_cloud_downloaded, book.title),
+                        noticeTone = StatusTone.SUCCESS
+                    )
+                },
+                onFailure = { error ->
+                    val text = if (error is UnsupportedBookFormatException) {
+                        string(R.string.sync_cloud_unknown_format)
+                    } else {
+                        syncFailureText(error)
+                    }
+                    mutableState.value = mutableState.value.copy(
+                        syncBusy = false,
+                        syncStatus = null,
+                        notice = string(R.string.sync_download_failed, text),
+                        noticeTone = StatusTone.DANGER
+                    )
+                }
+            )
+        }
     }
 
     // --- 自动更新（GitHub Release）-------------------------------------------

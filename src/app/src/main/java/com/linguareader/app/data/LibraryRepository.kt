@@ -22,6 +22,16 @@ class LibraryRepository(private val context: Context) : BookScopedStore {
         shared.registerImportedBook(imported)
     }
 
+    /** 云端下载的落地临时文件（cacheDir）；调用方负责删除。 */
+    fun downloadScratchFile(): File =
+        File(context.cacheDir, "cloud-download-" + System.currentTimeMillis() + ".bin")
+
+    /** 云端 blob 重导入：按内容魔数判格式 → 导入 → 登记，返回新书（task-3 下载侧）。 */
+    suspend fun importDownloadedFile(source: File, displayName: String): Book = withContext(Dispatchers.IO) {
+        val imported = BookImporter(context, shared.booksDir).importFile(source, displayName)
+        shared.registerImportedBook(imported)
+    }
+
     suspend fun saveProgress(
         book: Book,
         chapterIndex: Int,

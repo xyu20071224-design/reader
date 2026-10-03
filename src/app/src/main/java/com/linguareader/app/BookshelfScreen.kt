@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Translate
+import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.SyncSettings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ModalBottomSheet
@@ -187,6 +188,9 @@ internal fun BookshelfScreen(
     onSyncLogin: (SyncSettings, String) -> Unit = { _, _ -> },
     onSyncNow: () -> Unit = {},
     onSyncLogout: () -> Unit = {},
+    /** 云端书单（书籍正文 blob）：拉取与点选下载。 */
+    onRefreshCloudBooks: () -> Unit = {},
+    onDownloadCloudBook: (CloudBook) -> Unit = { _ -> },
     /** Q2-c07：书架内改阅读主题时通知外壳，整体配色即时生效。 */
     onReaderThemeChanged: (com.linguareader.app.data.ReaderTheme) -> Unit
 ) {
@@ -469,7 +473,12 @@ internal fun BookshelfScreen(
             onLogin = onSyncLogin,
             onSyncNow = onSyncNow,
             onLogout = onSyncLogout,
-            onDismiss = { showSyncSheet = false }
+            onDismiss = { showSyncSheet = false },
+            cloudBooks = state.cloudBooks,
+            cloudBooksLoaded = state.cloudBooksLoaded,
+            cloudBooksLoading = state.cloudBooksLoading,
+            onRefreshCloudBooks = onRefreshCloudBooks,
+            onDownloadCloudBook = onDownloadCloudBook
         )
     }
 
