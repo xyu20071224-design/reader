@@ -823,4 +823,5 @@
     <string name="sync_download_failed">云端下载失败：%1$s</string>
     <string name="sync_need_login_for_cloud">请先登录再拉取云端书单</string>
     <string name="sync_upload_failed">《%1$s》上传到云端失败：%2$s</string>
+    <string name="sync_manual_server_hint">未内置默认服务器，请在高级设置中填写服务器地址。</string>
 </resources>

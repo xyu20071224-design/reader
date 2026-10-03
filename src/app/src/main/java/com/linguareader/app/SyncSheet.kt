@@ -33,14 +33,19 @@ import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.ServerAddress
 import com.linguareader.shared.sync.ServerAddressError
 import com.linguareader.shared.sync.ServerAddressResult
+import com.linguareader.shared.sync.SyncServerDefaults
+import com.linguareader.shared.sync.SyncServerResolver
 import com.linguareader.shared.sync.SyncSettings
 
 /**
  * 云同步设置弹层（F-160，自托管服务端）。
  *
- * 日常只需填「服务器地址（IPv4）+ 用户名 + 密码」三项：协议固定 http://，端口缺省 8787，
- * URL 由 [ServerAddress] 推导。完整 URL / 证书指纹收进高级折叠区（沿用既有能力，
- * [SyncSettings] 不新增字段）。现有 serverUrl 不是简单形式时，打开即展开高级区并回填。
+ * 日常只填「用户名 + 密码」：服务器地址与证书指纹收进高级折叠区，默认用构建期注入的
+ * 默认服务器（[syncDefaults]，来自 gitignored 的 local.properties → BuildConfig）预填；
+ * 已保存的 serverUrl 优先于默认值。既无已保存值也无默认值时高级区默认展开，保留手填能力。
+ * 主输入框仍支持手填 IPv4[:端口]（协议固定 http://、端口缺省 8787），完整 URL 走高级区。
+ *
+ * **默认值不会自动开启同步**：enabled 仍只能由用户点保存/登录置 true（离线优先）。
  *
  * 只负责收集输入并把动作转发给 AppViewModel；网络、离线队列与冲突合并全在 :shared
  * 的 SyncCoordinator / SyncEngine。令牌不在这里持久化——由 AndroidSyncController 交给
@@ -62,16 +67,26 @@ internal fun SyncSheet(
     cloudBooksLoaded: Boolean = false,
     cloudBooksLoading: Boolean = false,
     onRefreshCloudBooks: () -> Unit = {},
-    onDownloadCloudBook: (CloudBook) -> Unit = {}
+    onDownloadCloudBook: (CloudBook) -> Unit = {},
+    /** 构建期注入的默认服务器（BuildConfig；空串 = 无默认，保持手填行为）。 */
+    syncDefaults: SyncServerDefaults = SyncServerDefaults.of(
+        BuildConfig.SYNC_DEFAULT_SERVER_URL,
+        BuildConfig.SYNC_DEFAULT_CERT_SHA256
+    )
 ) {
-    val simpleAddress = remember(settings.serverUrl) { ServerAddress.toInput(settings.serverUrl) }
+    // 地址初值：已保存值优先，否则构建期默认值（URL + 指纹成对取，见 SyncServerResolver）。
+    val initial = remember(settings.serverUrl, settings.pinnedCertSha256, syncDefaults) {
+        SyncServerResolver.initial(settings, syncDefaults)
+    }
+    // 简单 http://IPv4[:port] 回填地址框；https/域名/带路径回填高级区的完整 URL。
+    val simpleAddress = remember(initial.serverUrl) { ServerAddress.toInput(initial.serverUrl) }
     var address by remember { mutableStateOf(simpleAddress ?: "") }
+    var fullUrl by remember { mutableStateOf(if (simpleAddress == null) initial.serverUrl else "") }
+    var fingerprint by remember { mutableStateOf(initial.pinnedCertSha256) }
     var username by remember { mutableStateOf(settings.username) }
     var password by remember { mutableStateOf("") }
-    var fingerprint by remember { mutableStateOf(settings.pinnedCertSha256) }
-    // 存的是 https / 域名 / 带路径的完整 URL 时，IP 框无法回填 —— 直接展开高级区。
-    var advanced by remember { mutableStateOf(simpleAddress == null && settings.serverUrl.isNotBlank()) }
-    var fullUrl by remember { mutableStateOf(if (simpleAddress == null) settings.serverUrl else "") }
+    // 无已保存值也无默认值 → 展开高级区提示手填；否则收起，日常只填用户名+密码。
+    var advanced by remember { mutableStateOf(initial.needsManualAddress) }
     var error by remember { mutableStateOf<ServerAddressError?>(null) }
 
     val errorText = when (error) {
@@ -86,8 +101,10 @@ internal fun SyncSheet(
     val fullUrlInvalid = error != null && fullUrl.isNotBlank()
 
     // 保存与登录共用同一套输入校验：非法输入行内报错并拒绝动作。
+    // 两个地址框都空且存在默认值 → 回落默认 URL（不得报「请填写服务器地址」）。
     fun submit(onValid: (SyncSettings) -> Unit) {
-        when (val result = ServerAddress.compose(address, fullUrl)) {
+        val input = SyncServerResolver.submitInput(initial, address, fullUrl)
+        when (val result = ServerAddress.compose(input.address, input.fullUrl)) {
             is ServerAddressResult.Ok -> {
                 error = null
                 onValid(
@@ -122,17 +139,6 @@ internal fun SyncSheet(
             )
 
             OutlinedTextField(
-                value = address,
-                onValueChange = {
-                    address = it
-                    error = null
-                },
-                label = { Text(stringResource(R.string.sync_server_label)) },
-                singleLine = true,
-                isError = addressInvalid,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
                 value = username,
                 onValueChange = { username = it },
                 label = { Text(stringResource(R.string.sync_username_label)) },
@@ -148,11 +154,22 @@ internal fun SyncSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 高级设置：默认收起，保留完整 URL（HTTPS/反代）与证书指纹两项既有能力。
+            // 高级设置：服务器地址 + 完整 URL（HTTPS/反代）+ 证书指纹，默认收起并已预填。
             TextButton(onClick = { advanced = !advanced }) {
                 Text(stringResource(R.string.sync_advanced_toggle))
             }
             if (advanced) {
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = {
+                        address = it
+                        error = null
+                    },
+                    label = { Text(stringResource(R.string.sync_server_label)) },
+                    singleLine = true,
+                    isError = addressInvalid,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 OutlinedTextField(
                     value = fullUrl,
                     onValueChange = {
@@ -170,6 +187,14 @@ internal fun SyncSheet(
                     label = { Text(stringResource(R.string.sync_fingerprint_label)) },
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (initial.needsManualAddress) {
+                    // 没有内置默认服务器：明确告诉用户要在这里填地址（保留手填能力）。
+                    Text(
+                        stringResource(R.string.sync_manual_server_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSoft
+                    )
+                }
             }
 
             if (errorText != null) {

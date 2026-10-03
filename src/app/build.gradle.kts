@@ -1,7 +1,40 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// 内置默认同步服务器：真实值只写在 gitignored 的 src/local.properties，仓库里不落 IP/指纹。
+// 键：sync.defaultServerUrl / sync.defaultCertSha256；缺省空串 = 无默认服务器（保持手填行为）。
+val syncLocalProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.isFile) file.inputStream().use { load(it) }
+}
+val defaultSyncServerUrl = syncLocalProperties.getProperty("sync.defaultServerUrl").orEmpty().trim()
+val defaultSyncCertSha256 = syncLocalProperties.getProperty("sync.defaultCertSha256").orEmpty().trim()
+
+/**
+ * 转成 buildConfigField 的 Java 字符串字面量：URL 有斜杠、指纹有冒号，还可能含引号/反斜杠/$，
+ * 不转义会把生成的 BuildConfig.java 写坏。
+ */
+fun buildConfigString(raw: String): String = buildString {
+    append('"')
+    for (ch in raw) {
+        when (ch) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '$' -> {
+                append('\\')
+                append('$')
+            }
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            else -> append(ch)
+        }
+    }
+    append('"')
 }
 
 android {
@@ -16,6 +49,10 @@ android {
         versionName = "1.10.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 默认同步服务器（可选增强；出厂状态仍零出网：enabled 只能由用户保存/登录置 true）。
+        buildConfigField("String", "SYNC_DEFAULT_SERVER_URL", buildConfigString(defaultSyncServerUrl))
+        buildConfigField("String", "SYNC_DEFAULT_CERT_SHA256", buildConfigString(defaultSyncCertSha256))
     }
 
     buildFeatures {
