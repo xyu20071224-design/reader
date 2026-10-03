@@ -63,6 +63,7 @@ import com.linguareader.app.update.UpdateCheckOutcome
 import com.linguareader.shared.update.AppUpdatePhase
 import com.linguareader.shared.update.AppUpdateUiState
 import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.sync.AutoSyncScheduler
 import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.CloudBookList
 import com.linguareader.shared.sync.SyncErrorKind
@@ -75,6 +76,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -212,6 +214,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         SpeakerTagRepository(application, aiSettingsStore, glossaryRepository)
     /** 云同步：装配 :shared 的 SyncCoordinator（令牌走 Android Keystore）。 */
     private val sync = AndroidSyncController(application)
+    /** 自动同步（task-4）：纯逻辑防抖状态机 + 驱动它的 ticker；无排队时 ticker 立即退出，不空转。 */
+    private val autoSyncScheduler = AutoSyncScheduler()
+    private var autoSyncTicker: Job? = null
+    /** 令牌失效（AUTH）在状态区只提示一次；登录成功/手动同步成功后复位。 */
+    private var autoAuthWarned = false
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
     /** AI 整本翻译的在跑任务，按书 id 取消用。 */
@@ -294,6 +301,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             checkForUpdate(silent = true)
         }
         refresh()
+        // 冷启动自动同步一次（默认关闭：enabled=false 或未登录时 runAutoSync 直接返回，零出网）。
+        runAutoSync()
         // 资源包列表要出现在存储页与资源包页，启动时读一次登记表（小文件，无扫盘）。
         refreshPacks()
     }
@@ -412,6 +421,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         )
+        // 阅读进度写盘成功 → 排一次防抖同步（未启用/未登录时内部直接清空排队）。
+        scheduleAutoSync()
     }
 
     /**
@@ -718,6 +729,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 noticeTone = StatusTone.DANGER
             )
             refresh()
+            // 删书连带删了该书的生词 → 防抖同步（同步的墓碑记录来自本地快照）。
+            scheduleAutoSync()
         }
     }
 
@@ -877,6 +890,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_need_credentials))
             return
         }
+        // 与自动同步互斥：手动优先（自动链看到 busy 会跳过），并把已排队的防抖一并取消。
+        if (mutableState.value.syncBusy) return
+        autoSyncScheduler.cancel()
         mutableState.value = mutableState.value.copy(syncBusy = true, syncStatus = string(R.string.sync_syncing))
         viewModelScope.launch {
             val outcome = runCatching { sync.sync(settings) }
@@ -898,8 +914,80 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             // 同步会改动书库/生词本落盘内容，刷新界面数据。
             refresh()
-            // 同步成功后顺手刷新云端书单（规格：同步成功或弹窗内主动刷新）。
-            if (outcome.isSuccess) refreshCloudBooks()
+            if (outcome.isSuccess) {
+                // 手动同步成功即令牌有效：复位 AUTH 提示标记，并顺手刷新云端书单
+                // （规格：同步成功或弹窗内主动刷新）。
+                autoAuthWarned = false
+                refreshCloudBooks()
+            }
+        }
+    }
+
+    // --- 自动同步（task-4）：冷启动一次 + 本地变更后防抖 ---------------------------
+
+    /**
+     * 本地数据变更（阅读进度/生词增删改/删书）**写盘成功后**调用，排一次 30 秒防抖同步。
+     * 调度决策全在 :shared 的 [AutoSyncScheduler]；这里只是哑驱动：
+     * - 未启用/未登录 → 清空排队并取消 ticker（同步默认关闭的大前提：这条链永不出网）；
+     * - 已有 ticker 在跑 → 只重置到期时刻，不重复起协程；
+     * - ticker 只在有排队时存活，到点/取消/禁用即退出，不常驻空转。
+     */
+    private fun scheduleAutoSync() {
+        val enabled = mutableState.value.syncSettings.enabled && sync.hasSession()
+        if (!autoSyncScheduler.onLocalChange(enabled, System.currentTimeMillis())) {
+            autoSyncTicker?.cancel()
+            autoSyncTicker = null
+            return
+        }
+        if (autoSyncTicker?.isActive == true) return
+        autoSyncTicker = viewModelScope.launch {
+            try {
+                while (true) {
+                    val now = System.currentTimeMillis()
+                    val stillEnabled = mutableState.value.syncSettings.enabled && sync.hasSession()
+                    if (autoSyncScheduler.consumeIfDue(stillEnabled, now)) {
+                        runAutoSync()
+                        break
+                    }
+                    val remaining = autoSyncScheduler.remainingMs(now) ?: break
+                    delay(remaining)
+                }
+            } finally {
+                autoSyncTicker = null
+            }
+        }
+    }
+
+    /**
+     * 自动同步：冷启动一次 + 防抖到点各走这里。
+     *
+     * 与手动同步互斥（busy 守卫）；失败**安静**：
+     * - NETWORK（离线/超时）：静默跳过，不写状态不打扰；
+     * - AUTH（令牌失效）：状态区提示一次（[autoAuthWarned]），不反复；
+     * - 其余：同样静默 —— 完整反馈只保留给手动「立即同步」。
+     *
+     * 已知边界（勿当 bug 修）：听书进度由 TtsPlaybackService 直接落盘、不经 AppViewModel，
+     * 因此不触发本防抖链；它会在下次冷启动或手动同步时一并上行。
+     */
+    private fun runAutoSync() {
+        val settings = mutableState.value.syncSettings
+        if (!settings.enabled || !sync.hasSession()) return
+        if (mutableState.value.syncBusy) return
+        mutableState.value = mutableState.value.copy(syncBusy = true)
+        viewModelScope.launch {
+            val outcome = runCatching { sync.sync(settings) }
+            val authFailed = (outcome.exceptionOrNull() as? SyncException)?.kind == SyncErrorKind.AUTH
+            if (outcome.isSuccess) autoAuthWarned = false
+            mutableState.value = mutableState.value.copy(
+                syncBusy = false,
+                syncStatus = if (authFailed && !autoAuthWarned) {
+                    autoAuthWarned = true
+                    string(R.string.sync_error_auth)
+                } else {
+                    mutableState.value.syncStatus
+                }
+            )
+            if (outcome.isSuccess) refresh()
         }
     }
 
@@ -1779,6 +1867,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 noticeTone = StatusTone.SUCCESS
             )
             rescheduleReviewReminders()
+            scheduleAutoSync()
         }
     }
 
@@ -1791,6 +1880,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 notice = removedWord?.let { string(R.string.notice_word_removed, it) }
             )
             rescheduleReviewReminders()
+            scheduleAutoSync()
         }
     }
 
@@ -1800,6 +1890,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess { words ->
                     mutableState.value = mutableState.value.copy(savedWords = words)
                     rescheduleReviewReminders()
+                    // 复习等级/下次复习时间已落盘 → 防抖同步。
+                    scheduleAutoSync()
                     onDone(true)
                 }
                 .onFailure {

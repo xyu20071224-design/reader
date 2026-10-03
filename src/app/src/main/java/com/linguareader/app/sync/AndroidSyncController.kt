@@ -42,7 +42,19 @@ class AndroidSyncController(context: Context) {
         SyncSettings.save(prefs, settings)
     }
 
-    fun hasSession(): Boolean = !secrets.get(SyncCoordinator.TOKEN_KEY).isNullOrBlank()
+    /**
+     * 会话是否有效。结果**缓存**：阅读页每约 800ms 保存一次进度，防抖链每次都要问一次，
+     * 而 [AndroidSecretStore.get] 要做一次 Keystore 解密——不缓存等于把解密塞进热路径。
+     * 缓存只在 login / logout 处失效（令牌的唯二变更点）。
+     */
+    private var sessionCached: Boolean? = null
+
+    fun hasSession(): Boolean {
+        sessionCached?.let { return it }
+        val has = !secrets.get(SyncCoordinator.TOKEN_KEY).isNullOrBlank()
+        sessionCached = has
+        return has
+    }
 
     private fun coordinator(settings: SyncSettings): SyncCoordinator {
         val api = HttpSyncApi(settings.serverUrl, pinnedCertSha256 = settings.pinnedCertSha256)
@@ -51,6 +63,7 @@ class AndroidSyncController(context: Context) {
 
     suspend fun login(settings: SyncSettings, password: String): SyncSettings {
         coordinator(settings).login(settings.username, password)
+        sessionCached = true
         val enabled = settings.copy(enabled = true)
         saveSettings(enabled)
         return enabled
@@ -65,6 +78,7 @@ class AndroidSyncController(context: Context) {
 
     fun logout(settings: SyncSettings) {
         coordinator(settings).logout()
+        sessionCached = false
     }
 
     // --- 书籍正文（blob）------------------------------------------------------
