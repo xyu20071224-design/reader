@@ -1872,3 +1872,48 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 - 复验期间发现 Gradle 会静默 `UP-TO-DATE` 跳过测试（首轮 `testDebugUnitTest :shared:test` 仅 447ms 且 app XML 仍是 01:41 的旧产物），已改 `--rerun-tasks` 强制重跑取数；**「Build Successful + up-to-date」不能当作测试通过**，本文件一律以 XML mtime 与 tests/failures 计数为准。
 - 结论：纯逻辑与脚本层判据全部通过；WebView 渲染四项仍需真机（见上节「未验证」）。
 
+
+## 2026-10-04 v2.0.0 发布（云同步全链路 + 大版本号提升）
+
+**版本**：`versionCode 21 / versionName 2.0.0`（tag `v2.0.0`）。相对 1.10.1 的主版本跳跃，内容为本轮云同步优化。
+
+### 内容（本会话 7 个提交）
+
+| 提交 | 内容 |
+| --- | --- |
+| `8f42ba1` | 同步设置简化为 IPv4+用户名+密码；高级项折叠；登录/同步失败按 NETWORK/AUTH/SERVER 分类提示 |
+| `a5f510c` | 书籍正文 blob 接线：导入后留存源文件并自动上传；云端书单点选下载后按内容魔数判格式重导入 |
+| `cd2c2f0` | 自动同步：冷启动一次 + 本地变更后 30 秒防抖；离线静默、令牌失效只提示一次 |
+| `7bdd255` | 内置默认同步服务器：地址与证书指纹构建期注入，弹窗日常只需用户名+密码 |
+| `ed5cc10` | 简化输入支持 HTTPS（证书指纹驱动），回落路径对 https 整串透传防静默降级 |
+| `a4755cb` | e2e 脚本注释去真实服务器信息 |
+| `f818a4b` | 服务端健康自愈三件套入库 |
+
+⚠️ **隐私边界**：内置默认服务器的真实地址/指纹只写在 **gitignored** 的 `src/local.properties`（键 `sync.defaultServerUrl` / `sync.defaultCertSha256`），仓库内不落真实值；构建注入见 `src/app/build.gradle.kts`。
+
+### 验证（判据为原始 XML，非退出码）
+
+| 项 | 结果 |
+| --- | --- |
+| `:shared:test` | **455 tests / 0 failures / 0 errors / 1 skipped** |
+| `:app:testDebugUnitTest` | **447 tests / 0 failures / 0 errors** |
+| `assembleDebug` | BUILD SUCCESSFUL；`app-debug.apk` 57,458,382 B |
+| `assembleRelease`（R8） | BUILD SUCCESSFUL（33s，未加任何 `-dontwarn`）；`app-release-unsigned.apk` 35,141,930 B |
+
+### 发布包签名与版本核对（Lead 亲自执行，2026-10-04 03:3x）
+
+- 工程 release 无 `signingConfig`（历史既有状态）→ 产物未签名，按既有链路 `zipalign -p 4` + `apksigner sign` 用**工作区密钥库** `toolchain/guser-linux/.android/debug.keystore` 补签。
+- 验签：`apksigner verify --print-certs` **exit 0**；Signer #1 SHA-256 `ff9db6e1…55836f`（即 `FF:9D…83:6F`）**与工作区密钥库指纹逐字一致**，与手机已装包同源 → 支持覆盖安装。
+- 版本核对：`aapt2 dump badging` → 签名前后均为 `versionCode='21' versionName='2.0.0'`。
+- 产物：`artifacts/linguareader-2.0.0.apk`（35,169,709 B，gitignored）。
+
+### 未验证（需真机，单测覆盖不到）
+
+`adb devices` 无设备：① 弹窗只填用户名+密码即可登录并同步；② 导入新书自动上传、换账号后云端书单点选下载；③ 冷启动与变更后 30 秒防抖自动同步的实际触发；④ release（R8）包真机冒烟。以上四项均**未实测**，不得以单测结果顶替。
+
+### 服务端（运维侧，Lead 执行）
+
+- 生产实例 `linguareader-sync`（HTTPS）本轮修复了一次**进程僵死**（`active` 但不响应，日志显示最后一次成功服务在 2026-09-21）；已部署 `deploy/healthcheck.sh` + timer（开机 2 分钟后首次、此后每 5 分钟巡检，失败即重启）。
+- 自愈已实测：手动 `systemctl stop` 后脚本检出失败并重启恢复健康（`recovered after restart`，exit 0）；`--dry-run` 负向用例 exit 1；未知参数 exit 2。
+- 未在仓库/文档中记录该实例的真实地址与指纹（见上「隐私边界」）。
+
