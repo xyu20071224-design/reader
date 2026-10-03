@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic LinguaReader sync healthcheck
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=linguareader-sync-healthcheck.service
+
+[Install]
+WantedBy=timers.target

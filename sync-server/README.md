@@ -72,6 +72,36 @@ systemd 单元见本目录 [linguareader-sync.service](linguareader-sync.service
 
     sqlite3 /var/lib/linguareader-sync/sync.db ".backup '/var/backups/lr-sync-DATE.db'"
 
+## 健康自愈
+
+服务端的 systemd 单元挂掉时不会自愈。仓库里的 `deploy/` 提供「巡检 + 自动重启」三件套：
+**开机 2 分钟后首次执行，此后每 5 分钟一次**（`AccuracySec=30s`）；巡检失败就重启
+`linguareader-sync` 并在重启后复检。
+
+    sudo install -o ubuntu -g ubuntu -m 750 deploy/healthcheck.sh /home/ubuntu/linguareader-sync/healthcheck.sh
+    sudo install -o root -g root -m 644 deploy/linguareader-sync-healthcheck.service deploy/linguareader-sync-healthcheck.timer /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now linguareader-sync-healthcheck.timer
+    systemctl list-timers linguareader-sync-healthcheck.timer
+
+`healthcheck.sh` 巡检 `https://127.0.0.1:25000/api/v1/health`（自签证书用 `curl -k`；
+可用 `LR_HEALTH_URL` / `LR_HEALTH_TIMEOUT` 覆盖），不健康时执行
+`sudo -n systemctl restart linguareader-sync` 并最多复检 30 秒；`--dry-run` 只报告不重启。
+脚本里**不含任何密码/密钥**，但 `sudo -n`（非交互）**必须能免密执行**，否则重启那一步会失败、
+自愈静默失效。二选一：
+
+1. **给 ubuntu 配一条免密 sudo**（推荐；保持 unit 里现成的 `User=ubuntu`）：
+
+       # /etc/sudoers.d/linguareader-sync-healthcheck（权限 0600）
+       ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart linguareader-sync
+
+2. **或改由 root 运行该 unit**：把 `linguareader-sync-healthcheck.service` 的 `User=` / `Group=`
+   删掉或改为 `root`（这样不再需要 sudoers 条目，脚本里的 `sudo -n` 对 root 是空操作）。
+
+无论哪种，`healthcheck.sh` 权限都应是 **750**（选项 1 下还要求属主是 `ubuntu`）——否则 timer
+触发时会因权限不足失败。
+生产部署已实测：手动 `systemctl stop linguareader-sync` 后，最迟一个巡检周期（≤5 分钟）内自动恢复健康。
+
 ## 安全须知
 
 - 服务端会持有用户书籍正文（用户已确认纳入同步），**必须启用 HTTPS**，不要裸 HTTP 暴露公网。
