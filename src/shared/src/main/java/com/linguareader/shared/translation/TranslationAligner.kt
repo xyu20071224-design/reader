@@ -50,9 +50,39 @@ object TranslationAligner {
      *     并套同一个 [sentenceMergeAllowed] 门槛（此路径拿得到 meanings，非无证据回退）。
      *  3. 中文侧 [joinChinese] 改用空串拼接（英文侧保持空格）：中文并合译文不该出现
      *     「他說。 她笑了。」这种夹空格形态。
-     * 旧档案（alignerVersion < 7）靠版本闸门判旧，由书架「重新对齐」入口重跑。
+     *
+     * v8（相对 v7）：
+     *  1. **段级位置先验**：段级 DP 的配对走法加 w·|i/n − j/m| 的对角惩罚
+     *     （[PARAGRAPH_POSITION_PRIOR]=0.5），治泛化集 Δ±1 整节漂移；句级/章级保持 0。
+     *  2. **中文侧句数改精确计数**（[countChineseSentencesExact]，与 [splitChinese] 同口径），
+     *     消除第四轮审查 2-4 遗留的「终止符游程近似」已知例外。
+     *  3. **英方 2:1 恢复合并且落盘拆回单句**（即 T5 对 v7 第 1 条的修订）：句级 DP 恢复
+     *     2 en : 1 zh 走法（仍受 [sentenceMergeAllowed] 三门槛约束），但落盘时把被合并的
+     *     每个英文句各写成一条句对、共享同一条 zhSentence（主路径与邻近兜底路径同契约）。
+     *     档案里 enSentence 仍恒为单句（[EN_SINGLE_SENTENCE_SINCE] 的不变式不变），而 v7
+     *     那个「第二条英文句失去句级条目、只能段落兜底」的覆盖缺口被补上（金标准
+     *     s1/s19/s24/s27/s31/s32/s33 的根因，T5 恢复其中 5 条）。Q1-t04 的病灶是**档案里
+     *     的 "A. B." 并合串**，不是 DP 走法本身——拆开落盘后点 B 仍走第 1/2 级精确命中
+     *     它自己那条。
+     *
+     * 旧档案（alignerVersion < [VERSION]）靠版本闸门判旧，由书架「重新对齐」入口重跑。
      */
-    const val VERSION = 7
+    const val VERSION = 8
+
+    /**
+     * 「英文侧恒为单句」契约的起始版本：**v7/T5 起**落盘句对的
+     * [AlignedSentencePair.enSentence] 不可能再是 "A. B." 这种并合形态（v7 靠禁用英方并合
+     * 实现；v8/T5 起靠「DP 允许 2:1、落盘拆回单句」实现——不变式相同，理由是 Q1-t04 的
+     * 病灶在档案串本身）。**VERSION 后来升到 8 不改变本常量**：v7、v8 档案都满足该不变式，
+     * 查询侧护栏对二者都应关闭；写成 [VERSION] 会把 v7/v8 档案重新卷进游程启发式。
+     *
+     * 查询侧第 3 级的「并合片段」护栏（[TranslationMemorySearch.isCrossSentenceFragment]）
+     * 只对 **alignerVersion < 本常量** 的旧档案有意义。对 v7+ 档案继续套终止符游程
+     * 启发式会把含缩写点/问号+句号的**普通单句**误判成并合句，把同一句的真子串查询
+     * 降级为整段——金标准 s1/s7/s19/s24/s27/s31/s32/s33 八条就是这样从句级掉到段级的。
+     * 该常量必须钉死在 7：不能写成 [VERSION]，否则后续版本 +1 会把 v7 档案重新卷进护栏。
+     */
+    const val EN_SINGLE_SENTENCE_SINCE = 7
 
     /** 词义锚点每次命中的加分上限与单点权重（与「数字/拉丁锚点」同量级、略高）。 */
     private const val MEANING_MAX_HITS = 4
@@ -66,6 +96,19 @@ object TranslationAligner {
      *  ③ 边际要求：合并代价要比局部最优的 1:1 拆分便宜 [SENTENCE_MERGE_MARGIN]
      *     以上（「本来就配得好就不要合并」，否则正确配对会被合并抢走）。
      * 无 meaning 源时 ① 恒不满足，合并自动禁用（行为保守回退）。
+     *
+     * 英方 2:1（T5 恢复）在 DP 里合法，但**落盘一定拆回单句**（见 [align] 的 emitted 循环）；
+     * 因此本门槛判的是「这两句英文挤进这一句中文是否说得通」，与档案单句不变式不冲突。
+     *
+     * **T5 后泛化集同节精度 -1pp 的归因（实测）**：恢复英方合并会新增「同一段内共享同一条
+     * zhSentence 的多条句对」。泛化集（meaning=null，同节精度）：
+     *   John 含共享 0.906 → 排除共享 **0.918**；Genesis 0.906 → **0.920**；Proverbs 0.878 → **0.884**
+     *   （T4 无该机制时为 0.916 / 0.917 / 0.883）——跌幅全部来自**节级口径效应**：共享的中文句
+     *   同时覆盖多条英文句，按「每条句对定位到哪个节号」计分时不可能同时落进两个节，必然稀释
+     *   同节精度；排除共享对后回到 T4 水平（差 ≤ +0.3pp），T5 无真退化。
+     *   **泛化集是完全平行语料（KJV/和合本逐节一一对应），共享句在节级口径下必然稀释同节精度**
+     *   ——这是口径性质，不是回归，后人别把它当退化。用户侧则是净收益：点共享句覆盖的任一句
+     *   英文都能拿到句级译文，而不是整段兜底（魔戒 benchmark 段级兜底 29.3% → 22.7%）。
      */
     private const val SENTENCE_MERGE_MIN_EN_WORDS = 2
     private const val SENTENCE_MERGE_MIN_ZH_CHARS = 6
@@ -93,6 +136,46 @@ object TranslationAligner {
 
     const val MIN_CONFIDENCE = 0.15f
     private const val SKIP_COST = 1.2
+
+    // --- 位置先验（V8 起） ---------------------------------------------------
+    //
+    // 动机：泛化集残差几乎全是 Δ±1 整节平移（within±1 0.945–0.962 vs 同节 0.766–0.857）。
+    // 长度相近的片段之间，现有代价只有长度比 + 锚点，整段平移几乎不花代价，单调 DP 于是
+    // 可以整节滑走。这里给 DP 加一个 O(1) 的对角先验：路径在 (i/n, j/m) 平面上偏离对角线
+    // 的距离乘以权重。三类片段（章/段/句）各自独立可调，0.0 = 与旧版行为完全一致。
+    //
+    // 权重取值依据见各常量旁注释（泛化集 + 合成语料 + 金标准实测）。
+    /** 章节级对「章节数不等」的场景会把真实偏移当漂移惩罚，故保持 0（章配对本来就允许 1:0/0:1）。 */
+    private const val CHAPTER_POSITION_PRIOR = 0.0
+    /**
+     * 段级位置先验权重（V8 起生效；泛化集的「节」就在这一层）。
+     *
+     * 泛化集扫描（meaning=null，同节/±1节/覆盖率）：
+     *   p=0.0  John 0.857/0.962/0.782  Genesis 0.838/0.958/0.753  Proverbs 0.766/0.945/0.733
+     *   p=0.5  John 0.915/0.989/0.850  Genesis 0.916/0.991/0.844  Proverbs 0.883/0.989/0.854
+     *   p=0.7  John 0.924/0.992/0.861  Genesis 0.935/0.997/0.870  Proverbs 0.906/0.993/0.879
+     *   p=1.0  John 0.944/0.996/0.887  Genesis 0.950/0.998/0.887  Proverbs 0.941/0.998/0.914
+     *
+     * **泛化集是「逐节一一对应」的完全平行语料，指标随 p 单调上升，不能拿它定最优点**
+     * （KJV 与和合本每章节数完全相同，越「贴对角线」越对）。真正的上限由非平行场景定：
+     * p≥0.7 时 [TranslationAlignerTest.skippedParagraphGetsSentenceLevelFallback] 的
+     * 3 英文段 : 1 中文段 场景里，先验把「跳过最远段 + 句级兜底」顶成 2:1 段级合并，
+     * 丢掉了该测试守住的兜底行为；p=0.5 是仍保持该行为的上界。
+     * 魔戒侧（真正非平行）实测 p=0.5：金标准 65 条契约样本 0 变化；
+     * benchmark 段级句对 928→955（+2.9%）、点词命中率 96.9→97.0%、耗时 645→662ms（≤10% 护栏内）；
+     * 合成语料 clean/missing/mergedSplit/unmarked-window 四场景 precision/recall 全 1.000
+     * （扫描到 p=3.0 也不裂）。
+     */
+    private const val PARAGRAPH_POSITION_PRIOR = 0.5
+
+    /**
+     * 句级位置先验权重：**保持 0.0**（任务书原打算先在句级启用，被数据否掉）。
+     *
+     * 泛化集扫描里句级先验没有任何收益：p=0 时 s=0.0→0.1 三书 0.857/0.838/0.766
+     * → 0.858/0.839/0.765（噪声级），而覆盖率随 s 单调下滑（s=0.5 时 John 0.782→0.757）。
+     * 原因是句级 DP 的 n、m 很小（一段通常 3–10 句），归一化位置本身是粗粒度噪声。
+     */
+    private const val SENTENCE_POSITION_PRIOR = 0.0
 
     /**
      * 长度归一化的兜底值：约 1.7 个中文字符对应 1 个英文单词。
@@ -136,9 +219,15 @@ object TranslationAligner {
     private val WHITESPACE = Regex("\\s+")
     private val ZH_SENTENCE_END = Regex("(?<=[。！？；!?;])|(?<=\\n)")
 
-    // 英文侧的句数计数已改用真实分句（审查 2-4 口径 A），故不再需要 EN 终止符正则。
-    /** 句级密度用的近似句数计数（中文侧保留，见 [countSentencesApprox]）。 */
-    private val ZH_SENTENCE_ENDS = Regex("[。！？；!?;]+")
+    // 英文侧与中文侧的句数计数都已走真实分句（审查 2-4 口径 A；中文侧 V8 收敛），
+    // 不再需要「终止符游程」近似，旧的 ZH_SENTENCE_ENDS 正则已删除。
+    //
+    // 「；」是否算句界（V8 实测取舍，见 [countChineseSentencesExact]）：**算**，
+    // [ZH_SENTENCE_END] 保持原样。去掉它（口径 B）泛化集同节精度反而更高
+    // （John 0.928 / Genesis 0.924 / Proverbs 0.890 vs 口径 A 0.916/0.917/0.883），
+    // 但那要连中文分句边界一起改（产品可见），且魔戒查询侧口径 A 更优
+    // （句级命中 2791 vs 2777、段级兜底 1155 vs 1169）；泛化集又是完全平行语料、
+    // 偏好「句更短」，故不采用口径 B。
 
     // DP 回溯用的走法编码（每格 1 字节，避免每格再分配对象）。
     private const val MOVE_NONE: Byte = 0
@@ -157,6 +246,23 @@ object TranslationAligner {
         enChapters: List<List<String>>,
         zhChapters: List<List<String>>,
         meaning: MeaningIndex? = null
+    ): List<AlignedSentencePair> = align(
+        enChapters, zhChapters, meaning,
+        sentencePositionPrior = SENTENCE_POSITION_PRIOR,
+        paragraphPositionPrior = PARAGRAPH_POSITION_PRIOR
+    )
+
+    /**
+     * [align] 的内部调参入口：位置先验权重可逐档扫描（评测用），生产默认值见上方
+     * [SENTENCE_POSITION_PRIOR] / [PARAGRAPH_POSITION_PRIOR]。传 0.0 = 与旧版行为完全一致。
+     */
+    internal fun align(
+        enChapters: List<List<String>>,
+        zhChapters: List<List<String>>,
+        meaning: MeaningIndex?,
+        sentencePositionPrior: Double,
+        paragraphPositionPrior: Double,
+        chapterPositionPrior: Double = CHAPTER_POSITION_PRIOR
     ): List<AlignedSentencePair> {
         if (enChapters.isEmpty() || zhChapters.isEmpty()) return emptyList()
 
@@ -168,7 +274,7 @@ object TranslationAligner {
         val bookScale = bookParagraphScale(enParagraphSpans, zhParagraphSpans)
         val result = mutableListOf<AlignedSentencePair>()
 
-        for ((enIdx, zhIdx) in alignChapters(enParagraphSpans, zhParagraphSpans, bookScale)) {
+        for ((enIdx, zhIdx) in alignChapters(enParagraphSpans, zhParagraphSpans, bookScale, chapterPositionPrior)) {
             val enParagraphs = enChapters[enIdx]
             val zhParagraphs = zhChapters[zhIdx]
             if (enParagraphs.isEmpty() || zhParagraphs.isEmpty()) continue
@@ -180,7 +286,10 @@ object TranslationAligner {
             // 记录哪些英文段落真的配上了，以及它落在哪个中文段落（供邻近兜底用）。
             val zhForEn = HashMap<Int, Int>()
 
-            for (paragraphPair in alignSpans(enSpans, zhSpans, allowMerge = true, scale = scales.paragraph)) {
+            for (paragraphPair in alignSpans(
+                enSpans, zhSpans, allowMerge = true, scale = scales.paragraph,
+                positionPrior = paragraphPositionPrior
+            )) {
                 val enParagraph = join(enParagraphs, paragraphPair.a)
                 val zhParagraph = joinChinese(zhParagraphs, paragraphPair.b)
                 if (enParagraph.isBlank() || zhParagraph.isBlank()) continue
@@ -195,14 +304,17 @@ object TranslationAligner {
                     if (enSentences.isEmpty() || zhSentences.isEmpty()) emptyList()
                     else alignSpans(
                         enSentenceSpans, zhSentenceSpans, allowMerge = true,
-                        // Q1-t04：英方合并（2 en : 1 zh）下线——并合句对写进档案后，
-                        // 点其中第二句做精确匹配会失败并命中子串匹配，拿回 A 句的意思。
-                        // 中文侧 1 : 2 保留（译文拆句是真实形态）。
-                        allowEnMerge = false,
+                        // T5：英方 2:1 走法**在 DP 里恢复**（多英文句挤在一条中文句里是
+                        // 真实译本形态，禁掉只会让第二句起全部失去句级条目——金标准
+                        // s1/s19/s24/s27/s31/s32/s33 的根因）。落盘前会拆回单句
+                        // （见下方 emitted 循环），所以档案里 enSentence 恒为单句，
+                        // Q1-t04「点 B 拿回 A 句意思」的结构性病灶不会复现。
+                        allowEnMerge = true,
                         mergeGate = { e1, e2, z1, z2 ->
                             sentenceMergeAllowed(e1, e2, z1, z2, scales.sentence)
                         },
-                        scale = scales.sentence
+                        scale = scales.sentence,
+                        positionPrior = sentencePositionPrior
                     )
 
                 // V4：低置信句对是 DP 残渣（实测整本魔戒 2% 的句子精确命中这类对：
@@ -231,15 +343,35 @@ object TranslationAligner {
                     val merged = sentencePair.a.size > 1 || sentencePair.b.size > 1
                     val maxRatio = if (merged) SENTENCE_MAX_MERGED_LENGTH_RATIO else SENTENCE_MAX_LENGTH_RATIO
                     if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > maxRatio) continue
-                    emitted += AlignedSentencePair(
-                        enChapter = enIdx,
-                        zhChapter = zhIdx,
-                        enParagraph = enParagraph,
-                        zhParagraph = zhParagraph,
-                        enSentence = join(enSentences, sentencePair.a),
-                        zhSentence = joinChinese(zhSentences, sentencePair.b),
-                        confidence = confidence
-                    )
+                    val zhSentence = joinChinese(zhSentences, sentencePair.b)
+                    if (sentencePair.a.size > 1) {
+                        // T5：英方 2:1 合并**落盘时拆回单句**——每个被合并英文句各出一条
+                        // 句对，共享同一条 zhSentence。档案里 enSentence 恒为单句，查询侧
+                        // 各自精确命中（不再有 "A. B." 串让点 B 命中子串匹配）。
+                        // 门槛与置信度按**合并对整体**判定一次（拆分后的单句对整条中文句
+                        // 的长度比天然超标，按单句口径复核会把它们全部拒掉，见任务汇报）。
+                        for (index in sentencePair.a) {
+                            emitted += AlignedSentencePair(
+                                enChapter = enIdx,
+                                zhChapter = zhIdx,
+                                enParagraph = enParagraph,
+                                zhParagraph = zhParagraph,
+                                enSentence = enSentences[index],
+                                zhSentence = zhSentence,
+                                confidence = confidence
+                            )
+                        }
+                    } else {
+                        emitted += AlignedSentencePair(
+                            enChapter = enIdx,
+                            zhChapter = zhIdx,
+                            enParagraph = enParagraph,
+                            zhParagraph = zhParagraph,
+                            enSentence = join(enSentences, sentencePair.a),
+                            zhSentence = zhSentence,
+                            confidence = confidence
+                        )
+                    }
                 }
 
                 if (emitted.isEmpty()) {
@@ -292,7 +424,8 @@ object TranslationAligner {
                 zhSpans = zhSpans,
                 zhForEn = zhForEn,
                 meaning = meaning,
-                scales = scales
+                scales = scales,
+                sentencePositionPrior = sentencePositionPrior
             )
         }
         return result
@@ -319,7 +452,8 @@ object TranslationAligner {
         zhSpans: List<Span>,
         zhForEn: Map<Int, Int>,
         meaning: MeaningIndex?,
-        scales: LengthScales
+        scales: LengthScales,
+        sentencePositionPrior: Double
     ): List<AlignedSentencePair> {
         if (zhForEn.isEmpty()) return emptyList()
         val covered = zhForEn.keys.toIntArray()
@@ -349,12 +483,13 @@ object TranslationAligner {
                     // 覆盖全书的被跳过段落只能整段一锅端）。此路径已在
                     // [neighbourFallbacks] 入参里拿到 meanings，走的是有词义证据的
                     // 正常分支，不是 [sentenceMergeAllowed] 的无证据保守回退。
-                    // 英方合并同样下线（Q1-t04）。
-                    allowEnMerge = false,
+                    // 英方 2:1 走法与主路径一致恢复（T5），落盘同样拆回单句。
+                    allowEnMerge = true,
                     mergeGate = { e1, e2, z1, z2 ->
                         sentenceMergeAllowed(e1, e2, z1, z2, scales.sentence)
                     },
-                    scale = scales.sentence
+                    scale = scales.sentence,
+                    positionPrior = sentencePositionPrior
                 )) {
                     val merged = sentencePair.a.size > 1 || sentencePair.b.size > 1
                     val cost = pairCost(
@@ -379,15 +514,31 @@ object TranslationAligner {
                     val maxRatio =
                         if (merged) SENTENCE_MAX_MERGED_LENGTH_RATIO else SENTENCE_MAX_LENGTH_RATIO
                     if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > maxRatio) continue
-                    fallbacks += AlignedSentencePair(
-                        enChapter = enChapter,
-                        zhChapter = zhChapter,
-                        enParagraph = enParagraph,
-                        zhParagraph = zhParagraph,
-                        enSentence = join(enSentences, sentencePair.a),
-                        zhSentence = joinChinese(zhSentences, sentencePair.b),
-                        confidence = confidence
-                    )
+                    val zhSentence = joinChinese(zhSentences, sentencePair.b)
+                    if (sentencePair.a.size > 1) {
+                        // T5：与主路径同一契约——2:1 合并落盘拆回单句，共享同一条中文句。
+                        for (i in sentencePair.a) {
+                            fallbacks += AlignedSentencePair(
+                                enChapter = enChapter,
+                                zhChapter = zhChapter,
+                                enParagraph = enParagraph,
+                                zhParagraph = zhParagraph,
+                                enSentence = enSentences[i],
+                                zhSentence = zhSentence,
+                                confidence = confidence
+                            )
+                        }
+                    } else {
+                        fallbacks += AlignedSentencePair(
+                            enChapter = enChapter,
+                            zhChapter = zhChapter,
+                            enParagraph = enParagraph,
+                            zhParagraph = zhParagraph,
+                            enSentence = join(enSentences, sentencePair.a),
+                            zhSentence = zhSentence,
+                            confidence = confidence
+                        )
+                    }
                 }
             }
 
@@ -504,14 +655,16 @@ object TranslationAligner {
     private fun alignChapters(
         en: List<List<Span>>,
         zh: List<List<Span>>,
-        scale: Double
+        scale: Double,
+        positionPrior: Double
     ): List<Pair<Int, Int>> {
         if (en.size == zh.size) return en.indices.map { it to it }
         val enSpans = en.map { foldSpans(it) }
         val zhSpans = zh.map { foldSpans(it) }
         // 直接用 DP 给出的下标。不要拿文本去 indexOf 回查：两章正文完全相同
         // （或都为空）时会全部映射到第一处，导致整章错配。
-        return alignSpans(enSpans, zhSpans, allowMerge = false, scale = scale).map { it.a[0] to it.b[0] }
+        return alignSpans(enSpans, zhSpans, allowMerge = false, scale = scale, positionPrior = positionPrior)
+            .map { it.a[0] to it.b[0] }
     }
 
     /** 整本字/词密度（不依赖章配对）；拿不到时退回全局常量。 */
@@ -544,12 +697,11 @@ object TranslationAligner {
         if (enWords < MIN_ADAPTIVE_WORDS || zhChars == 0) return LengthScales(bookScale, bookScale)
         val paragraph = clampScale(zhChars.toDouble() / enWords)
 
-        // 第四轮审查 2-4（口径 A）：**英文侧改用真实分句**（SentenceSplitter.count），
-        // 其近似偏差实测 1.65% → 0%。中文侧**有意保留近似**（偏差 ~50%），已记为该条的
-        // 已知例外：把中文一起换成精确分句会移动句级密度先验，导致 Proverbs 节级覆盖率
-        // 0.674 < 既定下限 0.68（PublicDomainAlignmentGeneralizationTest），属真实权衡。
+        // 中英两侧都用**与对齐 DP 相同的分句器**做精确计数（V8 起，第四轮审查 2-4 的
+        // 「已知例外」就此消除）：英文 = SentenceSplitter.count，中文 = splitChinese +
+        // contentOnly，两者与各自 DP 用的句子列表逐条同源，密度先验不再有计数偏差。
         val enSentences = countSentencesExact(enParagraphs)
-        val zhSentences = countSentencesApprox(zhParagraphs, ZH_SENTENCE_ENDS)
+        val zhSentences = countChineseSentencesExact(zhParagraphs)
         if (enSentences == 0 || zhSentences == 0) return LengthScales(paragraph, paragraph)
         val sentence = clampScale(
             (zhChars.toDouble() / zhSentences) / (enWords.toDouble() / enSentences)
@@ -561,10 +713,8 @@ object TranslationAligner {
         value.coerceIn(MIN_ADAPTIVE_SCALE, MAX_ADAPTIVE_SCALE)
 
     /**
-     * 句数**精确**计数：调用与句子对齐同一个 [SentenceSplitter.count]。
-     *
-     * 第四轮审查 2-4（口径 A）：英文侧走这里，偏差从近似的 1.65% 降到 0。中文侧保持
-     * [countSentencesApprox]（已知例外，原因见调用点注释）。
+     * 英文侧句数**精确**计数：调用与句子对齐同一个 [SentenceSplitter.count]。
+     * 第四轮审查 2-4（口径 A）：偏差从近似的 1.65% 降到 0。
      */
     private fun countSentencesExact(texts: List<String>): Int {
         var total = 0
@@ -573,18 +723,24 @@ object TranslationAligner {
     }
 
     /**
-     * 章内句数的**近似**计数：只数终止符游程，不真的分句。
+     * 中文侧句数**精确**计数：用与句子 DP 完全相同的 [splitChinese] + contentOnly 口径
+     * （[terminators] 默认即 [ZH_SENTENCE_END]，与 DP 同一套规则）。
      *
-     * 句级密度 μ_zh/μ_en 只需要一个比例；近似计数与精确分句的差异（缩写句点、
-     * 引号残片、省略号）在两侧同量级，泛化集实测指标与精确计数持平或略好，
-     * 而省掉了「整体先分句一遍、DP 里再分一遍」的双倍开销（基准 514→1408ms 的那部分）。
+     * V8 起取代旧的「终止符游程」近似计数（偏差约 50%）。旧近似是第四轮审查 2-4 记录的
+     * 「已知例外」——当时换精确分句会把 Proverbs 节级覆盖率压到 0.674 < 下限 0.68；
+     * V8 有段级位置先验（[PARAGRAPH_POSITION_PRIOR]）托底后重测，三书覆盖率
+     * 0.852/0.848/0.854 远高于下限，例外消除。
      *
-     * **第四轮审查 2-4（口径 A）**：英文侧已改用 [countSentencesExact]；中文侧**有意保留**
-     * 本近似，是 2-4 的已知例外。
+     * 实测（V8，位置先验 p=0.5；同节/±1/覆盖率）：
+     *   近似计数（T3 现状）：John 0.915/0.989/0.850 Genesis 0.916/0.991/0.844 Proverbs 0.883/0.989/0.854
+     *   精确计数（本文）：  John 0.916/0.989/0.852 Genesis 0.917/0.991/0.848 Proverbs 0.883/0.989/0.854
+     * 魔戒 benchmark：句级命中 2774→2791、段级兜底 1172→1155、整本耗时 674→672ms。
+     *
+     * 代价：章内多跑一遍中文分句（DP 里本就要分一遍），相对整章 DP 开销可忽略。
      */
-    private fun countSentencesApprox(texts: List<String>, pattern: Regex): Int {
+    private fun countChineseSentencesExact(texts: List<String>, terminators: Regex = ZH_SENTENCE_END): Int {
         var total = 0
-        for (text in texts) total += pattern.findAll(text).count().coerceAtLeast(1)
+        for (text in texts) total += splitChinese(text, terminators).contentOnly().size
         return total
     }
 
@@ -595,8 +751,9 @@ object TranslationAligner {
 
     /**
      * 用 DP 把两个片段序列单调对齐。允许 1:0 / 0:1 / 1:1，[allowMerge] 时额外允许
-     * 2:1 / 1:2。[allowEnMerge] 单独控制 2:1（两 a : 一 b）——句级路径把它关掉，
-     * 保证落盘句对的英文侧恒为单句（Q1-t04，理由见 [VERSION] 的 v7 说明）。
+     * 2:1 / 1:2。[allowEnMerge] 单独控制 2:1（两 a : 一 b）——句级路径自 T5 起开启它，
+     * 靠调用方在落盘时拆回单句来维持「档案 enSentence 恒单句」的不变式（理由见 [VERSION]
+     * 的 v7/T5 说明）；保留该开关是为了给需要硬禁合并的调用方留口子。
      * [mergeGate] 非空时，每个合并走法还要过一道准入检查（句级 1:N 的
      * 语义/尺寸/边际门槛；段落级合并不设门槛）。
      * 返回「已对齐的下标对」（跳过项不产出）。
@@ -610,7 +767,8 @@ object TranslationAligner {
         allowMerge: Boolean,
         mergeGate: ((Span, Span?, Span, Span?) -> Boolean)? = null,
         allowEnMerge: Boolean = true,
-        scale: Double
+        scale: Double,
+        positionPrior: Double = 0.0
     ): List<SpanPair> {
         if (a.isEmpty() || b.isEmpty()) return emptyList()
         val n = a.size
@@ -644,7 +802,8 @@ object TranslationAligner {
                     }
                 }
                 if (i > 0 && j > 0 && prev1[j - 1] < Double.POSITIVE_INFINITY) {
-                    val cost = prev1[j - 1] + pairCost(a[i - 1], null, b[j - 1], null, scale)
+                    val cost = prev1[j - 1] + pairCost(a[i - 1], null, b[j - 1], null, scale) +
+                        positionCost(positionPrior, i, n, j, m)
                     if (cost < best) {
                         best = cost
                         move = MOVE_ONE_ONE
@@ -654,7 +813,8 @@ object TranslationAligner {
                     if (allowEnMerge && i > 1 && j > 0 && prev2[j - 1] < Double.POSITIVE_INFINITY &&
                         (mergeGate == null || mergeGate(a[i - 2], a[i - 1], b[j - 1], null))
                     ) {
-                        val cost = prev2[j - 1] + pairCost(a[i - 2], a[i - 1], b[j - 1], null, scale)
+                        val cost = prev2[j - 1] + pairCost(a[i - 2], a[i - 1], b[j - 1], null, scale) +
+                            positionCost(positionPrior, i, n, j, m)
                         if (cost < best) {
                             best = cost
                             move = MOVE_TWO_ONE
@@ -663,7 +823,8 @@ object TranslationAligner {
                     if (i > 0 && j > 1 && prev1[j - 2] < Double.POSITIVE_INFINITY &&
                         (mergeGate == null || mergeGate(a[i - 1], null, b[j - 2], b[j - 1]))
                     ) {
-                        val cost = prev1[j - 2] + pairCost(a[i - 1], null, b[j - 2], b[j - 1], scale)
+                        val cost = prev1[j - 2] + pairCost(a[i - 1], null, b[j - 2], b[j - 1], scale) +
+                            positionCost(positionPrior, i, n, j, m)
                         if (cost < best) {
                             best = cost
                             move = MOVE_ONE_TWO
@@ -741,8 +902,8 @@ object TranslationAligner {
      * 修复后两者均为 0，段数 14,870 → 11,667；12,692 条句级句对里有 2,216 条
      * （17.5%）是这种脏配对。
      */
-    private fun splitChinese(text: String): List<String> {
-        val raw = text.split(ZH_SENTENCE_END)
+    private fun splitChinese(text: String, terminators: Regex = ZH_SENTENCE_END): List<String> {
+        val raw = text.split(terminators)
             .map { it.trim() }
             .filter { it.isNotBlank() }
         val merged = mutableListOf<String>()
@@ -820,6 +981,13 @@ object TranslationAligner {
         if (enWords == 0) 0.0 else zhChars / (enWords * scale)
 
     // --- 代价与置信度（只做算术与哈希查表） ----------------------------------
+
+    /**
+     * 位置先验（0..[weight]）：路径在 (i/n, j/m) 平面上偏离对角线的距离。
+     * 只在配对走法上累加（跳过走法已有 [SKIP_COST]），纯算术、无文本扫描。
+     */
+    private fun positionCost(weight: Double, i: Int, n: Int, j: Int, m: Int): Double =
+        if (weight == 0.0) 0.0 else weight * abs(i.toDouble() / n - j.toDouble() / m)
 
     /** 长度比偏差（0..1）：英文词数 vs 中文有效字符数，按 [scale]（字符/词）归一。 */
     private fun lengthCost(enWords: Int, zhChars: Int, scale: Double): Double {

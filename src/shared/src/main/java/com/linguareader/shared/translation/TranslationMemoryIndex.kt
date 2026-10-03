@@ -32,6 +32,17 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
 
     private val byChapter: Map<Int, List<Entry>> = build()
 
+    /**
+     * 是否对**旧档案**启用第 3 级「并合英文句片段」护栏。
+     *
+     * v7 起英文侧恒为单句（[TranslationAligner.EN_SINGLE_SENTENCE_SINCE]，Q1-t04），
+     * 落盘句对不可能再是并合形态。对 v7+ 档案继续套终止符游程启发式，会把含缩写点、
+     * 问号+句号的**普通单句**误判成并合句，把同一句的真子串查询降级成整段——
+     * 金标准 s1/s7/s19/s24/s27/s31/s32/s33 八条实测即为此形态。
+     */
+    private val guardsLegacyMergedEnglish =
+        memory.alignerVersion < TranslationAligner.EN_SINGLE_SENTENCE_SINCE
+
     val translationTitle: String get() = memory.translationTitle
     val pairCount: Int get() = memory.pairs.size
 
@@ -59,16 +70,20 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
             ?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
 
         // 3) 句子重叠（同一段落内互相包含），但必须是**同粒度**的重叠。
-        //    档案里存在「2 句英文并成 1 条句对」（enSentence = "A. B."）时，
-        //    用户点 B 也会命中 contains —— 但那条译文是并合句的译文，整条按
-        //    SENTENCE 返回就是错标（「长句只翻译了其中一句」的主诉之一）。
-        //    查询句只是并合句的片段时不算第 3 级命中，放它继续走第 4/5 级：
-        //    第 5 级给整段 + PARAGRAPH，UI 有「段级（未定位到句）」文案。
+        //    **旧档案**（alignerVersion < v7）里存在「2 句英文并成 1 条句对」
+        //    （enSentence = "A. B."）时，用户点 B 也会命中 contains —— 但那条译文
+        //    是并合句的译文，整条按 SENTENCE 返回就是错标（「长句只翻译了其中一句」
+        //    的主诉之一）。查询句只是并合句的片段时不算第 3 级命中，放它继续走
+        //    第 4/5 级：第 5 级给整段 + PARAGRAPH，UI 有「段级（未定位到句）」文案。
+        //    **v7 起英文侧恒为单句**，故该判定只在 [guardsLegacyMergedEnglish] 时启用：
+        //    对 v7+ 档案再用游程启发式，会把含缩写点/问号+句号的普通单句误判成并合句，
+        //    把同一句的真子串查询降级成整段（金标准 8 条实测）。
         entries.firstOrNull {
             it.sentence.isNotBlank() && nSentence.isNotBlank() &&
                 it.paragraph == nParagraph &&
                 (it.sentence.contains(nSentence) || nSentence.contains(it.sentence)) &&
-                !TranslationMemorySearch.isCrossSentenceFragment(it.pair.enSentence, sentence)
+                (!guardsLegacyMergedEnglish ||
+                    !TranslationMemorySearch.isCrossSentenceFragment(it.pair.enSentence, sentence))
         }?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
 
         // 4) 句子级模糊：同章内相似度最高且达阈值的句子。
@@ -245,6 +260,10 @@ object TranslationMemorySearch {
      * 「宁可不高亮，不可错标」的取舍。
      *
      * 纯函数，参数都应当是**未归一化**的原文（[normalize] 会把终止符抹成空格）。
+     *
+     * **只用于 v7 之前的旧档案**（判据 [TranslationAligner.EN_SINGLE_SENTENCE_SINCE]，调用点
+     * 见 [TranslationMemoryIndex.lookup] 第 3 级）：v7 起落盘英文侧恒为单句，本启发式对
+     * v7+ 档案只会误伤普通单句。
      */
     fun isCrossSentenceFragment(stored: String, query: String): Boolean {
         val storedRuns = terminatorRuns(stored)

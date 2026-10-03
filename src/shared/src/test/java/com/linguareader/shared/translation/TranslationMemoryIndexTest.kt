@@ -135,6 +135,52 @@ class TranslationMemoryIndexTest {
         )
     }
 
+    // ── v7 版本闸门（Q1-t04 禁英方并合） ─────────────────────────────────────
+    // 同一条「库中句含 2 个句界、查询只覆盖后半段」的形态：
+    //  - v7 档案英文侧恒为单句，查询是同一句的真子串 → 按句级返回；
+    //  - 旧档案仍按并合片段护栏降级（护栏只对 alignerVersion < 7 有意义）。
+
+    /** 真实形态的替身：一句英文内含 ! 与 . 两个句界，但只有一个句子。 */
+    private val multiTerminatorEn = "I am sorry, Frodo! he cried, full of concern."
+    private val multiTerminatorZh = "「對不起，佛羅多！」他滿懷關切地說：「今天發生了好多事。」"
+
+    private fun fragmentArchive(alignerVersion: Int) = TranslationMemory(
+        sourceBookId = "s",
+        sourceTitle = "Source",
+        translationBookId = "z",
+        translationTitle = "译本",
+        alignedAt = 0L,
+        alignerVersion = alignerVersion,
+        pairs = listOf(
+            AlignedSentencePair(
+                0, 0, multiTerminatorEn, multiTerminatorZh,
+                multiTerminatorEn, multiTerminatorZh, 0.9f
+            )
+        )
+    )
+
+    @Test
+    fun `v7 archive keeps a multi terminator single sentence at sentence level`() {
+        val result = TranslationMemoryIndex(
+            fragmentArchive(TranslationAligner.EN_SINGLE_SENTENCE_SINCE)
+        ).lookup(0, "he cried, full of concern.", multiTerminatorEn)
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.SENTENCE, result!!.matchLevel)
+        assertEquals(multiTerminatorZh, result.chinese)
+    }
+
+    @Test
+    fun `legacy archive still demotes a fragment of a merged english sentence`() {
+        val result = TranslationMemoryIndex(
+            fragmentArchive(TranslationAligner.EN_SINGLE_SENTENCE_SINCE - 1)
+        ).lookup(0, "he cried, full of concern.", multiTerminatorEn)
+
+        assertNotNull(result)
+        assertEquals(TranslationMatchLevel.PARAGRAPH, result!!.matchLevel)
+        assertEquals(multiTerminatorZh, result.chinese)
+    }
+
     @Test
     fun `cross sentence fragment guard boundaries`() {
         // 库中句是并合句、查询只覆盖其中一部分 → 片段。
