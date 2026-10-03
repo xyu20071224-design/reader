@@ -1858,3 +1858,17 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 
 - `adb devices -l` 为空、`adb shell getprop` 报 `no devices/emulators found`：PKB110（序列号 `ZXJRNJVWY9C6BYDA`）本轮不在线。
 - 以下四项**均未实测**：① 实线/点线两样式在真机字号下可辨；② 30s `nowTick` 到期翻转后样式自动切换；③ 连续刷新后 DOM 里 `.lr-saved-word + .lr-due-word` 计数不增长（残壳/重复包裹回归，本单最高风险点）；④ 标记刷新引发的 `updateMetrics()` 重排不移动阅读位置。
+
+### Lead 独立复验（2026-10-04 02:20–02:22，干净窗口）
+
+执行者交付后由 Team Lead 亲自复跑，**不采信汇报数字，只认原始 XML 与文件时间戳**：
+
+| 项 | 结果 |
+| --- | --- |
+| `:shared:test`（`cleanTest` 后真执行，XML mtime 02:20:44） | **443 tests / 0 failures / 0 errors / 1 skipped**（另一会话此后追加了 shared 用例，故总数 421→443）；`SavedWordMarksTest` **7/0/0** |
+| `:app:testDebugUnitTest`（`--rerun-tasks` 强制 30/30 任务执行，XML mtime 02:21:40） | **447 tests / 0 failures / 0 errors / 0 skipped**；`ReaderScriptsTest` **49/0/0** |
+| 既有红 `TranslationGoldenReplayTest.goldenSamplesStayApproved` | 本机已随另一线 aligner v8（`5703498`）转绿，全仓当前**零失败** |
+
+- 复验期间发现 Gradle 会静默 `UP-TO-DATE` 跳过测试（首轮 `testDebugUnitTest :shared:test` 仅 447ms 且 app XML 仍是 01:41 的旧产物），已改 `--rerun-tasks` 强制重跑取数；**「Build Successful + up-to-date」不能当作测试通过**，本文件一律以 XML mtime 与 tests/failures 计数为准。
+- 结论：纯逻辑与脚本层判据全部通过；WebView 渲染四项仍需真机（见上节「未验证」）。
+
