@@ -401,6 +401,9 @@ class ReaderScriptsTest {
         assertContains(dark, "'--lr-link', \"#D7A072\"")
         assertContains(paper, "'--lr-mark', \"#8D5535\"")
         assertContains(paper, "'--lr-link', \"#9b6b43\"")
+        // 待复习词下划线是第二个标记类变量：主题切换必须同样生效。
+        assertContains(dark, "'--lr-due', \"#D7A072\"")
+        assertContains(paper, "'--lr-due', \"#9b6b43\"")
     }
 
     @Test
@@ -413,6 +416,7 @@ class ReaderScriptsTest {
         // 变量值本身），要防的是 CSS 规则里写死颜色。
         assertContains(script, "text-decoration-color: var(--lr-mark)")
         assertContains(script, "text-decoration-color: var(--lr-link)")
+        assertContains(script, "text-decoration-color: var(--lr-due)")
         assertContains(script, "::selection { background: var(--lr-selection); }")
         assertContains(script, "'background:var(--lr-highlight);border-radius:3px;'")
         assertFalse(script.contains("text-decoration-color: #"))
@@ -444,6 +448,10 @@ class ReaderScriptsTest {
             assertTrue(
                 contrast(theme.linkColor, theme.background) >= 3.0,
                 "linkColor of ${theme.name} must contrast >= 3:1 (was ${contrast(theme.linkColor, theme.background)})"
+            )
+            assertTrue(
+                contrast(theme.dueColor, theme.background) >= 3.0,
+                "dueColor of " + theme.name + " must contrast >= 3:1"
             )
         }
     }
@@ -616,6 +624,39 @@ class ReaderScriptsTest {
         assertContains(script, "\"carry\"")
         assertContains(script, "\"look forward to\"")
         assertFalse(script.contains("carry,carry"))
+    }
+
+    @Test
+    fun savedWordsScriptCarriesDueFormsAsSecondArray() {
+        val script = ReaderScripts.savedWordsScript(
+            words = listOf("carry", "look forward to"),
+            dueWords = listOf("carry")
+        )
+
+        // 到期词与普通形态分两份数组注入：既不会被 600 上限挤掉，
+        // 也让 30s nowTick 的到期翻转改变脚本内容，从而触发重注入。
+        assertContains(script, "[\"carry\",\"look forward to\"]")
+        assertContains(script, ", [\"carry\"]);")
+    }
+
+    @Test
+    fun dueWordStylingCoexistsWithSavedWordStyling() {
+        val script = ReaderScripts.bootstrap(0, ReaderPreferences())
+
+        // 第二个样式类：实线加粗 + 独立颜色变量，与普通生词的细点线并存。
+        assertContains(script, ".lr-due-word {")
+        assertContains(script, "text-decoration: underline solid")
+        assertContains(script, "text-decoration-thickness: 2px")
+        // 最高风险点：两类标记都必须被解开/跳过，漏一个就会留残壳并重复包裹。
+        assertContains(script, "querySelectorAll('.lr-saved-word, .lr-due-word')")
+        assertContains(script, "closest('.lr-saved-word, .lr-due-word')")
+        // 按命中原文查小写表分流；回填仍用正文原样文本（BUG-027/029 守卫）。
+        assertContains(script, "span.className = dueLookup[match[0].toLowerCase()] ? 'lr-due-word' : 'lr-saved-word';")
+        assertContains(script, "span.textContent = match[0];")
+        // 到期词排在形态表最前，避免被 buildSavedPattern 的 1200 条上限截掉。
+        assertContains(script, "savedDueWords.concat(savedWords.slice(0, 600))")
+        // 到期查表与命中判定共用同一套形态展开（study 到期后 studied 也变实线）。
+        assertContains(script, "for (const variant of savedWordVariants(base)) {")
     }
 
     @Test

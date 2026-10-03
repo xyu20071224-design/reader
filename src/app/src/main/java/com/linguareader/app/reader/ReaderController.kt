@@ -36,14 +36,21 @@ class ReaderController {
 
     private var lastSavedWords: String? = null
 
-    fun setSavedWords(words: List<String>) {
-        // 去重键必须与真正注入的那份一致：过去用全量算键、只注入前 300 个，
-        // 第 300 名之后的变动会触发一次毫无效果的整章重排。
+    /**
+     * @param words 全部生词形态（点状下划线）。
+     * @param dueWords 其中已到复习时间的（实线）；与 [words] 分开注入，
+     *   既不会被 600 上限挤掉，也能让 30s nowTick 的到期翻转改变去重键、触发重注入。
+     */
+    fun setSavedWords(words: List<String>, dueWords: List<String> = emptyList()) {
+        // 去重键必须与真正注入的那份一致：过去用全量算键、只注入前 600 个，
+        // 第 600 名之后的变动会触发一次毫无效果的整章重排。
         val payload = words.distinct().take(ReaderScripts.MAX_SAVED_WORD_FORMS)
-        val key = payload.sorted().joinToString("\u0000")
+        val duePayload = dueWords.distinct().take(ReaderScripts.MAX_SAVED_WORD_FORMS)
+        val key = payload.sorted().joinToString("\u0000") + "\u0001" +
+            duePayload.sorted().joinToString("\u0000")
         if (key == lastSavedWords) return
         lastSavedWords = key
-        webView.get()?.evaluateJavascript(ReaderScripts.savedWordsScript(payload), null)
+        webView.get()?.evaluateJavascript(ReaderScripts.savedWordsScript(payload, duePayload), null)
     }
 
     fun applyPreferences(preferences: ReaderPreferences) {

@@ -252,18 +252,26 @@ enum class ReaderTheme(
     val markColor: String,
     /** 链接下划线装饰色（正文链接文字仍是 foreground）。 */
     val linkColor: String,
+    /**
+     * 待复习生词下划线色（.lr-due-word 的 text-decoration-color）。
+     * 与普通生词的 markColor 点线并存，用于分辨「已到复习时间」的词。
+     */
+    val dueColor: String,
     /** 文本选区背景（半透明棕）。 */
     val selectionWash: String,
     /** TTS 整句高亮底（半透明棕）。 */
     val highlightWash: String
 ) {
-    PAPER(SharedString.THEME_PAPER, "#F7F3EA", "#27231F", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    WHITE(SharedString.THEME_WHITE, "#FFFFFF", "#181818", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    SEPIA(SharedString.THEME_SEPIA, "#E9DFC7", "#352F26", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    GREEN(SharedString.THEME_GREEN, "#CCE8CF", "#243329", "#8D5535", "#9b6b43", "rgba(184,132,83,.26)", "rgba(184,132,83,.30)"),
-    MORANDI(SharedString.THEME_MORANDI, "#E2D8D2", "#3A3330", "#8D5535", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
-    DARK(SharedString.THEME_DARK, "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)"),
-    AMOLED(SharedString.THEME_AMOLED, "#000000", "#E8E3DA", "#C98A5E", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)")
+    // dueColor 初值沿用各主题既有的 linkColor：该值已被 ReaderScriptsTest 的
+    // ≥3:1 对比度守卫覆盖，待复习词的区分主要靠「实线 + 2px」而非换色相；
+    // 将来要单独调色只改这一列，不会牵动链接装饰。
+    PAPER(SharedString.THEME_PAPER, "#F7F3EA", "#27231F", "#8D5535", "#9b6b43", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    WHITE(SharedString.THEME_WHITE, "#FFFFFF", "#181818", "#8D5535", "#9b6b43", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    SEPIA(SharedString.THEME_SEPIA, "#E9DFC7", "#352F26", "#8D5535", "#9b6b43", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    GREEN(SharedString.THEME_GREEN, "#CCE8CF", "#243329", "#8D5535", "#9b6b43", "#9b6b43", "rgba(184,132,83,.26)", "rgba(184,132,83,.30)"),
+    MORANDI(SharedString.THEME_MORANDI, "#E2D8D2", "#3A3330", "#8D5535", "#9b6b43", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
+    DARK(SharedString.THEME_DARK, "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)"),
+    AMOLED(SharedString.THEME_AMOLED, "#000000", "#E8E3DA", "#C98A5E", "#D7A072", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)")
 }
 
 enum class ReaderFont(val labelRes: SharedString, val css: String) {

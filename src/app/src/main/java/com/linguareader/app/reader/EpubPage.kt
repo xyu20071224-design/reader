@@ -114,6 +114,8 @@ fun EpubPage(
     initialScrollPageCount: Int = 1,
     preferences: ReaderPreferences,
     savedWords: List<String> = emptyList(),
+    /** 已到复习时间的生词形态（实线），与 [savedWords] 分开注入。 */
+    dueWords: List<String> = emptyList(),
     chromeTopPx: Int = ReaderScripts.DEFAULT_CHROME_TOP_PX,
     chromeBottomPx: Int = ReaderScripts.DEFAULT_CHROME_BOTTOM_PX,
     controller: ReaderController,
@@ -143,6 +145,7 @@ fun EpubPage(
     val latestScrollProgress by rememberUpdatedState(onScrollProgress)
     val latestSpeakingOffscreen by rememberUpdatedState(onSpeakingOffscreen)
     val latestSavedWords by rememberUpdatedState(savedWords)
+    val latestDueWords by rememberUpdatedState(dueWords)
     val latestChromeTop by rememberUpdatedState(chromeTopPx)
     val latestChromeBottom by rememberUpdatedState(chromeBottomPx)
     val latestLocusBlock by rememberUpdatedState(initialLocusBlock)
@@ -209,7 +212,7 @@ fun EpubPage(
                             null
                         )
                         view.evaluateJavascript(
-                            ReaderScripts.savedWordsScript(latestSavedWords),
+                            ReaderScripts.savedWordsScript(latestSavedWords, latestDueWords),
                             null
                         )
                     }
@@ -244,7 +247,7 @@ fun EpubPage(
         update = { view ->
             view.setBackgroundColor(Color.parseColor(preferences.theme.background))
             view.evaluateJavascript(ReaderScripts.preferenceScript(preferences), null)
-            controller.setSavedWords(latestSavedWords)
+            controller.setSavedWords(latestSavedWords, latestDueWords)
             controller.applyChromeInsets(latestChromeTop, latestChromeBottom)
         },
         onRelease = { view ->

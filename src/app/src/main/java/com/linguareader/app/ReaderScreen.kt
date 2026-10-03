@@ -117,6 +117,7 @@ import com.linguareader.app.translation.TranslationLookupResult
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.TtsPlaybackState
+import com.linguareader.shared.reader.SavedWordMarks
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -259,6 +260,11 @@ internal fun ReaderScreen(
     var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val dueWords = remember(savedWords, nowTick) {
         savedWords.filter { it.nextReviewAt <= nowTick }.sortedBy { it.nextReviewAt }
+    }
+    // 词面标记载荷：普通生词=点线，待复习词=实线。到期口径与上面的 dueWords 同源
+    // （同一个 nowTick），展开/去重/截断的纯逻辑在 shared/reader/SavedWordMarks.kt，可单测。
+    val wordMarks = remember(savedWords, nowTick) {
+        SavedWordMarks.of(savedWords, nowTick)
     }
 
     val preferenceStore = remember {
@@ -503,11 +509,8 @@ internal fun ReaderScreen(
                 initialScrollRatio = position.scrollRatio,
                 initialScrollPageCount = position.scrollPageCount.coerceAtLeast(1),
                 preferences = preferences,
-                savedWords = if (reminders.contextHighlight) {
-                    savedWords.flatMap { word -> listOf(word.headword) + word.surfaceForms }
-                } else {
-                    emptyList()
-                },
+                savedWords = if (reminders.contextHighlight) wordMarks.forms else emptyList(),
+                dueWords = if (reminders.contextHighlight) wordMarks.dueForms else emptyList(),
                 chromeTopPx = chromeTopPx.roundToInt(),
                 chromeBottomPx = reservedBottomPx.roundToInt(),
                 controller = controller,

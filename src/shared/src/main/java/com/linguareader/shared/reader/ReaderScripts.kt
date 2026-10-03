@@ -201,6 +201,14 @@ object ReaderScripts {
                 text-decoration-color: var(--lr-mark);
                 text-underline-offset: 3px;
               }
+              /* 待复习生词：实线 + 加粗，与普通生词的细点线同章并存。
+                 BUG-027 的整词正则不受影响，这里只换装饰。 */
+              .lr-due-word {
+                text-decoration: underline solid;
+                text-decoration-thickness: 2px;
+                text-decoration-color: var(--lr-due);
+                text-underline-offset: 3px;
+              }
             `;
           }
 
@@ -888,10 +896,14 @@ object ReaderScripts {
           }, true);
 
           let savedWords = [];
+          // 已到复习时间的形态表（单独注入，避免被 600 上限挤掉）。
+          let savedDueWords = [];
           let savedMarkVersion = 0;
 
           function unwrapSavedMarks(root) {
-            const marks = root.querySelectorAll('.lr-saved-word');
+            // 两类标记都要解开：漏掉 .lr-due-word 会在每次刷新时留下残壳、
+            // 并让新 span 嵌在旧 span 里反复堆积（本特性最高风险点）。
+            const marks = root.querySelectorAll('.lr-saved-word, .lr-due-word');
             for (let i = marks.length - 1; i >= 0; i--) {
               const mark = marks[i];
               const parent = mark.parentNode;
@@ -969,15 +981,33 @@ object ReaderScripts {
             return new RegExp('\\b(' + alt + ')\\b', 'gi');
           }
 
+          // 到期查表：与命中判定共用同一套形态展开，否则 study 到期时正文里的
+          // studied 仍是普通点线（同一个词在同章出现两种样式）。
+          function buildDueLookup(words) {
+            const lookup = Object.create(null);
+            for (const raw of words) {
+              const base = typeof raw === 'string' ? raw.trim() : '';
+              if (!base) continue;
+              for (const variant of savedWordVariants(base)) {
+                lookup[variant.toLowerCase()] = true;
+              }
+            }
+            return lookup;
+          }
+
           function markSavedWords(root) {
             const version = ++savedMarkVersion;
-            const pattern = buildSavedPattern(savedWords.slice(0, 600));
+            // 到期词排在最前：buildSavedPattern 内部有 1200 条形态上限，
+            // 拼在末尾的到期词可能被截掉。仍是同一条整词正则、最长优先
+            // （BUG-027/029 的语义不变）。
+            const pattern = buildSavedPattern(savedDueWords.concat(savedWords.slice(0, 600)));
             if (!pattern) return;
+            const dueLookup = buildDueLookup(savedDueWords);
             const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
             const textNodes = [];
             while (walker.nextNode()) {
               const node = walker.currentNode;
-              if (node.parentElement && node.parentElement.closest('.lr-saved-word')) continue;
+              if (node.parentElement && node.parentElement.closest('.lr-saved-word, .lr-due-word')) continue;
               textNodes.push(node);
             }
             let matchBudget = 2000;
@@ -998,7 +1028,7 @@ object ReaderScripts {
                   fragment.appendChild(document.createTextNode(text.slice(cursor, match.index)));
                 }
                 const span = document.createElement('span');
-                span.className = 'lr-saved-word';
+                span.className = dueLookup[match[0].toLowerCase()] ? 'lr-due-word' : 'lr-saved-word';
                 // 用正文里的原样文本，别拿存储的拼写去覆盖（大小写与变形都要保留）。
                 span.textContent = match[0];
                 fragment.appendChild(span);
@@ -1013,8 +1043,9 @@ object ReaderScripts {
             }
           }
 
-          window.lrRefreshSavedWords = function(words) {
+          window.lrRefreshSavedWords = function(words, dueWords) {
             savedWords = Array.isArray(words) ? words : [];
+            savedDueWords = Array.isArray(dueWords) ? dueWords : [];
             const content = document.getElementById('lingua-reader-content');
             if (!content) return;
             unwrapSavedMarks(content);
@@ -1503,11 +1534,20 @@ object ReaderScripts {
     /** 一次注入的最大「生词形态」数（原型 + 表面形展开后按此截断）。 */
     const val MAX_SAVED_WORD_FORMS = 600
 
-    fun savedWordsScript(words: List<String>): String {
+    /**
+     * 注入两份形态表：普通生词（点状下划线）与待复习生词（实线）。
+     *
+     * [dueWords] 带默认值是为了让桌面宿主（DesktopReaderPane）继续单参调用；
+     * 桌面暂无到期态消费，不阻塞 Android 侧落地。
+     */
+    fun savedWordsScript(words: List<String>, dueWords: List<String> = emptyList()): String {
         val encoded = JSONArray().apply {
             words.distinct().take(MAX_SAVED_WORD_FORMS).forEach { put(it) }
         }.toString()
-        return "window.lrRefreshSavedWords && window.lrRefreshSavedWords($encoded);"
+        val encodedDue = JSONArray().apply {
+            dueWords.distinct().take(MAX_SAVED_WORD_FORMS).forEach { put(it) }
+        }.toString()
+        return "window.lrRefreshSavedWords && window.lrRefreshSavedWords($encoded, $encodedDue);"
     }
 
     fun preferenceScript(preferences: ReaderPreferences, syncCurrentPage: Boolean = true): String {
@@ -1521,6 +1561,7 @@ object ReaderScripts {
         // 浅色主题维持历史值。bootstrap 里 installStyle 后同步注入，首帧即生效。
         val mark = JSONObject.quote(preferences.theme.markColor)
         val link = JSONObject.quote(preferences.theme.linkColor)
+        val due = JSONObject.quote(preferences.theme.dueColor)
         val selection = JSONObject.quote(preferences.theme.selectionWash)
         val highlight = JSONObject.quote(preferences.theme.highlightWash)
         // Bootstrap must NOT sync the page: at that moment the scroller has not
@@ -1538,6 +1579,7 @@ object ReaderScripts {
               root.style.setProperty('--lr-line', $line);
               root.style.setProperty('--lr-mark', $mark);
               root.style.setProperty('--lr-link', $link);
+              root.style.setProperty('--lr-due', $due);
               root.style.setProperty('--lr-selection', $selection);
               root.style.setProperty('--lr-highlight', $highlight);
               $sync

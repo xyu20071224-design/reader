@@ -1796,3 +1796,29 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 
 - 未在真机复测（本机无设备）：修复后的高亮率与观感需用户重装 v1.10.1 后确认。
 - 仍属固有局限的部分未变：词典义项与译者用词对不上、段落级命中按设计不高亮、繁体译本（词典是简体义项）匹配不到 —— 这些**两版都一样**，不在本次修复范围。
+
+## 2026-10-03 Q1-t11 待复习词独立下划线（GitHub issue #1 补充 11）
+
+**需求**：阅读页给「已到复习时间的生词」加一种区别于普通生词的下划线。
+
+### 实现（与普通生词划线**并存**，不替换；纯离线）
+
+- 新增纯逻辑 `src/shared/src/main/java/com/linguareader/shared/reader/SavedWordMarks.kt`：生词本 → 两份形态表（`forms` 全量 / `dueForms` 到期），口径 `nextReviewAt <= now`（等号计到期，与 `ReaderScreen`/`VocabularyScreen` 一致）。单测 `SavedWordMarksTest`（7 例）。
+- `ReaderScripts.kt`：新增 `.lr-due-word`（实线 + `text-decoration-thickness: 2px` + `text-decoration-color: var(--lr-due)`），普通生词仍是 `.lr-saved-word` 点状；`lrRefreshSavedWords(words, dueWords)` 按 `match[0]` 原文查小写到期表分流；到期表 concat 在普通表**之前**交给同一条整词正则（BUG-027/029 的「整词边界 + 最长优先 + 原文回填」语义不变）；**`unwrapSavedMarks` 与 TreeWalker 的 `closest()` 选择器同步扩成 `.lr-saved-word, .lr-due-word`**（本单最高风险点，已加断言）。
+- `ReaderTheme` 新增 `dueColor`（7 套主题初值 = 各自 `linkColor`，不引入未验证的新对比度），`preferenceScript` 注入 `--lr-due`；`ReaderScriptsTest` 的 ≥3:1 对比度循环已把 `dueColor` 纳入。
+- 链路：`ReaderScreen.kt`（`SavedWordMarks.of(savedWords, nowTick)`，仍受 `reminders.contextHighlight` 总闸；关闭时两份表都传空）→ `EpubPage.kt`（新 `dueWords` 参数）→ `ReaderController.setSavedWords(words, dueWords)`（去重键含两份表，30s 到期翻转会触发重注入）→ JS。`savedWordsScript(words, dueWords = emptyList())` 用默认参数，桌面 `DesktopReaderPane.kt:99` 单参调用零改动。无新增用户可见文案，未动 `strings.xml`。
+
+### 验证（判据为原始 XML，非退出码）
+
+| 项 | 结果 |
+| --- | --- |
+| `:shared:test`（`src/shared/build/test-results/test/*.xml`） | **421 tests / 0 failures / 0 errors / 1 skipped**；其中 `SavedWordMarksTest` **7/0/0** |
+| `:app:testDebugUnitTest`（`src/app/build/test-results/testDebugUnitTest/*.xml`） | **447 tests / 1 failure / 0 errors**；唯一红是既有 `TranslationGoldenReplayTest.goldenSamplesStayApproved`（金标准 11 条展示变化，与本改动无关，复现不归因、不修复）。基线 445/1 → 本改动 +2 例全绿，未劣化 |
+| `ReaderScriptsTest` | **49 / 0 / 0**，含新增 `dueWordStylingCoexistsWithSavedWordStyling`、`savedWordsScriptCarriesDueFormsAsSecondArray` |
+
+⚠️ 第一次全量运行（job bash-92）结果**作废**：同机另一条外来的 `:app:testDebugUnitTest --tests TranslationGoldenReplayTest --rerun-tasks` 与它并发，导致 195 tests / 60 failed（清一色 `initializationError: ClassNotFoundException`），且结果目录被清到只剩 1 个 XML。等进程静默后重跑才拿到上表数据；污染窗口内的结论一律不采信。
+
+### 未验证（WebView 渲染改动，必须有设备）
+
+- `adb devices -l` 为空、`adb shell getprop` 报 `no devices/emulators found`：PKB110（序列号 `ZXJRNJVWY9C6BYDA`）本轮不在线。
+- 以下四项**均未实测**：① 实线/点线两样式在真机字号下可辨；② 30s `nowTick` 到期翻转后样式自动切换；③ 连续刷新后 DOM 里 `.lr-saved-word + .lr-due-word` 计数不增长（残壳/重复包裹回归，本单最高风险点）；④ 标记刷新引发的 `updateMetrics()` 重排不移动阅读位置。
