@@ -83,13 +83,61 @@ class ServerAddressTest {
         assertEquals("192.168.1.5", ServerAddress.toInput("http://192.168.1.5:8787"))
         assertEquals("192.168.1.5", ServerAddress.toInput("http://192.168.1.5"))
         assertEquals("192.168.1.5:9000", ServerAddress.toInput("http://192.168.1.5:9000"))
-        // 非简单形式一律交给高级区
-        assertNull(ServerAddress.toInput("https://192.168.1.5:8787"))
+        // task-6：https 的简单形式同样回填主框（协议由指纹/初值推导，见 secureParse* 用例）
+        assertEquals("192.168.1.5", ServerAddress.toInput("https://192.168.1.5:8787"))
+        assertEquals("198.51.100.9:25000", ServerAddress.toInput("https://198.51.100.9:25000"))
+        // 非简单形式（域名 / 带路径 / 非法端口）一律交给高级区
         assertNull(ServerAddress.toInput("http://example.com:8787"))
+        assertNull(ServerAddress.toInput("https://example.com:8443"))
         assertNull(ServerAddress.toInput("https://example.com/lr"))
         assertNull(ServerAddress.toInput("http://192.168.1.5:8787/api"))
         assertNull(ServerAddress.toInput("http://192.168.1.5:0"))
         assertNull(ServerAddress.toInput(""))
+    }
+
+    @Test
+    fun secureFlagDerivesHttps() {
+        assertEquals("https://192.168.1.5:8787", ok(ServerAddress.parse("192.168.1.5", secure = true)))
+        assertEquals("https://192.168.1.5:25000", ok(ServerAddress.parse("192.168.1.5:25000", secure = true)))
+        // 端口/格式校验与协议无关
+        assertEquals(ServerAddressError.BAD_IPV4, error(ServerAddress.parse("256.1.1.1", secure = true)))
+        assertEquals(ServerAddressError.BAD_PORT, error(ServerAddress.parse("192.168.1.5:0", secure = true)))
+        assertEquals(ServerAddressError.EMPTY, error(ServerAddress.parse("", secure = true)))
+        // 指纹驱动：secure=false 仍维持 http
+        assertEquals("http://192.168.1.5:8787", ok(ServerAddress.compose("192.168.1.5", "")))
+        assertEquals("https://192.168.1.5:8787", ok(ServerAddress.compose("192.168.1.5", "", secure = true)))
+    }
+
+    @Test
+    fun advancedFullUrlBeatsSecureFlag() {
+        // 高级区填了完整 URL → 以它为准，secure 不参与（协议与端口都由 URL 决定）
+        assertEquals(
+            "http://192.168.1.5:8787",
+            ok(ServerAddress.compose("10.0.0.1", "http://192.168.1.5:8787", secure = true))
+        )
+        assertEquals(
+            "https://sync.example.com/lr",
+            ok(ServerAddress.compose("10.0.0.1", "https://sync.example.com/lr", secure = true))
+        )
+    }
+
+    @Test
+    fun httpsSimpleFormRoundTripsThroughInput() {
+        // 存的是 https 简单形式 → 回填主框 → 再推导（secure=true）必须回到原值
+        val stored = ok(ServerAddress.parse("203.0.113.9:25000", secure = true))
+        assertEquals("https://203.0.113.9:25000", stored)
+        val input = ServerAddress.toInput(stored)
+        assertEquals("203.0.113.9:25000", input)
+        assertEquals(stored, ok(ServerAddress.compose(input!!, "", secure = true)))
+    }
+
+    @Test
+    fun isSecureDetectsHttpsScheme() {
+        assertTrue(ServerAddress.isSecure("https://192.168.1.5:8787"))
+        assertTrue(ServerAddress.isSecure("  HTTPS://example.com  "))
+        assertFalse(ServerAddress.isSecure("http://192.168.1.5:8787"))
+        assertFalse(ServerAddress.isSecure("192.168.1.5"))
+        assertFalse(ServerAddress.isSecure(""))
     }
 
     @Test

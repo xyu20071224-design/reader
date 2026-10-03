@@ -833,4 +833,5 @@
     <string name="sync_need_login_for_cloud">Sign in first to load cloud books</string>
     <string name="sync_upload_failed">Failed to upload %1$s: %2$s</string>
     <string name="sync_manual_server_hint">No built-in server — enter the server address in Advanced.</string>
+    <string name="sync_https_fingerprint_hint">For a self-signed HTTPS server, just fill in the fingerprint above — no need to type the full URL.</string>
 </resources>

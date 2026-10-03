@@ -824,4 +824,5 @@
     <string name="sync_need_login_for_cloud">请先登录再拉取云端书单</string>
     <string name="sync_upload_failed">《%1$s》上传到云端失败：%2$s</string>
     <string name="sync_manual_server_hint">未内置默认服务器，请在高级设置中填写服务器地址。</string>
+    <string name="sync_https_fingerprint_hint">连自签 HTTPS 服务器时，填好上面的证书指纹即可，无需手写完整 URL。</string>
 </resources>

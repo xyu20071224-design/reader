@@ -78,7 +78,7 @@ internal fun SyncSheet(
     val initial = remember(settings.serverUrl, settings.pinnedCertSha256, syncDefaults) {
         SyncServerResolver.initial(settings, syncDefaults)
     }
-    // 简单 http://IPv4[:port] 回填地址框；https/域名/带路径回填高级区的完整 URL。
+    // http/https 的简单 IPv4[:port] 都回填地址框；域名/带路径回填高级区的完整 URL。
     val simpleAddress = remember(initial.serverUrl) { ServerAddress.toInput(initial.serverUrl) }
     var address by remember { mutableStateOf(simpleAddress ?: "") }
     var fullUrl by remember { mutableStateOf(if (simpleAddress == null) initial.serverUrl else "") }
@@ -88,6 +88,10 @@ internal fun SyncSheet(
     // 无已保存值也无默认值 → 展开高级区提示手填；否则收起，日常只填用户名+密码。
     var advanced by remember { mutableStateOf(initial.needsManualAddress) }
     var error by remember { mutableStateOf<ServerAddressError?>(null) }
+
+    // 协议推导（task-6）：证书指纹非空 → 推 https（自签部署只需填指纹，不必手写完整 URL）；
+    // 初值本身就是 https（公网 CA、无需固定指纹）也保持 https；否则维持 http。
+    val secure = fingerprint.trim().isNotEmpty() || ServerAddress.isSecure(initial.serverUrl)
 
     val errorText = when (error) {
         ServerAddressError.EMPTY -> stringResource(R.string.sync_error_empty)
@@ -104,7 +108,7 @@ internal fun SyncSheet(
     // 两个地址框都空且存在默认值 → 回落默认 URL（不得报「请填写服务器地址」）。
     fun submit(onValid: (SyncSettings) -> Unit) {
         val input = SyncServerResolver.submitInput(initial, address, fullUrl)
-        when (val result = ServerAddress.compose(input.address, input.fullUrl)) {
+        when (val result = ServerAddress.compose(input.address, input.fullUrl, secure)) {
             is ServerAddressResult.Ok -> {
                 error = null
                 onValid(
@@ -186,6 +190,12 @@ internal fun SyncSheet(
                     onValueChange = { fingerprint = it },
                     label = { Text(stringResource(R.string.sync_fingerprint_label)) },
                     modifier = Modifier.fillMaxWidth()
+                )
+                // task-6：填了指纹就自动按 https 推导，不必再去上面手写完整 URL。
+                Text(
+                    stringResource(R.string.sync_https_fingerprint_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSoft
                 )
                 if (initial.needsManualAddress) {
                     // 没有内置默认服务器：明确告诉用户要在这里填地址（保留手填能力）。

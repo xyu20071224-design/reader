@@ -14,9 +14,12 @@ sealed class ServerAddressResult {
 /**
  * 服务器地址的纯逻辑解析与回填（F-160「只需填 IPv4 + 用户名 + 密码」）。
  *
- * - 主输入框只接受 `IPv4` 或 `IPv4:端口`；协议固定 `http://`，缺省端口 [DEFAULT_PORT]。
+ * - 主输入框只接受 `IPv4` 或 `IPv4:端口`，缺省端口 [DEFAULT_PORT]；协议由 [parse] 的
+ *   `secure` 决定（UI 用「高级区证书指纹非空」驱动）：自签 HTTPS 部署填了指纹就推 https，
+ *   否则维持 http。
  * - 高级区可填完整 URL（http/https + 反代路径），非空时优先于主输入框。
- * - [toInput] 供 UI 打开时回填：只有简单形式才放回主输入框，否则交给高级区。
+ * - [toInput] 供 UI 打开时回填：http/https 的简单形式都放回主输入框（协议另由 [isSecure] 判断），
+ *   域名/带路径的交给高级区。
  * - [parseUrl] 保留路径（反代场景），只去掉尾部斜杠。
  *
  * 无平台依赖，可直接 JVM 单测。
@@ -29,8 +32,11 @@ object ServerAddress {
     private const val SCHEME = "http://"
     private const val SECURE_SCHEME = "https://"
 
-    /** 主输入框：`IPv4` / `IPv4:端口` → `http://IPv4[:端口]`。 */
-    fun parse(input: String): ServerAddressResult {
+    /**
+     * 主输入框：`IPv4` / `IPv4:端口` → `http(s)://IPv4[:端口]`。
+     * [secure] 由调用方根据「证书指纹是否非空」等条件给出：https 只在指纹驱动时推导。
+     */
+    fun parse(input: String, secure: Boolean = false): ServerAddressResult {
         val text = input.trim()
         if (text.isEmpty()) return ServerAddressResult.Invalid(ServerAddressError.EMPTY)
         val colon = text.indexOf(':')
@@ -47,7 +53,7 @@ object ServerAddress {
             portText.toIntOrNull()?.takeIf { it in 1..65535 }
                 ?: return ServerAddressResult.Invalid(ServerAddressError.BAD_PORT)
         }
-        return ServerAddressResult.Ok(SCHEME + host + ":" + port)
+        return ServerAddressResult.Ok((if (secure) SECURE_SCHEME else SCHEME) + host + ":" + port)
     }
 
     /** 高级区：完整 URL，保留路径（反代），去掉尾部斜杠。 */
@@ -77,18 +83,33 @@ object ServerAddress {
         return ServerAddressResult.Ok(text)
     }
 
-    /** 推导最终 serverUrl：高级区非空时优先（覆盖 IP 推导结果）。 */
-    fun compose(addressInput: String, fullUrlInput: String): ServerAddressResult =
-        if (fullUrlInput.isBlank()) parse(addressInput) else parseUrl(fullUrlInput)
+    /**
+     * 推导最终 serverUrl：高级区完整 URL 非空时优先（覆盖 IP 推导结果，协议以 URL 自身为准）；
+     * 否则按 [secure] 从 IPv4 推导 http/https。
+     */
+    fun compose(
+        addressInput: String,
+        fullUrlInput: String,
+        secure: Boolean = false
+    ): ServerAddressResult =
+        if (fullUrlInput.isBlank()) parse(addressInput, secure) else parseUrl(fullUrlInput)
+
+    /** 该 serverUrl 是否为 https（UI 用来保住「初值本来就是 https」的场景）。 */
+    fun isSecure(serverUrl: String): Boolean =
+        serverUrl.trim().lowercase().startsWith(SECURE_SCHEME)
 
     /**
-     * 打开 UI 时回填主输入框：`http://IPv4[:端口]`（无路径）返回 `IPv4[:端口]`，
-     * 缺省端口会被省略；其他形式（https / 域名 / 带路径）返回 null，交给高级区。
+     * 打开 UI 时回填主输入框：`http(s)://IPv4[:端口]`（无路径）返回 `IPv4[:端口]`，
+     * 缺省端口会被省略；其他形式（域名 / 带路径）返回 null，交给高级区。
+     * 协议不在这里表达——由 [isSecure] 与「指纹是否非空」在推导时决定。
      */
     fun toInput(serverUrl: String): String? {
         val text = serverUrl.trim().trimEnd('/')
-        if (!text.startsWith(SCHEME)) return null
-        val rest = text.removePrefix(SCHEME)
+        val rest = when {
+            text.startsWith(SECURE_SCHEME) -> text.removePrefix(SECURE_SCHEME)
+            text.startsWith(SCHEME) -> text.removePrefix(SCHEME)
+            else -> return null
+        }
         if (rest.isEmpty() || rest.contains('/')) return null
         val colon = rest.indexOf(':')
         if (colon >= 0 && rest.indexOf(':', colon + 1) >= 0) return null

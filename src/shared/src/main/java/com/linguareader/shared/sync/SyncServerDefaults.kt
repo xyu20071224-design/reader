@@ -63,7 +63,13 @@ object SyncServerResolver {
         addressInput.isNotBlank() -> SyncServerInput(address = addressInput, fullUrl = "")
         initial.serverUrl.isNotBlank() -> {
             // 用户把两个框都清空了，但存在默认/已保存地址：回落到它，别报「请填写服务器地址」。
-            val simple = ServerAddress.toInput(initial.serverUrl)
+            // 只有 **http** 简单形式才拆回主地址框；https 一律整串透传完整 URL ——
+            // 协议不在这条回落路径上被推导改写（免得将来某个调用方忘了传 secure 就静默降级 http）。
+            val simple = if (ServerAddress.isSecure(initial.serverUrl)) {
+                null
+            } else {
+                ServerAddress.toInput(initial.serverUrl)
+            }
             if (simple != null) SyncServerInput(simple, "") else SyncServerInput("", initial.serverUrl)
         }
         else -> SyncServerInput("", "")
