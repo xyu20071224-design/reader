@@ -2,8 +2,8 @@
 # 跨平台端到端：Linux 客户端（JVM） <-> Android 客户端（模拟器/真机），共用同一自托管服务端。
 #
 # 默认在宿主起本地服务端。指向已部署的远端（自签证书需给指纹）：
-#   LR_E2E_BASE=https://62.234.28.97:25000 \
-#   LR_E2E_PIN=D8:E8:...:70 \
+#   LR_E2E_BASE=https://203.0.113.9:25000 \
+#   LR_E2E_PIN=AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99 \
 #   LR_E2E_USER=reader LR_E2E_PASS=... \
 #   bash sync-server/e2e-cross-platform.sh
 set -euo pipefail
