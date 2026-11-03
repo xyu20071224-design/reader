@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cloud
@@ -191,6 +192,8 @@ internal fun BookshelfScreen(
     /** 云端书单（书籍正文 blob）：拉取与点选下载。 */
     onRefreshCloudBooks: () -> Unit = {},
     onDownloadCloudBook: (CloudBook) -> Unit = { _ -> },
+    /** 同步明细（F-160 二级界面）：重建本地快照，不发网络。 */
+    onRefreshSyncDetail: () -> Unit = {},
     /** Q2-c07：书架内改阅读主题时通知外壳，整体配色即时生效。 */
     onReaderThemeChanged: (com.linguareader.app.data.ReaderTheme) -> Unit
 ) {
@@ -233,11 +236,20 @@ internal fun BookshelfScreen(
     var showVocabulary by rememberSaveable { mutableStateOf(false) }
     // Q2-c08：生词本是次级视图，系统返回/左滑应回书架，而不是直接退出应用。
     BackHandler(enabled = showVocabulary) { showVocabulary = false }
+    // 同步明细同样是次级视图：返回箭头与标题由顶栏提供（Lead 裁决 A′）。
+    var showSyncDetail by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = showSyncDetail) { showSyncDetail = false }
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var showUpdateSheet by rememberSaveable { mutableStateOf(false) }
     var showStorageSheet by rememberSaveable { mutableStateOf(false) }
     var showPacksSheet by rememberSaveable { mutableStateOf(false) }
     var showSyncSheet by rememberSaveable { mutableStateOf(false) }
+    // 同步明细页的刷新：先重建本地快照（纯本地），已启用同步时再拉云端书单（**这步会出网**）。
+    // 命名刻意与 AppViewModel.refreshSyncDetail()（纯本地、零网络）区分，避免误读。
+    val refreshDetailAndCloud = {
+        onRefreshSyncDetail()
+        if (state.syncSettings.enabled) onRefreshCloudBooks()
+    }
     var glossaryBook by remember { mutableStateOf<Book?>(null) }
     var rosterBook by remember { mutableStateOf<Book?>(null) }
 
@@ -255,27 +267,51 @@ internal fun BookshelfScreen(
             containerColor = if (shelfAppearance.isCustomized) Color.Transparent else Paper,
             topBar = {
                 TopAppBar(
+                    // 同步明细页是二级视图：顶栏是唯一返回位（系统返回由 BackHandler 兜底）。
+                    navigationIcon = {
+                        if (showSyncDetail) {
+                            IconButton(onClick = { showSyncDetail = false }) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = stringResource(R.string.sync_detail_back),
+                                    modifier = Modifier.size(20.dp),
+                                    tint = InkSoft
+                                )
+                            }
+                        }
+                    },
                     title = {
                         // 只显示书/词计数，不放应用名：顶栏动作多，放名字会把「语境阅读」挤成两行。
-                        Text(
-                            if (showVocabulary) {
-                                pluralStringResource(
-                                    R.plurals.shelf_word_count,
-                                    state.savedWords.size,
-                                    state.savedWords.size
-                                )
-                            } else {
-                                pluralStringResource(
-                                    R.plurals.shelf_book_count,
-                                    state.books.size,
-                                    state.books.size
-                                )
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = InkSoft
-                        )
+                        // 同步明细页例外：顶栏直接报页面名，页内不再重复标题。
+                        if (showSyncDetail) {
+                            Text(
+                                stringResource(R.string.sync_detail_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = InkSoft
+                            )
+                        } else {
+                            Text(
+                                if (showVocabulary) {
+                                    pluralStringResource(
+                                        R.plurals.shelf_word_count,
+                                        state.savedWords.size,
+                                        state.savedWords.size
+                                    )
+                                } else {
+                                    pluralStringResource(
+                                        R.plurals.shelf_book_count,
+                                        state.books.size,
+                                        state.books.size
+                                    )
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                color = InkSoft
+                            )
+                        }
                     },
                     actions = {
+                        // 同步明细页独占顶栏：书架动作与生词本切换图标全部隐藏（Lead 裁决 A′）。
+                        if (!showSyncDetail) {
                         // Q2-c08：生词本是独立的次级视图，不再显示书架专属动作
                         // （存储占用 / 外观 / 检查更新）。此前这些图标在生词本里照旧渲染，
                         // 用户看到的是「生词本还有一部分书架的顶部图标」。
@@ -370,6 +406,7 @@ internal fun BookshelfScreen(
                             }
                         }
                         Spacer(Modifier.width(12.dp))
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = if (shelfAppearance.isCustomized) Color.Transparent else Paper
@@ -391,6 +428,19 @@ internal fun BookshelfScreen(
                         onReview = onReviewWord,
                         onExport = onExportVocabulary,
                         onSpeak = onSpeak
+                    )
+                } else if (showSyncDetail) {
+                    // 同步明细（F-160 二级界面）：离线渲染快照，拉取只走 onRefresh。
+                    SyncDetailScreen(
+                        detail = state.syncDetail,
+                        loading = state.syncDetailLoading,
+                        settings = state.syncSettings,
+                        status = state.syncStatus,
+                        lastSyncAt = state.lastSyncAt,
+                        busy = state.syncBusy,
+                        onRefresh = refreshDetailAndCloud,
+                        onSyncNow = onSyncNow,
+                        onDownloadCloudBook = onDownloadCloudBook
                     )
                 } else if (state.books.isEmpty() && !state.loading) {
                     EmptyBookshelf(onImport = { launcher.launch(IMPORT_MIME_TYPES) })
@@ -474,6 +524,12 @@ internal fun BookshelfScreen(
             onSyncNow = onSyncNow,
             onLogout = onSyncLogout,
             onDismiss = { showSyncSheet = false },
+            // 打开明细页：先关弹层，再进二级页并立即刷一次（本地快照 + 已启用时拉云端）。
+            onOpenDetail = {
+                showSyncSheet = false
+                showSyncDetail = true
+                refreshDetailAndCloud()
+            },
             cloudBooks = state.cloudBooks,
             cloudBooksLoaded = state.cloudBooksLoaded,
             cloudBooksLoading = state.cloudBooksLoading,

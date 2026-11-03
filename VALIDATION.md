@@ -1985,3 +1985,27 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 - 弹层拖拽下滑关闭、返回键关闭、SAF 往返后 canInstall 刷新；
 - 阅读页 WebView 渲染、手势翻页、点词、TTS 高亮跟随；
 - 返回键真实分发与转场（NavHostLite 刻意不含动画）。
+## 2026-10-04 云同步「同步明细」二级界面（F-160 增补，**未提交**）
+
+**背景**：用户反馈「云同步登录后没有界面」，需要能逐项看清「哪些内容已经同步了」。
+
+**改动**：新增 `:shared` `sync/SyncDetail.kt`（三态判定纯逻辑，可离线算出）+ `SyncDetailBuilderTest.kt`；新增 `app/SyncDetailScreen.kt`（二级页，零网络）；改 `AppViewModel.kt`（`syncDetail`/`cloudBlobSizes`/`lastSyncAt` + `refreshSyncDetail()` 纯本地零网络）、`sync/AndroidSyncController.kt`（`syncedMarks`/`pendingKeys`/`lastSyncAt`/`recordSyncSuccess`）、`SyncSheet.kt`（「查看同步明细」入口）、`BookshelfScreen.kt`（照 `showVocabulary` 先例的二级视图 + 顶栏返回）、`values{,-en}/strings.xml`（20 个 `sync_detail_*`）。
+**入口**：书架云图标 → 云同步弹层 →「查看同步明细」（登录后立即可见）。
+
+### 验证（判据为原始 XML，非退出码）
+
+| 项 | 结果 |
+| --- | --- |
+| `:shared:test`（前台 gradlew） | **474 tests / 0 failures / 0 errors / 12 skipped**；`SyncDetailBuilderTest` **19/0/0** |
+| `:app:testDebugUnitTest` | **447 tests / 2 failures / 0 errors / 2 skipped**；`StringResourcesTest` 3/0/0 |
+| 文案 | zh/en 各 757 key、双向差集为空；20 个 `sync_detail_*` 全部被代码引用，占位符 3×`%d`、1×`%s` 正确 |
+| 对比度 | chip（底色 `PaperDeep`）四态文字经 WCAG 复算：浅色 4.62–4.95、深色 4.74–7.60，均 ≥4.5:1 |
+| 契约核对 | 独立验证者逐条核对 10 项契约，全部符合；`refreshSyncDetail()` 内零网络调用 |
+
+- 两条 app 失败经 **stash 基线实验**证明为既有环境/基线问题：把本功能 10 个文件 `git stash push -u` 后在**未改动的 HEAD（v2.0.0）** 单跑这两个类，**复现同样两条失败**——`TranslationGoldenReplayTest:230`（本机 `artifacts/` 金标准未随 aligner v8 重新 bless；Linux 侧 2026-10-04 记录为全绿）与 `CloudTtsSynthesizerTest:159`（`endsWith("audio/…")` 在 Windows 路径分隔符下必假）。两测试类对本次改动符号的命中数为 0。
+- 独立验证者另发现并已修复一个**真问题**：`SyncCoordinator.sync()` 收尾会给「从未读过的书」写下水位 0，旧判定 `mark >= T` 的 `0 >= 0` 会把它误报为「阅读进度 · 已同步」。现改为 `T <= 0` 或 `mark <= 0` 一律按「从未上行」→ `LOCAL_ONLY`（outbox 优先级不变），并补 3 个回归用例；delta 复验由验证者独立重跑 `:shared:test` 通过（含其临时用例 478/0/0/12，还原后 474/0/0/12）。
+
+### 未验证（需真机，单测覆盖不到）
+
+`adb devices` 无设备（本次会话）：① 「查看同步明细」的实际点击与页面渲染；② 顶栏返回箭头与系统返回键；③ 明细页长列表滚动与夜间配色观感；④ 双 `BackHandler` 并存的返回优先级。以上四项**均未实测**，不得以单测/静态核对顶替。
+

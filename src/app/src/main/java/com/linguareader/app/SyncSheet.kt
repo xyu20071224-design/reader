@@ -62,6 +62,8 @@ internal fun SyncSheet(
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
     onDismiss: () -> Unit,
+    /** 打开「同步明细」二级页面（调用方负责关弹层 + 开二级页）。 */
+    onOpenDetail: () -> Unit = {},
     /** 云端书单（书籍正文 blob）：远端有、本机没有的书。 */
     cloudBooks: List<CloudBook> = emptyList(),
     cloudBooksLoaded: Boolean = false,
@@ -237,6 +239,11 @@ internal fun SyncSheet(
                 TextButton(onClick = onLogout, enabled = !busy) {
                     Text(stringResource(R.string.sync_logout))
                 }
+            }
+
+            // 二级界面入口：登录后一眼能看清「到底同步了什么」，不必只靠一行状态文案。
+            TextButton(onClick = onOpenDetail, enabled = !busy) {
+                Text(stringResource(R.string.sync_detail_entry))
             }
 
             if (status != null) {

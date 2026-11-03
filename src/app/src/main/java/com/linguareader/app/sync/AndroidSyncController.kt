@@ -66,6 +66,8 @@ class AndroidSyncController(context: Context) {
         sessionCached = true
         val enabled = settings.copy(enabled = true)
         saveSettings(enabled)
+        // 登录成功即拥有一次可用会话，记为一次成功动作（不代表业务数据已同步，语义见 lastSyncAt）。
+        recordSyncSuccess(System.currentTimeMillis())
         return enabled
     }
 
@@ -73,12 +75,35 @@ class AndroidSyncController(context: Context) {
     suspend fun sync(settings: SyncSettings): SyncReport {
         val coordinator = coordinator(settings)
         coordinator.restoreSession()
-        return coordinator.sync()
+        val report = coordinator.sync()
+        recordSyncSuccess(System.currentTimeMillis())
+        return report
     }
 
     fun logout(settings: SyncSettings) {
         coordinator(settings).logout()
         sessionCached = false
+    }
+
+    // --- 同步明细（数据层，供 SyncDetailBuilder 用；只读本地，不出网）----------------
+
+    /** 本地「已同步水位」：记录键（`collection/id`）→ 最后成功同步的 updatedAt。 */
+    fun syncedMarks(): Map<String, Long> = stateStore.readSynced()
+
+    /** outbox 里待推送记录的键集合（`SyncRecord.key`）。 */
+    fun pendingKeys(): Set<String> = stateStore.readOutbox().mapTo(LinkedHashSet()) { it.key }
+
+    /**
+     * 上次**同步动作成功**的时间（毫秒）；0 = 从未成功。
+     *
+     * 注意语义：登录成功、一次 sync() 跑完都会记为一次成功动作，但它只说明「动作成功」，
+     * **不代表本地全部业务数据都已上行**（逐条状态以 [syncedMarks] / [pendingKeys] 为准）。
+     */
+    fun lastSyncAt(): Long = prefs.getString(KEY_LAST_SYNC_AT)?.toLongOrNull() ?: 0L
+
+    /** 记录一次同步动作成功（[sync] / [login] 成功路径调用）。 */
+    fun recordSyncSuccess(at: Long) {
+        prefs.putString(KEY_LAST_SYNC_AT, at.toString())
     }
 
     // --- 书籍正文（blob）------------------------------------------------------
@@ -130,4 +155,9 @@ class AndroidSyncController(context: Context) {
 
     private fun requireBlobApi(settings: SyncSettings): HttpSyncApi = blobApi(settings)
         ?: throw SyncException("云同步未启用或未登录", 0, SyncErrorKind.AUTH)
+
+    private companion object {
+        /** 记在 [SyncSettings.PREFS_NAME] 里的「上次同步动作成功时间」；PreferencesStore 只有字符串面。 */
+        const val KEY_LAST_SYNC_AT = "sync.lastSyncAt"
+    }
 }

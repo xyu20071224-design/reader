@@ -207,6 +207,7 @@ private fun LinguaReaderApp(
                 onSyncLogout = viewModel::syncLogout,
                 onRefreshCloudBooks = viewModel::refreshCloudBooks,
                 onDownloadCloudBook = viewModel::downloadCloudBook,
+                onRefreshSyncDetail = viewModel::refreshSyncDetail,
                 uiAnimSpeed = uiAnimSpeed,
                 onAnimSpeedChange = onAnimSpeedChange
             )

@@ -832,4 +832,25 @@
     <string name="nav_placeholder_hint">该屏幕尚未接入 NavHostLite，P3 逐屏迁移。</string>
     <string name="overlay_placeholder_title">弹层待迁移 · %1$s</string>
     <string name="overlay_placeholder_hint">该弹层尚未接入 OverlayHost，P3 逐项迁移。</string>
+    <!-- 同步明细二级界面（F-160）：逐项看清哪些内容已同步 -->
+    <string name="sync_detail_title">同步明细</string>
+    <string name="sync_detail_back">返回</string>
+    <string name="sync_detail_entry">查看同步明细</string>
+    <string name="sync_detail_summary">已同步 %1$d · 待同步 %2$d · 仅本机 %3$d</string>
+    <string name="sync_detail_last_sync">上次同步：%1$s</string>
+    <string name="sync_detail_last_sync_never">尚未同步过</string>
+    <string name="sync_detail_state_synced">已同步</string>
+    <string name="sync_detail_state_pending">待同步</string>
+    <string name="sync_detail_state_local_only">仅本机</string>
+    <string name="sync_detail_state_unknown">未获取</string>
+    <string name="sync_detail_section_books">书籍</string>
+    <string name="sync_detail_section_words">生词</string>
+    <string name="sync_detail_section_remote_books">云端可下载书籍</string>
+    <string name="sync_detail_progress_label">阅读进度</string>
+    <string name="sync_detail_source_label">书籍正文</string>
+    <string name="sync_detail_refresh">刷新</string>
+    <string name="sync_detail_sync_now">立即同步</string>
+    <string name="sync_detail_not_logged_in">云同步尚未启用或未登录。打开「云同步」填好服务器与账号并登录后，这里会逐项列出已同步、待同步和仅存本机的内容。</string>
+    <string name="sync_detail_empty_books">书库还没有书。</string>
+    <string name="sync_detail_empty_words">还没有生词。</string>
 </resources>
