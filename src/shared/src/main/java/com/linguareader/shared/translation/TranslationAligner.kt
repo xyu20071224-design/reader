@@ -65,9 +65,59 @@ object TranslationAligner {
      *     的 "A. B." 并合串**，不是 DP 走法本身——拆开落盘后点 B 仍走第 1/2 级精确命中
      *     它自己那条。
      *
+     * v9（相对 v8）：**只改中文分句口径，不改 DP 走法**，但会改变落盘句对的切点。
+     *  1. [ZH_SENTENCE_END] **去掉 `；`**：中英分号地位对齐。英文 `SentenceSplitter`
+     *     从不把 `;` 当句界，中文侧过去把 `；` 当句界 → 一句英文在中文侧被切成两句 →
+     *     段内句数不等 → 句级 DP off-by-one → 静默错。AI 译本按「不合并、不拆分句子」
+     *     生成，`；` 几乎总在英文同一句内部，切它纯粹是破坏。
+     *  2. [ZH_CLOSING_LEADS] 补入**弯引号** `”`/`’`：AI 译文一律用弯引号，旧集合只有
+     *     直引号，于是 `！”甘道夫说。` 被切成两句，同样制造句数不等。
+     *
+     * 实测（生产链路 [align]，真值 AI 译本，分母 = 真值不同英文句；IDF 加权口径见
+     * `Stage0ProductionBaselineProbe`）：
+     *   |    | ch1 句级静默错 | ch1 加权静默错 | ch1 加权正确 | ch3 句级静默错 | ch3 加权静默错 | ch3 加权正确 |
+     *   | v8 | 13.08%         | 14.63%         | 84.21%       | 16.34%         | 15.56%         | 83.93%       |
+     *   | v9 |  6.94%         |  6.34%         | 92.63%       |  5.87%         |  6.18%         | 92.71%       |
+     * 静默错**减半**、有答案且正确 **+8.4pp / +8.8pp**，耗时不变（约 0.5s/章）。
+     *
+     * **R2（闭合引号残留并入前句）的合并策略已实测选型**：无条件合并胜出。
+     * `Stage0PolicyEndToEndProbe` 端到端扫了「选择性合并」（只有短 + 含说话动词 + 无逗号
+     * 的尾部才并入），用户代价（无答案×1.0 + 静默错×2.0）：
+     *   ch1 无条件 13.71 vs 选择性(6/8/10/14) 17.72 / 16.65 / 16.29 / 16.04
+     *   ch3 无条件 13.47 vs 选择性(6/8/10/14) 19.50 / 19.24 / 18.68 / 17.48
+     * 选择性合并能把「无答案」从 1.74% 降到 0.93%，但静默错从 6.94% 升到 8.68%+，
+     * 按 2 倍代价算净亏。**后人别再试这条路**（[ZhSplitPolicy] 保留该开关只为复测）。
+     *
+     * v10（相对 v9）：**合并对按句切开**（[splitMergedChinese]）。v9 只修了分句口径，
+     * 但「2 个英文句 → 1 条中文合并句」落盘时两边仍共享整串，用户点 A 看到 A+B、
+     * 点 B 也看到 A+B。残差归因显示这是静默错的**主成分**（ch1 5.19% / ch3 4.79%），
+     * 而真错配只有 0.00%/0.14%。切开后每条英文句只拿自己那段。
+     *   - 切点 = 让各段「中文字数 / 对应英文词数」方差最小的组合（穷举句读候选）
+     *   - 护栏①每段必须过 [SENTENCE_MIN_LENGTH_RATIO]..[SENTENCE_MAX_LENGTH_RATIO]，
+     *     否则整条回退共享（不加时 `‘Wake up, hobbits!’ he cried.` 会被切错）
+     *   - 护栏②[SPEECH_TAG_CUT_PENALTY] 对「引语 + 说话人交界」软惩罚（必须软，
+     *     硬禁止会让 ch3 劣化 2.82%→3.31%）
+     *
+     * 实测（累计，生产链路 [align]，真值 AI 译本，IDF 加权）：
+     *   ch1 静默错 14.63% → 6.34% → **3.01%**；有答案且正确 84.21% → **96.22%**
+     *   ch3 静默错 15.56% → 6.18% → **2.82%**；有答案且正确 83.93% → **96.45%**
+     *
+     * v11（相对 v10）：**P3 构造性句界**。AI 译文按句换行返回后，调用方把行边界
+     * 作为 [ZhSplitPolicy.knownSentences] 传进来，对齐器命中时**跳过中文分句推断**。
+     * 这不是算法改动而是输入质量改动——中文句界从「猜」变成「已知」。
+     *
+     * 实测（真值 AI 译本，IDF 加权，与 v10 同一个对齐器）：
+     *   ch1 静默错 4.45% → **2.07%**，代价 9.92 → **4.81**
+     *   ch3 静默错 3.59% → **0.82%**，代价 8.29 → **2.10**
+     * 侧车缺失或行数不等于英文句数时自动回退到中文分句器（行为与 v10 完全一致），
+     * 所以非 AI 译本、旧档案、手动导入的翻译都不受影响。
+     *
+     * **本版本必须触发重对齐**：旧档案里的句对是按错误的切点写下的，不重跑会继续
+     * 展示错配。书架「重新对齐」入口据 [VERSION] 判旧。
+     *
      * 旧档案（alignerVersion < [VERSION]）靠版本闸门判旧，由书架「重新对齐」入口重跑。
      */
-    const val VERSION = 8
+    const val VERSION = 11
 
     /**
      * 「英文侧恒为单句」契约的起始版本：**v7/T5 起**落盘句对的
@@ -217,17 +267,36 @@ object TranslationAligner {
     private val EN_WORDS = Regex("[a-z\'\u2019]+")
     private val HAN_RUNS = Regex("[\\u4e00-\\u9fa5]+")
     private val WHITESPACE = Regex("\\s+")
-    private val ZH_SENTENCE_END = Regex("(?<=[。！？；!?;])|(?<=\\n)")
+    /** 中文句界。V9 起**不含 `；`**（中英分号地位对齐，理由见上方长注释）。 */
+    private val ZH_SENTENCE_END = Regex("(?<=[。！？!?])|(?<=\\n)")
+
+    /** 含 `；` 的中文句界（V8 及更早；现仅用于按段自适应的候选口径）。 */
+    private val ZH_SENTENCE_END_WITH_SEMICOLON = Regex("(?<=[。！？；!?;])|(?<=\\n)")
 
     // 英文侧与中文侧的句数计数都已走真实分句（审查 2-4 口径 A；中文侧 V8 收敛），
     // 不再需要「终止符游程」近似，旧的 ZH_SENTENCE_ENDS 正则已删除。
     //
-    // 「；」是否算句界（V8 实测取舍，见 [countChineseSentencesExact]）：**算**，
-    // [ZH_SENTENCE_END] 保持原样。去掉它（口径 B）泛化集同节精度反而更高
-    // （John 0.928 / Genesis 0.924 / Proverbs 0.890 vs 口径 A 0.916/0.917/0.883），
-    // 但那要连中文分句边界一起改（产品可见），且魔戒查询侧口径 A 更优
-    // （句级命中 2791 vs 2777、段级兜底 1155 vs 1169）；泛化集又是完全平行语料、
-    // 偏好「句更短」，故不采用口径 B。
+    // ## 「；」是否算句界：V9 起**不算**（口径 B），推翻了 V8 的决定
+    //
+    // V8 曾实测「算」（口径 A）在泛化集上更好（John 0.916/Genesis 0.917/Proverbs 0.883
+    // vs 口径 B 的 0.928/0.924/0.890 同节精度——其实口径 B 更高，当时因「泛化集是完全
+    // 平行语料、偏好句更短」且魔戒查询侧口径 A 句级命中更多而选了 A）。
+    //
+    // **对齐目标改为 AI 译本后结论反转**。根因是**中英分号地位不对称**：
+    // 英文 `SentenceSplitter.terminators` 不含 `;`（`; but ...` 是同一句的一部分），
+    // 而中文侧曾把 `；` 当句界 → 一句英文在中文侧被切成两句 → 段内句数不等 →
+    // 句级 DP 整体 off-by-one → 静默错。AI 译本按「不合并、不拆分句子」生成，
+    // 中文 `；` 几乎总落在**英文同一句内部**，此时切分是纯粹的破坏。
+    //
+    // 实测（`Stage0SplitterVariantProbe`，真值 AI 译本 ch1/ch3）：
+    //   变体                     ch1 句数相等段   ch1 标配对正确   ch3 句数相等段   ch3 标配对正确
+    //   V0 现状（；算 + 直引号）    65.45%          93.85%          57.21%          96.64%
+    //   V2 去分号（仅本条）         85.86%          97.43%          77.29%          96.29%
+    //   V3 去分号 + 补弯引号        88.48%         **100.00%**      90.39%         **99.68%**
+    //
+    // 注意这是 [TranslationAligner] 的内部口径，**不是** TTS/阅读器的分句口径
+    // （后者仍是 [SentenceSplitter]，中文 `；` 照旧算句界）——所以本改动不影响朗读
+    // 与高亮，也不会让音频缓存失效。
 
     // DP 回溯用的走法编码（每格 1 字节，避免每格再分配对象）。
     private const val MOVE_NONE: Byte = 0
@@ -253,16 +322,33 @@ object TranslationAligner {
     )
 
     /**
+     * 指定中文分句口径的入口（生产按译本来源分流时用；评测也走这里）。
+     * 位置先验取生产默认值，调用方只需关心 [zhSplit]。
+     */
+    fun align(
+        enChapters: List<List<String>>,
+        zhChapters: List<List<String>>,
+        meaning: MeaningIndex?,
+        zhSplit: ZhSplitPolicy
+    ): List<AlignedSentencePair> = align(
+        enChapters, zhChapters, meaning,
+        sentencePositionPrior = SENTENCE_POSITION_PRIOR,
+        paragraphPositionPrior = PARAGRAPH_POSITION_PRIOR,
+        zhSplit = zhSplit
+    )
+
+    /**
      * [align] 的内部调参入口：位置先验权重可逐档扫描（评测用），生产默认值见上方
      * [SENTENCE_POSITION_PRIOR] / [PARAGRAPH_POSITION_PRIOR]。传 0.0 = 与旧版行为完全一致。
      */
-    internal fun align(
+    fun align(
         enChapters: List<List<String>>,
         zhChapters: List<List<String>>,
         meaning: MeaningIndex?,
         sentencePositionPrior: Double,
         paragraphPositionPrior: Double,
-        chapterPositionPrior: Double = CHAPTER_POSITION_PRIOR
+        chapterPositionPrior: Double = CHAPTER_POSITION_PRIOR,
+        zhSplit: ZhSplitPolicy = ZhSplitPolicy.PRODUCTION
     ): List<AlignedSentencePair> {
         if (enChapters.isEmpty() || zhChapters.isEmpty()) return emptyList()
 
@@ -281,7 +367,7 @@ object TranslationAligner {
 
             val enSpans = enParagraphSpans[enIdx]
             val zhSpans = zhParagraphSpans[zhIdx]
-            val scales = chapterScales(enParagraphs, zhParagraphs, enSpans, zhSpans, bookScale)
+            val scales = chapterScales(enParagraphs, zhParagraphs, enSpans, zhSpans, bookScale, zhSplit)
 
             // 记录哪些英文段落真的配上了，以及它落在哪个中文段落（供邻近兜底用）。
             val zhForEn = HashMap<Int, Int>()
@@ -296,7 +382,7 @@ object TranslationAligner {
                 for (index in paragraphPair.a) zhForEn[index] = paragraphPair.b[0]
 
                 val enSentences = SentenceSplitter.split(enParagraph).contentOnly()
-                val zhSentences = splitChinese(zhParagraph).contentOnly()
+                val zhSentences = zhSentencesFor(enParagraph, zhParagraph, zhSplit)
                 val enSentenceSpans = enSentences.map { englishSpan(it, meaning) }
                 val zhSentenceSpans = zhSentences.map { chineseSpan(it) }
 
@@ -350,14 +436,23 @@ object TranslationAligner {
                         // 各自精确命中（不再有 "A. B." 串让点 B 命中子串匹配）。
                         // 门槛与置信度按**合并对整体**判定一次（拆分后的单句对整条中文句
                         // 的长度比天然超标，按单句口径复核会把它们全部拒掉，见任务汇报）。
-                        for (index in sentencePair.a) {
+                        //
+                        // V10：**先把合并串按句切开**（[splitMergedChinese]）。只共享
+                        // 整串时，每条英文句都会显示「A+B」的全文中译——实测这是 AI 译本
+                        // 剩余静默错的**主要成分**（ch1 5.19%/ch3 4.79%），而真错配只有
+                        // 0.00%/0.14%。切开后每条只拿自己那段，静默错直接消掉。
+                        val parts = splitMergedChinese(
+                            zhSentence, sentencePair.a.size,
+                            sentencePair.a.map { enSentenceSpans[it].words }
+                        )
+                        for ((order, index) in sentencePair.a.withIndex()) {
                             emitted += AlignedSentencePair(
                                 enChapter = enIdx,
                                 zhChapter = zhIdx,
                                 enParagraph = enParagraph,
                                 zhParagraph = zhParagraph,
                                 enSentence = enSentences[index],
-                                zhSentence = zhSentence,
+                                zhSentence = parts?.getOrNull(order) ?: zhSentence,
                                 confidence = confidence
                             )
                         }
@@ -425,7 +520,8 @@ object TranslationAligner {
                 zhForEn = zhForEn,
                 meaning = meaning,
                 scales = scales,
-                sentencePositionPrior = sentencePositionPrior
+                sentencePositionPrior = sentencePositionPrior,
+                zhSplit = zhSplit
             )
         }
         return result
@@ -453,7 +549,8 @@ object TranslationAligner {
         zhForEn: Map<Int, Int>,
         meaning: MeaningIndex?,
         scales: LengthScales,
-        sentencePositionPrior: Double
+        sentencePositionPrior: Double,
+        zhSplit: ZhSplitPolicy = ZhSplitPolicy.PRODUCTION
     ): List<AlignedSentencePair> {
         if (zhForEn.isEmpty()) return emptyList()
         val covered = zhForEn.keys.toIntArray()
@@ -473,7 +570,7 @@ object TranslationAligner {
 
             // 句级兜底（V3）：句级 DP 出来的配对仍是真代价函数的选择，只是段落对应近似。
             val enSentences = SentenceSplitter.split(enParagraph).contentOnly()
-            val zhSentences = splitChinese(zhParagraph).contentOnly()
+            val zhSentences = zhSentencesFor(enParagraph, zhParagraph, zhSplit)
             if (enSentences.isNotEmpty() && zhSentences.isNotEmpty()) {
                 val enSentenceSpans = enSentences.map { englishSpan(it, meaning) }
                 val zhSentenceSpans = zhSentences.map { chineseSpan(it) }
@@ -688,7 +785,8 @@ object TranslationAligner {
         zhParagraphs: List<String>,
         enSpans: List<Span>,
         zhSpans: List<Span>,
-        bookScale: Double
+        bookScale: Double,
+        zhSplit: ZhSplitPolicy = ZhSplitPolicy.PRODUCTION
     ): LengthScales {
         var enWords = 0
         for (span in enSpans) enWords += span.words
@@ -701,7 +799,7 @@ object TranslationAligner {
         // 「已知例外」就此消除）：英文 = SentenceSplitter.count，中文 = splitChinese +
         // contentOnly，两者与各自 DP 用的句子列表逐条同源，密度先验不再有计数偏差。
         val enSentences = countSentencesExact(enParagraphs)
-        val zhSentences = countChineseSentencesExact(zhParagraphs)
+        val zhSentences = countChineseSentencesExact(zhParagraphs, zhSplit)
         if (enSentences == 0 || zhSentences == 0) return LengthScales(paragraph, paragraph)
         val sentence = clampScale(
             (zhChars.toDouble() / zhSentences) / (enWords.toDouble() / enSentences)
@@ -738,9 +836,335 @@ object TranslationAligner {
      *
      * 代价：章内多跑一遍中文分句（DP 里本就要分一遍），相对整章 DP 开销可忽略。
      */
-    private fun countChineseSentencesExact(texts: List<String>, terminators: Regex = ZH_SENTENCE_END): Int {
+    /**
+     * 中文分句口径。
+     *
+     * @property terminators 句界正则。
+     * @property closingLeads 出现在片段开头时并入前句的闭合引号/括号（R2）。
+     * @property speechTagMaxChars 闭合引号后剩余文本 ≤ 本值且像说话人引导语时并入前句；
+     *   null = 无条件并入（V9 生产值，实测最优）。
+     * @property semicolonIsBoundary 中文 `；` 是否算句界；**null = 按段自适应**。
+     * @property knownSentences 构造性句界：中文段落原文 → 该段的句子列表。命中时**完全跳过**
+     *   中文分句推断（P3 的落地形态；也是离线评测「句界完美上界」的入口）。默认 null = 不启用。
+     */
+    data class ZhSplitPolicy(
+        val terminators: Regex,
+        val closingLeads: Set<Char> = ZH_CLOSING_LEADS,
+        val speechTagMaxChars: Int? = null,
+        val semicolonIsBoundary: Boolean? = null,
+        val knownSentences: Map<String, List<String>>? = null
+    ) {
+        companion object {
+            /** 含 `；` 的口径（V8 及更早；**人译本最优**，见 [forAiTranslation]）。 */
+            val WITH_SEMICOLON = ZhSplitPolicy(
+                terminators = ZH_SENTENCE_END_WITH_SEMICOLON,
+                semicolonIsBoundary = true
+            )
+
+            /** 不含 `；` 的口径（V9；**AI 译本最优**，见 [forAiTranslation]）。 */
+            val WITHOUT_SEMICOLON = ZhSplitPolicy(
+                terminators = ZH_SENTENCE_END,
+                semicolonIsBoundary = false
+            )
+
+            /**
+             * 用调用方给的构造性句界（P3）。批次校验失败时应**回退**到
+             * [forAiTranslation]，不要因为句界缺失就整批失败。
+             */
+            fun withKnownSentences(known: Map<String, List<String>>): ZhSplitPolicy =
+                WITHOUT_SEMICOLON.copy(knownSentences = known)
+
+            /**
+             * **生产值 = 按译本来源分流**。
+             *
+             * 中文 `；` 在两种语料里用法相反，且两者都已端到端实测：
+             *
+             * | 语料 | 口径 | 指标 |
+             * | --- | --- | --- |
+             * | AI 译本（真值语料） | 不含 `；` | 静默错 ch1 10.68%→**6.94%**、ch3 8.24%→**5.87%** |
+             * | 人译本（朱學恆，整本） | 含 `；` | 句级命中 **84.29%** vs 83.28%（V9 低 1.01pp） |
+             *
+             * 即 AI 译本用 V9 口径是大改善，人译本用 V8 口径小胜。既然调用方**本来就知道**
+             * 译本来源（`Book.isAiTranslation` / `Book.AI_TRANSLATION_ID_PREFIX`），
+             * 就不该让对齐器去猜（猜的那条路已实测否决，见 [chooseZhSentences]）。
+             */
+            fun forAiTranslation(isAiTranslation: Boolean): ZhSplitPolicy =
+                if (isAiTranslation) WITHOUT_SEMICOLON else WITH_SEMICOLON
+
+            /**
+             * 默认生产值。**注意**：`TranslationAligner.align` 的默认参数必须是编译期常量，
+             * 拿不到译本来源，所以这里取「覆盖 AI 与人译本都吃到主要收益」的一侧——
+             * 实际生产路径由 `TranslationMemoryRepository` 显式传入 [forAiTranslation]。
+             */
+            val PRODUCTION = WITHOUT_SEMICOLON
+
+            /** 固定口径（评测用）。 */
+            fun fixed(withSemicolon: Boolean) =
+                if (withSemicolon) WITH_SEMICOLON else WITHOUT_SEMICOLON
+
+            /**
+             * R2 选择性合并：只有「短 + 含说话动词 + 无逗号」的尾部才并入前句。
+             * 实测在 AI 译本上劣于无条件合并（见 [VERSION] 的 v9 说明），保留供复测。
+             */
+            fun selectiveSpeechTag(maxChars: Int) =
+                ZhSplitPolicy(terminators = ZH_SENTENCE_END, speechTagMaxChars = maxChars)
+        }
+    }
+
+    private val SPEECH_VERB = Regex("说|道|问|答|喊|叫|嚷|叹|嘟囔|咕哝|低语|耳语|回答|补充")
+
+    private fun looksLikeSpeechTag(rest: String, maxChars: Int): Boolean {
+        if (rest.length > maxChars) return false
+        if (rest.any { it in "，,；;" }) return false
+        return SPEECH_VERB.containsMatchIn(rest)
+    }
+
+    /**
+     * 按段选择中文分句口径 —— **已实测否决，保留仅为复测**。
+     *
+     * ## 背景
+     *
+     * 中文 `；` 在两种语料里的用法相反：**AI 译本**里它几乎总落在英文同一句内部
+     * （当句界是破坏），**人译本**里译者会用它分隔两个英文句（当句界才对，
+     * 金标准 s9/s20 就是这样）。所以「全局固定一种口径」看起来必然有损。
+     *
+     * ## 实测结论：自适应不值得
+     *
+     * `SemicolonPolicyProbe`（朱學恆人译本 2806 段）确实显示逐段自适应的**句数相等率**
+     * 最高（19.96% vs 算 18.18% / 不算 18.85%），但 `Stage0PolicyEndToEndProbe`
+     * 端到端跑真 DP 后，用户代价反而略差：
+     *   ch1 自适应 **13.47** vs 不含 `；` 13.71（自适应好 0.24）
+     *   ch3 自适应 **14.60** vs 不含 `；` 13.47（自适应差 1.13）
+     * 净负，且因为要对含 `；` 的段跑第二遍分句，耗时增加。
+     *
+     * 根因：**「句数相等」不等于「切点正确」**。自适应为一个「差 1 变差 0」的段落
+     * 接受了错误的切点，把原本 DP 能靠代价函数纠正的段落反而固定成了错的。
+     *
+     * **后人别再走这条路**：真要按语料分流，应当由**上游**（知道译文来源是 AI 还是
+     * 人工的调用方）显式传入口径，而不是在对齐器里猜。
+     */
+    private fun chooseZhSentences(
+        enParagraph: String,
+        zhParagraph: String,
+        requireExactMatch: Boolean = true
+    ): List<String> {
+        val plain = splitChinese(zhParagraph, ZhSplitPolicy.WITHOUT_SEMICOLON).contentOnly()
+        // 快路径：没有分号（全角/半角）时两种口径必然一致。
+        if (zhParagraph.indexOf('；') < 0 && zhParagraph.indexOf(';') < 0) return plain
+        val withSemi = splitChinese(zhParagraph, ZhSplitPolicy.WITH_SEMICOLON).contentOnly()
+        if (withSemi.size == plain.size) return plain
+        val enCount = SentenceSplitter.count(enParagraph)
+        val plainDist = abs(plain.size - enCount)
+        val semiDist = abs(withSemi.size - enCount)
+        return when {
+            requireExactMatch -> if (semiDist == 0 && plainDist > 0) withSemi else plain
+            semiDist < plainDist -> withSemi
+            else -> plain
+        }
+    }
+
+    /**
+     * 分派到具体口径：`semicolonIsBoundary == null` 时按段自适应，否则用固定口径。
+     * 两条路径（主对齐与邻近兜底）都走这里，保证口径一致。
+     */
+    private fun zhSentencesFor(
+        enParagraph: String,
+        zhParagraph: String,
+        policy: ZhSplitPolicy
+    ): List<String> {
+        // 构造性句界优先：调用方（AI 翻译链路）若已知该段的句子切分，直接用，
+        // 完全不参与中文分句推断。这是 P3 的落地形态，也是离线评测「句界完美上界」的入口。
+        // 注意键的口径：`zhParagraph` 来自 `TtsTextExtractor`（空白已折叠成单空格并 trim），
+        // 调用方必须用同样的归一化建键，否则查表静默落空。
+        policy.knownSentences?.get(zhParagraph)?.let { known ->
+            if (known.size > 1) return known.filter { it.isNotBlank() }
+        }
+        return when (policy.semicolonIsBoundary) {
+            null -> chooseZhSentences(enParagraph, zhParagraph)
+            true -> splitChinese(zhParagraph, policy).contentOnly()
+            false -> splitChinese(zhParagraph, policy).contentOnly()
+        }
+    }
+
+    /**
+     * 把「N 个英文句 → 1 条中文合并句」的译文按中文句读边界切成 N 段（V10）。
+     *
+     * ## 为什么必须切
+     *
+     * T5 起英方 2:1 是合法走法，落盘时会把被合并的两条英文各写成一条句对，**共享同一条
+     * 中文串**。那让每条英文句都显示「A+B」的全文中译——用户点 A 看到 A+B、点 B 也看到
+     * A+B。实测这是 AI 译本剩余静默错的**主要成分**（ch1 5.19% / ch3 4.79%），
+     * 而真正的错配（OFFSET）只有 0.00% / 0.14%。所以切开的收益是纯的。
+     *
+     * ## 切法
+     *
+     * 中文句读点（`。！？!?` 及其后的闭合引号）天然是候选边界。选出 `N-1` 个切点，使
+     * 「每段中文字数 / 对应英文词数」的方差最小——即让各段的中英长度比尽量一致。
+     * 切点不足（整串只有一个句读）或切完出现空段时返回 `null`，调用方回退共享整串
+     * （行为与 V9 完全一致，不会更差）。
+     *
+     * @param merged 合并后的中文串
+     * @param count 英文句数（≥2）
+     * @param enWords 每条英文句的词数，用于按比例分配
+     */
+    private fun splitMergedChinese(merged: String, count: Int, enWords: List<Int>): List<String>? {
+        if (count < 2 || merged.isEmpty()) return null
+        // 候选边界：句读符 + 其后可跟闭合引号/括号。
+        //
+        // `speechTag` 标记这个切点后面是否紧接**说话人引导语**（`。」他說：「…`）。
+        // 它**不做硬禁止**而是加代价：对话密集语料（ch3）里这种位置既有「一句英文 +
+        // 说话人插入」也有「两句英文」，硬禁止会把该切的也挡掉（实测静默错 2.82%→3.31%）；
+        // 让长度比证据主导、引导语只作惩罚，两侧都取到最优（2.87%/2.82%）。
+        val boundaries = ArrayList<Int>()
+        val speechTagPenalty = ArrayList<Boolean>()
+        var i = 0
+        while (i < merged.length) {
+            if (merged[i] in ZH_MERGE_BREAKS) {
+                var j = i + 1
+                while (j < merged.length && merged[j] in ZH_MERGE_CLOSERS) j++
+                if (j < merged.length) {
+                    boundaries += j
+                    speechTagPenalty += opensSpeechTag(merged, j)
+                }
+                i = j
+            } else i++
+        }
+        if (boundaries.size < count - 1) return null
+
+        // 在候选边界里选 count-1 个，使各段中英长度比的方差最小（穷举，候选通常 <20）。
+        var best: IntArray? = null
+        var bestCost = Double.MAX_VALUE
+        val picks = IntArray(count - 1)
+
+        fun evaluate(): Double {
+            var start = 0
+            var enCum = 0
+            val ratios = DoubleArray(count)
+            for (k in 0 until count - 1) {
+                val end = picks[k]
+                val zhLen = end - start
+                enCum += enWords.getOrElse(k) { 1 }
+                ratios[k] = if (enCum == 0) 0.0 else zhLen.toDouble() / enCum
+                start = end
+            }
+            val zhLen = merged.length - start
+            enCum += enWords.getOrElse(count - 1) { 1 }
+            ratios[count - 1] = if (enCum == 0) 0.0 else zhLen.toDouble() / enCum
+            val mean = ratios.average()
+            if (mean <= 0.0) return Double.MAX_VALUE
+            var cost = 0.0
+            for (r in ratios) {
+                val d = r - mean
+                cost += d * d
+                if (r <= 0.0) return Double.MAX_VALUE // 空段直接淘汰
+            }
+            // 切点落在「引语 + 说话人引导语」交界处时加罚：那种切法会把说话人标签
+            // 和前一句的引语拆开，两侧都读不通。罚值相对长度方差足够大但可被更强的
+            // 长度证据压过。
+            for (k in 0 until count - 1) {
+                val idx = boundaries.indexOf(picks[k])
+                if (idx >= 0 && speechTagPenalty[idx]) cost += SPEECH_TAG_CUT_PENALTY
+            }
+            return cost / (mean * mean)
+        }
+
+        fun search(depth: Int, from: Int) {
+            if (depth == count - 1) {
+                val c = evaluate()
+                if (c < bestCost) { bestCost = c; best = picks.copyOf() }
+                return
+            }
+            // 留足后续切点与剩余字符（每段至少 1 字符）
+            val maxIdx = boundaries.size - (count - 1 - depth)
+            for (k in from..maxIdx) {
+                picks[depth] = boundaries[k]
+                search(depth + 1, k + 1)
+            }
+        }
+        search(0, 0)
+
+        val chosen = best ?: return null
+        val result = ArrayList<String>(count)
+        var start = 0
+        for (b in chosen) {
+            result += merged.substring(start, b).trim()
+            start = b
+        }
+        result += merged.substring(start).trim()
+        if (result.any { it.isEmpty() }) return null
+
+        // **长度比护栏**：每段必须过与落盘同一条长度比门槛。
+        // 没有它，切点会被「无参引语 + 说话人标签」这类形态骗过去（`‘Wake up, hobbits!’
+        // he cried.` 被切成「醒醒！」/「他喊道。」→ 两条都对不上）。宁可整条共享（V9 行为），
+        // 也不产错切——用户代价上「整串」与「错切」同为静默错，但错切更难解释。
+        // scale 取全串的实测比例：不同语料的中英长度密度不同，用实测值而非全局常量。
+        val zhChars = result.sumOf { s -> s.count { !it.isWhitespace() } }
+        val totalEn = enWords.sum().coerceAtLeast(1)
+        val scale = (zhChars.toDouble() / totalEn).coerceAtLeast(0.1)
+        for ((k, part) in result.withIndex()) {
+            val w = enWords.getOrElse(k) { 1 }.coerceAtLeast(1)
+            val partChars = part.count { !it.isWhitespace() }
+            val ratio = partChars / (w * scale)
+            if (ratio < SENTENCE_MIN_LENGTH_RATIO || ratio > SENTENCE_MAX_LENGTH_RATIO) return null
+        }
+        return result
+    }
+
+    /** 合并串的候选切点：中英文句读符。 */
+    private val ZH_MERGE_BREAKS = setOf('。', '！', '？', '!', '?', '；', ';', '…')
+
+    /**
+     * 切点落在「引语 + 说话人引导语」交界处的代价罚值（相对归一化长度方差）。
+     * 实测：硬禁止会让 ch3 静默错 2.82%→3.31%，软罚值两侧都最优。
+     */
+    private const val SPEECH_TAG_CUT_PENALTY = 0.10
+
+    /** 说话人引导语的终止字符：冒号与开引号（`他說：「…`），见 [opensSpeechTag]。 */
+    private val ZH_SPEECH_TAG_STOPS = setOf(
+        '：', ':', '「', '『', '“', '‘', '（', '【', '［', '(', '['
+    )
+
+    /** 句读符之后可能紧跟、应归入**前**一段的闭合字符。 */
+    private val ZH_MERGE_CLOSERS = setOf('」', '』', '”', '’', '"', '\'', '）', '】', '］', ')', ']')
+
+    /**
+     * `pos` 起的剩余文本是否以**说话人引导语**开头（`他說：「…` / `甘道夫摇着头说。`）。
+     *
+     * 是的话，这个句读点不能当切点——中文把「引语」和随后的「说话人标签 + 下一句引语」
+     * 写在一起是常态（`。」他說：「…」`），从中间切开会让前半段丢掉归属。
+     * 判据用「短 + 含说话动词 + 不含逗号」的宽松形态，与 [looksLikeSpeechTag] 同源。
+     */
+    private fun opensSpeechTag(text: String, pos: Int): Boolean {
+        // 跳过空白与闭合引号
+        var k = pos
+        while (k < text.length && (text[k].isWhitespace() || text[k] in ZH_MERGE_CLOSERS)) k++
+        if (k >= text.length) return false
+        // 到下一个句读符 / 冒号 / **开引号**为止。冒号与开引号必须也是终止条件：
+        // `一個聲音說：「如果你想知道得更清楚一點…` 里 head 若一路吃到下一个句点，
+        // 长度会远超说话人引导语的合理范围，形态判定必然失败（实测 s28/s34 就是这样漏掉的）。
+        var end = k
+        while (end < text.length &&
+            text[end] !in ZH_MERGE_BREAKS &&
+            text[end] !in ZH_SPEECH_TAG_STOPS
+        ) end++
+        val head = text.substring(k, end).trim()
+        if (head.isEmpty()) return false
+        // 「引号后直接续新引语」（`「A。」「B。」`）不是说话人标签，是真的句界。
+        if (head.firstOrNull() in ZH_MERGE_CLOSERS) return false
+        return looksLikeSpeechTag(head, maxChars = 12)
+    }
+
+    private fun countChineseSentencesExact(
+        texts: List<String>,
+        policy: ZhSplitPolicy = ZhSplitPolicy.PRODUCTION
+    ): Int {
         var total = 0
-        for (text in texts) total += splitChinese(text, terminators).contentOnly().size
+        // 章节密度估计只数句数、拿不到英文句数做参照；自适应口径下取不含 `；`
+        // （V9 已验证值），它是「句更少」的一侧，对密度先验的影响可忽略。
+        val effective = if (policy.semicolonIsBoundary == null) {
+            ZhSplitPolicy.WITHOUT_SEMICOLON
+        } else policy
+        for (text in texts) total += splitChinese(text, effective).contentOnly().size
         return total
     }
 
@@ -901,25 +1325,50 @@ object TranslationAligner {
      * 实测（魔戒档案）：3,464 段产生 1,461 个纯残渣段 + 1,742 个裸引号开头段，
      * 修复后两者均为 0，段数 14,870 → 11,667；12,692 条句级句对里有 2,216 条
      * （17.5%）是这种脏配对。
+     *
+     * R2 的「合并 vs 另起」取舍见 [ZhSplitPolicy.speechTagMaxChars]：无条件合并是
+     * V9 生产值（在 AI 译本上标配对正确率 100%/99.68%，是所有实测变体里最优的）。
      */
-    private fun splitChinese(text: String, terminators: Regex = ZH_SENTENCE_END): List<String> {
-        val raw = text.split(terminators)
+    private fun splitChinese(
+        text: String,
+        policy: ZhSplitPolicy = ZhSplitPolicy.PRODUCTION
+    ): List<String> {
+        val raw = text.split(policy.terminators)
             .map { it.trim() }
             .filter { it.isNotBlank() }
         val merged = mutableListOf<String>()
         for (seg in raw) {
             val isPunctuationOnly = seg.none { it.isLetterOrDigit() }
-            val leadsWithClosing = seg.firstOrNull() in ZH_CLOSING_LEADS
-            if (merged.isNotEmpty() && (isPunctuationOnly || leadsWithClosing)) {
-                merged[merged.lastIndex] = merged.last() + seg
-            } else {
-                merged += seg
+            val leadsWithClosing = seg.firstOrNull() in policy.closingLeads
+            val shouldAttach = when {
+                merged.isEmpty() -> false
+                isPunctuationOnly -> true
+                !leadsWithClosing -> false
+                policy.speechTagMaxChars == null -> true
+                else -> {
+                    val k = seg.indexOfFirst { it !in policy.closingLeads }
+                        .let { if (it < 0) seg.length else it }
+                    val rest = seg.substring(k).trim()
+                    rest.isEmpty() || looksLikeSpeechTag(rest, policy.speechTagMaxChars)
+                }
             }
+            if (shouldAttach) merged[merged.lastIndex] = merged.last() + seg else merged += seg
         }
         return merged
     }
 
-    private val ZH_CLOSING_LEADS = setOf('」', '』', '"', '\'', '）', '】')
+    /**
+     * 闭合引号/括号：出现在**片段开头**时并入前句（R2 引号归属修复）。
+     *
+     * V9 起补入**弯引号** `”`(U+201D) / `’`(U+2019)：AI 译文一律用弯引号，
+     * 而这里原先只有直引号 `"`/`'`，于是 `！”甘道夫说。` 被切成
+     * 「……！」+「”甘道夫说。」两句 → 段内句数多一句 → DP off-by-one → 静默错。
+     * 实测（ch1/ch3 真值 AI 译本）：「句数相等段落」比例 65.45%/57.21% 升至
+     * 70.16%/72.49%，与去分号合并后达 88.48%/90.39%，标配对正确率 100%/99.68%。
+     */
+    private val ZH_CLOSING_LEADS = setOf(
+        '」', '』', '”', '’', '"', '\'', '）', '】', '］', ')', ']'
+    )
 
     /** 纯标点句（切句残渣「 . 」这类）不参与对齐：没有可点词，也没有对照价值。 */
     private fun List<String>.contentOnly(): List<String> =

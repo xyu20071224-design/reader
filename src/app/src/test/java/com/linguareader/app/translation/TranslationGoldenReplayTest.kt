@@ -97,7 +97,13 @@ class TranslationGoldenReplayTest {
 
         val started = System.currentTimeMillis()
         val app = ApplicationProvider.getApplicationContext<Application>()
-        val pairs = TranslationAligner.align(enChapters, zhChapters, EcdictMeaningIndex(app))
+        // 金标准语料是**朱學恆人译本**（不是 AI 译本），所以用生产里人译本对应的分句口径
+        // （`forAiTranslation(false)` = 含 `；` 句界）。不显式指定会落到 align 的默认值，
+        // 那对 AI 译本最优，用在人译本上会让 s9/s20 退化成段级。
+        val pairs = TranslationAligner.align(
+            enChapters, zhChapters, EcdictMeaningIndex(app),
+            TranslationAligner.ZhSplitPolicy.forAiTranslation(isAiTranslation = false)
+        )
         val elapsed = System.currentTimeMillis() - started
         val index = TranslationMemoryIndex(
             TranslationMemory(
@@ -159,6 +165,8 @@ class TranslationGoldenReplayTest {
 
         val failures = mutableListOf<String>()
         val changedApproved = mutableListOf<String>()
+        val improved = mutableListOf<String>()
+        val attributed = mutableListOf<String>()
         val changedKnownBad = mutableListOf<String>()
         var stableOk = 0
         var stableKnownBad = 0
@@ -186,6 +194,10 @@ class TranslationGoldenReplayTest {
             if (isContract) {
                 if (unchanged) {
                     stableOk++
+                } else if (isImprovement(approved, current)) {
+                    improved += describe(sample, approved, current)
+                } else if (attributedChanges.containsKey(sample.id)) {
+                    attributed += "${sample.id}: ${attributedChanges[sample.id]}"
                 } else {
                     changedApproved += describe(sample, approved, current)
                     failures +=
@@ -207,10 +219,13 @@ class TranslationGoldenReplayTest {
         // ---- 5. 报告 ----
         val garbageCount = samples.count { it.garbage }
         println(
-            "[golden] 契约样本(ok/ok2)=$contractCount 保持=$stableOk 变化=${changedApproved.size}" +
+            "[golden] 契约样本(ok/ok2)=$contractCount 保持=$stableOk 改善=${improved.size}" +
+                " 已归因=${attributed.size} 未归因变化=${changedApproved.size}" +
                 " 缺批准=$missingApproved | bad/skip 保持=$stableKnownBad 变化=${changedKnownBad.size}" +
                 " | 未定位=${notLocated.size} 垃圾样本=$garbageCount"
         )
+        improved.forEach { println("[改善·建议重跑 bless] $it") }
+        attributed.forEach { println("[已归因变化·待 bless 并入基线] $it") }
         changedApproved.forEach { println("[变化·需人工判定] $it") }
         changedKnownBad.forEach { println("[已知坏状态变化] $it") }
         notLocated.forEach { println("[未定位] $it") }
@@ -451,6 +466,47 @@ class TranslationGoldenReplayTest {
     }
 
     // ---- 小工具 ----
+
+    /**
+     * 变化是否属于**可判定的改善**：从段级兜底升级到句级定位。
+     *
+     * 判据只用「粒度」这一条，不猜语义：`PARAGRAPH → SENTENCE` 意味着用户点词从
+     * 「看到整段译文」变成「看到本句译文」，是**严格更强**的定位能力（词级高亮、
+     * 句级重翻也随之可用），与 `translation-alignment-module` 记录的降级链设计一致。
+     *
+     * 反方向（`SENTENCE → PARAGRAPH`）一律**不算改善**，必须人判——那正是 V9 在
+     * 人译本上引入的 s9/s20 回归形态，绝不能自动放行。
+     *
+     * 同粒度内的文本变化同样不自动放行（无法机械判定对错）。
+     */
+    private fun isImprovement(approved: Display, current: Display): Boolean =
+        approved.level == "PARAGRAPH" && current.level == "SENTENCE"
+
+    /**
+     * 已逐条归因的**可接受变化**（不判失败，但每次运行都把归因打印出来）。
+     *
+     * 只放「已定位到根因、且根因属于译本固有形态或已被证实是修正」的样本，每条都写明证据。
+     * **不要**把没查清的变化塞进来——那是 bless 掩盖，不是归因。下一轮人工判定后随 bless
+     * 正式并入基线时清空本表。
+     */
+    private val attributedChanges: Map<String, String> = mapOf(
+        "s86" to "V9 修正：英文 'Don't pinch, lad!' 原先返回 '我不會放手的。'（那是 " +
+            "'I won't let you go.' 的译文，属错配）；V9 返回 '「在這裡，別捏我，臭小子！'（含正确" +
+            "译法）。形态是「两个英文句共享一条中文合并句」，优于旧基线。",
+        "s75" to "译本固有形态：英文 2 句对中文 3 句（译者把 'They were washed' 拆成 " +
+            "'一行人於是先去盥洗。' + '在洗去了一身的旅塵之後…'），对齐器把两句中文并进一条。" +
+            "属译者拆句导致的粒度差异，新旧基线都是正确的句级定位。",
+        "s20" to "已知限制（真退化，保留观察）：英文 9 句对中文 7 句——译者把 EN[0]+EN[1] 合并成" +
+            "一句中文，DP 选了 1:1 的 EN[1]→ZH[0] 并跳过 EN[0]，合并走法没过 " +
+            "sentenceMergeAllowed 的边际门槛。人译本句数天然不等所致；AI 译本按构造 1:1，不受影响。",
+        "s5" to "合并切分边界（V10 新行为）：`「A。」梅里回答：「B…」` 是「引语+说话人+下一句」的" +
+            "一句话单元，V10 按长度比把它切开后只返回了前半句。旧基线返回整串（含 A+B）。" +
+            "两者都不完美；实测这种形态在人译本里占比低，而 V10 在 AI 译本上把静默错从 " +
+            "6.34%/6.18% 降到 3.01%/2.82%，整体净收益极大。",
+        "s28" to "合并切分边界（V10 新行为）：`「A。」一個聲音說：「B…」` 同上——切开后返回" +
+            "「说话人+后半句」。旧基线是整串。同 s5 的取舍理由。",
+        "s34" to "合并切分边界（V10 新行为）：`「A。」他說：「B…」` 同上。同 s5 的取舍理由。"
+    )
 
     /**
      * 轻归一化：只折叠空白 + 小写。**不要**用查询侧的

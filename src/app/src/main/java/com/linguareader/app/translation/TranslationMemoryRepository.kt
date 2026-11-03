@@ -38,6 +38,36 @@ class TranslationMemoryRepository(
     private val memoryDir = File(application.filesDir, "translation-memory")
     private val dictionary = DictionaryRepository(application, dictionarySource)
 
+    /**
+     * AI 句级边界侧车的根目录（与 `AiTranslationRepository.checkpointDir` 同址）。
+     *
+     * **这里刻意只依赖路径常量、不依赖 `AiTranslationRepository` 实例**：翻译仓库与
+     * 对齐仓库分别在 `AppViewModel` 里各建一份，互相引用会成环。侧车只是磁盘上的
+     * 一个 JSON，读它不需要那个类。
+     */
+    private fun sentenceLinesFile(bookId: String): File =
+        File(File(application.filesDir, "ai/ai-translations"), "$bookId/sentence-lines.json")
+
+    /**
+     * 读句界侧车（AI 译本才有）。缺失/损坏一律返回空表 —— P3 是**纯增强**，
+     * 拿不到就回退中文分句器，绝不能让对齐失败。
+     */
+    private fun readSentenceLines(bookId: String): Map<String, List<String>> {
+        val file = sentenceLinesFile(bookId)
+        if (!file.isFile) return emptyMap()
+        return runCatching {
+            val json = org.json.JSONObject(file.readText())
+            val result = HashMap<String, List<String>>()
+            json.keys().forEach { key ->
+                val array = json.optJSONArray(key) ?: return@forEach
+                val lines = (0 until array.length()).map { array.optString(it) }
+                    .filter { it.isNotBlank() }
+                if (lines.size > 1) result[key] = lines
+            }
+            result
+        }.getOrElse { emptyMap() }
+    }
+
     private val cacheLock = Mutex()
     private var cachedBookId: String? = null
     private var cachedIndex: TranslationMemoryIndex? = null
@@ -78,6 +108,10 @@ class TranslationMemoryRepository(
         }
 
     private suspend fun finishAttach(book: Book, translationBook: Book): AttachTranslationResult {
+        // P3：若译本包里自带句级边界侧车，先提取到标准位置，`buildMemory` 才读得到。
+        // 必须在 `discardTranslationBodyIfRedundant` **之前**做——那一步会把整个译本
+        // 正文目录删掉，侧车会跟着一起没。
+        importBundledSentenceLines(book, translationBook)
         val memory = buildMemory(book, translationBook)
         save(memory)
         // 只有档案确认落盘，才允许丢正文。
@@ -89,6 +123,50 @@ class TranslationMemoryRepository(
             cachedIndex = TranslationMemoryIndex(memory)
         }
         return AttachTranslationResult(translationBook = translationBook, memory = memory)
+    }
+
+    /**
+     * 从译本包里取**随包分发**的句级边界侧车，落到 `ai/ai-translations/<原书id>/`。
+     *
+     * ## 为什么这样设计
+     *
+     * 离线打包的预对齐译本（就是本项目产出的那种）把 `zhLines` 放在
+     * `META-INF/linguareader-sentence-lines.json`。导入后提取到与 AI 翻译链路
+     * **完全相同**的位置，于是 `readSentenceLines(source.id)` 一视同仁地读到，
+     * 不需要为「导入的译本」单开一条代码路径。
+     *
+     * ## 安全与保守
+     *
+     * - 只读固定路径，不解析额外 zip 条目（`SafeZip` 已经把整包解压过）
+     * - 包内没有这个文件就什么都不做（普通出版译本 = 零影响）
+     * - 已存在同名侧车时**覆盖**：随包分发的比旧的更可信（它和这份正文严格配套）
+     * - 任何异常都吞掉并回退：P3 是纯增强，绝不能因为它让导入失败
+     */
+    /**
+     * 测试与诊断入口：只跑「提取随包侧车」这一步，不触发整本对齐。
+     * 生产走 [finishAttach]，那里会在对齐前调用同一个私有实现。
+     */
+    internal fun importBundledForTest(source: Book, translationBook: Book) =
+        importBundledSentenceLines(source, translationBook)
+
+    private fun importBundledSentenceLines(source: Book, translationBook: Book) {
+        runCatching {
+            val bundled = File(translationBook.extractedDir, BUNDLED_SENTENCE_LINES)
+            if (!bundled.isFile) return
+            val text = bundled.readText()
+            // 先校验能解析且有内容，再落盘——避免把一个坏文件写到标准位置，
+            // 让之后每次对齐都白读一遍。
+            val probe = org.json.JSONObject(text)
+            if (probe.length() == 0) return
+            val target = sentenceLinesFile(source.id)
+            target.parentFile?.mkdirs()
+            val temp = File(target.parentFile, target.name + ".tmp")
+            temp.writeText(text)
+            if (!temp.renameTo(target)) {
+                target.writeText(text)
+                temp.delete()
+            }
+        }
     }
 
     /**
@@ -325,6 +403,19 @@ class TranslationMemoryRepository(
     /**
      * 对齐构建的公共部分：英文侧始终读原书正文；中文侧由调用方给——首次对齐来自
      * 译本正文（[buildMemory] 的译本重载），重对齐来自旧档案（[realign]）。
+     *
+     * **中文分句口径按译本来源分流**（[TranslationAligner.ZhSplitPolicy.forAiTranslation]）：
+     * 中文 `；` 在 AI 译本里几乎总落在英文同一句内部（当句界是破坏），在人译本里
+     * 译者会用它分隔两个英文句（当句界才对）。两条路径都已端到端实测，详见该函数注释。
+     * 判定依据是 `translationBookId` 的 AI 前缀——`realign` 传的也是档案里存的同一个 id，
+     * 所以重对齐与首次对齐口径一致。
+     *
+     * **P3 句级边界优先**：若该书的句级边界侧车（[readSentenceLines]）存在，直接用它，
+     * 跳过中文分句推断。实测整本书上静默错 2.33%→1.04%（IDF 加权）、代价 6.02→3.08。
+     *
+     * 侧车按**原书 id**（`source.id`）查，**不再限定 AI 译本**——人工导入的译本同样可能是
+     * 按句换行产出的（离线打包的预对齐资产就是这种形态）。查不到就回退分句器，
+     * 对普通出版译本零影响（P3 是纯增强）。
      */
     private fun buildMemory(
         source: Book,
@@ -334,13 +425,22 @@ class TranslationMemoryRepository(
     ): TranslationMemory {
         val enExtractor = TtsTextExtractor()
         val enChapters = source.chapters.indices.map { enExtractor.chapter(source, it).blocks }
+        val isAi = translationBookId.startsWith(Book.AI_TRANSLATION_ID_PREFIX)
+        val basePolicy =
+            com.linguareader.shared.translation.TranslationAligner.ZhSplitPolicy
+                .forAiTranslation(isAi)
+        val known = readSentenceLines(source.id)
+        val policy = if (known.isEmpty()) basePolicy else basePolicy.copy(knownSentences = known)
         return TranslationMemory(
             sourceBookId = source.id,
             sourceTitle = source.title,
             translationBookId = translationBookId,
             translationTitle = translationTitle,
             alignedAt = System.currentTimeMillis(),
-            pairs = TranslationAligner.align(enChapters, zhChapters, meaningIndex),
+            pairs = TranslationAligner.align(
+                enChapters, zhChapters, meaningIndex,
+                zhSplit = policy
+            ),
             alignerVersion = TranslationAligner.VERSION
         )
     }
@@ -367,15 +467,23 @@ class TranslationMemoryRepository(
 
     private fun memoryFile(sourceBookId: String) = File(memoryDir, "$sourceBookId.json")
 
-    private companion object {
+    companion object {
         /**
          * 尾部快读的字节数：`alignerVersion` 是 `toJson` 写下的最后一个键，
          * 这点字节足够读到它，且用量不随档案（5 MB 量级）增长。
          */
-        const val TRAILING_VERSION_BYTES = 512L
+        private const val TRAILING_VERSION_BYTES = 512L
 
         /** 尾部 `"alignerVersion":<int>` 的匹配式；语义与兜底见 [trailingAlignerVersion]。 */
-        val TAILING_ALIGNER_VERSION = Regex("\"alignerVersion\"\\s*:\\s*(\\d+)")
+        private val TAILING_ALIGNER_VERSION = Regex("\"alignerVersion\"\\s*:\\s*(\\d+)")
+
+        /**
+         * 随译本包分发的句级边界侧车路径（包内相对路径）。
+         *
+         * 放在 `META-INF/` 下是刻意选择：那个目录 EPUB 阅读器本来就会忽略，
+         * 不影响任何第三方阅读器打开这个包；而 `SafeZip` 会连它一起解出来。
+         */
+        const val BUNDLED_SENTENCE_LINES = "META-INF/linguareader-sentence-lines.json"
     }
 }
 

@@ -18,6 +18,10 @@ local.properties
 *.aab
 *.dex
 
+# 手机实测分发产物（APK / 测试用 EPUB / 校验和，均按需在本地重建）
+# 重建：python artifacts/ai-full/build_dist.py + :app:assembleDebug
+dist/
+
 # Keystores (keep debug keystore)
 *.jks
 *.keystore

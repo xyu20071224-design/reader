@@ -245,6 +245,8 @@ object AiBookTranslator {
             appendLine("[${batch.paragraphIndices[position]}] $paragraph")
         }
         appendLine()
+        appendLine(SENTENCE_LINE_RULE)
+        appendLine()
         if (retryError != null) {
             appendLine("上一次输出未通过校验（$retryError）。请重新逐段完整翻译，确保每个编号都有对应译文、不合并不拆分段落。")
             appendLine()
@@ -320,6 +322,102 @@ object AiBookTranslator {
             throw AiRequestException("AI 译文长度异常（原文 $sourceWords 词，译文 $translatedChars 字）")
         }
         return translations
+    }
+
+    // --- 句级边界（P3）--------------------------------------------------------
+
+    /**
+     * prompt 里的句级输出要求：**每句一行**。
+     *
+     * 只加换行、不改 JSON 结构，是为了让下游能直接拿到构造性句界（见 [sentenceBoundaries]），
+     * 而不必让对齐器拿中文分句器重新猜。旧检查点/旧译本不受影响——没有换行就回退到
+     * 分句器推断，行为与之前完全一致。
+     */
+    private const val SENTENCE_LINE_RULE =
+        "排版要求：段内**每句译文独占一行**（用换行分隔），句数与英文原文的句子数严格相等，" +
+            "既不要把两句合成一行，也不要把一句拆成两行。段与段之间仍用编号区分，" +
+            "JSON 里换行写成 \\n。"
+
+    /**
+     * 从一批译文里抽出「译文整段原文 → 该段句子列表」的映射（**P3 句级边界**）。
+     *
+     * ## 为什么需要它
+     *
+     * 现有 prompt 已要求「不合并不拆分句子」，实测真值层面每段中英句数 **100% 相等**。
+     * 问题出在译文以整段字符串返回后，下游 `TranslationAligner` 要用中文分句器**重新
+     * 猜**句界，猜错就会让整段句级 DP off-by-one。
+     *
+     * 让模型按句返回（每句一行）后，这里把行切出来，交给对齐器**直接使用**，绕过分句推断。
+     *
+     * ## 只用行分隔，不改 JSON 结构
+     *
+     * `extractValidated` 的输出形状不变（仍是 `List<String>`，仍是整段译文），只是段内
+     * 用 `\n` 分行。这样：
+     *  - 检查点格式不受影响（翻译串本来就存在字符串里，换行原样保留在串内；
+     *    只有 `sourceHash` 之外不新增任何字段）
+     *  - 旧检查点、旧译本、人译本全部照旧（无换行 → 本函数不产出条目 → 对齐器回退到分句器）
+     *
+     * ## 生效条件（必须全部满足，否则该段不产出条目 = 保守回退）
+     *
+     *  - 段内至少 2 行
+     *  - 行数与英文句数**相等**（这是构造性证据；不等说明模型没按句返回，不能硬用）
+     *  - 每行非空
+     *
+     * @param paragraphs 该批每段的英文原文（与 [translations] 平行）
+     * @param translations 该批每段译文（段内可能含 `\n`）
+     * @return 键 = **按 [normalizeParagraphKey] 归一化后的译文整段文本**——必须与对齐器
+     *   实际看到的 `zhParagraphs` 同形（`TtsTextExtractor` 会把空白折叠成单个空格并 trim，
+     *   **不是**全部删除），否则查表必然落空。
+     */
+    fun sentenceBoundaries(
+        paragraphs: List<String>,
+        translations: List<String>
+    ): Map<String, List<String>> {
+        if (paragraphs.size != translations.size) return emptyMap()
+        val result = HashMap<String, List<String>>()
+        for (i in paragraphs.indices) {
+            val translated = translations[i]
+            if (!translated.contains('\n')) continue
+            val lines = translated.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+            if (lines.size < 2) continue
+            // 英文句数用生产分句器数（与对齐器英文侧同源）。
+            val enCount = SentenceSplitter.count(paragraphs[i])
+            if (enCount != lines.size) continue
+            result[normalizeParagraphKey(translated)] = lines
+        }
+        return result
+    }
+
+    /**
+     * 段落查表键：把连续空白折叠成单个空格并 trim。
+     *
+     * **必须与 `TtsTextExtractor.chapter()` 的归一化一致**——
+     * 它做的是 `.replace(Regex("\\s+"), " ").trim()`，不是删除空白。两侧口径只要差一点，
+     * 句界就永远查不到，P3 静默失效且不报错（这类 bug 极难发现）。
+     */
+    fun normalizeParagraphKey(text: String): String =
+        text.replace(Regex("\\s+"), " ").trim()
+
+    /**
+     * 软校验：译文行数与英文句数是否一致（仅提示，**绝不抛异常**）。
+     *
+     * 句级结构**不能做成硬校验**：抛 [AiRequestException] 会走重试 → 连续 3 批失败
+     * 触发整本中止（见 [MAX_CONSECUTIVE_BATCH_FAILURES]），等于把「某个长段漏了一行」
+     * 放大成「整本书翻译失败」。这里只返回不一致的编号，供调用方打点/降级。
+     */
+    fun sentenceCountMismatches(
+        batch: TranslationBatch,
+        translations: List<String>
+    ): List<Int> {
+        val mismatched = ArrayList<Int>()
+        batch.paragraphs.forEachIndexed { position, source ->
+            val translated = translations.getOrNull(position) ?: return@forEachIndexed
+            if (!translated.contains('\n')) return@forEachIndexed
+            val lines = translated.split('\n').count { it.isNotBlank() }
+            if (lines < 2) return@forEachIndexed
+            if (lines != SentenceSplitter.count(source)) mismatched += batch.paragraphIndices[position]
+        }
+        return mismatched
     }
 
     /**

@@ -48,6 +48,65 @@ class AiTranslationRepository(
     private val translationsDir = File(appContext.filesDir, "translations")
     private val mutex = Mutex()
 
+    /**
+     * 句级边界侧车：`ai/ai-translations/<bookId>/sentence-lines.json`。
+     *
+     * 内容 = `{ "中文译文整段（空白归一化后）": ["第1句", "第2句", ...] }`。
+     *
+     * ## 为什么要单独存一份，不塞进检查点
+     *
+     * 检查点的 `sourceHash` 只哈希**源文**段落，用来判断「这批译文还能不能复用」。
+     * 往里加字段会改变检查点的读取契约（旧检查点被判无效 = 已花钱的译文全废）。
+     * 侧车是**纯增量**的：没有它，对齐器回退到中文分句器，行为与之前完全一致。
+     *
+     * ## 为什么需要它
+     *
+     * 译文按句换行返回后，行边界就是**构造性句界**。对齐器直接用它可以跳过中文分句
+     * 推断——实测静默错 ch1 4.45%→2.07%、ch3 3.59%→0.82%（IDF 加权），代价
+     * 9.92→4.81 / 8.29→2.10。
+     */
+    private fun sentenceLinesFile(bookId: String): File =
+        File(File(checkpointDir, bookId), SENTENCE_LINES_FILE)
+
+    /**
+     * 读出该书的句界侧车；缺失或损坏返回空表（= 回退分句器，绝不阻断对齐）。
+     */
+    suspend fun readSentenceLines(bookId: String): Map<String, List<String>> =
+        withContext(Dispatchers.IO) {
+            val file = sentenceLinesFile(bookId)
+            if (!file.isFile) return@withContext emptyMap()
+            runCatching {
+                val json = JSONObject(file.readText())
+                val result = HashMap<String, List<String>>()
+                json.keys().forEach { key ->
+                    val array = json.optJSONArray(key) ?: return@forEach
+                    val lines = (0 until array.length()).map { array.optString(it) }
+                        .filter { it.isNotBlank() }
+                    if (lines.size > 1) result[key] = lines
+                }
+                result
+            }.getOrElse { emptyMap() }
+        }
+
+    /** 写入句界侧车（空表则删除，避免留一个空文件误导排查）。 */
+    private suspend fun storeSentenceLines(bookId: String, lines: Map<String, List<String>>) =
+        withContext(Dispatchers.IO + NonCancellable) {
+            val file = sentenceLinesFile(bookId)
+            if (lines.isEmpty()) {
+                file.delete()
+                return@withContext
+            }
+            file.parentFile?.mkdirs()
+            val json = JSONObject()
+            lines.forEach { (key, value) -> json.put(key, JSONArray(value)) }
+            val temp = File(file.parentFile, file.name + ".tmp")
+            temp.writeText(json.toString())
+            if (!temp.renameTo(file)) {
+                file.writeText(temp.readText())
+                temp.delete()
+            }
+        }
+
     /** 确认框展示用的规模估算（全部是本地抽取，无出网）。 */
     data class Estimate(
         val chapters: Int,
@@ -228,6 +287,8 @@ class AiTranslationRepository(
                     englishParagraphs = blocks
                 )
             }
+            // P3：只凭检查点组装时同样产出句界侧车（检查点里已保留换行）。
+            storeSentenceLines(book.id, collectSentenceLines(book, translatedChapters))
             writeTranslationBook(
                 book,
                 translatedChapters,
@@ -314,7 +375,35 @@ class AiTranslationRepository(
                 englishParagraphs = chapterBlocks[chapterIndex]
             )
         }
+        // P3：从「按句换行」的译文里抽出构造性句界，写侧车供对齐器直接使用。
+        // 只在行数与英文句数相等时才收（见 AiBookTranslator.sentenceBoundaries），
+        // 否则该段不产条目 → 对齐器回退中文分句器，与改造前完全一致。
+        storeSentenceLines(book.id, collectSentenceLines(book, translatedChapters))
         writeTranslationBook(book, translatedChapters, settings.providerDisplayName)
+    }
+
+    /**
+     * 把逐章译文里的句级边界汇总成一张表（[sentenceLinesFile] 的内容）。
+     *
+     * 英文侧句数必须用**与对齐器同源**的 `TtsTextExtractor` 抽出的段落来数，
+     * 不能拿 `translatedChapters` 的段号直接猜——超长段被拆成多个译块后已合并回一条，
+     * 段数与 `chapterBlocks` 一致，但句数只能靠分句器数英文原文。
+     */
+    private fun collectSentenceLines(
+        book: Book,
+        translatedChapters: List<List<String>>
+    ): Map<String, List<String>> {
+        val extractor = TtsTextExtractor()
+        val result = HashMap<String, List<String>>()
+        for (chapterIndex in translatedChapters.indices) {
+            val enBlocks = runCatching {
+                extractor.chapter(book, chapterIndex).blocks
+            }.getOrNull() ?: continue
+            val zhBlocks = translatedChapters[chapterIndex]
+            if (enBlocks.size != zhBlocks.size) continue
+            result.putAll(AiBookTranslator.sentenceBoundaries(enBlocks, zhBlocks))
+        }
+        return result
     }
 
     /** 删除一本书的全部翻译检查点与风格说明（删书时随书清理）。 */
@@ -624,6 +713,9 @@ ${body.ifBlank { "<p></p>" }}
          */
         fun translationId(sourceBookId: String): String =
             Book.AI_TRANSLATION_ID_PREFIX + sourceBookId
+
+        /** 句级边界侧车文件名（见 [sentenceLinesFile]）。 */
+        const val SENTENCE_LINES_FILE = "sentence-lines.json"
 
         /**
          * 整本翻译模式：standard = 单遍直译；polish = 每批初翻后再让模型对照
