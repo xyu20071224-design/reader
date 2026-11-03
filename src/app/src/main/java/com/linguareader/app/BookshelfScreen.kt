@@ -42,20 +42,20 @@ import androidx.compose.material.icons.filled.Translate
 import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.SyncSettings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.linguareader.app.components.EmptyState
 import com.linguareader.app.components.LinguaScaffold
+import com.linguareader.app.components.LinguaSheet
 import com.linguareader.app.components.LinguaTopBarAction
 import com.linguareader.app.components.PrimaryButton
 import com.linguareader.app.components.StatusChip
@@ -80,7 +80,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -328,7 +327,7 @@ internal fun BookshelfScreen(
                             icon = Icons.Default.Palette,
                             contentDescription = stringResource(R.string.shelf_appearance_title),
                             onClick = { showAppearanceSheet = true },
-                            tint = if (shelfAppearance.isCustomized) Accent else null
+                            tint = if (shelfAppearance.isCustomized) t.colors.accent else null
                         )
                         // 检查更新入口：本会话发现新版时给个小红点。
                         // 读屏语义也在 contentDescription 里（只画红点读屏用户收不到）。
@@ -358,7 +357,7 @@ internal fun BookshelfScreen(
                         ),
                         onClick = { showVocabulary = !showVocabulary },
                         modifier = Modifier.testTag(UiTags.SHELF_VOCABULARY),
-                        tint = if (showVocabulary) Accent else null
+                        tint = if (showVocabulary) t.colors.accent else null
                     )
                     if (!showVocabulary) {
                         // AI 中心：图标入口，名字在抽屉头部与无障碍描述里。
@@ -367,7 +366,7 @@ internal fun BookshelfScreen(
                             contentDescription = stringResource(R.string.shelf_ai_center),
                             onClick = { showAiDrawer = true },
                             modifier = Modifier.testTag(UiTags.SHELF_AI_CENTER),
-                            tint = if (state.aiSettings.enabled) Accent else null
+                            tint = if (state.aiSettings.enabled) t.colors.accent else null
                         )
                         // 导入是这一屏的主动作：恒定 accent（未激活态的语义不适用）。
                         LinguaTopBarAction(
@@ -375,7 +374,7 @@ internal fun BookshelfScreen(
                             contentDescription = stringResource(R.string.shelf_import),
                             onClick = { launcher.launch(IMPORT_MIME_TYPES) },
                             modifier = Modifier.testTag(UiTags.SHELF_IMPORT),
-                            tint = Accent
+                            tint = t.colors.accent
                         )
                     }
                 }
@@ -537,68 +536,55 @@ internal fun BookshelfScreen(
     }
 
     state.message?.let {
-        AlertDialog(
-            onDismissRequest = onDismissMessage,
-            confirmButton = {
-                TextButton(onClick = onDismissMessage) { Text(stringResource(R.string.common_got_it)) }
-            },
-            title = { Text(state.messageTitle.ifBlank { stringResource(R.string.common_notice_title) }) },
-            text = { Text(it) },
-            containerColor = CardSurface,
-            shape = CardShape
+        ShelfNoticeDialog(
+            title = state.messageTitle.ifBlank { stringResource(R.string.common_notice_title) },
+            body = it,
+            confirmText = stringResource(R.string.common_got_it),
+            onConfirm = onDismissMessage,
+            onDismiss = onDismissMessage
         )
     }
 
     deleteCandidate?.let { book ->
-        AlertDialog(
-            onDismissRequest = { deleteCandidate = null },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(book)
-                    deleteCandidate = null
-                }) { Text(stringResource(R.string.common_delete), color = Danger) }
+        // 删书连带删该书生词，且不可恢复 —— 条数必须摆在按下去之前。
+        val wordCount = state.savedWords.count { it.bookId == book.id }
+        ShelfNoticeDialog(
+            title = stringResource(R.string.shelf_delete_title, book.title),
+            body = if (wordCount == 0) {
+                stringResource(R.string.shelf_delete_body)
+            } else {
+                pluralStringResource(R.plurals.shelf_delete_body_words, wordCount, wordCount)
             },
-            dismissButton = {
-                TextButton(onClick = { deleteCandidate = null }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
+            confirmText = stringResource(R.string.common_delete),
+            dangerConfirm = true,
+            onConfirm = {
+                onDelete(book)
+                deleteCandidate = null
             },
-            title = { Text(stringResource(R.string.shelf_delete_title, book.title)) },
-            text = {
-                // 删书连带删该书生词，且不可恢复 —— 条数必须摆在按下去之前。
-                val wordCount = state.savedWords.count { it.bookId == book.id }
-                Text(
-                    if (wordCount == 0) stringResource(R.string.shelf_delete_body)
-                    else pluralStringResource(
-                        R.plurals.shelf_delete_body_words,
-                        wordCount,
-                        wordCount
-                    )
-                )
-            },
-            containerColor = CardSurface,
-            shape = CardShape
+            dismissText = stringResource(R.string.common_cancel),
+            onDismiss = { deleteCandidate = null }
         )
     }
 
     detachTranslationCandidate?.let { book ->
-        AlertDialog(
-            onDismissRequest = { detachTranslationCandidate = null },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDetachTranslation(book)
-                    detachTranslationCandidate = null
-                }) { Text(stringResource(R.string.common_delete), color = Danger) }
+        val t = LocalDesignTokens.current
+        ShelfNoticeDialog(
+            title = stringResource(R.string.shelf_translation_remove_title, book.title),
+            confirmText = stringResource(R.string.common_delete),
+            dangerConfirm = true,
+            onConfirm = {
+                onDetachTranslation(book)
+                detachTranslationCandidate = null
             },
-            dismissButton = {
-                TextButton(onClick = { detachTranslationCandidate = null }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            },
-            title = { Text(stringResource(R.string.shelf_translation_remove_title, book.title)) },
-            text = {
-                Column {
-                    Text(stringResource(R.string.shelf_translation_remove_body))
+            dismissText = stringResource(R.string.common_cancel),
+            onDismiss = { detachTranslationCandidate = null },
+            bodyContent = {
+                Column(verticalArrangement = Arrangement.spacedBy(t.spacing.xs)) {
+                    Text(
+                        stringResource(R.string.shelf_translation_remove_body),
+                        style = t.typography.body,
+                        color = t.colors.ink
+                    )
                     RealignTranslationEntry(
                         outdated = book.id in state.outdatedTranslations,
                         onRealign = {
@@ -607,14 +593,17 @@ internal fun BookshelfScreen(
                         }
                     )
                 }
-            },
-            containerColor = CardSurface,
-            shape = CardShape
+            }
         )
     }
 
     // AI 译本的管理对话框：重新生成（检查点复用）或删除。
+    // AI 译本的管理对话框：**菜单类**，正文里有 3 个动作。
+    // 不套 ShelfNoticeDialog：它的按钮槽是「确认 + 取消」，而这里是「重新生成 + 取消」
+    // 加正文内 3 个动作 —— 结构不同，硬套会得到一个要传菜单项的万能接口。
+    // 本处只换样式（容器色 / 圆角 / 字梯 / 间距），正文结构与动作顺序一行未动。
     aiTranslationManageCandidate?.let { book ->
+        val t = LocalDesignTokens.current
         AlertDialog(
             onDismissRequest = { aiTranslationManageCandidate = null },
             confirmButton = {
@@ -628,10 +617,20 @@ internal fun BookshelfScreen(
                     Text(stringResource(R.string.common_cancel))
                 }
             },
-            title = { Text(stringResource(R.string.shelf_translation_manage_title)) },
+            title = {
+                Text(
+                    stringResource(R.string.shelf_translation_manage_title),
+                    style = t.typography.title,
+                    color = t.colors.ink
+                )
+            },
             text = {
-                Column {
-                    Text(stringResource(R.string.shelf_translation_manage_body))
+                Column(verticalArrangement = Arrangement.spacedBy(t.spacing.xs)) {
+                    Text(
+                        stringResource(R.string.shelf_translation_manage_body),
+                        style = t.typography.body,
+                        color = t.colors.ink
+                    )
                     RealignTranslationEntry(
                         outdated = book.id in state.outdatedTranslations,
                         onRealign = {
@@ -653,17 +652,21 @@ internal fun BookshelfScreen(
                     }) {
                         Text(
                             stringResource(R.string.shelf_translation_manage_remove),
-                            color = Danger
+                            color = t.colors.danger
                         )
                     }
                 }
             },
-            containerColor = CardSurface,
-            shape = CardShape
+            containerColor = t.colors.cardSurface,
+            shape = t.cardShape
         )
     }
 
+    // 「加译本来源」：**选择类**。两个按钮都是「选一条路」，没有主次之分，
+    // 所以两个都走 TextButton 的 accent（迁移前 cancel 槽用的是 Material 默认色，
+    // 这里与生词本「复习全部」同口径：文字按钮只有一种主色，主次由位置与文案承担）。
     translationChoiceCandidate?.let { book ->
+        val t = LocalDesignTokens.current
         AlertDialog(
             onDismissRequest = { translationChoiceCandidate = null },
             confirmButton = {
@@ -679,10 +682,20 @@ internal fun BookshelfScreen(
                     onPrepareAiTranslation(book)
                 }) { Text(stringResource(R.string.shelf_translation_choice_ai)) }
             },
-            title = { Text(stringResource(R.string.shelf_translation_choice_title)) },
+            title = {
+                Text(
+                    stringResource(R.string.shelf_translation_choice_title),
+                    style = t.typography.title,
+                    color = t.colors.ink
+                )
+            },
             text = {
-                Column {
-                    Text(stringResource(R.string.shelf_translation_choice_body))
+                Column(verticalArrangement = Arrangement.spacedBy(t.spacing.xs)) {
+                    Text(
+                        stringResource(R.string.shelf_translation_choice_body),
+                        style = t.typography.body,
+                        color = t.colors.ink
+                    )
                     // 第三条路：手动 AI 翻译——导出任务文件交给外部 agent，再把
                     // 结果文件导回来。不要求应用内配置 API Key。
                     TextButton(onClick = {
@@ -693,13 +706,16 @@ internal fun BookshelfScreen(
                     }
                 }
             },
-            containerColor = CardSurface,
-            shape = CardShape
+            containerColor = t.colors.cardSurface,
+            shape = t.cardShape
         )
     }
 
+    // 「手动 AI 翻译」：**表单类**（正文含输入框），结构与确认类不同，不套封装。
+    // 只换样式：容器色 / 圆角 / 字梯 / 间距。正文结构与动作顺序一行未动。
     state.manualTranslationPrepare?.let { prepare ->
         var styleNotes by remember(prepare.book.id) { mutableStateOf(prepare.styleNotes) }
+        val t = LocalDesignTokens.current
         AlertDialog(
             onDismissRequest = onDismissManualTranslationPrepare,
             confirmButton = {
@@ -712,27 +728,36 @@ internal fun BookshelfScreen(
                     Text(stringResource(R.string.common_cancel))
                 }
             },
-            title = { Text(stringResource(R.string.shelf_translation_manual_title)) },
+            title = {
+                Text(
+                    stringResource(R.string.shelf_translation_manual_title),
+                    style = t.typography.title,
+                    color = t.colors.ink
+                )
+            },
             text = {
-                Column {
-                    Text(stringResource(R.string.shelf_translation_manual_body, prepare.batches))
+                Column(verticalArrangement = Arrangement.spacedBy(t.spacing.xs)) {
+                    Text(
+                        stringResource(R.string.shelf_translation_manual_body, prepare.batches),
+                        style = t.typography.body,
+                        color = t.colors.ink
+                    )
                     if (prepare.coveredBatches > 0) {
-                        Spacer(Modifier.height(6.dp))
                         Text(
                             stringResource(
                                 R.string.shelf_translation_manual_coverage,
                                 prepare.coveredBatches,
                                 prepare.batches
                             ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = InkSoft
+                            style = t.typography.caption,
+                            color = t.colors.inkSoft
                         )
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(t.spacing.xs))
                     Text(
                         stringResource(R.string.shelf_translation_ai_style_label),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
                     OutlinedTextField(
                         value = styleNotes,
@@ -740,7 +765,7 @@ internal fun BookshelfScreen(
                         placeholder = {
                             Text(
                                 stringResource(R.string.shelf_translation_ai_style_placeholder),
-                                style = MaterialTheme.typography.bodySmall
+                                style = t.typography.caption
                             )
                         },
                         minLines = 2,
@@ -757,50 +782,52 @@ internal fun BookshelfScreen(
                     }
                 }
             },
-            containerColor = CardSurface,
-            shape = CardShape
+            containerColor = t.colors.cardSurface,
+            shape = t.cardShape
         )
     }
 
     // 手动导入的逐条拒绝原因：「拒绝 N 条」的条数不告诉用户该改什么，
     // 典型错误（agent 把段落编号重新编号）只有看到具体原因才能定位。
     state.manualImportRejected?.let { rejected ->
-        AlertDialog(
-            onDismissRequest = onClearManualImportRejected,
-            confirmButton = {
-                TextButton(onClick = onClearManualImportRejected) {
-                    Text(stringResource(R.string.common_got_it))
-                }
-            },
-            title = { Text(stringResource(R.string.shelf_translation_manual_rejected_title)) },
-            text = {
+        val t = LocalDesignTokens.current
+        ShelfNoticeDialog(
+            title = stringResource(R.string.shelf_translation_manual_rejected_title),
+            confirmText = stringResource(R.string.common_got_it),
+            onConfirm = onClearManualImportRejected,
+            onDismiss = onClearManualImportRejected,
+            bodyContent = {
+                // 限高 + 自带滚动：拒绝原因可能有几十条，"拒绝 N 条"不告诉用户该改什么，
+                // 典型错误（agent 把段落编号重新编号）只有看到具体原因才能定位。
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 360.dp)
+                        .heightIn(max = ManualRejectedMaxHeight)
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
                         stringResource(R.string.shelf_translation_manual_rejected_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = InkSoft
+                        style = t.typography.caption,
+                        color = t.colors.inkSoft
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(t.spacing.s))
                     rejected.forEach { reason ->
-                        Text(reason, style = MaterialTheme.typography.bodySmall)
-                        Spacer(Modifier.height(4.dp))
+                        Text(reason, style = t.typography.caption, color = t.colors.ink)
+                        Spacer(Modifier.height(t.spacing.xs))
                     }
                 }
-            },
-            containerColor = CardSurface,
-            shape = CardShape
+            }
         )
     }
 
+    // 「AI 生成译本」确认：**表单类**（单选 + 输入框），结构与确认类不同，不套封装。
+    // 只换样式；翻译模式的两个取值（"standard"/"polish"）是与 ViewModel 的契约字符串，
+    // 原样保留。
     state.aiTranslationPrepare?.let { prepare ->
         // 确认框内的可编辑项：翻译模式（记住上次）与风格说明（书级，随开随改）。
         var mode by remember(prepare.book.id) { mutableStateOf(prepare.mode) }
         var styleNotes by remember(prepare.book.id) { mutableStateOf(prepare.styleNotes) }
+        val t = LocalDesignTokens.current
         AlertDialog(
             onDismissRequest = onDismissAiTranslationPrepare,
             confirmButton = {
@@ -813,9 +840,15 @@ internal fun BookshelfScreen(
                     Text(stringResource(R.string.common_cancel))
                 }
             },
-            title = { Text(stringResource(R.string.shelf_translation_ai_title)) },
+            title = {
+                Text(
+                    stringResource(R.string.shelf_translation_ai_title),
+                    style = t.typography.title,
+                    color = t.colors.ink
+                )
+            },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(t.spacing.xs)) {
                     Text(
                         stringResource(
                             R.string.shelf_translation_ai_confirm_body,
@@ -825,24 +858,25 @@ internal fun BookshelfScreen(
                             prepare.batches,
                             prepare.glossaryTerms,
                             prepare.glossaryInjected
-                        )
+                        ),
+                        style = t.typography.body,
+                        color = t.colors.ink
                     )
                     if (prepare.oversizedParagraphs > 0) {
-                        Spacer(Modifier.height(8.dp))
                         Text(
                             stringResource(
                                 R.string.shelf_translation_ai_oversized,
                                 prepare.oversizedParagraphs
                             ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = InkSoft
+                            style = t.typography.caption,
+                            color = t.colors.inkSoft
                         )
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(DialogTightGap))
                     Text(
                         stringResource(R.string.shelf_translation_ai_mode_label),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(
@@ -851,23 +885,23 @@ internal fun BookshelfScreen(
                         )
                         Text(
                             stringResource(R.string.shelf_translation_ai_mode_standard),
-                            style = MaterialTheme.typography.bodySmall
+                            style = t.typography.caption
                         )
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(t.spacing.s))
                         RadioButton(
                             selected = mode == "polish",
                             onClick = { mode = "polish" }
                         )
                         Text(
                             stringResource(R.string.shelf_translation_ai_mode_polish),
-                            style = MaterialTheme.typography.bodySmall
+                            style = t.typography.caption
                         )
                     }
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(DialogTightGap))
                     Text(
                         stringResource(R.string.shelf_translation_ai_style_label),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
                     OutlinedTextField(
                         value = styleNotes,
@@ -875,7 +909,7 @@ internal fun BookshelfScreen(
                         placeholder = {
                             Text(
                                 stringResource(R.string.shelf_translation_ai_style_placeholder),
-                                style = MaterialTheme.typography.bodySmall
+                                style = t.typography.caption
                             )
                         },
                         minLines = 2,
@@ -883,8 +917,8 @@ internal fun BookshelfScreen(
                     )
                 }
             },
-            containerColor = CardSurface,
-            shape = CardShape
+            containerColor = t.colors.cardSurface,
+            shape = t.cardShape
         )
     }
 
@@ -940,6 +974,7 @@ internal fun BookshelfScreen(
  */
 @Composable
 private fun RealignTranslationEntry(outdated: Boolean, onRealign: () -> Unit) {
+    val t = LocalDesignTokens.current
     TextButton(onClick = onRealign) {
         Text(stringResource(R.string.shelf_translation_realign))
     }
@@ -948,8 +983,8 @@ private fun RealignTranslationEntry(outdated: Boolean, onRealign: () -> Unit) {
             if (outdated) R.string.shelf_translation_realign_outdated
             else R.string.shelf_translation_realign_hint
         ),
-        style = MaterialTheme.typography.bodySmall,
-        color = if (outdated) Accent else InkSoft
+        style = t.typography.caption,
+        color = if (outdated) t.colors.accent else t.colors.inkSoft
     )
 }
 
@@ -960,12 +995,13 @@ private fun RealignTranslationEntry(outdated: Boolean, onRealign: () -> Unit) {
 @Composable
 private fun ShelfBackgroundLayer(appearance: ShelfAppearance) {
     val context = LocalContext.current
+    val t = LocalDesignTokens.current
     // 深色外壳下浅色预设不可读（审查 5-1：叠加后对比度低到 1.02–2.56:1），
     // 此时预设整体不渲染，只留蒙版，等同回到调色板纸色；见 ShelfAppearanceSheet 的同类判定。
     val dark = chromeIsDark(storedReaderTheme(context), isSystemInDarkTheme())
     // 深色外壳 + 自定义背景时加重蒙版，保住顶栏与文字可读。
     val scrimAlpha = if (dark) maxOf(appearance.dimOpacity, DARK_CHROME_MIN_SCRIM) else appearance.dimOpacity
-    val scrim = Paper.copy(alpha = scrimAlpha)
+    val scrim = t.colors.paper.copy(alpha = scrimAlpha)
     Box(Modifier.fillMaxSize()) {
         val imageFile = appearance.imageFile
             ?.let { ShelfBackgroundStore.backgroundFile(context, it) }
@@ -1016,13 +1052,17 @@ private fun RosterSheet(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+    // 外壳换成统一弹层 [LinguaSheet]（纸色 / 圆角 / 拖柄 / 底部留白一并统一）。
+    // ⚠️ 滚动**必须由内容体自己拥有**：LinguaSheet 的内容槽只是普通 Column，不给滚动，
+    // 而 MultiVoiceSection 在手机上远超一屏。迁移前是 ModalBottomSheet 里手写
+    // verticalScroll —— 换容器时最容易把它一起删掉（PacksSheet 就踩过这个坑）。
+    LinguaSheet(onDismiss = onDismiss, contentArrangement = Arrangement.Top) {
+        // 水平内边距与底部留白由 LinguaSheet 统一给（spacing.l / spacing.xl），
+        // 这里不再自己补 —— 迁移前那两处 20/30dp 是 ModalBottomSheet 裸壳的补偿。
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 30.dp)
         ) {
             var settings by remember(book.id) {
                 mutableStateOf(CloudTtsSettings.load(context))
@@ -1162,7 +1202,7 @@ private fun BookCard(
                         .padding(BookProgressInset)
                         .size(BookProgressSize)
                         .background(t.colors.paper.copy(alpha = BookProgressScrimAlpha), CircleShape)
-                        .padding(BookProgressPadding)
+                        .padding(t.spacing.xs)
                 ) {
                     CircularProgressIndicator(
                         progress = { book.progress },
@@ -1345,6 +1385,82 @@ private fun ShelfCardAction(
     }
 }
 
+/**
+ * 书架的**确认 / 通知类对话框**统一封装。
+ *
+ * ## 覆盖范围（只有这三处同构）
+ *
+ * 删书确认、删译本确认、通知提示、手动导入被拒原因（正文可换成自定义内容）。
+ * 它们的按钮槽结构完全一样：一到两个 TextButton（确认 + 可选取消），
+ * 容器色/圆角/标题字梯走 token。
+ *
+ * ## 为什么放在本文件而不是 components/
+ *
+ * 本组件是**这一屏的 3~4 处同构收敛**，不是通用件。全项目的确认框形态差异很大
+ * （生词本的「复习全部」只有一个确认按钮；资源包卸载确认带文件名与体积；
+ * 多角色面板 7 个各有正文结构），现在抽到 components/ 等于拍脑袋定一个万能接口。
+ *
+ * **升级判定条件**：其它屏出现**按钮槽结构相同**（不是文案相似）的用法时，
+ * 把这个类整体搬到 components/LinguaConfirmDialog.kt 并删除这里 —— 那是一次纯搬移，
+ * 不是重新设计。
+ *
+ * @param body 纯文本正文；需要自定义正文（列表、输入框、额外动作）时改用 [bodyContent]
+ * @param dangerConfirm 确认按钮用 danger 色。这是**状态表达**（该动作不可撤销 /
+ *   会连带删除别的东西），不是样式选择 —— 与 LinguaTopBarAction.tint 同口径。
+ * @param dismissText null = 只有确认按钮（通知类）
+ */
+@Composable
+private fun ShelfNoticeDialog(
+    title: String,
+    confirmText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    body: String? = null,
+    bodyContent: (@Composable () -> Unit)? = null,
+    dismissText: String? = null,
+    dangerConfirm: Boolean = false
+) {
+    val t = LocalDesignTokens.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            // 用 TextButton + token 配色，而不是 LinguaTextButton：后者只有一种主色
+            // （accent），而确认按钮需要能表达 danger（不可撤销动作）。
+            // 「给 LinguaTextButton 加 color 参数」属于组件层改动，本轮不越界。
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(
+                    // 危险动作用 danger 语义色：与迁移前「删除按钮 color = Danger」一致。
+                    contentColor = if (dangerConfirm) t.colors.danger else t.colors.accent
+                )
+            ) {
+                Text(text = confirmText, style = t.typography.body)
+            }
+        },
+        dismissButton = dismissText?.let { text ->
+            {
+                TextButton(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.textButtonColors(contentColor = t.colors.accent)
+                ) {
+                    Text(text = text, style = t.typography.body)
+                }
+            }
+        },
+        title = { Text(text = title, style = t.typography.title, color = t.colors.ink) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(t.spacing.xs)) {
+                if (body != null) {
+                    Text(text = body, style = t.typography.body, color = t.colors.ink)
+                }
+                bodyContent?.invoke()
+            }
+        },
+        containerColor = t.colors.cardSurface,
+        shape = t.cardShape
+    )
+}
+
 @Composable
 private fun GlossaryDialog(
     book: Book,
@@ -1354,14 +1470,22 @@ private fun GlossaryDialog(
     onRemove: suspend (String, String) -> BookGlossary,
     onDismiss: () -> Unit
 ) {
+    // 术语表对话框：正文内嵌整个编辑器，结构自成一类，不套 ShelfNoticeDialog。
+    val t = LocalDesignTokens.current
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) }
         },
-        title = { Text(stringResource(R.string.glossary_title, book.title)) },
+        title = {
+            Text(
+                stringResource(R.string.glossary_title, book.title),
+                style = t.typography.title,
+                color = t.colors.ink
+            )
+        },
         text = {
-            Box(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+            Box(Modifier.fillMaxWidth().heightIn(max = GlossaryDialogMaxHeight)) {
                 // 共用编辑器自带滚动；这里只负责限高。
                 GlossaryEditorBody(
                     books = listOf(book),
@@ -1373,8 +1497,8 @@ private fun GlossaryDialog(
                 )
             }
         },
-        containerColor = CardSurface,
-        shape = CardShape
+        containerColor = t.colors.cardSurface,
+        shape = t.cardShape
     )
 }
 
@@ -1397,6 +1521,9 @@ private fun EmptyBookshelfDarkPreview() {
 // 「一张书封多高」「网格列最小多宽」是这一屏自己的形状参数，塞进梯子只会让梯子
 // 变成杂物间。梯子里也确实没有对应档位（4/8/16/24/32/48）：148、14、205 硬套
 // 都会改变像素，而 P3 的验收前提是「迁移前后视觉等价」。集中命名，可读性不比裸 dp 差。
+//
+// 全屏 55 → 14（三笔累计）：只剩这张表里的 14 个几何/限高常量 + 2 个透明度常量，
+// 裸 dp 字面量 0 处。剩下这 14 个都不是「间距」，换成梯子档位都会改变像素。
 
 /** 书架网格的单列最小宽度：决定 411dp 窄屏上是 2 列还是 3 列，属版式决策不是间距。 */
 private val ShelfColumnMinWidth = 148.dp
@@ -1413,10 +1540,9 @@ private val BookCoverHeight = 205.dp
 /** 书封内文字（无封面时的书名/作者）的内边距。 */
 private val BookCoverPadding = 18.dp
 
-/** 书封右上角进度环的直径、离边距、纸色底盘的内缩。 */
+/** 书封右上角进度环的直径与离书封边缘的距离（内圈的 4dp 用 spacing.xs）。 */
 private val BookProgressSize = 38.dp
 private val BookProgressInset = 10.dp
-private val BookProgressPadding = 4.dp
 
 /** 进度环笔画宽度。 */
 private val BookProgressStroke = 3.dp
@@ -1425,6 +1551,15 @@ private val BookProgressStroke = 3.dp
 private val BookActionHeight = 30.dp
 private val BookActionIconSize = 14.dp
 private val BookActionIconGap = 3.dp
+
+/** 术语表对话框的最大高度（超出后由 GlossaryEditor 自带滚动接管）。 */
+private val GlossaryDialogMaxHeight = 480.dp
+
+/** 「手动导入被拒原因」列表的最高可视高度（超出后列表自己滚）。 */
+private val ManualRejectedMaxHeight = 360.dp
+
+/** 对话框正文里「模式/风格标签」与输入框之间的小间距（比 spacing.xs 更松一点）。 */
+private val DialogTightGap = 6.dp
 
 /** 书架「正在整理图书」遮罩的不透明度：能看清下面有书、又读得清提示字。 */
 private const val LoadingScrimAlpha = 0.72f
