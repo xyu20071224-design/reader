@@ -1917,3 +1917,71 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 - 自愈已实测：手动 `systemctl stop` 后脚本检出失败并重启恢复健康（`recovered after restart`，exit 0）；`--dry-run` 负向用例 exit 1；未知参数 exit 2。
 - 未在仓库/文档中记录该实例的真实地址与指纹（见上「隐私边界」）。
 
+
+---
+
+## 2026-11-04 · 前端重构 P0–P2 + P3 起步（分支 `refactor/ui-foundation`）
+
+> 隔离方式：`git worktree add wr-ui -b refactor/ui-foundation`（主工作树 main 另有并行开发线）。
+
+### 环境结论（影响后续所有验收口径）
+
+- **模拟器不可用**：SDK emulator 37.2.13 + system-images;android-35;google_apis;x86_64 已装、AVD lr35 已建，但本机 HypervisorPresent=False、Hyper-V/WHPX 全部 Disabled，x86_64 镜像强制要求硬件加速。启用需管理员权限 + 重启，本轮未做。
+- **替代方案已落地**：Robolectric NATIVE 图形 + 真 ComponentActivity 挂载 + decorView.draw → PNG，纯 JVM 出图。能力探针 NativeGraphicsProbeTest / ComposeRenderProbeTest 证明 Canvas 真的光栅化（逐像素断言，非 shadow 桩）。
+- **局限（不得忽视）**：覆盖不到 WebView 渲染、手势、真实字体、GPU 效果、TTS 播报。P4 及阅读页改动仍必须真机验证。
+
+### 基线（重构前）
+
+| 模块 | tests | failures | 说明 |
+| --- | --- | --- | --- |
+| :app:testDebugUnitTest | 470 | 2 | 两条既有环境失败 |
+| :shared:test | 658 | 0 | |
+
+**已知既有失败（非本次引入，勿改断言）**：
+1. CloudTtsSynthesizerTest.audioPackIsResolvedWithoutSynthesizing —— Windows 路径分隔符。
+2. PythonServerE2ETest.* —— 本机 python3 是 Microsoft Store 的 0 字节别名，ProcessBuilder 起不来（error=1920）。
+
+### P0 交付
+
+- ComposeRenderHarness（可复用渲染台）+ renderDp()（按 dp 渲染，规避 xxhdpi density=3.0 把像素当 dp 的坑）。
+- HardcodedStyleScanner + HardcodedStyleBaselineTest：把「不得裸写样式」变成可断言数字，只降不升。
+- 主工作树遗留 WIP 经验证后提交（b1241a3 F-160 云同步明细）并推送 main。
+
+### P1 交付（设计系统 + 图片换肤）
+
+- :shared/ui/skin：SkinSpec / SkinColorMath / SkinJson / SkinValidator / SkinBuiltIns / ImagePaletteExtractor / ImageSkinBuilder。
+- :app/skin：DesignTokens + LocalDesignTokens + SkinRegistry + LegacyPaletteAdapter（现有 Paper/Ink 等 API 零改动可用）。
+- :app/components：8 个原语（LinguaScaffold / LinguaSheet / LinguaCard / SettingRow / SectionHeader / StatusChip / PrimaryButton+SecondaryButton / EmptyState）。
+- **Lead 复验发现的真实缺陷（已由 owner 修复）**：
+  - 暖木书桌照被推导成深绿纸底（面积最大色簇 ≠ 背景色）；
+  - 高饱和海报的正文被染成黄色（对比度 15:1 但视觉错误）；
+  - components-empty-shelf-* 首次出图整屏空白（内容高度塌陷）。
+  - 三条都写成了 ImageSkinQualityGateTest 的断言（7 条），防止回归。
+
+### P2 交付（导航与状态）
+
+- :shared/ui/nav：Route / NavStack（不可变、栈永不为空、根不可弹）/ Navigator。
+- :shared/ui/state：Overlay / OverlayStack（同类唯一、只显示栈顶、返回键只关一层、空栈 PassThrough）/ 五切片状态。
+- :app/nav：ComposeNavigator / LocalNavigator / NavHostLite / OverlayHost / AppBackDispatcher / AppNavState。
+- :app/state：AppUiState.split() 投影 + 反射对账测试（保证字段不丢）。
+
+### P3 交付（逐屏迁移，进行中）
+
+| 屏 | 硬编码 dp | 状态 |
+| --- | --- | --- |
+| UpdateSheet | 20 → 0 | 已提交（000b10c），7 张状态图 |
+| ShelfAppearanceSheet | 12 → 10（有理由保留，聚成命名常量） | 已提交（488272b） |
+| VocabularyScreen | 23 → 7（同上） | 代码完成，待出图提交 |
+
+### 本轮验证结果
+
+| 范围 | tests | failures |
+| --- | --- | --- |
+| :app:testDebugUnitTest | 554 | 1（CloudTts 路径，既有） |
+| :shared:test | 756 | 1（PythonServer，既有） |
+
+### 未验证（需真机，渲染台覆盖不到）
+
+- 弹层拖拽下滑关闭、返回键关闭、SAF 往返后 canInstall 刷新；
+- 阅读页 WebView 渲染、手势翻页、点词、TTS 高亮跟随；
+- 返回键真实分发与转场（NavHostLite 刻意不含动画）。
