@@ -17,22 +17,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,14 +36,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
+import com.linguareader.app.components.LinguaSheet
+import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.components.PrimaryButton
+import com.linguareader.app.components.SectionHeader
 import com.linguareader.app.data.Book
+import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.MiMoTtsBackend
 import com.linguareader.app.tts.MiMoVoiceCatalog
@@ -61,11 +59,24 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
-/** Settings for the optional cloud TTS engines (F-151). */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 听书设置弹层（引擎 / 音色 / 语速 / 试听）。
+ *
+ * P3 迁移：外壳换成 [LinguaSheet]（拖柄/圆角/边距统一由组件给），样式一律取
+ * [LocalDesignTokens]。**三个引擎分支的内容、保存语义、行内反馈与文案零改动。**
+ *
+ * 标题留在内容体里而不是走 [LinguaSheet] 的 title 槽：同一个内容体还被
+ * AI 抽屉的「听书语音」Tab 复用（那里上方是总开关行与 Tab 行，没有本屏标题），
+ * 把标题挪进外壳会让抽屉那条路径丢掉这个标题 —— 那属于行为改动，不在迁移范围内。
+ */
 @Composable
 internal fun ListeningSettingsSheet(onDismiss: () -> Unit, book: Book? = null) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
+    LinguaSheet(
+        onDismiss = onDismiss,
+        // 内容体自带显式 Spacer 排布（迁移前就是这样），关掉容器的默认块间距，
+        // 否则会 16（默认 spacing.m）+ 自带 Spacer 双倍叠加。
+        contentArrangement = Arrangement.Top
+    ) {
         ListeningSettingsBody(onDismiss = onDismiss, onSaved = onDismiss, book = book)
     }
 }
@@ -96,14 +107,15 @@ internal data class SettingsStatus(
 @Composable
 internal fun SettingsStatusText(status: SettingsStatus?, modifier: Modifier = Modifier) {
     if (status == null) return
+    val t = LocalDesignTokens.current
     Text(
         status.text,
         color = when (status.tone) {
-            StatusTone.SUCCESS -> Success
-            StatusTone.DANGER -> Danger
-            StatusTone.NEUTRAL -> InkFaint
+            StatusTone.SUCCESS -> t.colors.success
+            StatusTone.DANGER -> t.colors.danger
+            StatusTone.NEUTRAL -> t.colors.inkFaint
         },
-        style = MaterialTheme.typography.labelMedium,
+        style = t.typography.label,
         modifier = modifier
     )
 }
@@ -111,6 +123,22 @@ internal fun SettingsStatusText(status: SettingsStatus?, modifier: Modifier = Mo
 /**
  * Reusable body of the listening settings (engine / voices / speed / test).
  * Shared by the reader's quick sheet and the AI drawer's "听书语音" tab.
+ *
+ * ## P3 迁移：**本组件不自带横向留白，由调用方外壳提供**
+ *
+ * 迁移前它在自己身上写死 `padding(horizontal = 24.dp).padding(bottom = 30.dp)`。
+ * 现在两个宿主（[ListeningSettingsSheet] 与 AI 抽屉）都由 [LinguaSheet] 提供
+ * spacing.l / spacing.xl 的留白，内容体再写一遍会变成 48dp —— 而且 AI 抽屉那条路径
+ * 迁移前就已经是「弹层 24 + 内容体 24 = 48dp」，比其他 Tab 宽一圈。
+ * 所以留白**上移到外壳**，两个宿主各拿到一份，抽屉里那个双倍留白顺带被修正。
+ *
+ * ⚠️ **复用本组件时必须自己给横向留白**（否则内容会顶到屏幕边缘）。它只提供
+ * 「填满宽度 + 可滚动」，不给 padding —— 这是为了让宿主唯一的留白来源是外壳，
+ * 不会两层叠成 48dp。同理，单独使用（渲染台、未来的平板双栏）时调用方还要提供纸色底。
+ *
+ * 滚动仍然由本组件自己拥有（`verticalScroll`）：[LinguaSheet] 的内容槽只是普通
+ * Column，不给滚动；这一屏在手机上远超一屏，丢了滚动就是真机拖不动的回归
+ * （PacksSheet 迁移时踩过的 PacksSheet.kt:141 那条）。
  *
  * @param onDismiss optional dismiss callback; when null the cancel button is hidden.
  * @param onSaved invoked after a successful save (e.g. close the sheet).
@@ -126,6 +154,7 @@ internal fun ListeningSettingsBody(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val t = LocalDesignTokens.current
     var settings by remember { mutableStateOf(CloudTtsSettings.load(context)) }
     var systemVoices by remember { mutableStateOf<List<SystemVoiceInfo>>(emptyList()) }
     var systemVoicesLoaded by remember { mutableStateOf(false) }
@@ -237,12 +266,13 @@ internal fun ListeningSettingsBody(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 30.dp)
     ) {
-        Text(stringResource(R.string.tts_settings_title), style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(14.dp))
-            Text(stringResource(R.string.tts_engine_section), style = MaterialTheme.typography.labelLarge, color = InkSoft)
+        // 标题：headlineSmall(24sp) 在 5 档排版梯里没有同名角色，归到 title（18sp/600/衬线）——
+        // 与其余已迁移弹层的标题观感一致；差别记在提交信息的「已知差异」里。
+        Text(stringResource(R.string.tts_settings_title), style = t.typography.title, color = t.colors.ink)
+            // 分区标题换成 SectionHeader：它的上下留白（spacing.l / spacing.s）就是
+            // 这一屏原本「14dp 空行 + 分区标题」的 token 版，不再另外叠 Spacer。
+            SectionHeader(text = stringResource(R.string.tts_engine_section))
             // 每个引擎独占一行（全宽 radio + 横排 label）。之前把它们塞进
             // `Row` 里左右并排，但 EngineChoice 内部用 `fillMaxWidth()`，在
             // Row 内会两两争抢宽度被压成竖排（真机截图 2026-08-26）。改为
@@ -266,24 +296,24 @@ internal fun ListeningSettingsBody(
             }
 
             if (settings.mode == TtsEngineMode.SYSTEM) {
-                Spacer(Modifier.height(16.dp))
-                Text(stringResource(R.string.tts_system_section), style = MaterialTheme.typography.labelLarge, color = InkSoft)
-                Spacer(Modifier.height(4.dp))
+                SectionHeader(text = stringResource(R.string.tts_system_section))
                 Text(
                     stringResource(R.string.tts_system_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
+                    style = t.typography.label,
+                    color = t.colors.inkFaint
                 )
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = { loadSystemVoices(refresh = true) }) {
-                    Text(
-                        if (systemVoices.isEmpty()) stringResource(R.string.tts_load_voices)
-                        else stringResource(R.string.tts_refresh_voices)
-                    )
-                }
+                Spacer(Modifier.height(t.spacing.xs))
+                LinguaTextButton(
+                    text = if (systemVoices.isEmpty()) {
+                        stringResource(R.string.tts_load_voices)
+                    } else {
+                        stringResource(R.string.tts_refresh_voices)
+                    },
+                    onClick = { loadSystemVoices(refresh = true) }
+                )
                 status?.let { SettingsStatusText(it) }
                 if (systemVoices.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(t.spacing.xs))
                     // Fall back to the full list when the engine's locale codes
                     // don't map to zh/en at all (some domestic engines), so the
                     // dropdowns still offer the voices instead of only
@@ -297,24 +327,24 @@ internal fun ListeningSettingsBody(
                         selected = settings.systemZhVoice,
                         onSelect = { settings = settings.copy(systemZhVoice = it) }
                     )
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(t.spacing.xs))
                     SystemVoiceDropdown(
                         label = stringResource(R.string.tts_voice_english),
                         voices = if (hasLanguageSplit) englishVoices else systemVoices,
                         selected = settings.systemEnVoice,
                         onSelect = { settings = settings.copy(systemEnVoice = it) }
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(t.spacing.xs))
                     Text(
                         stringResource(R.string.tts_system_hidden_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkFaint
+                        style = t.typography.label,
+                        color = t.colors.inkFaint
                     )
                 }
             }
 
             if (settings.mode == TtsEngineMode.OPENAI_COMPAT) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 OutlinedTextField(
                     value = settings.serverUrl,
                     onValueChange = { settings = settings.copy(serverUrl = it.trim()) },
@@ -323,7 +353,7 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.serverModel,
                     onValueChange = { settings = settings.copy(serverModel = it.trim()) },
@@ -332,7 +362,7 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.serverToken,
                     onValueChange = { settings = settings.copy(serverToken = it.trim()) },
@@ -341,7 +371,7 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.serverVoice,
                     onValueChange = { settings = settings.copy(serverVoice = it.trim()) },
@@ -350,7 +380,7 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.serverEnVoice,
                     onValueChange = { settings = settings.copy(serverEnVoice = it.trim()) },
@@ -359,7 +389,7 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.serverZhVoice,
                     onValueChange = { settings = settings.copy(serverZhVoice = it.trim()) },
@@ -368,7 +398,7 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.narratorVoice,
                     onValueChange = { settings = settings.copy(narratorVoice = it.trim()) },
@@ -377,7 +407,7 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.dialogueVoice,
                     onValueChange = { settings = settings.copy(dialogueVoice = it.trim()) },
@@ -386,27 +416,23 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
-                TextButton(onClick = ::testServer, enabled = !busy) {
-                    Text(stringResource(R.string.tts_test_connection))
-                }
+                Spacer(Modifier.height(t.spacing.s))
+                LinguaTextButton(
+                    text = stringResource(R.string.tts_test_connection),
+                    onClick = ::testServer,
+                    enabled = !busy
+                )
                 status?.let { SettingsStatusText(it) }
             }
 
             if (settings.mode == TtsEngineMode.MIMO) {
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    stringResource(R.string.tts_mimo_section),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = InkSoft
-                )
-                Spacer(Modifier.height(4.dp))
+                SectionHeader(text = stringResource(R.string.tts_mimo_section))
                 Text(
                     stringResource(R.string.tts_mimo_section_hint),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
+                    style = t.typography.label,
+                    color = t.colors.inkFaint
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.mimoApiKey,
                     onValueChange = { settings = settings.copy(mimoApiKey = it.trim()) },
@@ -415,21 +441,21 @@ internal fun ListeningSettingsBody(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 PresetField(
                     label = stringResource(R.string.tts_mimo_zh_voice_label),
                     value = settings.mimoZhVoice,
                     onValueChange = { settings = settings.copy(mimoZhVoice = it.trim()) },
                     presets = mimoZhVoicePresets()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 PresetField(
                     label = stringResource(R.string.tts_mimo_en_voice_label),
                     value = settings.mimoEnVoice,
                     onValueChange = { settings = settings.copy(mimoEnVoice = it.trim()) },
                     presets = mimoEnVoicePresets()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.mimoStyleInstruction,
                     onValueChange = { settings = settings.copy(mimoStyleInstruction = it) },
@@ -438,14 +464,16 @@ internal fun ListeningSettingsBody(
                     minLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
-                TextButton(onClick = ::testMimo, enabled = !busy) {
-                    Text(stringResource(R.string.tts_test_connection))
-                }
+                Spacer(Modifier.height(t.spacing.s))
+                LinguaTextButton(
+                    text = stringResource(R.string.tts_test_connection),
+                    onClick = ::testMimo,
+                    enabled = !busy
+                )
                 status?.let { SettingsStatusText(it) }
             }
 
-            // Multi-voice M4: switch + narrator/character voices (§8).
+            // Multi-voice M4: switch + narrator/character voices (`8).
             MultiVoiceSection(
                 settings = settings,
                 onSettingsChange = { settings = it },
@@ -454,11 +482,11 @@ internal fun ListeningSettingsBody(
             )
 
             if (settings.mode != TtsEngineMode.SYSTEM) {
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 Text(
                     stringResource(R.string.tts_cloud_notice),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
+                    style = t.typography.label,
+                    color = t.colors.inkFaint
                 )
             }
 
@@ -471,24 +499,23 @@ internal fun ListeningSettingsBody(
                 onStatus = { status = it }
             )
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(t.spacing.l))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (onDismiss != null) {
-                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
-                    Spacer(Modifier.width(8.dp))
+                    LinguaTextButton(
+                        text = stringResource(R.string.common_cancel),
+                        onClick = onDismiss
+                    )
+                    Spacer(Modifier.width(t.spacing.s))
                 }
-                Button(
+                PrimaryButton(
+                    text = stringResource(R.string.common_save),
                     onClick = ::save,
-                    enabled = !busy,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Accent,
-                        contentColor = OnAccent
-                    ),
-                    shape = PillShape
-                ) { Text(stringResource(R.string.common_save)) }
+                    enabled = !busy
+                )
             }
         }
-    }
+}
 
 /** 按资源名（如 `tts_mimo_voice_default`）解析预置音色显示名；找不到时回退 key。 */
 private fun mimoPresetName(context: Context, nameKey: String): String {
@@ -534,7 +561,10 @@ private fun PresetField(
                 modifier = Modifier.weight(1f)
             )
             Box {
-                TextButton(onClick = { expanded = true }) { Text(stringResource(R.string.tts_preset)) }
+                LinguaTextButton(
+                    text = stringResource(R.string.tts_preset),
+                    onClick = { expanded = true }
+                )
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
@@ -556,29 +586,43 @@ private fun PresetField(
     }
 }
 
+/**
+ * 引擎单选行。
+ *
+ * 整行可点（`clickable` 挂在整行 Row 上）：需求里的「点文字也能选中」是历史事故的
+ * 修复结果（只有圆钮可点时，自动化与手指都会点空），迁移时不能退回局部 clickable。
+ */
 @Composable
 private fun EngineChoice(
     label: String,
     selected: Boolean,
     onSelect: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onSelect)
-            .padding(vertical = 4.dp),
+            .padding(vertical = t.spacing.xs),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RadioButton(selected = selected, onClick = onSelect)
         Text(
             label,
-            style = MaterialTheme.typography.bodyMedium,
+            style = t.typography.body,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (selected) Accent else Ink
+            color = if (selected) t.colors.accent else t.colors.ink
         )
     }
 }
 
+/**
+ * 系统音色下拉。
+ *
+ * 刻意仍是 Material `TextButton` 而不是 [LinguaTextButton]：它要用「文字占满剩余宽度 +
+ * 右侧下拉箭头」的复合内容，原语只接受一个字符串。配色与字级全部取 token，不写裸色值。
+ * （与 AiDrawerSheet 的 DrawerTabButton、PacksSheet 的 DangerTextButton 同一类取舍。）
+ */
 @Composable
 private fun SystemVoiceDropdown(
     label: String,
@@ -586,21 +630,24 @@ private fun SystemVoiceDropdown(
     selected: String,
     onSelect: (String) -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = InkSoft)
+        Text(label, style = t.typography.label, color = t.colors.inkSoft)
         Box(Modifier.fillMaxWidth()) {
             TextButton(
                 onClick = { expanded = true },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColors(contentColor = t.colors.ink)
             ) {
                 Text(
                     voices.firstOrNull { it.name == selected }?.displayName()
                         ?: stringResource(R.string.tts_follow_system_default),
                     modifier = Modifier.weight(1f),
-                    color = Ink
+                    style = t.typography.body,
+                    color = t.colors.ink
                 )
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = t.colors.inkSoft)
             }
             DropdownMenu(
                 expanded = expanded,
@@ -639,6 +686,7 @@ private fun AudioCacheSection(
     onLimitChange: (Int) -> Unit,
     onStatus: (SettingsStatus) -> Unit
 ) {
+    val t = LocalDesignTokens.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cache = remember { TtsAudioCache(context) }
@@ -648,48 +696,44 @@ private fun AudioCacheSection(
         usedBytes = withContext(Dispatchers.IO) { cache.totalBytes() }
     }
 
-    Spacer(Modifier.height(16.dp))
-    Text(
-        stringResource(R.string.tts_cache_section),
-        style = MaterialTheme.typography.labelLarge,
-        color = InkSoft
-    )
-    Spacer(Modifier.height(4.dp))
+    SectionHeader(text = stringResource(R.string.tts_cache_section))
     Text(
         when {
             usedBytes < 0 -> ""
             usedBytes == 0L -> stringResource(R.string.tts_cache_usage_empty)
             else -> stringResource(R.string.tts_cache_usage, formatBytes(usedBytes))
         },
-        style = MaterialTheme.typography.bodyMedium,
-        color = Ink
+        style = t.typography.body,
+        color = t.colors.ink
     )
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(t.spacing.xs))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             stringResource(R.string.tts_cache_limit_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = InkSoft
+            style = t.typography.label,
+            color = t.colors.inkSoft
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(t.spacing.s))
         CloudTtsSettings.CACHE_LIMIT_OPTIONS_MB.forEach { option ->
             val selected = limitMb == option
-            TextButton(onClick = { onLimitChange(option) }) {
-                Text(
-                    if (option <= 0) stringResource(R.string.tts_cache_limit_unlimited)
-                    else stringResource(R.string.tts_cache_limit_mb, option),
-                    color = if (selected) Accent else InkSoft,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-                )
-            }
+            CacheLimitOption(
+                text = if (option <= 0) {
+                    stringResource(R.string.tts_cache_limit_unlimited)
+                } else {
+                    stringResource(R.string.tts_cache_limit_mb, option)
+                },
+                selected = selected,
+                onClick = { onLimitChange(option) }
+            )
         }
     }
     Text(
         stringResource(R.string.tts_cache_hint),
-        style = MaterialTheme.typography.labelSmall,
-        color = InkFaint
+        style = t.typography.label,
+        color = t.colors.inkFaint
     )
-    TextButton(
+    LinguaTextButton(
+        text = stringResource(R.string.tts_cache_clear),
         onClick = {
             scope.launch {
                 val freed = withContext(Dispatchers.IO) { cache.clearAll() }
@@ -702,7 +746,33 @@ private fun AudioCacheSection(
             }
         },
         enabled = usedBytes > 0
-    ) { Text(stringResource(R.string.tts_cache_clear)) }
+    )
+}
+
+/**
+ * 缓存上限的候选值（256MB / 512MB / 1024MB / 不限）。
+ *
+ * 刻意仍是 Material `TextButton`：选中态靠**字重 + 颜色**两个维度表达，
+ * 而 [LinguaTextButton] 只有一种主色、不接受字重参数 —— 套上去「当前选中哪一档」
+ * 这条唯一线索就没了。这是组件层缺口（还没有「可选中文字按钮」原语），
+ * 与 AiDrawerSheet 的 DrawerTabButton 同一处缺口，已在提交信息里记给 Lead。
+ * 配色与字级取 token，不写裸色值。
+ */
+@Composable
+private fun CacheLimitOption(text: String, selected: Boolean, onClick: () -> Unit) {
+    val t = LocalDesignTokens.current
+    TextButton(
+        onClick = onClick,
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = if (selected) t.colors.accent else t.colors.inkSoft
+        )
+    ) {
+        Text(
+            text = text,
+            style = t.typography.body,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+        )
+    }
 }
 
 /** 人类可读的字节数（占用要给人看，不是给机器看）。 */
@@ -710,5 +780,5 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f GB", bytes / 1024.0 / 1024.0 / 1024.0)
     bytes >= 1024L * 1024L -> String.format(Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0)
     bytes >= 1024L -> String.format(Locale.US, "%.0f KB", bytes / 1024.0)
-    else -> "$bytes B"
+    else -> "${bytes} B"
 }
