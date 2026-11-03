@@ -138,200 +138,184 @@ internal fun PacksContent(
 ) {
     val t = LocalDesignTokens.current
 
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = stringResource(R.string.packs_title),
-            style = t.typography.title,
-            color = t.colors.ink
-        )
-        Spacer(Modifier.width(PacksTitleGap))
-        Text(
-            text = stringResource(R.string.packs_count, state.items.size),
-            style = t.typography.label,
-            color = t.colors.inkFaint
-        )
-        Spacer(Modifier.weight(1f))
-        // 6-14/7-13：注明这是**磁盘实测**（与存储页同源），而非各条清单声明之和。
-        Text(
-            text = stringResource(R.string.packs_total_on_disk, formatStorageBytes(state.totalBytes)),
-            style = t.typography.label,
-            color = t.colors.inkFaint
-        )
-    }
-    Spacer(Modifier.height(PacksHeaderGap))
+    // 这一屏的内容在 891dp 高的手机上远超一屏（四个分区 + 远端列表 + 残留），
+    // 滚动**必须由内容体自己拥有**：LinguaSheet 的内容槽只是普通 Column，不给滚动；
+    // 迁移前是外壳的 Column 上挂 verticalScroll，换成弹层组件后那层没了 ——
+    // 若不在这里补回来，长列表会直接溢出到屏幕外且拖不动（渲染台的静态 PNG 看不出来，
+    // 这是「像素对 ≠ 行为对」的典型坑，真机必现）。
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.packs_title),
+                style = t.typography.title,
+                color = t.colors.ink
+            )
+            Spacer(Modifier.width(PacksTitleGap))
+            Text(
+                text = stringResource(R.string.packs_count, state.items.size),
+                style = t.typography.label,
+                color = t.colors.inkFaint
+            )
+            Spacer(Modifier.weight(1f))
+            // 6-14/7-13：注明这是**磁盘实测**（与存储页同源），而非各条清单声明之和。
+            Text(
+                text = stringResource(R.string.packs_total_on_disk, formatStorageBytes(state.totalBytes)),
+                style = t.typography.label,
+                color = t.colors.inkFaint
+            )
+        }
+        Spacer(Modifier.height(PacksHeaderGap))
 
-    state.loadWarning?.let { warning ->
-        Text(
+        state.loadWarning?.let { warning ->
+            Text(
+                text = stringResource(
+                    when (warning) {
+                        LoadWarning.REGISTRY_DAMAGED -> R.string.packs_load_warning_registry_damaged
+                        LoadWarning.ACTIVE_DICTIONARY_MISSING -> R.string.packs_load_warning_active_missing
+                    }
+                ),
+                style = t.typography.caption,
+                color = t.colors.danger
+            )
+            Spacer(Modifier.height(PacksSectionGap))
+        }
+
+        if (state.items.isEmpty()) {
+            Text(
+                text = stringResource(R.string.packs_empty),
+                style = t.typography.body,
+                color = t.colors.inkSoft
+            )
+            Spacer(Modifier.height(PacksHintGap))
+            Text(
+                text = stringResource(R.string.packs_empty_hint),
+                style = t.typography.caption,
+                color = t.colors.inkFaint
+            )
+            Spacer(Modifier.height(PacksEmptyGap))
+        }
+
+        PrimaryButton(
             text = stringResource(
-                when (warning) {
-                    LoadWarning.REGISTRY_DAMAGED -> R.string.packs_load_warning_registry_damaged
-                    LoadWarning.ACTIVE_DICTIONARY_MISSING -> R.string.packs_load_warning_active_missing
-                }
+                if (state.installing) R.string.packs_installing else R.string.packs_install
             ),
-            style = t.typography.caption,
-            color = t.colors.danger
+            onClick = onInstallClick,
+            enabled = !state.installing
         )
-        Spacer(Modifier.height(PacksSectionGap))
-    }
+        Spacer(Modifier.height(PacksBigGap))
 
-    if (state.items.isEmpty()) {
+        // 7-9：未登记目录 / .tmp 残留 —— 它们已计入上方「磁盘实测」占用，
+        // 但不在包列表里，用户看得到占用却找不到可删的东西。这里显式列出 + 给清理入口。
+        if (state.residuals.isNotEmpty()) {
+            SectionHeader(text = stringResource(R.string.packs_residuals_title))
+            Text(
+                text = stringResource(
+                    R.string.packs_residuals_found,
+                    state.residuals.size,
+                    formatStorageBytes(state.residuals.sumOf { it.bytes })
+                ),
+                style = t.typography.body,
+                color = t.colors.ink
+            )
+            Text(
+                text = stringResource(R.string.packs_residuals_hint),
+                style = t.typography.label,
+                color = t.colors.inkFaint
+            )
+            DangerTextButton(
+                text = stringResource(R.string.packs_residuals_clean),
+                onClick = onCleanResiduals
+            )
+            Spacer(Modifier.height(PacksSectionGap))
+        }
+
+        // Q2-c03：从 GitHub Releases 获取资源包。离线优先不破 —— 不点这个按钮
+        // 就不会联网；下载完成后复用同一条安装管线。
+        SectionHeader(text = stringResource(R.string.packs_remote_title))
         Text(
-            text = stringResource(R.string.packs_empty),
-            style = t.typography.body,
-            color = t.colors.inkSoft
-        )
-        Spacer(Modifier.height(PacksHintGap))
-        Text(
-            text = stringResource(R.string.packs_empty_hint),
+            text = stringResource(R.string.packs_remote_hint),
             style = t.typography.caption,
             color = t.colors.inkFaint
         )
-        Spacer(Modifier.height(PacksEmptyGap))
-    }
-
-    PrimaryButton(
-        text = stringResource(
-            if (state.installing) R.string.packs_installing else R.string.packs_install
-        ),
-        onClick = onInstallClick,
-        enabled = !state.installing
-    )
-    Spacer(Modifier.height(PacksBigGap))
-
-    // 7-9：未登记目录 / .tmp 残留 —— 它们已计入上方「磁盘实测」占用，
-    // 但不在包列表里，用户看得到占用却找不到可删的东西。这里显式列出 + 给清理入口。
-    if (state.residuals.isNotEmpty()) {
-        SectionHeader(text = stringResource(R.string.packs_residuals_title))
-        Text(
-            text = stringResource(
-                R.string.packs_residuals_found,
-                state.residuals.size,
-                formatStorageBytes(state.residuals.sumOf { it.bytes })
-            ),
-            style = t.typography.body,
-            color = t.colors.ink
-        )
-        Text(
-            text = stringResource(R.string.packs_residuals_hint),
-            style = t.typography.label,
-            color = t.colors.inkFaint
-        )
-        DangerTextButton(
-            text = stringResource(R.string.packs_residuals_clean),
-            onClick = onCleanResiduals
-        )
-        Spacer(Modifier.height(PacksSectionGap))
-    }
-
-    // Q2-c03：从 GitHub Releases 获取资源包。离线优先不破 —— 不点这个按钮
-    // 就不会联网；下载完成后复用同一条安装管线。
-    SectionHeader(text = stringResource(R.string.packs_remote_title))
-    Text(
-        text = stringResource(R.string.packs_remote_hint),
-        style = t.typography.caption,
-        color = t.colors.inkFaint
-    )
-    Spacer(Modifier.height(t.spacing.s))
-    PrimaryButton(
-        text = stringResource(
-            if (state.remote.loading) R.string.packs_remote_loading else R.string.packs_remote_load
-        ),
-        onClick = onLoadRemotePacks,
-        enabled = !state.remote.loading && state.remote.downloading == null
-    )
-    state.remote.error?.let { error ->
-        Spacer(Modifier.height(PacksHintGap))
-        Text(
-            text = stringResource(R.string.packs_remote_failed, error),
-            style = t.typography.caption,
-            color = t.colors.danger
-        )
-    }
-    if (!state.remote.loading && state.remote.error == null && state.remote.assets.isEmpty()) {
-        Spacer(Modifier.height(PacksHintGap))
-        Text(
-            text = stringResource(
-                if (state.remote.fetched) R.string.packs_remote_empty else R.string.packs_remote_none_yet
-            ),
-            style = t.typography.caption,
-            color = t.colors.inkFaint
-        )
-    }
-    state.remote.assets.forEach { asset ->
         Spacer(Modifier.height(t.spacing.s))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(text = asset.name, style = t.typography.body, color = t.colors.ink)
-                if (asset.bytes > 0) {
-                    Text(
-                        text = formatStorageBytes(asset.bytes),
-                        style = t.typography.label,
-                        color = t.colors.inkFaint
+        PrimaryButton(
+            text = stringResource(
+                if (state.remote.loading) R.string.packs_remote_loading else R.string.packs_remote_load
+            ),
+            onClick = onLoadRemotePacks,
+            enabled = !state.remote.loading && state.remote.downloading == null
+        )
+        state.remote.error?.let { error ->
+            Spacer(Modifier.height(PacksHintGap))
+            Text(
+                text = stringResource(R.string.packs_remote_failed, error),
+                style = t.typography.caption,
+                color = t.colors.danger
+            )
+        }
+        if (!state.remote.loading && state.remote.error == null && state.remote.assets.isEmpty()) {
+            Spacer(Modifier.height(PacksHintGap))
+            Text(
+                text = stringResource(
+                    if (state.remote.fetched) R.string.packs_remote_empty else R.string.packs_remote_none_yet
+                ),
+                style = t.typography.caption,
+                color = t.colors.inkFaint
+            )
+        }
+        state.remote.assets.forEach { asset ->
+            Spacer(Modifier.height(t.spacing.s))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(text = asset.name, style = t.typography.body, color = t.colors.ink)
+                    if (asset.bytes > 0) {
+                        Text(
+                            text = formatStorageBytes(asset.bytes),
+                            style = t.typography.label,
+                            color = t.colors.inkFaint
+                        )
+                    }
+                }
+                LinguaTextButton(
+                    text = stringResource(
+                        if (state.remote.downloading == asset.name) {
+                            R.string.packs_remote_downloading
+                        } else {
+                            R.string.packs_remote_download
+                        }
+                    ),
+                    onClick = { onInstallRemotePack(asset) },
+                    enabled = state.remote.downloading == null && !state.installing
+                )
+            }
+        }
+        Spacer(Modifier.height(PacksBigGap))
+
+        val dictionary = state.items.filter { it.type == PackType.DICTIONARY }
+        val audio = state.items.filter { it.type == PackType.AUDIO }
+        val voice = state.items.filter { it.type == PackType.VOICE }
+        val bundle = state.items.filter { it.type == PackType.BUNDLE }
+
+        if (dictionary.isNotEmpty()) {
+            SectionHeader(text = stringResource(R.string.packs_section_dictionary))
+            dictionary.forEach { item ->
+                PackRow(item, state.verifying) {
+                    DictionaryActions(
+                        item = item,
+                        onSetActiveDictionary = onSetActiveDictionary,
+                        onVerify = onVerify,
+                        onUninstall = { onUninstallRequest(item) }
                     )
                 }
             }
-            LinguaTextButton(
-                text = stringResource(
-                    if (state.remote.downloading == asset.name) {
-                        R.string.packs_remote_downloading
-                    } else {
-                        R.string.packs_remote_download
-                    }
-                ),
-                onClick = { onInstallRemotePack(asset) },
-                enabled = state.remote.downloading == null && !state.installing
-            )
         }
-    }
-    Spacer(Modifier.height(PacksBigGap))
-
-    val dictionary = state.items.filter { it.type == PackType.DICTIONARY }
-    val audio = state.items.filter { it.type == PackType.AUDIO }
-    val voice = state.items.filter { it.type == PackType.VOICE }
-    val bundle = state.items.filter { it.type == PackType.BUNDLE }
-
-    if (dictionary.isNotEmpty()) {
-        SectionHeader(text = stringResource(R.string.packs_section_dictionary))
-        dictionary.forEach { item ->
-            PackRow(item, state.verifying) {
-                DictionaryActions(
-                    item = item,
-                    onSetActiveDictionary = onSetActiveDictionary,
-                    onVerify = onVerify,
-                    onUninstall = { onUninstallRequest(item) }
-                )
-            }
-        }
-    }
-    if (audio.isNotEmpty()) {
-        SectionHeader(text = stringResource(R.string.packs_section_audio))
-        audio.forEach { item ->
-            PackRow(item, state.verifying) {
-                PackActions(
-                    item = item,
-                    onVerify = onVerify,
-                    onUninstall = { onUninstallRequest(item) }
-                )
-            }
-        }
-    }
-    if (voice.isNotEmpty()) {
-        SectionHeader(text = stringResource(R.string.packs_section_voice))
-        voice.forEach { item ->
-            PackRow(item, state.verifying) {
-                PackActions(
-                    item = item,
-                    onVerify = onVerify,
-                    onUninstall = { onUninstallRequest(item) }
-                )
-            }
-        }
-    }
-    // Q2-c02：集合包 —— 一个包捆绑多个成员包，安装时逐个装好。
-    if (bundle.isNotEmpty()) {
-        SectionHeader(text = stringResource(R.string.packs_section_bundle))
-        bundle.forEach { item ->
-            Column(Modifier.fillMaxWidth()) {
+        if (audio.isNotEmpty()) {
+            SectionHeader(text = stringResource(R.string.packs_section_audio))
+            audio.forEach { item ->
                 PackRow(item, state.verifying) {
                     PackActions(
                         item = item,
@@ -339,13 +323,40 @@ internal fun PacksContent(
                         onUninstall = { onUninstallRequest(item) }
                     )
                 }
-                item.bundleMembers?.let { count ->
-                    Text(
-                        text = stringResource(R.string.packs_bundle_members, count),
-                        style = t.typography.label,
-                        color = t.colors.inkFaint,
-                        modifier = Modifier.padding(bottom = PacksHintGap)
+            }
+        }
+        if (voice.isNotEmpty()) {
+            SectionHeader(text = stringResource(R.string.packs_section_voice))
+            voice.forEach { item ->
+                PackRow(item, state.verifying) {
+                    PackActions(
+                        item = item,
+                        onVerify = onVerify,
+                        onUninstall = { onUninstallRequest(item) }
                     )
+                }
+            }
+        }
+        // Q2-c02：集合包 —— 一个包捆绑多个成员包，安装时逐个装好。
+        if (bundle.isNotEmpty()) {
+            SectionHeader(text = stringResource(R.string.packs_section_bundle))
+            bundle.forEach { item ->
+                Column(Modifier.fillMaxWidth()) {
+                    PackRow(item, state.verifying) {
+                        PackActions(
+                            item = item,
+                            onVerify = onVerify,
+                            onUninstall = { onUninstallRequest(item) }
+                        )
+                    }
+                    item.bundleMembers?.let { count ->
+                        Text(
+                            text = stringResource(R.string.packs_bundle_members, count),
+                            style = t.typography.label,
+                            color = t.colors.inkFaint,
+                            modifier = Modifier.padding(bottom = PacksHintGap)
+                        )
+                    }
                 }
             }
         }
