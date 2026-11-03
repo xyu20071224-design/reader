@@ -72,7 +72,7 @@ class PrimitiveComponentShotsTest {
 
     // ① LinguaScaffold（统一顶栏 / 返回箭头 / 标题）
     @Test
-    fun linguaScaffold() = shot("prim-1-scaffold", 420, 220) {
+    fun linguaScaffold() = shot("prim-1-scaffold", 420, 260) {
         LinguaScaffold(
             title = "书架",
             onBack = {},
@@ -86,7 +86,7 @@ class PrimitiveComponentShotsTest {
 
     // ② LinguaCard（+ CardTitleRow / CardDivider）
     @Test
-    fun linguaCard() = shot("prim-2-card", 420, 220) {
+    fun linguaCard() = shot("prim-2-card", 420, 260) {
         Column(Modifier.padding(16.dp)) {
             LinguaCard {
                 CardTitleRow(title = "卡片标题", subtitle = "副标题")
@@ -98,7 +98,7 @@ class PrimitiveComponentShotsTest {
 
     // ③ SettingRow（标题 + 副标题 + Switch）
     @Test
-    fun settingRow() = shot("prim-3-setting-row", 420, 160) {
+    fun settingRow() = shot("prim-3-setting-row", 420, 200) {
         Column(Modifier.padding(16.dp)) {
             SettingRow(
                 title = "字号跟随系统",
@@ -111,13 +111,13 @@ class PrimitiveComponentShotsTest {
 
     // ④ SectionHeader
     @Test
-    fun sectionHeader() = shot("prim-4-section-header", 420, 100) {
+    fun sectionHeader() = shot("prim-4-section-header", 420, 120) {
         SectionHeader("阅读设置")
     }
 
     // ⑤ StatusChip（五种语义色）
     @Test
-    fun statusChip() = shot("prim-5-status-chip", 420, 220) {
+    fun statusChip() = shot("prim-5-status-chip", 420, 240) {
         Column(Modifier.padding(16.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusChip("成功", StatusChipTone.SUCCESS)
@@ -134,7 +134,7 @@ class PrimitiveComponentShotsTest {
 
     // ⑥ PrimaryButton / SecondaryButton
     @Test
-    fun buttons() = shot("prim-6-buttons", 420, 120) {
+    fun buttons() = shot("prim-6-buttons", 420, 160) {
         Box(Modifier.padding(16.dp)) {
             ButtonRow {
                 SecondaryButton(text = "取消", onClick = {})
@@ -145,7 +145,7 @@ class PrimitiveComponentShotsTest {
 
     // ⑦ EmptyState
     @Test
-    fun emptyState() = shot("prim-7-empty-state", 420, 380) {
+    fun emptyState() = shot("prim-7-empty-state", 420, 400) {
         EmptyState(
             icon = Icons.Filled.MenuBook,
             title = "书架还是空的",
@@ -157,7 +157,7 @@ class PrimitiveComponentShotsTest {
     // ⑧ LinguaSheet —— ModalBottomSheet 需要真实窗口宿主，单图里用它的内容容器等价呈现：
     //    验证「拖柄 + 标题 + 内容」这套内部布局本身是画得出来的。
     @Test
-    fun sheetContents() = shot("prim-8-sheet-contents", 420, 240) {
+    fun sheetContents() = shot("prim-8-sheet-contents", 420, 320) {
         val t = LocalDesignTokens.current
         Column(
             Modifier
