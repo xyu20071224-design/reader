@@ -68,6 +68,8 @@ import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.CloudBookList
 import com.linguareader.shared.sync.SyncErrorKind
 import com.linguareader.shared.sync.SyncException
+import com.linguareader.shared.sync.SyncDetail
+import com.linguareader.shared.sync.SyncDetailBuilder
 import com.linguareader.shared.sync.SyncSettings
 import com.linguareader.shared.packs.PackValidationResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -187,7 +189,22 @@ data class AppUiState(
     val cloudBooks: List<CloudBook> = emptyList(),
     /** 是否已成功拉取过一次云端书单（区分「没拉过」与「拉过但为空」）。 */
     val cloudBooksLoaded: Boolean = false,
-    val cloudBooksLoading: Boolean = false
+    val cloudBooksLoading: Boolean = false,
+    /**
+     * 同步明细快照：本地全部书/生词逐条三态 + 只在云端的书 + 汇总计数。
+     * null = 尚未构建（冷启动 init 结尾会构建一次；构建函数 [AppViewModel.refreshSyncDetail] 纯本地、零网络）。
+     */
+    val syncDetail: SyncDetail? = null,
+    /** 明细构建中的标记（纯本地读水位文件，通常一闪而过）。 */
+    val syncDetailLoading: Boolean = false,
+    /**
+     * 云端正文 blob 的 bookId → size；null = 尚未成功拉到云端正文列表。
+     * 与 [cloudBooks] 语义不同：这里含**全部**云端完整 blob（含本机也有的书），
+     * cloudBooks 只含「远端有、本机没有」的书。
+     */
+    val cloudBlobSizes: Map<String, Long>? = null,
+    /** 上次同步动作成功的时间（毫秒）；0 = 从未成功。仅表示动作成功，不代表业务数据都已同步。 */
+    val lastSyncAt: Long = 0L
 ) {
     /** The effective pace used by scheduling and reminders. */
     val reviewPace: ReviewPace get() = reviewPreset?.toPace() ?: customReview
@@ -305,6 +322,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         runAutoSync()
         // 资源包列表要出现在存储页与资源包页，启动时读一次登记表（小文件，无扫盘）。
         refreshPacks()
+        // 同步明细：冷启动构建一次（纯本地，未登录也不出网）。
+        refreshSyncDetail()
     }
 
     fun refresh() {
@@ -881,6 +900,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     onFailure = { syncFailureText(it) }
                 )
             )
+            if (outcome.isSuccess) refreshSyncDetail()
         }
     }
 
@@ -918,6 +938,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 // 手动同步成功即令牌有效：复位 AUTH 提示标记，并顺手刷新云端书单
                 // （规格：同步成功或弹窗内主动刷新）。
                 autoAuthWarned = false
+                refreshSyncDetail()
                 refreshCloudBooks()
             }
         }
@@ -987,13 +1008,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     mutableState.value.syncStatus
                 }
             )
-            if (outcome.isSuccess) refresh()
+            if (outcome.isSuccess) {
+                refresh()
+                refreshSyncDetail()
+            }
         }
     }
 
     fun syncLogout() {
         sync.logout(mutableState.value.syncSettings)
-        mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_logged_out))
+        // 登出后云端正文列表即失效（不同账号/未登录不应沿用旧快照），明细回落到「未知」。
+        mutableState.value = mutableState.value.copy(
+            syncStatus = string(R.string.sync_logged_out),
+            cloudBlobSizes = null
+        )
+        refreshSyncDetail()
     }
 
     /**
@@ -1009,6 +1038,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             else -> string(R.string.sync_error_server, error.message ?: error.javaClass.simpleName)
         }
         null -> string(R.string.sync_failed, error.message ?: error.javaClass.simpleName)
+    }
+
+    // --- 云同步 · 同步明细（数据层）--------------------------------------------
+
+    /**
+     * 重建同步明细：**纯本地、零网络**——只读书库/生词本快照与本地水位文件
+     * （`filesDir/sync/{synced,outbox}.json`），未登录时也能算出进度/生词的三态。
+     *
+     * 调用时机：init 结尾、登录成功后、手动/自动同步成功后、登出后，
+     * 以及云端书单刷新成功/未登录早退之后；界面打开明细页时也可主动调一次。
+     */
+    fun refreshSyncDetail() {
+        mutableState.value = mutableState.value.copy(syncDetailLoading = true)
+        viewModelScope.launch {
+            val built = withContext(Dispatchers.IO) {
+                val snapshot = mutableState.value
+                SyncDetailBuilder.build(
+                    books = snapshot.books,
+                    words = snapshot.savedWords,
+                    syncedMarks = sync.syncedMarks(),
+                    pendingKeys = sync.pendingKeys(),
+                    remoteBlobSizes = snapshot.cloudBlobSizes,
+                    remoteOnlyBooks = snapshot.cloudBooks
+                ) to sync.lastSyncAt()
+            }
+            mutableState.value = mutableState.value.copy(
+                syncDetail = built.first,
+                syncDetailLoading = false,
+                lastSyncAt = built.second
+            )
+        }
     }
 
     // --- 云同步 · 书籍正文（blob，task-3）--------------------------------------
@@ -1034,6 +1094,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 拉取云端书单：远端有完整正文、本机书库没有的书。
      * 书名轻量增强（远端进度记录里的 title）失败时静默回退 bookId 前 8 位。
+     * 顺带把云端正文清单（全部完整 blob 的 bookId → size）写进
+     * [AppUiState.cloudBlobSizes]，供同步明细判定「正文」状态。
      */
     fun refreshCloudBooks() {
         val settings = mutableState.value.syncSettings
@@ -1042,8 +1104,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 cloudBooks = emptyList(),
                 cloudBooksLoaded = true,
                 cloudBooksLoading = false,
+                // 未登录时旧快照已失效：明细的「正文」状态应回落到「未知」而不是沿用上一账号的结果。
+                cloudBlobSizes = null,
                 syncStatus = string(R.string.sync_need_login_for_cloud)
             )
+            refreshSyncDetail()
             return
         }
         mutableState.value = mutableState.value.copy(cloudBooksLoading = true)
@@ -1051,14 +1116,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val outcome = runCatching {
                 val blobs = sync.listRemoteBlobs(settings)
                 val titles = runCatching { sync.remoteBookTitles(settings) }.getOrDefault(emptyMap())
-                CloudBookList.missing(blobs, mutableState.value.books.map { it.id }.toSet(), titles)
+                val missing = CloudBookList.missing(blobs, mutableState.value.books.map { it.id }.toSet(), titles)
+                // 只收 size > 0 的完整 blob（服务端 listBlobs 本就只返回完整 blob，这里再兜一层）。
+                missing to blobs.filter { it.size > 0L }.associate { it.bookId to it.size }
             }
+            val fetched = outcome.getOrNull()
             mutableState.value = mutableState.value.copy(
                 cloudBooksLoading = false,
                 cloudBooksLoaded = true,
-                cloudBooks = outcome.getOrElse { mutableState.value.cloudBooks },
+                // 失败时保留上一份快照（书单与正文状态都不因一次网络失败倒退）。
+                cloudBooks = fetched?.first ?: mutableState.value.cloudBooks,
+                cloudBlobSizes = fetched?.second ?: mutableState.value.cloudBlobSizes,
                 syncStatus = outcome.exceptionOrNull()?.let { syncFailureText(it) } ?: mutableState.value.syncStatus
             )
+            if (outcome.isSuccess) refreshSyncDetail()
         }
     }
 
