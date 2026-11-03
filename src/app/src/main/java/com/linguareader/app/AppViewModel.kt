@@ -5,14 +5,14 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.linguareader.app.ai.AiBookStatus
-import com.linguareader.app.ai.AiBookTranslator
 import com.linguareader.app.ai.AiLookupOutcome
 import com.linguareader.app.ai.AiLookupRequest
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.AiSettingsStore
-import com.linguareader.app.ai.AiTranslationAbortedException
 import com.linguareader.app.ai.AiTranslationRepository
+import com.linguareader.app.ai.TranslationCoordinator
+import com.linguareader.app.ai.TranslationHost
 import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.ai.BookGlossaryRepository
 import com.linguareader.app.ai.BookContextProfile
@@ -20,9 +20,7 @@ import com.linguareader.app.ai.BookContextRepository
 import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.ai.SpeakerTagRepository
 import com.linguareader.app.ai.SentenceTranslationResult
-import com.linguareader.app.ai.SentenceTranslatorFactory
 import com.linguareader.app.translation.TranslationLookupResult
-import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.translation.TranslationMemoryRepository
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.BookDataOrphan
@@ -61,9 +59,9 @@ import com.linguareader.app.update.UpdateCheckOutcome
 import com.linguareader.shared.update.AppUpdatePhase
 import com.linguareader.shared.update.AppUpdateUiState
 import com.linguareader.shared.packs.PackType
+import com.linguareader.shared.sync.CloudBook
 import com.linguareader.app.sync.AppSyncCoordinator
 import com.linguareader.app.sync.SyncHost
-import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.SyncDetail
 import com.linguareader.shared.sync.SyncSettings
 import com.linguareader.shared.packs.PackValidationResult
@@ -72,7 +70,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -248,14 +245,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     )
-    /** AI 整本翻译的在跑任务，按书 id 取消用。 */
-    private val aiTranslationJobs = mutableMapOf<String, Job>()
-    /** 已取走、等 SAF 写入回调的手动任务文件（takeManualExport 与 writeManualExport 之间）。 */
-    private var manualExportInFlight: PendingManualExport? = null
-    /** 整本翻译的「记住上次选择」：翻译模式（标准/精译）。 */
-    private val aiTranslationPrefs = getApplication<Application>().getSharedPreferences(
-        "ai_translation", android.content.Context.MODE_PRIVATE
+
+    /**
+     * AI 翻译协调器：AI 生成译本 / 手动全书翻译 / 句级重翻 / 整句翻译四块的归属地。
+     *
+     * 注入的仓库与拆分前是**同一批实例**（尤其 aiTranslationRepository 仍在
+     * bookDataStores 里登记着 —— 删书级联不能因为搬家而漏掉它）。
+     */
+    private val translationCoordinator = TranslationCoordinator(
+        context = application,
+        library = library,
+        aiRepository = aiRepository,
+        glossaryRepository = glossaryRepository,
+        aiTranslationRepository = aiTranslationRepository,
+        translationRepository = translationRepository,
+        host = object : TranslationHost {
+            override fun snapshot(): AppUiState = mutableState.value
+
+            override fun updateState(transform: (AppUiState) -> AppUiState) {
+                mutableState.value = transform(mutableState.value)
+            }
+
+            override val scope: CoroutineScope get() = this@AppViewModel.viewModelScope
+
+            /** 译本生成/导入完成后重读书架（refresh 顺带重播种 AI 状态、排复习提醒）。 */
+            override fun refreshLibrary() {
+                this@AppViewModel.refresh()
+            }
+        }
     )
+
     /** 云 TTS 音频缓存：路径的唯一知情者，删书时按这份清单清理。 */
     private val ttsAudioCache = TtsAudioCache(application)
     /** 角色→音色映射：以前删书是在这里手写 File 路径，绕过了它自带的 delete。 */
@@ -285,10 +304,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 自动更新：检查 + 下载的编排层（网络细节在 update/ 包内）。 */
     private val updateRepository = AppUpdateRepository(application)
     private var updateJob: Job? = null
-
-    companion object {
-        private const val KEY_TRANSLATION_MODE = "mode"
-    }
 
     init {
         val storedName = reviewPrefs.getString(ReviewMode.PREFERENCE_KEY, null)
@@ -744,7 +759,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteBook(book: Book) {
         viewModelScope.launch {
             // 在途的整本翻译任务先停，否则它会往刚清掉的检查点目录里继续写。
-            aiTranslationJobs.remove(book.id)?.cancel()
+            // job 表已随实现搬进 TranslationCoordinator，这里只发取消请求。
+            translationCoordinator.cancelForBookDeletion(book.id)
             // 单处清理失败（文件被占用、目录权限异常）不该中断其余清理 ——
             // 半清理的残留比一次报错更难查。失败的项留给孤儿对账兜底（方案 D1.7）。
             val failed = bookDataStores.mapNotNull { store ->
@@ -1161,492 +1177,64 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- AI 生成译本对照 -------------------------------------------------------
+    // --- AI 生成译本对照 / 手动 AI 全书翻译 / 句级重翻 ----------------------------
+    //
+    // 实现已抽到 [TranslationCoordinator]（含句级定点重翻）。这里只保留同名转发：
+    // 签名、参数、返回类型、副作用与拆分前逐字一致，调用点零改动。
+    //
+    // 注意边界：**中文译本对照**（attach/detach/realign）与下面的 translationLookup
+    // 仍在本类——它们是纯离线对齐/只读查询，与 AI 无关。
 
     /**
-     * 「AI 生成译本」第一步：备齐术语表（缺失时先生成语境档案并导入）、估算
-     * 规模，然后停在确认框等用户点头。全程除语境档案生成本身外不出网。
-     * 已有 AI 译本的书走这里是重新生成（检查点复用，只补失败批）；
-     * 出版译本不提供重生成，但书架入口对它本来只出删除确认框，这里只是兜底。
+     * 「AI 生成译本」第一步：备齐术语表、估算规模，然后停在确认框等用户点头。
+     * 已有 AI 译本的书走这里是重新生成（检查点复用，只补失败批）。
      */
-    fun prepareAiTranslation(book: Book) {
-        if (book.id in mutableState.value.aiTranslationProgress) return
-        if (book.hasTranslation && !book.isAiTranslation) return
-        val settings = mutableState.value.aiSettings
-        if (!settings.powerEnabled || !settings.remoteReady) {
-            mutableState.value = mutableState.value.copy(
-                notice = string(R.string.notice_translation_ai_need_key)
-            )
-            return
-        }
-        viewModelScope.launch {
-            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, preparing = true))
-            runCatching {
-                var glossary = glossaryRepository.load(book.id)
-                if (glossary.entries.isEmpty()) {
-                    // 术语先行：整本翻译的译法一致性靠它；档案缺失或降级时这里
-                    // 会触发一次远程生成（generate 自带降级，失败返回 local）。
-                    val profile = aiRepository.generate(book)
-                    runCatching { glossaryRepository.importFromProfile(book.id, profile) }
-                    glossary = glossaryRepository.load(book.id)
-                }
-                val estimate = aiTranslationRepository.estimate(book)
-                AiTranslationPrepare(
-                    book = book,
-                    chapters = estimate.chapters,
-                    batches = estimate.batches,
-                    glossaryTerms = estimate.glossaryTerms,
-                    glossaryInjected = estimate.glossaryInjected,
-                    oversizedParagraphs = estimate.oversizedParagraphs,
-                    mode = aiTranslationPrefs.getString(
-                        KEY_TRANSLATION_MODE, AiTranslationRepository.MODE_STANDARD
-                    ) ?: AiTranslationRepository.MODE_STANDARD,
-                    styleNotes = aiTranslationRepository.loadStyle(book.id).orEmpty()
-                )
-            }.onSuccess { prepare ->
-                mutableState.value = mutableState.value.copy(
-                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id,
-                    aiTranslationPrepare = prepare
-                )
-            }.onFailure {
-                mutableState.value = mutableState.value.copy(
-                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id,
-                    notice = string(
-                        R.string.notice_translation_ai_failed,
-                        it.message ?: string(R.string.message_ai_context_failed)
-                    ),
-                    noticeTone = StatusTone.DANGER
-                )
-            }
-        }
-    }
+    fun prepareAiTranslation(book: Book) = translationCoordinator.prepareAiTranslation(book)
 
-    fun dismissAiTranslationPrepare() {
-        if (mutableState.value.aiTranslationPrepare != null) {
-            mutableState.value = mutableState.value.copy(aiTranslationPrepare = null)
-        }
-    }
+    fun dismissAiTranslationPrepare() = translationCoordinator.dismissAiTranslationPrepare()
 
     /** 确认框点「开始生成」：逐章逐批翻译（检查点续跑）→ 对齐 → 落盘。 */
-    fun startAiTranslation(book: Book, mode: String, styleNotes: String) {
-        dismissAiTranslationPrepare()
-        if (book.id in mutableState.value.aiTranslationProgress) return
-        val settings = mutableState.value.aiSettings
-        if (!settings.powerEnabled || !settings.remoteReady) {
-            mutableState.value = mutableState.value.copy(
-                notice = string(R.string.notice_translation_ai_need_key)
-            )
-            return
-        }
-        val safeMode = if (mode == AiTranslationRepository.MODE_POLISH) {
-            AiTranslationRepository.MODE_POLISH
-        } else {
-            AiTranslationRepository.MODE_STANDARD
-        }
-        val polish = safeMode == AiTranslationRepository.MODE_POLISH
-        aiTranslationPrefs.edit().putString(KEY_TRANSLATION_MODE, safeMode).apply()
-        aiTranslationJobs[book.id] = viewModelScope.launch {
-            val startedAt = System.currentTimeMillis()
-            runCatching { aiTranslationRepository.saveStyle(book.id, styleNotes) }
-            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, polish = polish))
-            mutableState.value = mutableState.value.copy(
-                notice = string(R.string.notice_translation_ai_started, book.title)
-            )
-            // 单批用尽重试后不再中止整本书：该批整段保留英文原文继续跑，末尾汇总告知用户。
-            // 一个段落可能被拆成多个译块、跨多批（超长段），所以按「章 + 原段」去重计数；
-            // 不能拿 batch.paragraphs.size（那是译块数）累加。
-            val untranslatedParagraphs = mutableSetOf<Pair<Int, Int>>()
-            try {
-                val translationBook = aiTranslationRepository.translateBook(
-                    book,
-                    mode = safeMode,
-                    styleNotes = styleNotes.trim().ifBlank { null },
-                    onBatchFailed = { batch, _ ->
-                        batch.sourceParagraphIndices.forEach { index ->
-                            untranslatedParagraphs += batch.chapterIndex to index
-                        }
-                    }
-                ) { percent ->
-                    setAiTranslationProgress(book.id, AiTranslationProgress(percent = percent, polish = polish))
-                }
-                setAiTranslationProgress(
-                    book.id,
-                    AiTranslationProgress(percent = 100, aligning = true, polish = polish)
-                )
-                val result = translationRepository.attachGenerated(book, translationBook)
-                library.saveTranslation(
-                    book,
-                    result.translationBook.id,
-                    result.translationBook.title,
-                    result.memory.alignedAt
-                )
-                val seconds = ((System.currentTimeMillis() - startedAt) / 1000).toInt()
-                mutableState.value = mutableState.value.copy(
-                    notice = if (untranslatedParagraphs.isNotEmpty()) {
-                        string(
-                            R.string.notice_translation_ready_partial,
-                            result.memory.pairs.size,
-                            seconds,
-                            untranslatedParagraphs.size
-                        )
-                    } else {
-                        string(R.string.notice_translation_ready, result.memory.pairs.size, seconds)
-                    },
-                    noticeTone = if (untranslatedParagraphs.isNotEmpty()) StatusTone.NEUTRAL else StatusTone.SUCCESS
-                )
-                refresh()
-            } catch (cancelled: CancellationException) {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(R.string.notice_translation_ai_cancelled)
-                )
-            } catch (aborted: AiTranslationAbortedException) {
-                // 连败断路器（AiBookTranslator.MAX_CONSECUTIVE_BATCH_FAILURES）：
-                // 系统性失败提前止损。检查点都在，排除故障后重新生成即续跑。
-                mutableState.value = mutableState.value.copy(
-                    notice = string(
-                        R.string.notice_translation_ai_aborted,
-                        book.title,
-                        AiBookTranslator.MAX_CONSECUTIVE_BATCH_FAILURES
-                    ),
-                    noticeTone = StatusTone.DANGER
-                )
-            } catch (failed: Throwable) {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(
-                        R.string.notice_translation_ai_failed,
-                        failed.message ?: string(R.string.message_ai_context_failed)
-                    ),
-                    noticeTone = StatusTone.DANGER
-                )
-            } finally {
-                aiTranslationJobs.remove(book.id)
-                mutableState.value = mutableState.value.copy(
-                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
-                )
-            }
-        }
-    }
+    fun startAiTranslation(book: Book, mode: String, styleNotes: String) =
+        translationCoordinator.startAiTranslation(book, mode, styleNotes)
 
     /** 取消在跑的整本翻译；已完成批次的检查点保留，下次直接续跑。 */
-    fun cancelAiTranslation(book: Book) {
-        aiTranslationJobs.remove(book.id)?.cancel()
-    }
+    fun cancelAiTranslation(book: Book) = translationCoordinator.cancelAiTranslation(book)
 
-    // --- 手动 AI 全书翻译（导出任务文件 / 导入外部 agent 结果） -----------------
+    /** 「手动 AI 翻译」对话框数据：覆盖进度 + 风格说明，全部本地读取，不出网。 */
+    fun prepareManualTranslation(book: Book) = translationCoordinator.prepareManualTranslation(book)
 
-    /**
-     * 「手动 AI 翻译」对话框数据：覆盖进度 + 风格说明，全部本地读取，不出网。
-     * 与 [prepareAiTranslation] 的关键差异：不检查 API Key、不自动生成语境
-     * 档案——手动路径的用户可能根本没配 Key，术语表用已有的即可。
-     * 准备阶段登记进 [aiTranslationJobs]，书卡上的「取消生成」真有效。
-     */
-    fun prepareManualTranslation(book: Book) {
-        if (book.id in mutableState.value.aiTranslationProgress) return
-        if (book.hasTranslation && !book.isAiTranslation) return
-        aiTranslationJobs[book.id] = viewModelScope.launch {
-            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, preparing = true))
-            try {
-                val coverage = aiTranslationRepository.manualCoverage(book)
-                if (coverage.totalBatches == 0) {
-                    // 抽不出任何段落的书（如无文字层的扫描 PDF）没有可翻译的东西，
-                    // 直接说明，别让用户困在「已收 0/0 批」里永远无法完成。
-                    mutableState.value = mutableState.value.copy(
-                        notice = string(R.string.notice_translation_manual_empty)
-                    )
-                    return@launch
-                }
-                mutableState.value = mutableState.value.copy(
-                    manualTranslationPrepare = ManualTranslationPrepare(
-                        book = book,
-                        batches = coverage.totalBatches,
-                        coveredBatches = coverage.coveredBatches,
-                        styleNotes = aiTranslationRepository.loadStyle(book.id).orEmpty()
-                    )
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failed: Throwable) {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(
-                        R.string.notice_translation_ai_failed,
-                        failed.message ?: string(R.string.message_ai_context_failed)
-                    ),
-                    noticeTone = StatusTone.DANGER
-                )
-            } finally {
-                aiTranslationJobs.remove(book.id)
-                mutableState.value = mutableState.value.copy(
-                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
-                )
-            }
-        }
-    }
+    fun dismissManualTranslationPrepare() =
+        translationCoordinator.dismissManualTranslationPrepare()
 
-    fun dismissManualTranslationPrepare() {
-        if (mutableState.value.manualTranslationPrepare != null) {
-            mutableState.value = mutableState.value.copy(manualTranslationPrepare = null)
-        }
-    }
+    fun clearManualImportRejected() = translationCoordinator.clearManualImportRejected()
 
-    fun clearManualImportRejected() {
-        if (mutableState.value.manualImportRejected != null) {
-            mutableState.value = mutableState.value.copy(manualImportRejected = null)
-        }
-    }
+    /** 构建任务文件文本；就绪后置 [AppUiState.pendingManualExport] 让界面弹 SAF 面板。 */
+    fun buildManualExport(book: Book, styleNotes: String) =
+        translationCoordinator.buildManualExport(book, styleNotes)
 
-    /**
-     * 构建任务文件文本（全书抽取，大书要几秒），就绪后置 [PendingManualExport]
-     * 让界面弹 SAF 保存面板。风格说明顺手保存，与在线路径同一存储位。
-     * 构建阶段登记进 [aiTranslationJobs]，书卡上的「取消生成」真有效。
-     */
-    fun buildManualExport(book: Book, styleNotes: String) {
-        dismissManualTranslationPrepare()
-        if (book.id in mutableState.value.aiTranslationProgress) return
-        aiTranslationJobs[book.id] = viewModelScope.launch {
-            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, preparing = true))
-            try {
-                aiTranslationRepository.saveStyle(book.id, styleNotes)
-                val task = aiTranslationRepository.buildManualTask(book, styleNotes.trim().ifBlank { null })
-                mutableState.value = mutableState.value.copy(
-                    pendingManualExport = PendingManualExport(
-                        bookId = book.id,
-                        fileName = "${book.title}-manual-translation.json"
-                            .replace(Regex("[\\\\/:*?\"<>|]"), "_"),
-                        content = task.toString(),
-                        batches = task.optJSONArray("batches")?.length() ?: 0
-                    )
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failed: Throwable) {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(
-                        R.string.notice_translation_manual_export_failed,
-                        failed.message ?: string(R.string.message_ai_context_failed)
-                    ),
-                    noticeTone = StatusTone.DANGER
-                )
-            } finally {
-                aiTranslationJobs.remove(book.id)
-                mutableState.value = mutableState.value.copy(
-                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
-                )
-            }
-        }
-    }
-
-    /**
-     * 界面弹保存面板前取走任务文件：状态即刻置空，旋转屏幕重建组合后
-     * [AppUiState.pendingManualExport] 已不在，LaunchedEffect 不会重放出
-     * 第二个面板。内容暂存 [manualExportInFlight] 供写入回调使用。
-     */
-    fun takeManualExport(): PendingManualExport? {
-        val pending = mutableState.value.pendingManualExport ?: return null
-        mutableState.value = mutableState.value.copy(pendingManualExport = null)
-        manualExportInFlight = pending
-        return pending
-    }
+    /** 界面弹保存面板前取走任务文件（内容暂存在协调器，供写入回调使用）。 */
+    fun takeManualExport(): PendingManualExport? = translationCoordinator.takeManualExport()
 
     /** SAF 保存面板的回调：把构建好的任务文件写进用户选的位置。 */
-    fun writeManualExport(uri: Uri) {
-        val pending = manualExportInFlight ?: return
-        manualExportInFlight = null
-        viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    getApplication<Application>().contentResolver.openOutputStream(uri, "w")
-                        ?.bufferedWriter()
-                        ?.use { it.write(pending.content) }
-                        ?: error("无法打开导出文件")
-                }
-            }.onSuccess {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(R.string.notice_translation_manual_exported, pending.batches)
-                )
-            }.onFailure {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(
-                        R.string.notice_translation_manual_export_failed,
-                        it.message ?: string(R.string.message_ai_context_failed)
-                    ),
-                    noticeTone = StatusTone.DANGER
-                )
-            }
-        }
-    }
+    fun writeManualExport(uri: Uri) = translationCoordinator.writeManualExport(uri)
 
     /** 用户在 SAF 面板取消了保存：丢弃已构建的任务文件。 */
-    fun cancelManualExport() {
-        manualExportInFlight = null
-        mutableState.value = mutableState.value.copy(pendingManualExport = null)
-    }
+    fun cancelManualExport() = translationCoordinator.cancelManualExport()
+
+    /** 导入外部 agent 的结果文件（可多选）；覆盖满 100% 则自动离线生成译本对照。 */
+    fun importManualResults(book: Book, uris: List<Uri>) =
+        translationCoordinator.importManualResults(book, uris)
 
     /**
-     * 导入外部 agent 的结果文件（可多选）：读文本 → 校验逐批落检查点 →
-     * 覆盖满 100% 则自动离线生成译本对照（一个网络请求都不发）。
-     * 导入阶段登记进 [aiTranslationJobs]，书卡上的「取消生成」真有效。
-     */
-    fun importManualResults(book: Book, uris: List<Uri>) {
-        dismissManualTranslationPrepare()
-        if (book.id in mutableState.value.aiTranslationProgress) return
-        aiTranslationJobs[book.id] = viewModelScope.launch {
-            var readyToComplete = false
-            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 0, preparing = true))
-            try {
-                if (aiTranslationRepository.manualCoverage(book).totalBatches == 0) {
-                    mutableState.value = mutableState.value.copy(
-                        notice = string(R.string.notice_translation_manual_empty)
-                    )
-                    return@launch
-                }
-                val texts = uris.map { uri ->
-                    withContext(Dispatchers.IO) {
-                        getApplication<Application>().contentResolver.openInputStream(uri)
-                            ?.bufferedReader()
-                            ?.use { it.readText() }
-                            ?: error("无法读取所选文件")
-                    }
-                }
-                val report = aiTranslationRepository.importManualResults(book, texts)
-                if (report.coverage.complete) {
-                    readyToComplete = true
-                    mutableState.value = mutableState.value.copy(
-                        notice = string(R.string.notice_translation_manual_imported_done, report.coverage.totalBatches)
-                    )
-                } else {
-                    mutableState.value = mutableState.value.copy(
-                        notice = string(
-                            R.string.notice_translation_manual_imported_partial,
-                            report.coverage.coveredBatches,
-                            report.coverage.totalBatches,
-                            report.rejected.size
-                        ),
-                        noticeTone = if (report.acceptedBatches == 0) StatusTone.DANGER else StatusTone.NEUTRAL
-                    )
-                }
-                if (report.rejected.isNotEmpty()) {
-                    // 拒绝详情立刻弹对话框逐条展示——「拒绝 N 条」的条数不告诉
-                    // 用户该让 agent 改什么（典型错误：段落编号被重新编号）。
-                    mutableState.value = mutableState.value.copy(
-                        manualImportRejected = report.rejected
-                    )
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failed: Throwable) {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(
-                        R.string.notice_translation_manual_import_failed,
-                        failed.message ?: string(R.string.message_ai_context_failed)
-                    ),
-                    noticeTone = StatusTone.DANGER
-                )
-            } finally {
-                aiTranslationJobs.remove(book.id)
-                if (!readyToComplete) {
-                    mutableState.value = mutableState.value.copy(
-                        aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
-                    )
-                }
-            }
-            // finally 已摘掉本 job，这里才能过 completeManualTranslation 的防重闸。
-            if (readyToComplete) completeManualTranslation(book)
-        }
-    }
-
-    /**
-     * 手动译文齐批后的离线生成：completeFromCheckpoints（零出网）→ 对齐落盘。
-     * 进度条与取消复用在线翻译的 [aiTranslationProgress] 机制。
-     */
-    private fun completeManualTranslation(book: Book) {
-        if (book.id in aiTranslationJobs) return
-        aiTranslationJobs[book.id] = viewModelScope.launch {
-            val startedAt = System.currentTimeMillis()
-            setAiTranslationProgress(book.id, AiTranslationProgress(percent = 100, aligning = true))
-            try {
-                val translationBook = aiTranslationRepository.completeFromCheckpoints(
-                    book,
-                    providerName = string(R.string.translation_manual_provider)
-                )
-                val result = translationRepository.attachGenerated(book, translationBook)
-                library.saveTranslation(
-                    book,
-                    result.translationBook.id,
-                    result.translationBook.title,
-                    result.memory.alignedAt
-                )
-                val seconds = ((System.currentTimeMillis() - startedAt) / 1000).toInt()
-                mutableState.value = mutableState.value.copy(
-                    notice = string(R.string.notice_translation_ready, result.memory.pairs.size, seconds),
-                    noticeTone = StatusTone.SUCCESS
-                )
-                refresh()
-            } catch (cancelled: CancellationException) {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(R.string.notice_translation_ai_cancelled)
-                )
-            } catch (failed: Throwable) {
-                mutableState.value = mutableState.value.copy(
-                    notice = string(
-                        R.string.notice_translation_ai_failed,
-                        failed.message ?: string(R.string.message_ai_context_failed)
-                    ),
-                    noticeTone = StatusTone.DANGER
-                )
-            } finally {
-                aiTranslationJobs.remove(book.id)
-                mutableState.value = mutableState.value.copy(
-                    aiTranslationProgress = mutableState.value.aiTranslationProgress - book.id
-                )
-            }
-        }
-    }
-
-    /** 句级定点重翻的在跑书（每本同时最多一次，防双击双扣费）。 */
-    private val retranslateInFlight = mutableSetOf<String>()
-
-    /**
-     * 句级定点重翻：一次小请求替换档案里 [result.pairIndex] 那条句对的译文。
-     * 只对句级命中开放（段落级兜底命中没有确定的句对条目）；成功/失败经
-     * [onDone] 回调，旧译文由界面保持不动。
+     * 句级定点重翻：一次小请求替换档案里 [TranslationLookupResult.pairIndex] 那条句对的译文。
+     * 只对句级命中开放；成功/失败经 [onDone] 回调，旧译文由界面保持不动。
      */
     fun retranslateTranslation(
         book: Book,
         result: TranslationLookupResult,
         feedback: String?,
         onDone: (Boolean) -> Unit
-    ) {
-        val settings = mutableState.value.aiSettings
-        if (!settings.powerEnabled || !settings.remoteReady ||
-            !book.isAiTranslation ||
-            result.matchLevel != TranslationMatchLevel.SENTENCE || result.pairIndex < 0 ||
-            book.id in retranslateInFlight || book.id in mutableState.value.aiTranslationProgress
-        ) {
-            onDone(false)
-            return
-        }
-        retranslateInFlight.add(book.id)
-        viewModelScope.launch {
-            val ok = runCatching {
-                val newZh = aiTranslationRepository.retranslateText(
-                    book,
-                    enSentence = result.english,
-                    enParagraph = result.englishParagraph,
-                    currentZh = result.chinese,
-                    feedback = feedback
-                )
-                translationRepository.replaceSentenceTranslation(book.id, result.pairIndex, newZh) != null
-            }.isSuccess
-            retranslateInFlight.remove(book.id)
-            onDone(ok)
-        }
-    }
-
-    private fun setAiTranslationProgress(bookId: String, progress: AiTranslationProgress) {
-        mutableState.value = mutableState.value.copy(
-            aiTranslationProgress = mutableState.value.aiTranslationProgress + (bookId to progress)
-        )
-    }
+    ) = translationCoordinator.retranslateTranslation(book, result, feedback, onDone)
 
     /** 点词时查译本对照；未配译本或档案损坏时返回 null，界面不显示该区块。 */
     suspend fun translationLookup(
@@ -1665,16 +1253,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * book's enabled glossary terms. The returned [SentenceTranslationResult]
      * carries the provider name so the UI can label the real source.
      */
-    suspend fun translateSentence(book: Book, sentence: String): SentenceTranslationResult {
-        val settings = mutableState.value.aiSettings
-        val translator = SentenceTranslatorFactory.from(settings)
-            ?: error("未启用整句翻译（先在 AI 中心配置并保存一个服务商）")
-        val glossary = glossaryRepository.load(book.id)
-        return SentenceTranslationResult(
-            text = translator.translateSentence(sentence, glossary),
-            provider = translator.displayName
-        )
-    }
+    suspend fun translateSentence(book: Book, sentence: String): SentenceTranslationResult =
+        translationCoordinator.translateSentence(book, sentence)
 
     fun saveWord(
         book: Book,
