@@ -35,7 +35,10 @@ import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.linguareader.app.data.ReaderTheme
+import com.linguareader.app.skin.LocalDesignTokens
+import com.linguareader.app.skin.SkinRegistry
 import com.linguareader.app.tts.SpeechReadiness
+import com.linguareader.shared.ui.skin.SkinBuiltIns
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -70,7 +73,20 @@ class MainActivity : ComponentActivity() {
             val palette = paletteFor(readerTheme, isSystemInDarkTheme())
             ApplySystemBars(palette)
             val snackbar = rememberAppSnackbar()
+            // 设计 token 必须与调色板**同源同明暗**。
+            //
+            // 这里曾经只下发 LocalLinguaPalette，于是 LocalDesignTokens 一路走默认值
+            // （SkinRegistry.default = 日间），已迁移的屏（6 个弹层 + 生词本 + 复习屏）
+            // 在深色外壳下拿到的是日间色：近黑字落在近黑底上、弹层纸白刺眼。
+            // 之所以长期没被发现：所有渲染台测试都是**显式** provide token 的，
+            // 测不到生产接线；渲染台默认也只跑日间。
+            // 明暗判定复用 chromeIsDark 的那条规则（经 paletteFor），不另起一套，
+            // 否则会出现「外壳夜里、组件日间」的第二类错配。
+            val tokens = SkinRegistry.toDesignTokens(
+                if (palette.isDark) SkinBuiltIns.dark else SkinBuiltIns.light
+            )
             CompositionLocalProvider(
+                LocalDesignTokens provides tokens,
                 LocalLinguaPalette provides palette,
                 LocalAppSnackbar provides snackbar
             ) {
