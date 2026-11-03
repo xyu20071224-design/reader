@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import com.linguareader.app.components.LinguaSheet
+import com.linguareader.app.components.PrimaryButton
 import com.linguareader.app.components.LinguaTextButton
 import com.linguareader.app.components.PrimaryButton
 import com.linguareader.app.components.SectionHeader
@@ -22,6 +23,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,16 +41,12 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
@@ -79,7 +78,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.R
@@ -93,7 +91,6 @@ import kotlinx.coroutines.delay
 import kotlin.math.pow
 
 /** Shared review deck used by the vocabulary screen and reader-side entries. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReviewSheet(
     deck: List<SavedWord>,
@@ -134,135 +131,222 @@ internal fun ReviewSheet(
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Paper,
-        modifier = Modifier.testTag(UiTags.REVIEW_SHEET)
+    LinguaSheet(
+        onDismiss = onDismiss,
+        contentArrangement = Arrangement.Top
     ) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 26.dp).padding(bottom = 34.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (allDone) {
-                Spacer(Modifier.height(28.dp))
-                Icon(
-                    Icons.Filled.Check,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = Success
-                )
-                Spacer(Modifier.height(12.dp))
+        ReviewCardContent(
+            word = word,
+            cardIndex = index,
+            deckSize = deck.size,
+            completedCount = completedCount,
+            allDone = allDone,
+            revealed = revealed,
+            busy = busy,
+            onDismissRequest = onDismiss,
+            onReveal = { revealed = true },
+            onSpeak = { onSpeak(word.headword) },
+            onFinish = { finish(it) }
+        )
+    }
+}
+
+/**
+ * 复习卡片的**内容体**，与 sheet 外壳解耦。
+ *
+ * 理由同其余已迁弹层：`ModalBottomSheet` 在渲染台里画不进位图，抽出内容体才能做
+ * 迁移前后对比。代价也一样——**不再自带宽度/背景约束**，单独使用时调用方必须补齐。
+ *
+ * 状态流转（index / completedCount / allDone / busy）与 `finish()` 的评分回调
+ * 全部留在外壳 [ReviewSheet]：那是复习卡组的核心逻辑，有 700+ 条单测守着；
+ * 这里只收快照 + 回调，评分语义一个字都不改。
+ */
+@Composable
+internal fun ReviewCardContent(
+    word: SavedWord,
+    cardIndex: Int,
+    deckSize: Int,
+    completedCount: Int,
+    allDone: Boolean,
+    revealed: Boolean,
+    busy: Boolean,
+    onDismissRequest: () -> Unit,
+    onReveal: () -> Unit,
+    onSpeak: () -> Unit,
+    onFinish: (Boolean) -> Unit
+) {
+    val t = LocalDesignTokens.current
+    // REVIEW_SHEET 原本挂在 ModalBottomSheet 上（LinguaSheet 不接受 modifier）；
+    // 内容体是它的子树，语义查找照样命中，故改挂在这里，不丢可达性。
+    // 不再自带水平/底部留白：[LinguaSheet] 的 content 槽已经给了 horizontal = spacing.l
+    // 与 bottom = spacing.xl，这里再加一层会变成双倍内边距（实测会左右各多 24dp）。
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(UiTags.REVIEW_SHEET),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (allDone) {
+            Spacer(Modifier.height(t.spacing.l))
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                modifier = Modifier.size(DoneIconSize),
+                tint = t.colors.success
+            )
+            Spacer(Modifier.height(t.spacing.s))
+            Text(
+                text = stringResource(R.string.review_done_title),
+                style = t.typography.display,
+                color = t.colors.ink,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(t.spacing.xs))
+            Text(
+                text = stringResource(R.string.review_done_body, completedCount, deckSize),
+                style = t.typography.body,
+                color = t.colors.inkSoft,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(t.spacing.m))
+            PrimaryButton(
+                text = stringResource(R.string.common_done),
+                onClick = onDismissRequest
+            )
+            Spacer(Modifier.height(t.spacing.m))
+        } else {
+            Text(
+                text = if (completedCount == 0) {
+                    stringResource(R.string.review_card_position, cardIndex + 1, deckSize)
+                } else {
+                    stringResource(R.string.review_card_progress, completedCount, deckSize)
+                },
+                style = t.typography.label,
+                color = t.colors.inkSoft
+            )
+            Spacer(Modifier.height(t.spacing.m))
+            Text(
+                text = word.headword,
+                style = t.typography.display,
+                color = t.colors.ink,
+                textAlign = TextAlign.Center
+            )
+            if (word.phonetic.isNotBlank()) {
                 Text(
-                    stringResource(R.string.review_done_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold
+                    text = "/${word.phonetic}/",
+                    style = t.typography.caption,
+                    color = t.colors.inkSoft
                 )
-                Spacer(Modifier.height(6.dp))
+            }
+            SpeakButton(text = stringResource(R.string.common_speak), onClick = onSpeak)
+            Spacer(Modifier.height(t.spacing.s))
+            Text(
+                text = word.sentence,
+                // 例句保持衬线：它是书里的原文，与释义在观感上必须分开（与生词本同口径）。
+                style = t.typography.body.copy(fontFamily = FontFamily.Serif),
+                color = t.colors.ink
+            )
+            Spacer(Modifier.height(t.spacing.m))
+            if (revealed) {
                 Text(
-                    stringResource(R.string.review_done_body, completedCount, deck.size),
-                    color = InkSoft,
-                    textAlign = TextAlign.Center
+                    text = word.meaning,
+                    style = t.typography.body,
+                    color = t.colors.ink,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(20.dp))
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
-                    shape = PillShape
-                ) { Text(stringResource(R.string.common_done)) }
-                Spacer(Modifier.height(16.dp))
-            } else {
-                Text(
-                    if (completedCount == 0) {
-                        stringResource(R.string.review_card_position, index + 1, deck.size)
-                    } else {
-                        stringResource(R.string.review_card_progress, completedCount, deck.size)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = InkSoft
-                )
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    word.headword,
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (word.phonetic.isNotBlank()) {
-                    Text("/${word.phonetic}/", color = InkSoft)
-                }
-                TextButton(onClick = { onSpeak(word.headword) }) {
-                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(stringResource(R.string.common_speak))
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    word.sentence,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontFamily = FontFamily.Serif
-                )
-                Spacer(Modifier.height(20.dp))
-                if (revealed) {
+                if (word.aiMeaning.isNotBlank()) {
+                    Spacer(Modifier.height(t.spacing.s))
                     Text(
-                        word.meaning,
-                        style = MaterialTheme.typography.bodyLarge,
+                        text = if (word.aiSource.isBlank()) {
+                            stringResource(R.string.common_book_context, word.aiMeaning)
+                        } else {
+                            stringResource(
+                                R.string.common_book_context_source,
+                                word.aiSource,
+                                word.aiMeaning
+                            )
+                        },
+                        style = t.typography.body,
+                        color = t.colors.accent,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    if (word.aiMeaning.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            if (word.aiSource.isBlank()) {
-                                stringResource(R.string.common_book_context, word.aiMeaning)
-                            } else {
-                                stringResource(
-                                    R.string.common_book_context_source,
-                                    word.aiSource,
-                                    word.aiMeaning
-                                )
-                            },
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = Accent,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    if (word.aiExplanation.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            stringResource(R.string.review_context_explanation, word.aiExplanation),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = InkSoft,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    Spacer(Modifier.height(18.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        TextButton(onClick = { finish(false) }, enabled = !busy) {
-                            Icon(Icons.Filled.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.review_learn_again))
-                        }
-                        Button(
-                            onClick = { finish(true) },
-                            enabled = !busy,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Success,
-                                contentColor = OnAccent
-                            ),
-                            shape = PillShape
-                        ) {
-                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.review_known))
-                        }
-                    }
-                } else {
-                    Button(
-                        onClick = { revealed = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
-                        shape = PillShape
-                    ) { Text(stringResource(R.string.review_reveal)) }
                 }
+                if (word.aiExplanation.isNotBlank()) {
+                    Spacer(Modifier.height(t.spacing.s))
+                    Text(
+                        text = stringResource(R.string.review_context_explanation, word.aiExplanation),
+                        style = t.typography.caption,
+                        color = t.colors.inkSoft,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Spacer(Modifier.height(t.spacing.m))
+                Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
+                    LinguaTextButton(
+                        text = stringResource(R.string.review_learn_again),
+                        onClick = { onFinish(false) },
+                        enabled = !busy
+                    )
+                    // 「知道了」是这张卡上的主动作，但语义色是 success 而非 accent。
+                    // PrimaryButton 固定取 accent，硬套会把按钮从绿变棕，
+                    // 与「评对了」这件事的反馈脱钩，故保留一颗 token 驱动的按钮。
+                    Button(
+                        onClick = { onFinish(true) },
+                        enabled = !busy,
+                        modifier = Modifier.defaultMinSize(minHeight = t.controlHeight),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = t.colors.success,
+                            contentColor = t.colors.successOn,
+                            disabledContainerColor = t.colors.paperDeep,
+                            disabledContentColor = t.colors.inkFaint
+                        ),
+                        shape = t.pillShape,
+                        contentPadding = PaddingValues(
+                            horizontal = t.spacing.l,
+                            vertical = t.spacing.s
+                        )
+                    ) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(ButtonIconSize)
+                        )
+                        Spacer(Modifier.width(t.spacing.xs))
+                        Text(stringResource(R.string.review_known), style = t.typography.body)
+                    }
+                }
+            } else {
+                PrimaryButton(
+                    text = stringResource(R.string.review_reveal),
+                    onClick = onReveal
+                )
             }
         }
+    }
+}
+
+/**
+ * 「朗读这个单词」的行内文字按钮（图标 + 文字）。
+ *
+ * 单独抽出来是因为 `components/Buttons.kt` 目前只有**纯文字**的 [LinguaTextButton]，
+ * 没有图标版；这一处需要喇叭图标，而 IconButton 又会丢掉「Speak」这层文字提示。
+ * 配色走 token，等组件层补出 icon 版再换（与生词本的处理一致，组件缺口已反馈）。
+ */
+@Composable
+private fun SpeakButton(text: String, onClick: () -> Unit) {
+    val t = LocalDesignTokens.current
+    TextButton(
+        onClick = onClick,
+        colors = ButtonDefaults.textButtonColors(contentColor = t.colors.accent),
+        contentPadding = PaddingValues(horizontal = t.spacing.m, vertical = t.spacing.xs)
+    ) {
+        Icon(
+            Icons.AutoMirrored.Filled.VolumeUp,
+            contentDescription = null,
+            modifier = Modifier.size(SpeakIconSize)
+        )
+        Spacer(Modifier.width(t.spacing.xs))
+        Text(text, style = t.typography.body)
     }
 }
 
@@ -777,7 +861,7 @@ private fun ReviewCurvePicker(
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .height(CurveCanvasHeight)
             .semantics { contentDescription = curveDescription }
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
@@ -792,10 +876,10 @@ private fun ReviewCurvePicker(
                 }
             }
     ) {
-        val left = 8.dp.toPx()
-        val top = 10.dp.toPx()
-        val right = 8.dp.toPx()
-        val bottom = 16.dp.toPx()
+        val left = CurveAxisInsetStart.toPx()
+        val top = CurveAxisInsetTop.toPx()
+        val right = CurveAxisInsetEnd.toPx()
+        val bottom = CurveAxisInsetBottom.toPx()
         val chartWidth = size.width - left - right
         val chartHeight = size.height - top - bottom
 
@@ -807,7 +891,7 @@ private fun ReviewCurvePicker(
                 color = gridColor,
                 start = Offset(left, yFor(r)),
                 end = Offset(size.width - right, yFor(r)),
-                strokeWidth = 1.dp.toPx()
+                strokeWidth = CurveGridStroke.toPx()
             )
         }
 
@@ -821,37 +905,111 @@ private fun ReviewCurvePicker(
             if (step == 0) path.moveTo(px, py) else path.lineTo(px, py)
             step += 1
         }
-        drawPath(path, color = curveColor, style = Stroke(width = 2.dp.toPx()))
+        drawPath(path, color = curveColor, style = Stroke(width = CurveLineStroke.toPx()))
 
         ReviewMode.entries.forEach { mode ->
             val r = ReviewPace.retentionForMultiplier(mode.intervalMultiplier)
             drawCircle(
                 color = markerColor,
-                radius = 3.dp.toPx(),
+                radius = CurvePresetDotRadius.toPx(),
                 center = Offset(xFor(r), yFor(r))
             )
         }
 
         val handleRetention = retention.coerceIn(ReviewPace.MIN_RETENTION, ReviewPace.MAX_RETENTION)
         val handle = Offset(xFor(handleRetention), yFor(handleRetention))
-        drawCircle(color = curveColor, radius = 9.dp.toPx(), center = handle)
-        drawCircle(color = handleFill, radius = 4.dp.toPx(), center = handle)
+        drawCircle(color = curveColor, radius = CurveHandleOuterRadius.toPx(), center = handle)
+        drawCircle(color = handleFill, radius = CurveHandleInnerRadius.toPx(), center = handle)
     }
 }
 
 @Composable
 private fun PacePreview(pace: ReviewPace) {
+    val t = LocalDesignTokens.current
     Column {
-        Text(stringResource(R.string.review_pace_preview_title), color = InkSoft, style = MaterialTheme.typography.labelMedium)
-        Spacer(Modifier.height(4.dp))
-        Text(stringResource(R.string.review_pace_preview_first, firstDelayLabel(pace.firstDelayMillis)))
-        Text(stringResource(R.string.review_pace_preview_nth, 2, formatApproxDuration(ReviewScheduler.intervalFor(1, pace))))
-        Text(stringResource(R.string.review_pace_preview_nth, 3, formatApproxDuration(ReviewScheduler.intervalFor(2, pace))))
-        Text(stringResource(R.string.review_pace_preview_nth, 4, formatApproxDuration(ReviewScheduler.intervalFor(3, pace))))
+        Text(
+            text = stringResource(R.string.review_pace_preview_title),
+            style = t.typography.label,
+            color = t.colors.inkSoft
+        )
+        Spacer(Modifier.height(t.spacing.xs))
+        // 这几行是「按此节奏」的预测值，数字本身来自 ReviewScheduler，一个字没改。
+        Text(stringResource(R.string.review_pace_preview_first, firstDelayLabel(pace.firstDelayMillis)), style = t.typography.caption, color = t.colors.ink)
+        Text(stringResource(R.string.review_pace_preview_nth, 2, formatApproxDuration(ReviewScheduler.intervalFor(1, pace))), style = t.typography.caption, color = t.colors.ink)
+        Text(stringResource(R.string.review_pace_preview_nth, 3, formatApproxDuration(ReviewScheduler.intervalFor(2, pace))), style = t.typography.caption, color = t.colors.ink)
+        Text(stringResource(R.string.review_pace_preview_nth, 4, formatApproxDuration(ReviewScheduler.intervalFor(3, pace))), style = t.typography.caption, color = t.colors.ink)
     }
 }
 
 // ── 组件专有几何常量 ──────────────────────────────────────────────
+//
+// 这些值**不进间距梯**，理由与 `ShelfAppearanceSheet` 同一口径：它们不是「间距」，
+// 而是这一屏自己的形状参数（图标尺寸、胶囊内边距、曲线画布与其坐标轴内缩）。
+// 间距梯只有 4/8/16/24/32/48；图标 18/20 与曲线 180/8/10/16/1/2/3/9/4 硬套都会
+// 改变像素，而 P3 的验收前提是「迁移前后视觉等价」。聚成命名常量，可读性不比裸 dp 差。
+
+/** 结算态那颗大对勾的直径（视觉锚点，比正文图标大一圈）。 */
+private val DoneIconSize = 48.dp
+
+/** 卡片内「朗读」与评分按钮里的行内图标。 */
+private val SpeakIconSize = 18.dp
+
+/** 「知道了」按钮里的对勾图标。 */
+private val ButtonIconSize = 18.dp
+
+// ── 复习曲线（阶梯可视化）的几何 ─────────────────────────────────
+//
+// ⚠️ **这组比例是语义的一部分，不是样式**：横轴是「复习后经过的时间比例」，
+// 纵轴是「记忆留存率」，曲线形状与三档参考点共同解释「为什么这个节奏合理」。
+// 为了套 token 而改动任何一档，都会让这张图说假话 —— 所以宁可保留原值。
+// 下方数值逐字照抄迁移前的实现，迁移只做了「起名」这一件事。
+
+/** 曲线画布高度。 */
+private val CurveCanvasHeight = 180.dp
+
+/** 绘图区左内缩（给纵轴端点留白）。 */
+private val CurveAxisInsetStart = 8.dp
+
+/** 绘图区上内缩。 */
+private val CurveAxisInsetTop = 10.dp
+
+/** 绘图区右内缩。 */
+private val CurveAxisInsetEnd = 8.dp
+
+/** 绘图区下内缩（为底部刻度留白）。 */
+private val CurveAxisInsetBottom = 16.dp
+
+/** 三条参考留存率网格线的粗细。 */
+private val CurveGridStroke = 1.dp
+
+/** 曲线本体笔画宽度。 */
+private val CurveLineStroke = 2.dp
+
+/** 内置三档节奏在曲线上的参考点半径。 */
+private val CurvePresetDotRadius = 3.dp
+
+/** 可拖动圆点外圈半径。 */
+private val CurveHandleOuterRadius = 9.dp
+
+/** 可拖动圆点内圈（纸色填充）半径。 */
+private val CurveHandleInnerRadius = 4.dp
+
+/** 网格线透明度。 */
+private const val CurveGridAlpha = .10f
+
+/** 参考点透明度。 */
+private const val CurveMarkerAlpha = .45f
+
+/** 复习提醒横幅的纸底不透明度（略透，暗示它不是页面常驻内容）。 */
+private const val BannerAlpha = .97f
+
+/** 复习提醒横幅抬起的高度。 */
+private val BannerShadow = 3.dp
+
+/** 复习提醒横幅的左右内边距（间距梯无 18 档，硬套 16 会改变像素）。 */
+private val BannerHorizontalPadding = 18.dp
+
+
 //
 // 这些值**不进间距梯**，理由与 `ShelfAppearanceSheet` 同一口径：它们不是「间距」，
 // 而是这一屏自己的形状参数（胶囊内边距、曲线画布高度、坐标轴内缩）。
@@ -957,6 +1115,7 @@ internal fun ReviewPromptBanner(
     onStart: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     LaunchedEffect(dwellMillis) {
         if (dwellMillis > 0) {
             delay(dwellMillis)
@@ -965,21 +1124,23 @@ internal fun ReviewPromptBanner(
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = PaperDeep.copy(alpha = .97f),
-        shadowElevation = 3.dp
+        // 半透明纸底 + 抬起阴影：这是一条**浮在正文之上**的非模态提示，
+        // 需要与身后滚动的内容拉开一层，所以保留阴影而不是纸感的描边分层。
+        color = t.colors.paperDeep.copy(alpha = BannerAlpha),
+        shadowElevation = BannerShadow
     ) {
         Row(
-            Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = BannerHorizontalPadding, vertical = t.spacing.s),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                pluralStringResource(R.plurals.review_banner_due, count, count),
+                text = pluralStringResource(R.plurals.review_banner_due, count, count),
                 modifier = Modifier.weight(1f),
-                color = Ink,
-                style = MaterialTheme.typography.bodyMedium
+                style = t.typography.body,
+                color = t.colors.ink
             )
-            TextButton(onClick = onStart) { Text(stringResource(R.string.review_banner_start), color = Accent) }
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.review_banner_dismiss)) }
+            LinguaTextButton(text = stringResource(R.string.review_banner_start), onClick = onStart)
+            LinguaTextButton(text = stringResource(R.string.review_banner_dismiss), onClick = onDismiss)
         }
     }
 }
