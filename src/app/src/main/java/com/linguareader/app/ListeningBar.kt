@@ -10,15 +10,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -38,14 +38,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
 import com.linguareader.app.data.ReaderTheme
-import com.linguareader.shared.tts.DegradedReason
+import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.tts.TtsPlaybackState
+import com.linguareader.shared.tts.DegradedReason
 import java.util.Locale
 
 /**
@@ -59,6 +61,19 @@ import java.util.Locale
  * **配色完全跟随阅读主题**（背景/前景/强调色都取自 [ReaderTheme]，与底部翻页栏
  * 同一口径）：此前这里用外壳调色板（只有米白/夜间两套），选「护眼」「护眼绿」
  * 等浅色主题时底栏跟主题、听书条却是米白，两者不一致。
+ *
+ * ## P3 迁移的边界（**这一屏有意不动配色来源**）
+ *
+ * 迁移只改：布局间距（走 token 间距梯）、字号字重（走 token 排版梯）、提示行的
+ * 组件复用。**底色/字色/强调色仍然从 [ReaderTheme] 取，不换成
+ * [LocalDesignTokens]** —— 两者是两套语义：皮肤描述的是「外壳」（书架/弹层）长什么样，
+ * 阅读主题描述的是「正文 + 贴正文的这条栏」长什么样。护眼绿主题配纸色皮肤时，
+ * 听书条必须跟正文一样是绿的，否则一条米白横杠会横在绿色正文上（这就是当年的
+ * 真实事故）。`ListeningRenderTest` 用像素断言把这条钉住了。
+ *
+ * 同理，**播放控制回调的语义一个字没动**：这些不是普通按钮，背后是
+ * `TtsPlaybackController` 的播放状态机（上一句/下一句要 stop 再播、章节握手、
+ * 代际号隔离都在引擎里），这里只负责画与转发。
  */
 @Composable
 internal fun ListeningBar(
@@ -83,6 +98,7 @@ internal fun ListeningBar(
     /** 退出滑动模式（仅滑动模式下给出；它是滑动模式的唯一出口，不能藏进菜单）。 */
     onExitScrollMode: (() -> Unit)? = null
 ) {
+    val t = LocalDesignTokens.current
     var overflowMenuOpen by remember { mutableStateOf(false) }
     // semantics{} 不是 composable 作用域，无障碍标签先在这里取出来。
     val previousLabel = stringResource(R.string.player_previous)
@@ -114,76 +130,57 @@ internal fun ListeningBar(
         modifier
             .fillMaxWidth()
             .background(background)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .padding(horizontal = BarHorizontalPadding, vertical = BarVerticalPadding)
     ) {
         LinearProgressIndicator(
             progress = { progress.coerceIn(0f, 1f) },
-            modifier = Modifier.fillMaxWidth().height(2.dp),
+            modifier = Modifier.fillMaxWidth().height(ProgressBarHeight),
             color = accent,
-            trackColor = accent.copy(alpha = .12f)
+            trackColor = accent.copy(alpha = ProgressTrackAlpha)
         )
 
         // ── 降级提示（6-6）：云合成失败回退系统语音 / 连错暂停，都要说清原因 ──
         // 整行占宽，避免挤进控制行（与下方「跑出视口」提示同一处理方式）。
         degradedHint?.let { hint ->
-            Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Filled.Info,
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    hint,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = accent,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
-                )
-            }
+            BarHintRow(
+                icon = Icons.Filled.Info,
+                text = hint,
+                tint = accent,
+                maxLines = 2
+            )
         }
 
         // ── 信息行：当前句，或「朗读已跑出视口」的提示 ──────────────────
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 朗读处未知（还没开始念）时不给「回到朗读处」：按下也没地方去。
-            if (speakingOffscreen && state.highlightBlockIndex >= 0) {
-                // 主动提示：朗读跑出视口了。不弹窗、不硬翻页（用户接管期间
-                // 页面归他）。提示整行占宽，控制行不再受它膨胀影响——此前它在
-                // 控制行里会从 48dp 图标撑成 ~110dp 的文字按钮，是挤爆的元凶。
-                Icon(
-                    Icons.Filled.MyLocation,
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    offscreenHint,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = accent,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp)
-                )
-                TextButton(onClick = onBackToSpeaking) {
-                    Text(backToSpeakingLabel, color = accent)
+        // 朗读处未知（还没开始念）时不给「回到朗读处」：按下也没地方去。
+        if (speakingOffscreen && state.highlightBlockIndex >= 0) {
+            // 主动提示：朗读跑出视口了。不弹窗、不硬翻页（用户接管期间
+            // 页面归他）。提示整行占宽，控制行不再受它膨胀影响——此前它在
+            // 控制行里会从 48dp 图标撑成 ~110dp 的文字按钮，是挤爆的元凶。
+            BarHintRow(
+                icon = Icons.Filled.MyLocation,
+                text = offscreenHint,
+                tint = accent,
+                maxLines = 1,
+                trailing = {
+                    TextButton(onClick = onBackToSpeaking) {
+                        Text(backToSpeakingLabel, color = accent)
+                    }
                 }
-            } else {
+            )
+        } else {
+            Row(
+                Modifier.fillMaxWidth().padding(top = t.spacing.xs),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    when {
+                    text = when {
                         choosingStart -> stringResource(R.string.player_choose_start_hint)
                         state.currentSentence.isNotBlank() -> state.currentSentence
                         state.isPlaying -> stringResource(R.string.player_preparing)
                         else -> stringResource(R.string.player_paused)
                     },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = foreground.copy(alpha = .65f),
+                    style = t.typography.caption,
+                    color = foreground.copy(alpha = SentenceAlpha),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -193,7 +190,7 @@ internal fun ListeningBar(
 
         // ── 控制行：传输键 + 停止 + 溢出菜单 ──────────────────────────
         Row(
-            Modifier.fillMaxWidth().padding(top = 2.dp),
+            Modifier.fillMaxWidth().padding(top = ControlRowTopGap),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
@@ -205,7 +202,7 @@ internal fun ListeningBar(
             IconButton(
                 onClick = onToggle,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(PlayButtonSize)
                     .semantics {
                         contentDescription = if (state.isPlaying) pauseLabel else playLabel
                     }
@@ -214,7 +211,7 @@ internal fun ListeningBar(
                     if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     contentDescription = null,
                     tint = accent,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(PlayIconSize)
                 )
             }
             IconButton(
@@ -225,6 +222,11 @@ internal fun ListeningBar(
             }
             Spacer(Modifier.weight(1f))
             if (onExitScrollMode != null) {
+                // 刻意仍是 Material TextButton 而不是 LinguaTextButton：这个按钮的文字色
+                // 必须等于**阅读主题**的前景色（真机上它压在绿色/米色正文底上），而原语
+                // 只有 accent 一种主色，套上去在护眼绿主题下会变成棕褐字压绿底。
+                // 与 PacksSheet 的 DangerTextButton 同一类取舍：语义由阅读主题决定，
+                // 组件原语表达不了，故保留 Material 组件但配色全取主题色、不写裸色值。
                 TextButton(onClick = onExitScrollMode) {
                     Text(paginationLabel, color = foreground)
                 }
@@ -236,7 +238,7 @@ internal fun ListeningBar(
                 Icon(
                     Icons.Filled.Close,
                     contentDescription = null,
-                    tint = foreground.copy(alpha = .6f)
+                    tint = foreground.copy(alpha = IconAlpha)
                 )
             }
             Box {
@@ -247,7 +249,7 @@ internal fun ListeningBar(
                     Icon(
                         Icons.Filled.MoreVert,
                         contentDescription = null,
-                        tint = foreground.copy(alpha = .6f)
+                        tint = foreground.copy(alpha = IconAlpha)
                     )
                 }
                 DropdownMenu(
@@ -257,12 +259,14 @@ internal fun ListeningBar(
                     // 朗读处未知（还没开始念）时不显示：按下也没地方去。
                     // 菜单是独立窗口层，MaterialTheme 取的是外壳调色板（只有日/夜两套）。
                     // 这里按阅读主题重设配色，菜单内的文字/滑块才跟着主题走。
+                    // ⚠️ 这段重设的是 **MaterialTheme 的颜色槽**（不是设计 token）：
+                    // Slider 与 DropdownMenuItem 是 Material 组件、读的是 colorScheme。
                     MaterialTheme(
                         colorScheme = MaterialTheme.colorScheme.copy(
                             surface = background,
                             onSurface = foreground,
                             surfaceVariant = background,
-                            onSurfaceVariant = foreground.copy(alpha = .7f),
+                            onSurfaceVariant = foreground.copy(alpha = MenuHintAlpha),
                             primary = accent,
                             onPrimary = background,
                             outline = accent
@@ -270,22 +274,18 @@ internal fun ListeningBar(
                     ) {
                     if (state.highlightBlockIndex >= 0 && !speakingOffscreen) {
                         DropdownMenuItem(
-                            text = { Text(backToSpeakingLabel) },
+                            text = { Text(backToSpeakingLabel, style = t.typography.body) },
                             onClick = {
                                 overflowMenuOpen = false
                                 onBackToSpeaking()
                             },
                             leadingIcon = {
-                                Icon(
-                                    Icons.Filled.MyLocation,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                MenuItemIcon(Icons.Filled.MyLocation)
                             }
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text(startLabel) },
+                        text = { Text(startLabel, style = t.typography.body) },
                         onClick = {
                             overflowMenuOpen = false
                             onChooseStart()
@@ -295,16 +295,16 @@ internal fun ListeningBar(
                                 Icons.Filled.Flag,
                                 contentDescription = null,
                                 tint = if (choosingStart) accent else Color.Unspecified,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(MenuItemIconSize)
                             )
                         }
                     )
                     HorizontalDivider()
                     var rate by remember(state.speechRate) { mutableFloatStateOf(state.speechRate) }
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Column(Modifier.padding(horizontal = t.spacing.m, vertical = t.spacing.s)) {
                         Text(
                             stringResource(R.string.player_speed_value, rateLabel(rate)),
-                            style = MaterialTheme.typography.labelLarge
+                            style = t.typography.body
                         )
                         Slider(
                             value = rate,
@@ -317,8 +317,8 @@ internal fun ListeningBar(
                         )
                         Text(
                             stringResource(R.string.player_speed_hint),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = foreground.copy(alpha = .55f)
+                            style = t.typography.label,
+                            color = foreground.copy(alpha = MenuHintAlpha)
                         )
                     }
                     }
@@ -326,6 +326,54 @@ internal fun ListeningBar(
             }
         }
     }
+}
+
+/**
+ * 听书条上的「图标 + 说明」提示行（降级原因 / 朗读离屏）。
+ *
+ * 两处原本各抄一遍（图标尺寸、图标与文字的间隙、顶端留白都一样），迁移时收成一处：
+ * 它们的**唯一差别**是有没有尾部动作，[trailing] 那个槽就够，不必再抄第二份。
+ * 抽出来的另一个好处是这两处历史事故（挤爆控制行）的布局只在一个地方成立。
+ */
+@Composable
+private fun BarHintRow(
+    icon: ImageVector,
+    text: String,
+    tint: Color,
+    maxLines: Int,
+    trailing: @Composable (() -> Unit)? = null
+) {
+    val t = LocalDesignTokens.current
+    Row(
+        Modifier.fillMaxWidth().padding(top = t.spacing.xs),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(HintIconSize)
+        )
+        Text(
+            text = text,
+            style = t.typography.label,
+            color = tint,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(horizontal = HintIconGap)
+        )
+        if (trailing != null) trailing()
+    }
+}
+
+/** 溢出菜单里的行内图标（与菜单文字同一档大小）。 */
+@Composable
+private fun MenuItemIcon(icon: ImageVector) {
+    Icon(
+        icon,
+        contentDescription = null,
+        modifier = Modifier.size(MenuItemIconSize)
+    )
 }
 
 /** 阅读主题里的 hex 色值（`#RRGGBB`）→ Compose [Color]。 */
@@ -350,3 +398,60 @@ internal fun degradedHintRes(reason: DegradedReason?): Int? = when (reason) {
     DegradedReason.FALLBACK_TO_SYSTEM -> R.string.player_degraded_fallback
     DegradedReason.PAUSED_AFTER_ERRORS -> R.string.player_degraded_paused
 }
+
+// ── 组件专有几何常量 ──────────────────────────────────────────────
+//
+// 这几组值**不进间距梯**，理由与 ReviewUi / ShelfAppearanceSheet 同一口径：它们不是
+// 「间距」，而是这一条栏自己的形状参数。间距梯只有 4/8/16/24/32/48：
+//
+//  * 12/6（条的内边距）是「贴屏幕底缘的细条」的专属比例；硬套 16/8 会让这条栏变厚
+//    约 4dp，而它压缩的是正文高度，属于用户可感知的变化；
+//  * 2（进度条厚度）比 spacing.xs(4) 细一半，加厚会让顶部多出一条明显横杠；
+//  * 16（提示图标）、6（图标与文字间隙）、2（控制行顶部间隙）、44/32（播放键与其图标）、
+//    18（菜单图标）都是**图形尺寸**，token 里只有 iconSize=24 与 controlHeight=48 两档。
+//
+// P3 的验收前提是「迁移前后视觉等价」，所以这些值逐字照抄原实现、只做「起名」这一件事。
+
+/** 听书条左右内边距。 */
+private val BarHorizontalPadding = 12.dp
+
+/** 听书条上下内边距（条要薄，别抢正文的高度）。 */
+private val BarVerticalPadding = 6.dp
+
+/** 顶部朗读进度线的粗细（2dp：可见但不喧哗）。 */
+private val ProgressBarHeight = 2.dp
+
+/** 提示行图标尺寸（16dp：比正文图标小一档，避免比当前句更抢眼）。 */
+private val HintIconSize = 16.dp
+
+/** 提示行图标与文字的间隙。 */
+private val HintIconGap = 6.dp
+
+/** 控制行在信息行下方的顶部间隙（2dp：两行要贴在一起才像一条控制条）。 */
+private val ControlRowTopGap = 2.dp
+
+/** 播放/暂停键的触达尺寸（44dp：比 IconButton 默认 48 略小，给三段传输键视觉节奏）。 */
+private val PlayButtonSize = 44.dp
+
+/** 播放/暂停图标尺寸（32dp：控制行里最大的符号，是主操作）。 */
+private val PlayIconSize = 32.dp
+
+/** 溢出菜单行内图标尺寸。 */
+private val MenuItemIconSize = 18.dp
+
+// ── 主题色透明度 ──────────────────────────────────────────────────
+//
+// 这些不是「颜色」而是**同一个主题色的深浅档**：底色/前景色由阅读主题决定，深浅只能
+// 靠 alpha 从它派生（另配一份颜色会在换主题时对不上）。所以留在文件里而不进 token。
+
+/** 当前朗读句相对前景色的透明度（次要信息，但不至于读不清）。 */
+private const val SentenceAlpha = .65f
+
+/** 停止/更多这两个「次要动作」图标的透明度。 */
+private const val IconAlpha = .6f
+
+/** 进度条轨道 = 强调色的极浅一档。 */
+private const val ProgressTrackAlpha = .12f
+
+/** 菜单里说明文字的透明度。 */
+private const val MenuHintAlpha = .55f
