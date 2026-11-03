@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,6 +58,8 @@ import com.linguareader.app.components.EmptyState
 import com.linguareader.app.components.LinguaScaffold
 import com.linguareader.app.components.LinguaTopBarAction
 import com.linguareader.app.components.PrimaryButton
+import com.linguareader.app.components.StatusChip
+import com.linguareader.app.components.StatusChipTone
 import com.linguareader.app.skin.LocalDesignTokens
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -71,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -411,13 +415,13 @@ internal fun BookshelfScreen(
                     EmptyBookshelf(onImport = { launcher.launch(IMPORT_MIME_TYPES) })
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(148.dp),
+                        columns = GridCells.Adaptive(ShelfColumnMinWidth),
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 16.dp)
+                            .padding(horizontal = t.spacing.m)
                             .testTag(UiTags.SHELF_GRID),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(20.dp)
+                        horizontalArrangement = Arrangement.spacedBy(ShelfColumnGap),
+                        verticalArrangement = Arrangement.spacedBy(ShelfRowGap)
                     ) {
                         items(state.books, key = { it.id }) { book ->
                             BookCard(
@@ -1086,20 +1090,26 @@ private fun BookCard(
     onTranslation: () -> Unit,
     onLongPressDelete: () -> Unit
 ) {
+    // 书卡是本屏最密的区域：书封 + 标题 + 作者/进度 + 至多三条状态徽章 + 两行操作按钮。
+    // 样式一律取 token；BookCard 自身不接受颜色参数（与 LinguaCard 的约束同口径）。
+    val t = LocalDesignTokens.current
     Column(
         modifier = Modifier
             .testTag(UiTags.bookCard(book.id))
             .clickable(onClick = onOpen)
     ) {
         Box {
+            // 书封用 Card 而不是 LinguaCard：LinguaCard 内部固定带 CardTitleRow 式内边距、
+            // 且把内容包在 Column 里；书封需要「图/Crop 铺满整块、无内边距」的纯容器。
+            // 样式仍然是 token 驱动 —— 圆角、底色、层级全部来自 LocalDesignTokens。
             Card(
-                modifier = Modifier.fillMaxWidth().height(205.dp),
-                shape = CardShape,
+                modifier = Modifier.fillMaxWidth().height(BookCoverHeight),
+                shape = t.cardShape,
                 // 自定义背景时书卡略透，与背景融合；有封面的书本来就完全被图盖住。
                 colors = CardDefaults.cardColors(
-                    containerColor = BookCoverFallback.copy(alpha = containerAlpha)
+                    containerColor = t.colors.bookCoverFallback.copy(alpha = containerAlpha)
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = t.elevation.card)
             ) {
                 val coverFile = book.coverRelativePath?.let { File(book.extractedDir, it) }
                 val bitmap by produceState<android.graphics.Bitmap?>(null, coverFile?.absolutePath) {
@@ -1114,51 +1124,61 @@ private fun BookCard(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
+                    // 无封面：书脊渐变 + 书名/作者。渐变两端都取 token
+                    // （accentSoft → bookCoverFallback），换肤时跟着走。
                     Box(
                         Modifier.fillMaxSize()
-                            .background(Brush.verticalGradient(listOf(AccentSoft, BookCoverFallback)))
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(t.colors.accentSoft, t.colors.bookCoverFallback)
+                                )
+                            )
                     ) {
                         Column(
-                            Modifier.fillMaxSize().padding(18.dp),
+                            Modifier.fillMaxSize().padding(BookCoverPadding),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
                                 book.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontFamily = FontFamily.Serif,
-                                fontWeight = FontWeight.SemiBold,
+                                // 排版梯的 title 本身就是衬线（SkinTypography.titleFamily =
+                                // SERIF），与原来显式指定的 FontFamily.Serif 同义。
+                                style = t.typography.title,
+                                color = t.colors.ink,
                                 maxLines = 4,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(Modifier.height(10.dp))
-                            Text(book.author, style = MaterialTheme.typography.labelMedium, color = InkSoft)
+                            Spacer(Modifier.height(t.spacing.s))
+                            Text(book.author, style = t.typography.label, color = t.colors.inkSoft)
                         }
                     }
                 }
             }
             if (book.progress > 0f) {
+                // 进度环浮在书封右上角：外面一圈纸色底盘把它与封面图隔开，
+                // 否则深色封面上那条 accent 细环几乎看不见。
                 Box(
                     Modifier.align(Alignment.TopEnd)
-                        .padding(10.dp)
-                        .size(38.dp)
-                        .background(Paper.copy(alpha = .94f), CircleShape)
-                        .padding(4.dp)
+                        .padding(BookProgressInset)
+                        .size(BookProgressSize)
+                        .background(t.colors.paper.copy(alpha = BookProgressScrimAlpha), CircleShape)
+                        .padding(BookProgressPadding)
                 ) {
                     CircularProgressIndicator(
                         progress = { book.progress },
                         modifier = Modifier.fillMaxSize(),
-                        color = Accent,
-                        trackColor = Accent.copy(alpha = .14f),
-                        strokeWidth = 3.dp
+                        color = t.colors.accent,
+                        trackColor = t.colors.accent.copy(alpha = BookProgressTrackAlpha),
+                        strokeWidth = BookProgressStroke
                     )
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(t.spacing.xs))
         Text(
             book.title,
-            fontWeight = FontWeight.Medium,
+            style = t.typography.body.copy(fontWeight = FontWeight.Medium),
+            color = t.colors.ink,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -1168,8 +1188,8 @@ private fun BookCard(
             } else {
                 book.author
             },
-            style = MaterialTheme.typography.bodySmall,
-            color = InkSoft,
+            style = t.typography.caption,
+            color = t.colors.inkSoft,
             maxLines = 1
         )
         if (aiEnabled) {
@@ -1186,18 +1206,24 @@ private fun BookCard(
                 else -> stringResource(R.string.shelf_ai_failed)
             }
             if (statusLabel.isNotBlank()) {
-                Text(
-                    statusLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (aiStatus?.ready == true) Success else InkFaint,
-                    maxLines = 1
+                // 状态徽章：成功态用 SUCCESS 语义色、其余（待生成/生成中/失败）
+                // 用中性 —— 与原来「ready → Success，其它 → InkFaint」的分档一致。
+                //
+                // 刻意换成 StatusChip 而不是继续用一行小字：书卡上三种状态
+                // （AI 语境 / 译本 / 档案过期）会横向叠加，纯文字三行颜色相近、
+                // 挤在一起分不清谁是谁；徽章有底色，能一眼分开。
+                StatusChip(
+                    text = statusLabel,
+                    tone = if (aiStatus?.ready == true) StatusChipTone.SUCCESS else StatusChipTone.NEUTRAL
                 )
             }
         }
         if (attachingTranslation || book.hasTranslation || aiTranslationProgress != null) {
             val aiProgress = aiTranslationProgress
-            Text(
-                when {
+            // 「进行中」与「已就绪」在原来就分了色（InkFaint vs Success），
+            // 换徽章后仍按同一分档：进行中 = 中性、已就绪 = 成功。
+            StatusChip(
+                text = when {
                     attachingTranslation -> stringResource(R.string.shelf_translation_aligning)
                     aiProgress?.preparing == true ->
                         stringResource(R.string.shelf_translation_ai_preparing)
@@ -1209,102 +1235,113 @@ private fun BookCard(
                         stringResource(R.string.shelf_translation_ai_progress, aiProgress.percent)
                     else -> book.translationTitle.ifBlank { stringResource(R.string.shelf_translation_ready) }
                 },
-                style = MaterialTheme.typography.bodySmall,
-                color = when {
-                    attachingTranslation || aiProgress != null -> InkFaint
-                    else -> Success
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                tone = if (attachingTranslation || aiProgress != null) {
+                    StatusChipTone.NEUTRAL
+                } else {
+                    StatusChipTone.SUCCESS
+                }
             )
             // 版本闸门（阶段 2）：档案由更旧版对齐器写出。这里只是可见提示，
             // 动作入口在译本菜单里（书卡不放第二个按钮）。
+            // 与上面那条徽章**并存**（截图里 Pride and Prejudice 同时有
+            // 「AI building」+「Pairing outdated」+ 译本名），所以是第二个 chip 而不是替身。
             if (translationOutdated && !attachingTranslation && aiProgress == null) {
-                Text(
-                    stringResource(R.string.shelf_translation_outdated),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Accent,
-                    maxLines = 1
+                // 用 ACCENT 而不是 WARNING：迁移前这条提示就是 accent 色，
+                // P3 的验收前提是「迁移前后视觉等价」；「该不该改成警示色」是设计决策，
+                // 不该混在结构迁移里悄悄发生。要改另开一条。
+                StatusChip(
+                    text = stringResource(R.string.shelf_translation_outdated),
+                    tone = StatusChipTone.ACCENT
                 )
             }
         }
+        // 书卡操作区：两行、每行两个「图标 + 文字」按钮。
+        //
+        // 刻意**不**用 LinguaTextButton：那个按 token 的 controlHeight(48dp) 给最小高度，
+        // 两行就会把书卡撑高一倍，而网格里每张卡的纵向空间是固定的（书封 205dp 之外
+        // 只剩一屏能放几张的余量）。BookActionHeight(30dp) 是本屏专有几何常量，
+        // 与 ReviewUi 保留图标/胶囊尺寸同一口径。颜色仍然全部来自 token。
         Row {
-            TextButton(onClick = onGlossary, modifier = Modifier.height(30.dp)) {
-                Icon(
-                    Icons.AutoMirrored.Filled.MenuBook,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = Accent
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    stringResource(R.string.shelf_glossary),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Accent
-                )
-            }
-            TextButton(onClick = onManageRoster, modifier = Modifier.height(30.dp)) {
-                Icon(
-                    Icons.Default.Groups,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = Accent
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    stringResource(R.string.shelf_roster),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Accent
-                )
-            }
+            ShelfCardAction(
+                icon = Icons.AutoMirrored.Filled.MenuBook,
+                text = stringResource(R.string.shelf_glossary),
+                tint = t.colors.accent,
+                onClick = onGlossary
+            )
+            ShelfCardAction(
+                icon = Icons.Default.Groups,
+                text = stringResource(R.string.shelf_roster),
+                tint = t.colors.accent,
+                onClick = onManageRoster
+            )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onLongPressDelete, modifier = Modifier.height(30.dp)) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = InkFaint
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    stringResource(R.string.shelf_remove),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkFaint
-                )
-            }
-            TextButton(
-                onClick = onTranslation,
+            ShelfCardAction(
+                icon = Icons.Default.Delete,
+                text = stringResource(R.string.shelf_remove),
+                tint = t.colors.inkFaint,
+                onClick = onLongPressDelete
+            )
+            // 译本按钮的三态色（进行中/已有/未加）本来就是语义分档，
+            // 原样搬进参数，不改判定。
+            ShelfCardAction(
+                icon = Icons.Filled.Translate,
+                text = when {
+                    aiTranslationProgress != null ->
+                        stringResource(R.string.shelf_translation_ai_cancel)
+                    book.hasTranslation -> stringResource(R.string.shelf_translation_ready)
+                    else -> stringResource(R.string.shelf_translation_add)
+                },
+                tint = when {
+                    aiTranslationProgress != null -> t.colors.inkFaint
+                    book.hasTranslation -> t.colors.success
+                    else -> t.colors.accent
+                },
                 enabled = !attachingTranslation,
-                modifier = Modifier.height(30.dp)
-            ) {
-                Icon(
-                    Icons.Filled.Translate,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = when {
-                        aiTranslationProgress != null -> InkFaint
-                        book.hasTranslation -> Success
-                        else -> Accent
-                    }
-                )
-                Spacer(Modifier.width(3.dp))
-                Text(
-                    when {
-                        aiTranslationProgress != null ->
-                            stringResource(R.string.shelf_translation_ai_cancel)
-                        book.hasTranslation -> stringResource(R.string.shelf_translation_ready)
-                        else -> stringResource(R.string.shelf_translation_add)
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        aiTranslationProgress != null -> InkFaint
-                        book.hasTranslation -> Success
-                        else -> Accent
-                    }
-                )
-            }
+                onClick = onTranslation
+            )
         }
+    }
+}
+
+/**
+ * 书卡上的紧凑「图标 + 文字」按钮（术语表 / 角色 / 移除 / 译本）。
+ *
+ * 为什么不用 [com.linguareader.app.components.LinguaTextButton]：那个按 token 的
+ * `controlHeight`(48dp) 给最小高度，而书卡里这排按钮排两行、每行至多 4 个字，
+ * 用 48dp 会把书卡撑高一倍，网格一屏就少放半排书。这是**本屏的形状参数**，
+ * 与 ReviewUi 保留图标尺寸、ShelfAppearanceSheet 保留色块直径同一口径。
+ *
+ * 颜色仍然全部由调用方从 [LocalDesignTokens] 取，本组件不自造色值。
+ */
+@Composable
+private fun ShelfCardAction(
+    icon: ImageVector,
+    text: String,
+    tint: Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true
+) {
+    val t = LocalDesignTokens.current
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.height(BookActionHeight),
+        contentPadding = PaddingValues(horizontal = t.spacing.xs)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(BookActionIconSize),
+            tint = if (enabled) tint else t.colors.inkFaint
+        )
+        Spacer(Modifier.width(BookActionIconGap))
+        Text(
+            text = text,
+            style = t.typography.label,
+            color = if (enabled) tint else t.colors.inkFaint,
+            maxLines = 1
+        )
     }
 }
 
@@ -1353,14 +1390,50 @@ private fun EmptyBookshelfDarkPreview() {
     PreviewScaffold(dark = true) { EmptyBookshelf(onImport = {}) }
 }
 
-// ── 组件专有常量 ──────────────────────────────────────────────────
+// ── 组件专有几何常量 ──────────────────────────────────────────────
 //
-// 与 ShelfAppearanceSheet / ReviewUi 同一口径：**不进间距梯**的值集中命名在这里。
+// 与 ShelfAppearanceSheet / ReviewUi 同一口径：这些值**不进间距梯**。
 // 间距梯的语义是「同一语义在不同屏上表现一致」（区块间距 / 卡内边距 / 行内间隙）；
-// 透明度这种「这一屏自己的观感参数」塞进梯子只会让梯子变成杂物间。
+// 「一张书封多高」「网格列最小多宽」是这一屏自己的形状参数，塞进梯子只会让梯子
+// 变成杂物间。梯子里也确实没有对应档位（4/8/16/24/32/48）：148、14、205 硬套
+// 都会改变像素，而 P3 的验收前提是「迁移前后视觉等价」。集中命名，可读性不比裸 dp 差。
+
+/** 书架网格的单列最小宽度：决定 411dp 窄屏上是 2 列还是 3 列，属版式决策不是间距。 */
+private val ShelfColumnMinWidth = 148.dp
+
+/** 书卡之间的横向间隙（比纵向小：书封并排时留白过大会显得散）。 */
+private val ShelfColumnGap = 14.dp
+
+/** 书卡行之间的纵向间隙（要容得下卡下方那两行操作按钮的视觉呼吸）。 */
+private val ShelfRowGap = 20.dp
+
+/** 书封区域的固定高度（网格列宽会变，书封高度不变，保证一排书卡顶部齐平）。 */
+private val BookCoverHeight = 205.dp
+
+/** 书封内文字（无封面时的书名/作者）的内边距。 */
+private val BookCoverPadding = 18.dp
+
+/** 书封右上角进度环的直径、离边距、纸色底盘的内缩。 */
+private val BookProgressSize = 38.dp
+private val BookProgressInset = 10.dp
+private val BookProgressPadding = 4.dp
+
+/** 进度环笔画宽度。 */
+private val BookProgressStroke = 3.dp
+
+/** 书卡操作按钮的行高与行内图标（见 [ShelfCardAction] 的注释：不能用 token 的 48）。 */
+private val BookActionHeight = 30.dp
+private val BookActionIconSize = 14.dp
+private val BookActionIconGap = 3.dp
 
 /** 书架「正在整理图书」遮罩的不透明度：能看清下面有书、又读得清提示字。 */
 private const val LoadingScrimAlpha = 0.72f
+
+/** 进度环纸色底盘的透明度：压得住封面图，又不至于把下面的画完全盖住。 */
+private const val BookProgressScrimAlpha = 0.94f
+
+/** 进度环未走完那段轨道的透明度（比环本身淡，避免双环打架）。 */
+private const val BookProgressTrackAlpha = 0.14f
 
 private fun decodeSampledCover(file: File, targetWidth: Int): android.graphics.Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

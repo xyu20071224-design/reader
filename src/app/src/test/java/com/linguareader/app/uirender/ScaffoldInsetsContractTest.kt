@@ -20,6 +20,10 @@ import java.io.File
  *
  * 这条测试在有人「为了简化」删掉那两行 insets 时会红，并指向本注释里的原因。
  * 真机验收仍然必须做——它证明的是「代码里有这个意图」，不是「真机上看对了」。
+ *
+ * ⚠️ 断言用的是 `contains`（纯文本匹配，不做语法分析），所以**注释里也别写带括号的
+ * `systemBarsPadding()`**：写进 KDoc 一样会被判为「用了它」。第一次落地时
+ * `LinguaScaffold` 的注释里就写了这个词、测试当场误红——要提这个词请不带括号地写。
  */
 class ScaffoldInsetsContractTest {
 
