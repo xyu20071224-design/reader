@@ -54,8 +54,6 @@ import com.linguareader.app.packs.PackUiState
 import com.linguareader.app.packs.RemotePacksState
 import com.linguareader.shared.update.GitHubReleaseParser
 import com.linguareader.app.packs.toUiItem
-import com.linguareader.app.data.UnsupportedBookFormatException
-import com.linguareader.app.sync.AndroidSyncController
 import com.linguareader.app.tts.MultiVoiceSupport
 import com.linguareader.app.tts.TtsAudioCache
 import com.linguareader.app.update.AppUpdateRepository
@@ -63,22 +61,19 @@ import com.linguareader.app.update.UpdateCheckOutcome
 import com.linguareader.shared.update.AppUpdatePhase
 import com.linguareader.shared.update.AppUpdateUiState
 import com.linguareader.shared.packs.PackType
-import com.linguareader.shared.sync.AutoSyncScheduler
+import com.linguareader.app.sync.AppSyncCoordinator
+import com.linguareader.app.sync.SyncHost
 import com.linguareader.shared.sync.CloudBook
-import com.linguareader.shared.sync.CloudBookList
-import com.linguareader.shared.sync.SyncErrorKind
-import com.linguareader.shared.sync.SyncException
 import com.linguareader.shared.sync.SyncDetail
-import com.linguareader.shared.sync.SyncDetailBuilder
 import com.linguareader.shared.sync.SyncSettings
 import com.linguareader.shared.packs.PackValidationResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -229,15 +224,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** Multi-voice M2: per-chapter speaker tag cache (invalidated with the profile). */
     private val speakerTagRepository =
         SpeakerTagRepository(application, aiSettingsStore, glossaryRepository)
-    /** 云同步：装配 :shared 的 SyncCoordinator（令牌走 Android Keystore）。 */
-    private val sync = AndroidSyncController(application)
-    /** 自动同步（task-4）：纯逻辑防抖状态机 + 驱动它的 ticker；无排队时 ticker 立即退出，不空转。 */
-    private val autoSyncScheduler = AutoSyncScheduler()
-    private var autoSyncTicker: Job? = null
-    /** 令牌失效（AUTH）在状态区只提示一次；登录成功/手动同步成功后复位。 */
-    private var autoAuthWarned = false
     private val mutableState = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = mutableState.asStateFlow()
+    /**
+     * 云同步协调器：同步动作 / 自动同步调度 / 同步明细 / 正文 blob 四块逻辑的归属地。
+     * 构造在 mutableState 之后——它要通过 [SyncHost] 读写同一份状态。
+     */
+    private val syncCoordinator = AppSyncCoordinator(
+        context = application,
+        library = library,
+        host = object : SyncHost {
+            override fun snapshot(): AppUiState = mutableState.value
+
+            override fun updateState(transform: (AppUiState) -> AppUiState) {
+                mutableState.value = transform(mutableState.value)
+            }
+
+            override val scope: CoroutineScope get() = this@AppViewModel.viewModelScope
+
+            /** 同步会改写书库/生词本落盘内容；refresh() 同时重播种 AI 状态、排复习提醒。 */
+            override fun refreshLibrary() {
+                this@AppViewModel.refresh()
+            }
+        }
+    )
     /** AI 整本翻译的在跑任务，按书 id 取消用。 */
     private val aiTranslationJobs = mutableMapOf<String, Job>()
     /** 已取走、等 SAF 写入回调的手动任务文件（takeManualExport 与 writeManualExport 之间）。 */
@@ -311,7 +321,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             launchPrompt = prompt,
             aiSettings = aiSettingsStore.load(),
             update = AppUpdateUiState(autoCheckEnabled = updateRepository.loadSettings().autoCheckEnabled),
-            syncSettings = sync.settings()
+            syncSettings = syncCoordinator.settings()
         )
         if (updateRepository.loadSettings().autoCheckEnabled) {
             // 出厂默认关；用户开了开关才在启动时静默查一次，失败不打扰。
@@ -873,311 +883,58 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // --- 云同步（自托管服务端，F-160）-----------------------------------------
+    //
+    // 实现已抽到 [AppSyncCoordinator]（同步动作 / 自动同步 / 明细 / 正文 blob 四块）。
+    // 这里**只保留同名转发**：签名、参数、返回类型、副作用与拆分前逐字一致，
+    // 调用点（MainActivity / BookshelfScreen）零改动。
 
     /** 设置页改动后落盘；令牌不放这里（走 Android Keystore）。 */
-    fun saveSyncSettings(settings: SyncSettings) {
-        sync.saveSettings(settings)
-        mutableState.value = mutableState.value.copy(syncSettings = settings)
-    }
+    fun saveSyncSettings(settings: SyncSettings) = syncCoordinator.saveSyncSettings(settings)
 
     /**
      * 登录用界面传来的**当前输入**设置（不是已保存的旧值）：改了地址没点保存也能登录。
      * 落库由 AndroidSyncController.login 在成功后完成（失败不写设置）。
      */
-    fun syncLogin(settings: SyncSettings, password: String) {
-        if (settings.serverUrl.isBlank() || settings.username.isBlank()) {
-            mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_need_credentials))
-            return
-        }
-        mutableState.value = mutableState.value.copy(syncBusy = true, syncStatus = string(R.string.sync_logging_in))
-        viewModelScope.launch {
-            val outcome = runCatching { sync.login(settings, password) }
-            mutableState.value = mutableState.value.copy(
-                syncBusy = false,
-                syncSettings = outcome.getOrElse { settings },
-                syncStatus = outcome.fold(
-                    onSuccess = { string(R.string.sync_logged_in, it.username) },
-                    onFailure = { syncFailureText(it) }
-                )
-            )
-            if (outcome.isSuccess) refreshSyncDetail()
-        }
-    }
+    fun syncLogin(settings: SyncSettings, password: String) =
+        syncCoordinator.syncLogin(settings, password)
 
-    fun syncNow() {
-        val settings = mutableState.value.syncSettings
-        if (settings.serverUrl.isBlank()) {
-            mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_need_credentials))
-            return
-        }
-        // 与自动同步互斥：手动优先（自动链看到 busy 会跳过），并把已排队的防抖一并取消。
-        if (mutableState.value.syncBusy) return
-        autoSyncScheduler.cancel()
-        mutableState.value = mutableState.value.copy(syncBusy = true, syncStatus = string(R.string.sync_syncing))
-        viewModelScope.launch {
-            val outcome = runCatching { sync.sync(settings) }
-            mutableState.value = mutableState.value.copy(
-                syncBusy = false,
-                syncStatus = outcome.fold(
-                    onSuccess = { report ->
-                        if (report.unresolved.isEmpty()) {
-                            string(R.string.sync_done, report.uploaded, report.downloaded, report.pending)
-                        } else {
-                            string(
-                                R.string.sync_done_unresolved,
-                                report.uploaded, report.downloaded, report.pending, report.unresolved.size
-                            )
-                        }
-                    },
-                    onFailure = { syncFailureText(it) }
-                )
-            )
-            // 同步会改动书库/生词本落盘内容，刷新界面数据。
-            refresh()
-            if (outcome.isSuccess) {
-                // 手动同步成功即令牌有效：复位 AUTH 提示标记，并顺手刷新云端书单
-                // （规格：同步成功或弹窗内主动刷新）。
-                autoAuthWarned = false
-                refreshSyncDetail()
-                refreshCloudBooks()
-            }
-        }
-    }
-
-    // --- 自动同步（task-4）：冷启动一次 + 本地变更后防抖 ---------------------------
+    fun syncNow() = syncCoordinator.syncNow()
 
     /**
      * 本地数据变更（阅读进度/生词增删改/删书）**写盘成功后**调用，排一次 30 秒防抖同步。
-     * 调度决策全在 :shared 的 [AutoSyncScheduler]；这里只是哑驱动：
-     * - 未启用/未登录 → 清空排队并取消 ticker（同步默认关闭的大前提：这条链永不出网）；
-     * - 已有 ticker 在跑 → 只重置到期时刻，不重复起协程；
-     * - ticker 只在有排队时存活，到点/取消/禁用即退出，不常驻空转。
+     * 调度决策全在 :shared 的 AutoSyncScheduler；这里转发给 [AppSyncCoordinator]。
      */
-    private fun scheduleAutoSync() {
-        val enabled = mutableState.value.syncSettings.enabled && sync.hasSession()
-        if (!autoSyncScheduler.onLocalChange(enabled, System.currentTimeMillis())) {
-            autoSyncTicker?.cancel()
-            autoSyncTicker = null
-            return
-        }
-        if (autoSyncTicker?.isActive == true) return
-        autoSyncTicker = viewModelScope.launch {
-            try {
-                while (true) {
-                    val now = System.currentTimeMillis()
-                    val stillEnabled = mutableState.value.syncSettings.enabled && sync.hasSession()
-                    if (autoSyncScheduler.consumeIfDue(stillEnabled, now)) {
-                        runAutoSync()
-                        break
-                    }
-                    val remaining = autoSyncScheduler.remainingMs(now) ?: break
-                    delay(remaining)
-                }
-            } finally {
-                autoSyncTicker = null
-            }
-        }
-    }
+    private fun scheduleAutoSync() = syncCoordinator.scheduleAutoSync()
 
     /**
-     * 自动同步：冷启动一次 + 防抖到点各走这里。
-     *
-     * 与手动同步互斥（busy 守卫）；失败**安静**：
-     * - NETWORK（离线/超时）：静默跳过，不写状态不打扰；
-     * - AUTH（令牌失效）：状态区提示一次（[autoAuthWarned]），不反复；
-     * - 其余：同样静默 —— 完整反馈只保留给手动「立即同步」。
-     *
-     * 已知边界（勿当 bug 修）：听书进度由 TtsPlaybackService 直接落盘、不经 AppViewModel，
-     * 因此不触发本防抖链；它会在下次冷启动或手动同步时一并上行。
+     * 自动同步：冷启动一次 + 防抖到点各走这里（失败安静、与手动同步互斥）。
+     * 实现见 [AppSyncCoordinator.runAutoSync]。
      */
-    private fun runAutoSync() {
-        val settings = mutableState.value.syncSettings
-        if (!settings.enabled || !sync.hasSession()) return
-        if (mutableState.value.syncBusy) return
-        mutableState.value = mutableState.value.copy(syncBusy = true)
-        viewModelScope.launch {
-            val outcome = runCatching { sync.sync(settings) }
-            val authFailed = (outcome.exceptionOrNull() as? SyncException)?.kind == SyncErrorKind.AUTH
-            if (outcome.isSuccess) autoAuthWarned = false
-            mutableState.value = mutableState.value.copy(
-                syncBusy = false,
-                syncStatus = if (authFailed && !autoAuthWarned) {
-                    autoAuthWarned = true
-                    string(R.string.sync_error_auth)
-                } else {
-                    mutableState.value.syncStatus
-                }
-            )
-            if (outcome.isSuccess) {
-                refresh()
-                refreshSyncDetail()
-            }
-        }
-    }
+    private fun runAutoSync() = syncCoordinator.runAutoSync()
 
-    fun syncLogout() {
-        sync.logout(mutableState.value.syncSettings)
-        // 登出后云端正文列表即失效（不同账号/未登录不应沿用旧快照），明细回落到「未知」。
-        mutableState.value = mutableState.value.copy(
-            syncStatus = string(R.string.sync_logged_out),
-            cloudBlobSizes = null
-        )
-        refreshSyncDetail()
-    }
-
-    /**
-     * 同步失败文案：错误类别由 :shared 的 [SyncException.kind] 给出，这里只做文案映射。
-     * 未知类别（非同步异常）才回落到「失败：<原因>」。
-     */
-    private fun syncFailureText(error: Throwable): String = when ((error as? SyncException)?.kind) {
-        SyncErrorKind.AUTH -> string(R.string.sync_error_auth)
-        SyncErrorKind.NETWORK -> string(R.string.sync_error_network)
-        SyncErrorKind.SERVER -> when ((error as? SyncException)?.status) {
-            // 上传 blob 超服务端配额是 413，给专门文案而不是笼统「服务端错误」。
-            413 -> string(R.string.sync_error_quota)
-            else -> string(R.string.sync_error_server, error.message ?: error.javaClass.simpleName)
-        }
-        null -> string(R.string.sync_failed, error.message ?: error.javaClass.simpleName)
-    }
-
-    // --- 云同步 · 同步明细（数据层）--------------------------------------------
+    fun syncLogout() = syncCoordinator.syncLogout()
 
     /**
      * 重建同步明细：**纯本地、零网络**——只读书库/生词本快照与本地水位文件
      * （`filesDir/sync/{synced,outbox}.json`），未登录时也能算出进度/生词的三态。
-     *
-     * 调用时机：init 结尾、登录成功后、手动/自动同步成功后、登出后，
-     * 以及云端书单刷新成功/未登录早退之后；界面打开明细页时也可主动调一次。
      */
-    fun refreshSyncDetail() {
-        mutableState.value = mutableState.value.copy(syncDetailLoading = true)
-        viewModelScope.launch {
-            val built = withContext(Dispatchers.IO) {
-                val snapshot = mutableState.value
-                SyncDetailBuilder.build(
-                    books = snapshot.books,
-                    words = snapshot.savedWords,
-                    syncedMarks = sync.syncedMarks(),
-                    pendingKeys = sync.pendingKeys(),
-                    remoteBlobSizes = snapshot.cloudBlobSizes,
-                    remoteOnlyBooks = snapshot.cloudBooks
-                ) to sync.lastSyncAt()
-            }
-            mutableState.value = mutableState.value.copy(
-                syncDetail = built.first,
-                syncDetailLoading = false,
-                lastSyncAt = built.second
-            )
-        }
-    }
+    fun refreshSyncDetail() = syncCoordinator.refreshSyncDetail()
 
-    // --- 云同步 · 书籍正文（blob，task-3）--------------------------------------
+    /**
+     * 拉取云端书单：远端有完整正文、本机书库没有的书。
+     * 顺带把云端正文清单（全部完整 blob 的 bookId → size）写进 [AppUiState.cloudBlobSizes]。
+     */
+    fun refreshCloudBooks() = syncCoordinator.refreshCloudBooks()
+
+    /** 下载云端书籍正文 → 临时文件 → 重跑导入器 → 刷新书库/书单。 */
+    fun downloadCloudBook(cloud: CloudBook) = syncCoordinator.downloadCloudBook(cloud)
 
     /**
      * 导入成功后自动上传源文件。未启用/未登录/老书没有留存源文件都静默跳过；
      * 只有真正的网络/服务端失败才发 Snackbar（规格：失败必须可见）。
      */
-    private fun uploadBookSourceInBackground(book: Book) {
-        val settings = mutableState.value.syncSettings
-        if (!settings.enabled || !sync.hasSession()) return
-        viewModelScope.launch {
-            runCatching { sync.uploadSource(settings, book) }
-                .onFailure { error ->
-                    mutableState.value = mutableState.value.copy(
-                        notice = string(R.string.sync_upload_failed, book.title, syncFailureText(error)),
-                        noticeTone = StatusTone.DANGER
-                    )
-                }
-        }
-    }
-
-    /**
-     * 拉取云端书单：远端有完整正文、本机书库没有的书。
-     * 书名轻量增强（远端进度记录里的 title）失败时静默回退 bookId 前 8 位。
-     * 顺带把云端正文清单（全部完整 blob 的 bookId → size）写进
-     * [AppUiState.cloudBlobSizes]，供同步明细判定「正文」状态。
-     */
-    fun refreshCloudBooks() {
-        val settings = mutableState.value.syncSettings
-        if (!settings.enabled || !sync.hasSession()) {
-            mutableState.value = mutableState.value.copy(
-                cloudBooks = emptyList(),
-                cloudBooksLoaded = true,
-                cloudBooksLoading = false,
-                // 未登录时旧快照已失效：明细的「正文」状态应回落到「未知」而不是沿用上一账号的结果。
-                cloudBlobSizes = null,
-                syncStatus = string(R.string.sync_need_login_for_cloud)
-            )
-            refreshSyncDetail()
-            return
-        }
-        mutableState.value = mutableState.value.copy(cloudBooksLoading = true)
-        viewModelScope.launch {
-            val outcome = runCatching {
-                val blobs = sync.listRemoteBlobs(settings)
-                val titles = runCatching { sync.remoteBookTitles(settings) }.getOrDefault(emptyMap())
-                val missing = CloudBookList.missing(blobs, mutableState.value.books.map { it.id }.toSet(), titles)
-                // 只收 size > 0 的完整 blob（服务端 listBlobs 本就只返回完整 blob，这里再兜一层）。
-                missing to blobs.filter { it.size > 0L }.associate { it.bookId to it.size }
-            }
-            val fetched = outcome.getOrNull()
-            mutableState.value = mutableState.value.copy(
-                cloudBooksLoading = false,
-                cloudBooksLoaded = true,
-                // 失败时保留上一份快照（书单与正文状态都不因一次网络失败倒退）。
-                cloudBooks = fetched?.first ?: mutableState.value.cloudBooks,
-                cloudBlobSizes = fetched?.second ?: mutableState.value.cloudBlobSizes,
-                syncStatus = outcome.exceptionOrNull()?.let { syncFailureText(it) } ?: mutableState.value.syncStatus
-            )
-            if (outcome.isSuccess) refreshSyncDetail()
-        }
-    }
-
-    /** 下载云端书籍正文 → 临时文件 → 重跑导入器 → 刷新书库/书单。 */
-    fun downloadCloudBook(cloud: CloudBook) {
-        val settings = mutableState.value.syncSettings
-        if (!settings.enabled || !sync.hasSession()) {
-            mutableState.value = mutableState.value.copy(syncStatus = string(R.string.sync_need_login_for_cloud))
-            return
-        }
-        mutableState.value = mutableState.value.copy(
-            syncBusy = true,
-            syncStatus = string(R.string.sync_cloud_downloading, cloud.displayName)
-        )
-        viewModelScope.launch {
-            val target = library.downloadScratchFile()
-            val outcome = runCatching {
-                sync.downloadBlob(settings, cloud.bookId, target)
-                library.importDownloadedFile(target, cloud.displayName)
-            }
-            target.delete()
-            outcome.fold(
-                onSuccess = { book ->
-                    refresh()
-                    mutableState.value = mutableState.value.copy(
-                        syncBusy = false,
-                        syncStatus = null,
-                        cloudBooks = mutableState.value.cloudBooks.filterNot { it.bookId == cloud.bookId },
-                        notice = string(R.string.sync_cloud_downloaded, book.title),
-                        noticeTone = StatusTone.SUCCESS
-                    )
-                },
-                onFailure = { error ->
-                    val text = if (error is UnsupportedBookFormatException) {
-                        string(R.string.sync_cloud_unknown_format)
-                    } else {
-                        syncFailureText(error)
-                    }
-                    mutableState.value = mutableState.value.copy(
-                        syncBusy = false,
-                        syncStatus = null,
-                        notice = string(R.string.sync_download_failed, text),
-                        noticeTone = StatusTone.DANGER
-                    )
-                }
-            )
-        }
-    }
+    private fun uploadBookSourceInBackground(book: Book) =
+        syncCoordinator.uploadBookSourceInBackground(book)
 
     // --- 自动更新（GitHub Release）-------------------------------------------
 
