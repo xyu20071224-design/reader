@@ -93,11 +93,14 @@ class TranslationCoordinator(
     private fun string(id: Int, vararg args: Any): String = appContext.getString(id, *args)
 
     /**
-     * 取消某本书在跑的任何翻译任务。
+     * 取消某本书在跑的任何翻译任务（在线整本翻译 / 手动导出 / 手动导入 / 齐批生成）。
      *
-     * **删书必须调它**：不取消的话任务会继续往刚清掉的检查点目录里写（原实现里
-     * 这一步是 `AppViewModel.deleteBook` 直接 `aiTranslationJobs.remove(id)?.cancel()`，
-     * 抽出来后 job 表只有这里知道，所以对外开了这个入口）。
+     * **删书必须调它**，调用点在 `AppViewModel.deleteBook` 开头：不取消的话任务会继续
+     * 往刚清掉的检查点目录里写（把检查点与句界侧车重新造出来，等于「删了又回来」），
+     * 而且跑完还会发一条指向不存在书籍的「译本已生成」提示。
+     *
+     * 原实现里这一步是 `AppViewModel.deleteBook` 直接 `aiTranslationJobs.remove(id)?.cancel()`；
+     * job 表搬到这里之后它是唯一知情者，所以对外开了这个入口。
      */
     fun cancelForBookDeletion(bookId: String) {
         aiTranslationJobs.remove(bookId)?.cancel()

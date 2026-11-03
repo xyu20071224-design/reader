@@ -758,8 +758,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteBook(book: Book) {
         viewModelScope.launch {
-            // 在途的整本翻译任务先停，否则它会往刚清掉的检查点目录里继续写。
-            // job 表已随实现搬进 TranslationCoordinator，这里只发取消请求。
+            // ⚠ 删书**必须**先取消该书的 AI 翻译 job，否则后台会继续跑一个已经删掉的书：
+            // 它会往刚清掉的检查点目录里接着写（把检查点、句界侧车重新造出来，
+            // 让这次删除变成「删了又回来」），并且跑完后还会写一条「译本已生成」的
+            // Snackbar 指向一本不存在的书。
+            //
+            // job 表（aiTranslationJobs）已随实现搬进 [TranslationCoordinator]，
+            // 本类只剩这一个取消入口——**不要**因为这里看着像多余的清理就删掉它。
+            // 新增任何「按书挂后台任务」的机制时，也要在这里补上对应的取消。
             translationCoordinator.cancelForBookDeletion(book.id)
             // 单处清理失败（文件被占用、目录权限异常）不该中断其余清理 ——
             // 半清理的残留比一次报错更难查。失败的项留给孤儿对账兜底（方案 D1.7）。
