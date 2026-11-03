@@ -389,6 +389,33 @@ class SettingsSheetRenderTest {
         assertTrue("空资源包页也要画出引导文案与安装按钮", countNonPaper(bmp) > 300)
     }
 
+    @Test
+    fun packsSheetBottomSectionsRender() {
+        // 891dp 画布放不下四个分区（真机上靠滚动），所以底部两个分区单独出一张：
+        // 只给音色包 + 集合包，确保它们不是「看不见所以没坏」。
+        // 注：曾试过把画布加高到 1400dp，但渲染台的 decorView 高度受屏幕尺寸限制，
+        // 内容会提前被裁、纸色也会中途断开 —— 那是夹具失真，不是实现问题，故改为分状态出图。
+        val bmp = renderSheetContent("sheet-packs-bottom") {
+            PacksContent(
+                state = PackUiState(
+                    items = listOf(
+                        packItem("voice-mimo", PackType.VOICE, "MiMo 音色", "MiMo voices"),
+                        packItem("bundle-starter", PackType.BUNDLE, "入门合集", "Starter bundle", bundleMembers = 3)
+                    ),
+                    totalBytes = 116_000_000L
+                ),
+                onInstallClick = {},
+                onSetActiveDictionary = {},
+                onVerify = {},
+                onUninstallRequest = {},
+                onCleanResiduals = {},
+                onLoadRemotePacks = {},
+                onInstallRemotePack = {}
+            )
+        }
+        assertTrue("音色包与集合包分区必须画出内容", countNonPaper(bmp) > 400)
+    }
+
     private companion object {
         /** `GitHubReleaseParser.PackAsset` 的构造在 :shared 里，夹具只取名字与大小。 */
         fun GitHubAsset(name: String, bytes: Long) = com.linguareader.shared.update.GitHubReleaseParser.PackAsset(
