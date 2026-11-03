@@ -1,5 +1,6 @@
 package com.linguareader.app.nav
 
+import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -140,6 +142,10 @@ fun rememberOverlayHost(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FallbackOverlay(overlay: Overlay, onDismiss: () -> Unit) {
+    // 与 MissingScreen 同理：真机上要能从 logcat 看出是哪种弹层没接进来。
+    LaunchedEffect(overlay) {
+        Log.w(TAG, "未注册的弹层：" + overlay.kind.name + " → " + overlay)
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
         Column(
             Modifier

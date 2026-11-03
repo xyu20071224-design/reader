@@ -52,6 +52,11 @@ import org.robolectric.annotation.GraphicsMode
  * **它不是真机的替代品**——手势、返回键的真实分发、转场动画都测不到，那些仍需真机。
  *
  * 出图位置：app/build/ui-render-probe/nav-*.png
+ *
+ * **这些图是管线验证夹具，不是书架的真实外观。** P2 只验证「导航模型 + 弹层栈能渲染、
+ * 且只渲染栈顶」，屏幕本身要等 P3 逐屏迁移。所以 [FakeBookshelf] 只是一块标题 +
+ * 一个强调色方块——它的作用是「证明这一屏真的画了、颜色真的落到像素上」，
+ * 任何拿这几张图当设计稿或视觉基线的用法都是误解。
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -76,7 +81,10 @@ class NavRenderProbeTest {
         }
     }
 
-    /** 一块假书架屏：只负责铺一块强调色，好断言「这一屏真的渲染了」。 */
+    /**
+     * 管线夹具（**不是真实书架**）：只画标题 + 一块强调色，用来断言「这一屏真的渲染了」。
+     * 真实书架外观在 P3 迁移后才由 BookshelfScreen 提供。
+     */
     @Composable
     private fun FakeBookshelf(route: Route) {
         Column(Modifier.fillMaxSize().padding(24.dp)) {

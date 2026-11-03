@@ -67,7 +67,26 @@ object AppUiStateMapping {
         "cloudBooksLoading"
     )
 
-    /** 只能留在 :app 的（载荷类型带 Android 依赖，见 AppOnlyState 的说明）。 */
+    /**
+     * **暂时**留在 :app 的字段（载荷类型带 Android 依赖，见 [AppOnlyState]）。
+     *
+     * 这不是永久归属，是搬家清单。每个字段的解锁条件：
+     * - `launchPrompt`：`LaunchPromptUi`/`Greeting`/`UpdateNote` 里的 `@StringRes Int`
+     *   改成 `com.linguareader.shared.res.SharedString` 之后，可以并入 [SHELL]
+     *   （它就是个覆盖在壳上的提示）。
+     * - `packs`：`PackUiState`/`PackUiItem`/`PackResidual`/`RemotePacksState` 从
+     *   `:app/packs` 下沉到 `:shared/packs` 之后（它们带 `java.io.File` 与 `:app` 专属枚举，
+     *   资源包契约的下沉属于资源包线），并入 [SETTINGS]。
+     * - `aiTranslationProgress` / `aiTranslationPrepare` / `manualTranslationPrepare` /
+     *   `pendingManualExport`：这些是 AI 整本翻译的流程状态，正确归属是
+     *   **新的 `TranslationState` 切片**（P3 迁书架/AI 弹层时再切），不是 `SettingsState`。
+     *   在那之前先留在 `AppOnlyState`，避免硬塞进不合适的切片。
+     *
+     * **何时可以删掉 `AppOnlyState`**：上面三条全部完成——即
+     * `grep -r "AppOnlyState" src/app` 只剩 `AppSlices.kt` 一处、且
+     * `APP_ONLY` 集合为空。届时 `AppUiStateSplitTest` 的账本自动全绿，
+     * `AppOnlyState.kt` 与 `APP_ONLY` 一起删除。
+     */
     val APP_ONLY = setOf(
         "launchPrompt",
         "aiTranslationProgress",

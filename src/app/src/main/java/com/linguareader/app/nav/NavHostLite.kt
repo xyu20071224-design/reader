@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import android.util.Log
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -29,6 +31,9 @@ enum class RouteKey {
     SYNC_DETAIL,
     READER
 }
+
+/** logcat tag：导航层的诊断都打在这一路，方便 `adb logcat -s LinguaNav`。 */
+const val TAG = "LinguaNav"
 
 /** 路由对应的屏幕键。`when` 必须穷举：加 Route 时这里会红，是设计的一部分。 */
 val Route.key: RouteKey
@@ -114,9 +119,17 @@ fun NavHostLite(
     }
 }
 
-/** 未注册屏幕的诊断占位（不是崩溃）：P2 阶段迁移中的正常态。 */
+/**
+ * 未注册屏幕的诊断占位（不是崩溃）：P2 阶段迁移中的正常态。
+ *
+ * 除了画占位，还会把缺失的路由写进 logcat（tag=[TAG]）——真机上如果没有这行日志，
+ * 「点了一下没反应」会变成无从下手的问题：界面只看到一块占位，不知道是哪个路由没注册。
+ */
 @Composable
 fun MissingScreen(route: Route, modifier: Modifier = Modifier) {
+    LaunchedEffect(route) {
+        Log.w(TAG, "未注册的屏幕：" + route.javaClass.simpleName + " (" + route.key.name + ") → " + route)
+    }
     Surface(modifier = modifier.fillMaxSize(), color = Paper) {
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
