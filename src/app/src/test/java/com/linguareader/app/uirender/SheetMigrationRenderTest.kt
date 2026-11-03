@@ -17,6 +17,7 @@ import com.linguareader.app.AppShapes
 import com.linguareader.app.LightLinguaPalette
 import com.linguareader.app.LocalLinguaPalette
 import com.linguareader.app.Paper
+import com.linguareader.app.ShelfAppearanceContent
 import com.linguareader.app.UpdateSheetContent
 import com.linguareader.app.colorSchemeFor
 import com.linguareader.shared.update.AppUpdatePhase
@@ -61,7 +62,12 @@ class SheetMigrationRenderTest {
                 MaterialTheme(colorScheme = colorSchemeFor(LightLinguaPalette), shapes = AppShapes) {
                     // 纸色铺满整块画布：弹层在真机上是整屏 sheet，纸色不会在内容底部断开。
                     Box(Modifier.fillMaxSize().background(Paper)) {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), content = content)
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 20.dp)
+                        ) {
+                            // 标题由 LinguaSheet 的 title 槽渲染，夹具里补同一份，图才和真机一致。
+                            content()
+                        }
                     }
                 }
             }
@@ -88,6 +94,79 @@ class SheetMigrationRenderTest {
             }
         }
         return n
+    }
+
+    // ── ShelfAppearanceSheet ──────────────────────────────────────
+
+    private fun appearance(presetId: String?, image: String? = null) =
+        com.linguareader.app.ShelfAppearance(
+            presetId = presetId,
+            imageFile = image,
+            dimOpacity = 0.35f
+        )
+
+    @Test
+    fun shelfAppearanceSheetContentRenders() {
+        val bmp = renderSheetContent("sheet-appearance") {
+            ShelfAppearanceContent(
+                appearance = appearance(presetId = null),
+                onAppearanceChange = {},
+                animSpeed = com.linguareader.app.UiAnimSpeed.NORMAL,
+                onAnimSpeedChange = {},
+                selectedTheme = com.linguareader.shared.data.ReaderTheme.PAPER,
+                onSelectTheme = {},
+                darkChrome = false,
+                imageStatus = null,
+                onImageStatusShown = {},
+                onPickImage = {},
+                onReset = {}
+            )
+        }
+        val nonPaper = countNonPaper(bmp, bmp.height / 2)
+        assertTrue("外观弹层必须画出预设色块与主题选择器（$nonPaper 个非纸色采样点）", nonPaper > 200)
+    }
+
+    @Test
+    fun shelfAppearanceShowsTheDisabledPresetHintOnDarkChrome() {
+        // 深色外壳下预设不可用、并且必须**说明原因**（审查 5-1）——这条文案是产品承诺，
+        // 迁移时最容易在换组件的过程中被顺手丢掉。
+        val dark = renderSheetContent("sheet-appearance-dark-chrome") {
+            ShelfAppearanceContent(
+                appearance = appearance(presetId = "green"),
+                onAppearanceChange = {},
+                animSpeed = com.linguareader.app.UiAnimSpeed.SLOW,
+                onAnimSpeedChange = {},
+                selectedTheme = com.linguareader.shared.data.ReaderTheme.DARK,
+                onSelectTheme = {},
+                darkChrome = true,
+                imageStatus = null,
+                onImageStatusShown = {},
+                onPickImage = {},
+                onReset = {}
+            )
+        }
+        val light = renderSheetContent("sheet-appearance-light-chrome") {
+            ShelfAppearanceContent(
+                appearance = appearance(presetId = "green"),
+                onAppearanceChange = {},
+                animSpeed = com.linguareader.app.UiAnimSpeed.SLOW,
+                onAnimSpeedChange = {},
+                selectedTheme = com.linguareader.shared.data.ReaderTheme.PAPER,
+                onSelectTheme = {},
+                darkChrome = false,
+                imageStatus = null,
+                onImageStatusShown = {},
+                onPickImage = {},
+                onReset = {}
+            )
+        }
+        // 深色外壳多一行说明文案 → 内容更高。用像素差异间接守住「说明没被丢掉」。
+        val darkNonPaper = countNonPaper(dark, dark.height / 2)
+        val lightNonPaper = countNonPaper(light, light.height / 2)
+        assertTrue(
+            "深色外壳必须比浅色多画出禁用说明（dark=$darkNonPaper / light=$lightNonPaper）",
+            darkNonPaper > lightNonPaper
+        )
     }
 
     @Test
