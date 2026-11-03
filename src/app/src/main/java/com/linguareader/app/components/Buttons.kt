@@ -112,16 +112,32 @@ fun SecondaryButton(
  * 文字按钮：低优先级动作（「了解更多」「查看全部」）。
  *
  * 刻意不加底色与描边 —— 现有代码里最常被滥用的就是这个：把「删除」做成 TextButton，
- * 用户看不出它是危险操作。危险动作用 [StatusChipTone.DANGER] 语义的按钮或二次确认。
+ * 用户看不出它是危险操作。危险动作用 [tone] = [TextButtonTone.DANGER] 或二次确认。
+ *
+ * @param icon 前置图标；传入即为「图标 + 文字」形态（[LinguaIconTextButton] 是它的
+ *   显式别名，语义相同，两者取其一即可——**新增代码用 [LinguaIconTextButton]**）
+ * @param tone 动作的语义强度。默认 [TextButtonTone.DEFAULT]（accent）。
+ *   这是**动作语义**（这个操作是什么性质），不是样式选择，因此不算破坏
+ *   「样式只来自 token」的约定。
  */
 @Composable
 fun LinguaTextButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    icon: ImageVector? = null,
+    tone: TextButtonTone = TextButtonTone.DEFAULT
 ) {
     val t = LocalDesignTokens.current
+    val contentColor = when {
+        !enabled -> t.colors.inkFaint
+        else -> when (tone) {
+            TextButtonTone.DEFAULT -> t.colors.accent
+            TextButtonTone.DANGER -> t.colors.danger
+            TextButtonTone.SUCCESS -> t.colors.success
+        }
+    }
     androidx.compose.material3.TextButton(
         onClick = onClick,
         enabled = enabled,
@@ -131,12 +147,64 @@ fun LinguaTextButton(
             vertical = t.spacing.xs
         )
     ) {
-        Text(
-            text = text,
-            style = t.typography.body,
-            color = if (enabled) t.colors.accent else t.colors.inkFaint
-        )
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(t.iconSize)
+            )
+            androidx.compose.foundation.layout.Spacer(Modifier.size(t.spacing.xs))
+        }
+        Text(text = text, style = t.typography.body, color = contentColor)
     }
+}
+
+/**
+ * 文字按钮的动作语义强度。
+ *
+ * 为什么需要它：设计系统原本只有一种文字按钮颜色（accent），于是「删除」「确认完成」
+ * 这类动作只能靠调用方自己包一层颜色 —— 复习屏、生词本、听书屏各自封装了一遍。
+ * 这个枚举把那件事收进组件层，同时**仍然是枚举而非 Color 参数**：
+ * 调用方表达的是「这是什么性质的动作」，具体颜色由 token 决定。
+ */
+enum class TextButtonTone {
+    /** 常规动作（accent）。 */
+    DEFAULT,
+
+    /** 危险/不可撤销（danger）。删除、清空、卸载。 */
+    DANGER,
+
+    /** 完成/通过（success）。「知道了」这类正向确认。 */
+    SUCCESS
+}
+
+/**
+ * 图标 + 文字按钮。
+ *
+ * **存在理由**：图标与文字的间距、图标尺寸、按下态三处，复习屏 / 生词本 / 听书屏
+ * 各自封装了一遍（三份实现，尺寸 18/20/24 各不相同）。这个组件把那些收敛到一处。
+ *
+ * 与 [LinguaTextButton] 带 [LinguaTextButton.icon] 的形态等价 —— 保留两个名字是因为
+ * 调用点读起来更清楚：有图标的写 [LinguaIconTextButton]，纯文字写 [LinguaTextButton]。
+ */
+@Composable
+fun LinguaIconTextButton(
+    text: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tone: TextButtonTone = TextButtonTone.DEFAULT
+) {
+    LinguaTextButton(
+        text = text,
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        icon = icon,
+        tone = tone
+    )
 }
 
 /** 并排按钮行：主按钮右、次按钮左（与系统对话框的按钮顺序一致）。 */
