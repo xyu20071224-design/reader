@@ -6,17 +6,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,9 +19,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.linguareader.app.components.LinguaSheet
+import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.components.PrimaryButton
+import com.linguareader.app.components.SecondaryButton
+import com.linguareader.app.components.SectionHeader
+import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.shared.data.formatStorageBytes
 import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.ServerAddress
@@ -50,8 +49,11 @@ import com.linguareader.shared.sync.SyncSettings
  * 只负责收集输入并把动作转发给 AppViewModel；网络、离线队列与冲突合并全在 :shared
  * 的 SyncCoordinator / SyncEngine。令牌不在这里持久化——由 AndroidSyncController 交给
  * Android Keystore 加密后存独立 prefs。
+ *
+ * P3 迁移：外壳换成 [LinguaSheet]（拖柄/圆角/边距统一由组件给，标题走 title 槽），
+ * 按钮换成 [PrimaryButton]/[SecondaryButton]/[LinguaTextButton]，样式一律取
+ * [LocalDesignTokens]。**校验规则、协议推导、默认值优先级与文案零改动。**
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SyncSheet(
     settings: SyncSettings,
@@ -102,9 +104,6 @@ internal fun SyncSheet(
         ServerAddressError.BAD_URL -> stringResource(R.string.sync_error_bad_url)
         null -> null
     }
-    // 高级区非空时 compose 只认完整 URL，行内报错要落在真正出错的那个框上。
-    val addressInvalid = error != null && fullUrl.isBlank()
-    val fullUrlInvalid = error != null && fullUrl.isNotBlank()
 
     // 保存与登录共用同一套输入校验：非法输入行内报错并拒绝动作。
     // 两个地址框都空且存在默认值 → 回落默认 URL（不得报「请填写服务器地址」）。
@@ -126,188 +125,290 @@ internal fun SyncSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
-        // 内容（输入框 + 高级区 + 两行按钮 + 状态）在手机屏高下超出一屏，不给滚动会把
-        // 下面那行按钮顶到屏幕外（Pixel 5 实机 dump 实测）。故整块可纵向滚动。
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+    LinguaSheet(
+        onDismiss = onDismiss,
+        title = stringResource(R.string.sync_title),
+        // 内容体自带显式 spacedBy（既有排布），关掉容器默认块间距，避免双倍叠加。
+        contentArrangement = Arrangement.Top
+    ) {
+        SyncSheetContent(
+            form = SyncSheetForm(
+                username = username,
+                password = password,
+                address = address,
+                fullUrl = fullUrl,
+                fingerprint = fingerprint,
+                advanced = advanced,
+                needsManualAddress = initial.needsManualAddress,
+                errorText = errorText
+            ),
+            busy = busy,
+            status = status,
+            cloudBooks = cloudBooks,
+            cloudBooksLoaded = cloudBooksLoaded,
+            cloudBooksLoading = cloudBooksLoading,
+            onUsernameChange = { username = it },
+            onPasswordChange = { password = it },
+            onToggleAdvanced = { advanced = !advanced },
+            onAddressChange = {
+                address = it
+                error = null
+            },
+            onFullUrlChange = {
+                fullUrl = it
+                error = null
+            },
+            onFingerprintChange = { fingerprint = it },
+            // 登录用「当前输入」推导的设置（不是已保存的旧值）：改了地址没点保存也能登录；
+            // 只有登录成功才由 AndroidSyncController 落库（失败不写设置）。
+            onSave = { submit { onSave(it) } },
+            onLogin = { submit { settings -> onLogin(settings, password) } },
+            onSyncNow = onSyncNow,
+            onLogout = onLogout,
+            onOpenDetail = onOpenDetail,
+            onRefreshCloudBooks = onRefreshCloudBooks,
+            onDownloadCloudBook = onDownloadCloudBook
+        )
+    }
+}
+
+/**
+ * 云同步表单草稿：用户输入 + 由输入派生出的行内校验标记。外壳持有，内容体只读。
+ *
+ * 抽成数据类而不是把十几个参数摊平：内容体的参数已经很多，再把「输入」与「回调」
+ * 混在一起，渲染台夹具会读不出哪几个是同一份表单的数据。
+ */
+internal data class SyncSheetForm(
+    val username: String = "",
+    val password: String = "",
+    val address: String = "",
+    val fullUrl: String = "",
+    val fingerprint: String = "",
+    val advanced: Boolean = false,
+    val needsManualAddress: Boolean = false,
+    val errorText: String? = null
+) {
+    /** 高级区非空时 compose 只认完整 URL，行内报错要落在真正出错的那个框上。 */
+    val addressInvalid: Boolean get() = errorText != null && fullUrl.isBlank()
+    val fullUrlInvalid: Boolean get() = errorText != null && fullUrl.isNotBlank()
+}
+
+/**
+ * 弹层的**内容体**，与弹层外壳解耦。
+ *
+ * 抽出来的理由：`ModalBottomSheet` 在渲染台（Robolectric）里画不进位图，于是迁移前/后的
+ * 视觉对比根本没法做。
+ *
+ * ⚠️ **抽取是有代价的：本组件不再自带宽度/背景约束**，单独使用时调用方必须补齐
+ * （渲染台用法见 `SettingsSheetRenderTest`）。
+ *
+ * 内容（输入框 + 高级区 + 两行按钮 + 状态 + 云端书单）在手机屏高下超出一屏，
+ * 因此整块可纵向滚动 —— 这是 Pixel 5 实机 dump 发现「按钮被顶到屏幕外」后加的，
+ * 迁移时原样保留。
+ */
+@Composable
+internal fun SyncSheetContent(
+    form: SyncSheetForm,
+    busy: Boolean,
+    status: String?,
+    cloudBooks: List<CloudBook>,
+    cloudBooksLoaded: Boolean,
+    cloudBooksLoading: Boolean,
+    onUsernameChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onToggleAdvanced: () -> Unit,
+    onAddressChange: (String) -> Unit,
+    onFullUrlChange: (String) -> Unit,
+    onFingerprintChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onLogin: () -> Unit,
+    onSyncNow: () -> Unit,
+    onLogout: () -> Unit,
+    onOpenDetail: () -> Unit,
+    onRefreshCloudBooks: () -> Unit,
+    onDownloadCloudBook: (CloudBook) -> Unit
+) {
+    val t = LocalDesignTokens.current
+    // 弹层里的输入框没有原语组件，配色统一走 token（与 VocabularyScreen 搜索框同一打法）。
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = t.colors.accent,
+        focusedLabelColor = t.colors.accent,
+        cursorColor = t.colors.accent,
+        unfocusedBorderColor = t.colors.outline,
+        unfocusedLabelColor = t.colors.inkFaint,
+        errorBorderColor = t.colors.danger,
+        errorLabelColor = t.colors.danger
+    )
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(SyncContentGap)
+    ) {
+        OutlinedTextField(
+            value = form.username,
+            onValueChange = onUsernameChange,
+            label = { Text(stringResource(R.string.sync_username_label)) },
+            singleLine = true,
+            shape = t.smallShape,
+            colors = fieldColors,
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = form.password,
+            onValueChange = onPasswordChange,
+            label = { Text(stringResource(R.string.sync_password_label)) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            shape = t.smallShape,
+            colors = fieldColors,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // 高级设置：服务器地址 + 完整 URL（HTTPS/反代）+ 证书指纹，默认收起并已预填。
+        LinguaTextButton(
+            text = stringResource(R.string.sync_advanced_toggle),
+            onClick = onToggleAdvanced
+        )
+        if (form.advanced) {
+            OutlinedTextField(
+                value = form.address,
+                onValueChange = onAddressChange,
+                label = { Text(stringResource(R.string.sync_server_label)) },
+                singleLine = true,
+                isError = form.addressInvalid,
+                shape = t.smallShape,
+                colors = fieldColors,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = form.fullUrl,
+                onValueChange = onFullUrlChange,
+                label = { Text(stringResource(R.string.sync_full_url_label)) },
+                singleLine = true,
+                isError = form.fullUrlInvalid,
+                shape = t.smallShape,
+                colors = fieldColors,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = form.fingerprint,
+                onValueChange = onFingerprintChange,
+                label = { Text(stringResource(R.string.sync_fingerprint_label)) },
+                shape = t.smallShape,
+                colors = fieldColors,
+                modifier = Modifier.fillMaxWidth()
+            )
+            // task-6：填了指纹就自动按 https 推导，不必再去上面手写完整 URL。
+            Text(
+                text = stringResource(R.string.sync_https_fingerprint_hint),
+                style = t.typography.caption,
+                color = t.colors.inkSoft
+            )
+            if (form.needsManualAddress) {
+                // 没有内置默认服务器：明确告诉用户要在这里填地址（保留手填能力）。
+                Text(
+                    text = stringResource(R.string.sync_manual_server_hint),
+                    style = t.typography.caption,
+                    color = t.colors.inkSoft
+                )
+            }
+        }
+
+        form.errorText?.let { message ->
+            Text(
+                text = message,
+                style = t.typography.caption,
+                color = t.colors.danger
+            )
+        }
+
+        // 四个按钮排一行会在手机宽度下溢出（实机 dump 时「登出」跑到屏幕外），
+        // 因此拆成两行。两行内各自 spacedBy(spacing.s)。
+        Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
+            PrimaryButton(text = stringResource(R.string.sync_save), onClick = onSave, enabled = !busy)
+            PrimaryButton(text = stringResource(R.string.sync_login), onClick = onLogin, enabled = !busy)
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(t.spacing.s),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                stringResource(R.string.sync_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = Ink
+            PrimaryButton(text = stringResource(R.string.sync_now), onClick = onSyncNow, enabled = !busy)
+            LinguaTextButton(
+                text = stringResource(R.string.sync_logout),
+                onClick = onLogout,
+                enabled = !busy
             )
+        }
 
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text(stringResource(R.string.sync_username_label)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+        // 二级界面入口：登录后一眼能看清「到底同步了什么」，不必只靠一行状态文案。
+        LinguaTextButton(
+            text = stringResource(R.string.sync_detail_entry),
+            onClick = onOpenDetail,
+            enabled = !busy
+        )
+
+        if (status != null) {
+            Spacer(Modifier.height(SyncTightGap))
+            Text(text = status, style = t.typography.caption, color = t.colors.inkSoft)
+        }
+
+        // 云端书单：书籍正文（blob）按内容寻址存在服务端，这里列「远端有、本机没有」的书，
+        // 点「下载」重跑导入器落到本地书库。没登录/没拉过显示引导文案。
+        SectionHeader(text = stringResource(R.string.sync_cloud_books_title))
+        Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
+            SecondaryButton(
+                text = stringResource(
+                    if (cloudBooksLoaded) R.string.sync_cloud_refresh else R.string.sync_cloud_load
+                ),
+                onClick = onRefreshCloudBooks,
+                enabled = !busy && !cloudBooksLoading
             )
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text(stringResource(R.string.sync_password_label)) },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
+        }
+        when {
+            cloudBooksLoading -> Text(
+                text = stringResource(R.string.sync_cloud_loading),
+                style = t.typography.caption,
+                color = t.colors.inkSoft
             )
-
-            // 高级设置：服务器地址 + 完整 URL（HTTPS/反代）+ 证书指纹，默认收起并已预填。
-            TextButton(onClick = { advanced = !advanced }) {
-                Text(stringResource(R.string.sync_advanced_toggle))
-            }
-            if (advanced) {
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = {
-                        address = it
-                        error = null
-                    },
-                    label = { Text(stringResource(R.string.sync_server_label)) },
-                    singleLine = true,
-                    isError = addressInvalid,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = fullUrl,
-                    onValueChange = {
-                        fullUrl = it
-                        error = null
-                    },
-                    label = { Text(stringResource(R.string.sync_full_url_label)) },
-                    singleLine = true,
-                    isError = fullUrlInvalid,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = fingerprint,
-                    onValueChange = { fingerprint = it },
-                    label = { Text(stringResource(R.string.sync_fingerprint_label)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                // task-6：填了指纹就自动按 https 推导，不必再去上面手写完整 URL。
-                Text(
-                    stringResource(R.string.sync_https_fingerprint_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkSoft
-                )
-                if (initial.needsManualAddress) {
-                    // 没有内置默认服务器：明确告诉用户要在这里填地址（保留手填能力）。
-                    Text(
-                        stringResource(R.string.sync_manual_server_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = InkSoft
-                    )
-                }
-            }
-
-            if (errorText != null) {
-                Text(
-                    errorText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-
-            // 四个按钮排一行会在手机宽度下溢出（实机 dump 时「登出」跑到屏幕外），
-            // 因此拆成两行。
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { submit { onSave(it) } }, enabled = !busy) {
-                    Text(stringResource(R.string.sync_save))
-                }
-                // 登录用「当前输入」推导的设置（不是已保存的旧值）：改了地址没点保存也能登录；
-                // 只有登录成功才由 AndroidSyncController 落库（失败不写设置）。
-                Button(
-                    onClick = { submit { settings -> onLogin(settings, password) } },
-                    enabled = !busy
-                ) {
-                    Text(stringResource(R.string.sync_login))
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onSyncNow, enabled = !busy) {
-                    Text(stringResource(R.string.sync_now))
-                }
-                TextButton(onClick = onLogout, enabled = !busy) {
-                    Text(stringResource(R.string.sync_logout))
-                }
-            }
-
-            // 二级界面入口：登录后一眼能看清「到底同步了什么」，不必只靠一行状态文案。
-            TextButton(onClick = onOpenDetail, enabled = !busy) {
-                Text(stringResource(R.string.sync_detail_entry))
-            }
-
-            if (status != null) {
-                Spacer(Modifier.height(2.dp))
-                Text(status, style = MaterialTheme.typography.bodySmall, color = InkSoft)
-            }
-
-            // 云端书单：书籍正文（blob）按内容寻址存在服务端，这里列「远端有、本机没有」的书，
-            // 点「下载」重跑导入器落到本地书库。没登录/没拉过显示引导文案。
-            Spacer(Modifier.height(2.dp))
-            Text(
-                stringResource(R.string.sync_cloud_books_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = Ink
+            !cloudBooksLoaded -> Text(
+                text = stringResource(R.string.sync_cloud_hint),
+                style = t.typography.caption,
+                color = t.colors.inkSoft
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onRefreshCloudBooks,
-                    enabled = !busy && !cloudBooksLoading
+            cloudBooks.isEmpty() -> Text(
+                text = stringResource(R.string.sync_cloud_empty),
+                style = t.typography.caption,
+                color = t.colors.inkSoft
+            )
+            else -> cloudBooks.forEach { cloud ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        stringResource(
-                            if (cloudBooksLoaded) R.string.sync_cloud_refresh else R.string.sync_cloud_load
-                        )
+                        text = cloud.displayName + " · " + formatStorageBytes(cloud.sizeBytes),
+                        style = t.typography.caption,
+                        color = t.colors.ink
                     )
-                }
-            }
-            when {
-                cloudBooksLoading -> Text(
-                    stringResource(R.string.sync_cloud_loading),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkSoft
-                )
-                !cloudBooksLoaded -> Text(
-                    stringResource(R.string.sync_cloud_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkSoft
-                )
-                cloudBooks.isEmpty() -> Text(
-                    stringResource(R.string.sync_cloud_empty),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkSoft
-                )
-                else -> cloudBooks.forEach { cloud ->
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            cloud.displayName + " · " + formatStorageBytes(cloud.sizeBytes),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Ink
-                        )
-                        TextButton(
-                            onClick = { onDownloadCloudBook(cloud) },
-                            enabled = !busy
-                        ) {
-                            Text(stringResource(R.string.sync_cloud_download))
-                        }
-                    }
+                    LinguaTextButton(
+                        text = stringResource(R.string.sync_cloud_download),
+                        onClick = { onDownloadCloudBook(cloud) },
+                        enabled = !busy
+                    )
                 }
             }
         }
     }
 }
+
+// ── 组件专有几何常量 ──────────────────────────────────────────────
+//
+// 这两个值不进间距梯：梯里只有 4/8/16/24/32/48，而这一屏的内容块间距沿用迁移前的
+// 10dp、状态行前的细间隙沿用 2dp。硬套档位（10→8、2→4）会改变像素，而 P3 的验收前提是
+// 「迁移前后视觉等价」。它们又确实是这一屏自己的排布常量，不是「同一语义跨屏」的间距，
+// 故集中命名而非塞进梯子。
+private val SyncContentGap = 10.dp
+private val SyncTightGap = 2.dp
