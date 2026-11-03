@@ -63,6 +63,12 @@ interface TranslationHost {
  * 拆分原则与 `AppSyncCoordinator` 一致：**提取类 + 保留转发**。公开方法的签名、
  * 参数、返回类型、副作用一字不改，调用点（MainActivity / BookshelfScreen /
  * ReaderScreen）零改动。
+ *
+ * **本类可脱离 Robolectric 单测**：宿主接口见 [TranslationHost]。手动翻译这条链的
+ * 纯状态分支——「抽不出段落时要说清楚」「覆盖满 100% 才自动生成」「拒绝条目要弹详情」
+ * 「finally 里必须摘 job，否则防重闸会卡死下一轮」——给一个假宿主 + 临时目录就能在
+ * 几毫秒内验掉，不必构造整个 `AppViewModel`。
+ * 尚未补这类单测——**这是后续接手时该做的第一件事**。
  */
 class TranslationCoordinator(
     context: Context,

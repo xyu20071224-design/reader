@@ -65,6 +65,12 @@ interface SyncHost {
  * 拆分原则是「提取类 + 保留转发」，不是「搬走删掉」：
  * `AppViewModel` 里这些方法名的签名、语义、副作用一字未改，只是实现换了个住处。
  * 调用点（`MainActivity`、`BookshelfScreen`）零改动。
+ *
+ * **本类可脱离 Robolectric 单测**：宿主接口见 [SyncHost]。给一个假宿主
+ * （一个 `AppUiState` 变量 + 一个 `TestScope`/`runBlocking` 即可，不必构造整个
+ * `AppViewModel`、不必起真实 `Application` 与磁盘前置），就能验「防抖到点该不该触发」
+ * 「AUTH 只提示一次」「书单拉失败要不要保留旧快照」这些分支。
+ * 尚未补这类单测——**这是后续接手时该做的第一件事**。
  */
 class AppSyncCoordinator(
     context: Context,
