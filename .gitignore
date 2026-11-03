@@ -22,6 +22,10 @@ local.properties
 # 重建：python artifacts/ai-full/build_dist.py + :app:assembleDebug
 dist/
 
+# DSH 桌面工具自身的插件（与本项目功能无关）。
+# 注意 tools/dsh-voice-console 是**本项目**的 TTS 音色控制台，已入库，不要一起忽略。
+tools/dsh-window-pin/
+
 # Keystores (keep debug keystore)
 *.jks
 *.keystore
