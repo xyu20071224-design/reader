@@ -62,7 +62,12 @@ internal fun UpdateSheet(
         canInstall = ApkInstaller.canInstall(context)
     }
 
-    LinguaSheet(onDismiss = onDismiss) {
+    LinguaSheet(
+        onDismiss = onDismiss,
+        // 内容体自带显式 Spacer 排布（迁移前就是这样），关掉容器的默认块间距，
+        // 否则会 16(dp 默认) + 自带 Spacer 双倍叠加。
+        contentArrangement = androidx.compose.foundation.layout.Arrangement.Top
+    ) {
         UpdateSheetContent(
             update = update,
             canInstall = canInstall,

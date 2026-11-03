@@ -1,6 +1,7 @@
 package com.linguareader.app.uirender
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -61,11 +62,19 @@ class SheetMigrationRenderTest {
             CompositionLocalProvider(LocalLinguaPalette provides LightLinguaPalette) {
                 MaterialTheme(colorScheme = colorSchemeFor(LightLinguaPalette), shapes = AppShapes) {
                     // 纸色铺满整块画布：弹层在真机上是整屏 sheet，纸色不会在内容底部断开。
+                    // 夹具如实复刻 LinguaSheet 的结构：纸色铺满 + 水平/底部留白 +
+                    // 内容块之间 spacedBy(16dp)（= 组件现在的默认 contentArrangement）。
+                    // 标题由 title 槽渲染，夹具里补同一份，图才和真机一致。
                     Box(Modifier.fillMaxSize().background(Paper)) {
                         Column(
-                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 20.dp)
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .padding(top = 20.dp, bottom = 28.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            // 标题由 LinguaSheet 的 title 槽渲染，夹具里补同一份，图才和真机一致。
+                            // 注意：UpdateSheet 的标题在内容体里（不走 title 槽），ShelfAppearance 的走 title 槽。
+                            // 两张图都按各自真实结构渲染，这里只负责容器约束。
                             content()
                         }
                     }
