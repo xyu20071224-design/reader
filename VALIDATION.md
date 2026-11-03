@@ -2107,3 +2107,40 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 `:app:testDebugUnitTest`：112 suites / **597 tests** / 1 failure（CloudTts 路径，既有）/ 2 skipped。
 `ScaffoldInsetsContractTest` 2/0（改前红 → 改后绿）、`ProductionThemeWiringTest` 2/0、
 `BookshelfScreenShotTest` 3/0、`DesignTokenDisciplineTest` 7/0。
+
+### 2026-11-04 续三 · 听书三屏 + 书架三笔收口
+
+#### P3 新增迁移（续）
+
+| 屏 | dp（官方 scanner 口径） | 提交 |
+| --- | --- | --- |
+| ListeningBar | 16 → **9** | `0972985` |
+| ListeningSettingsSheet | 33 → **0**（唯一归零的一屏） | `16f44a6` |
+| MultiVoiceSettings | 71 → **18** | `2c980c7` |
+| BookshelfScreen（三笔） | 55 → **14** | `559fa16` + `b1e0cb0` + 第三笔 |
+
+**dp 计数口径（重要，避免下次对不上）**：
+> 一律以 `HardcodedStyleScanner` 为准（**剔除注释与字符串后**统计 `\b\d+(\.\d+)?\.dp\b`）。
+> 直接扫源码会把 KDoc 里的示例代码算进去——`ListeningSettingsSheet.kt:129` 的
+> `padding(horizontal = 24.dp).padding(bottom = 30.dp)` 就是这样多出来的 2 处，实际为 0。
+> **复核 dp 数请复跑 `HardcodedStyleBaselineTest`，不要临时 grep。**
+
+#### 三条新的方法论沉淀
+
+1. **可见变化必须单独成节**（提交信息里用「【可见变化 — …】」小节），并配**像素证据链**
+   而不是「我推断更对齐」。实例：AI 抽屉留白 48 → 24，用 `leftmostContentX` 量出
+   「内容体单独渲染 0dp / 加外壳 24dp」两个坐标作为客观证据。
+2. **深色基线曾经是错的**（`LocalDesignTokens` 未接线期间）：图看着正常、断言全绿、
+   **数据全错**——三类判据同时失效，只有「对照真实值」能发现。已在 `7a71b11` 的提交信息里
+   标注「此前基于日间 token 的深色基线作废」。
+3. **`ListeningBar` 刻意不从 token 取色**（仍跟 `ReaderTheme`）：皮肤描述外壳、
+   阅读主题描述贴正文的这条栏，护眼绿主题下听书条必须跟正文同色（历史事故）。
+   已用像素断言钉死，并把**「如何推翻这个决定」**写进 KDoc。
+
+#### 组件层缺口（下一轮第一优先级）
+
+两个原语缺失导致**三屏各自封装同一件事**：
+1. `LinguaIconTextButton`（图标 + 文字）—— 复习屏 / 生词本 / 听书屏；
+2. 可选中文字按钮（选中态靠字重 + 颜色）—— 缓存档位 / 抽屉 Tab / 书架分组。
+
+补齐后可一并收掉各屏保留的 Material `TextButton`（听书三屏剩 3 处、复习屏 2 处）。
