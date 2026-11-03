@@ -52,9 +52,18 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xxhdpi")
 class PrimitiveComponentShotsTest {
 
-    private fun shot(name: String, width: Int = 420, height: Int = 200, content: @Composable () -> Unit) {
+    /**
+     * 画布尺寸以 **dp** 为单位。
+     *
+     * 关键坑：`ComposeRenderHarness.render` 收的是**像素**，而本类用
+     * `@Config(qualifiers = "w411dp-h891dp-xxhdpi")`，density = 3。
+     * 早先按「像素」写 420×220，等于只有 140dp×73dp 的窗口——卡片标题一出来就被裁掉，
+     * 图看着像布局塌了，其实是画布太小。所以这里统一按 dp 传，内部乘 density。
+     */
+    private fun shot(name: String, widthDp: Int = 320, heightDp: Int = 120, content: @Composable () -> Unit) {
+        val density = 3 // xxhdpi，与 @Config 的 qualifiers 对应
         val tokens = SkinRegistry.toDesignTokens(SkinBuiltIns.light)
-        val bmp = ComposeRenderHarness.render(name, width, height) {
+        val bmp = ComposeRenderHarness.render(name, widthDp * density, heightDp * density) {
             CompositionLocalProvider(LocalDesignTokens provides tokens) {
                 Box(Modifier.fillMaxWidth()) { content() }
             }
@@ -72,7 +81,7 @@ class PrimitiveComponentShotsTest {
 
     // ① LinguaScaffold（统一顶栏 / 返回箭头 / 标题）
     @Test
-    fun linguaScaffold() = shot("prim-1-scaffold", 420, 260) {
+    fun linguaScaffold() = shot("prim-1-scaffold", 360, 140) {
         LinguaScaffold(
             title = "书架",
             onBack = {},
@@ -86,7 +95,7 @@ class PrimitiveComponentShotsTest {
 
     // ② LinguaCard（+ CardTitleRow / CardDivider）
     @Test
-    fun linguaCard() = shot("prim-2-card", 420, 260) {
+    fun linguaCard() = shot("prim-2-card", 360, 140) {
         Column(Modifier.padding(16.dp)) {
             LinguaCard {
                 CardTitleRow(title = "卡片标题", subtitle = "副标题")
@@ -98,7 +107,7 @@ class PrimitiveComponentShotsTest {
 
     // ③ SettingRow（标题 + 副标题 + Switch）
     @Test
-    fun settingRow() = shot("prim-3-setting-row", 420, 200) {
+    fun settingRow() = shot("prim-3-setting-row", 360, 90) {
         Column(Modifier.padding(16.dp)) {
             SettingRow(
                 title = "字号跟随系统",
@@ -111,13 +120,13 @@ class PrimitiveComponentShotsTest {
 
     // ④ SectionHeader
     @Test
-    fun sectionHeader() = shot("prim-4-section-header", 420, 120) {
+    fun sectionHeader() = shot("prim-4-section-header", 360, 70) {
         SectionHeader("阅读设置")
     }
 
     // ⑤ StatusChip（五种语义色）
     @Test
-    fun statusChip() = shot("prim-5-status-chip", 420, 240) {
+    fun statusChip() = shot("prim-5-status-chip", 360, 110) {
         Column(Modifier.padding(16.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusChip("成功", StatusChipTone.SUCCESS)
@@ -134,7 +143,7 @@ class PrimitiveComponentShotsTest {
 
     // ⑥ PrimaryButton / SecondaryButton
     @Test
-    fun buttons() = shot("prim-6-buttons", 420, 160) {
+    fun buttons() = shot("prim-6-buttons", 360, 90) {
         Box(Modifier.padding(16.dp)) {
             ButtonRow {
                 SecondaryButton(text = "取消", onClick = {})
@@ -145,7 +154,7 @@ class PrimitiveComponentShotsTest {
 
     // ⑦ EmptyState
     @Test
-    fun emptyState() = shot("prim-7-empty-state", 420, 400) {
+    fun emptyState() = shot("prim-7-empty-state", 360, 260) {
         EmptyState(
             icon = Icons.Filled.MenuBook,
             title = "书架还是空的",
@@ -157,7 +166,7 @@ class PrimitiveComponentShotsTest {
     // ⑧ LinguaSheet —— ModalBottomSheet 需要真实窗口宿主，单图里用它的内容容器等价呈现：
     //    验证「拖柄 + 标题 + 内容」这套内部布局本身是画得出来的。
     @Test
-    fun sheetContents() = shot("prim-8-sheet-contents", 420, 320) {
+    fun sheetContents() = shot("prim-8-sheet-contents", 360, 180) {
         val t = LocalDesignTokens.current
         Column(
             Modifier
