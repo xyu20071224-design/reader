@@ -825,4 +825,11 @@
     <string name="sync_upload_failed">《%1$s》上传到云端失败：%2$s</string>
     <string name="sync_manual_server_hint">未内置默认服务器，请在高级设置中填写服务器地址。</string>
     <string name="sync_https_fingerprint_hint">连自签 HTTPS 服务器时，填好上面的证书指纹即可，无需手写完整 URL。</string>
+
+    <!-- 导航与弹层（P2 地基）：尚未迁移的屏幕/弹层占位 -->
+    <string name="nav_placeholder_title">屏幕尚未迁移</string>
+    <string name="nav_placeholder_screen">%1$s · %2$s</string>
+    <string name="nav_placeholder_hint">该屏幕尚未接入 NavHostLite，P3 逐屏迁移。</string>
+    <string name="overlay_placeholder_title">弹层待迁移 · %1$s</string>
+    <string name="overlay_placeholder_hint">该弹层尚未接入 OverlayHost，P3 逐项迁移。</string>
 </resources>

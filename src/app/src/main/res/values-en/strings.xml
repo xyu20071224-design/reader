@@ -834,4 +834,11 @@
     <string name="sync_upload_failed">Failed to upload %1$s: %2$s</string>
     <string name="sync_manual_server_hint">No built-in server — enter the server address in Advanced.</string>
     <string name="sync_https_fingerprint_hint">For a self-signed HTTPS server, just fill in the fingerprint above — no need to type the full URL.</string>
+
+    <!-- Navigation & overlays (P2 foundation): placeholders for screens/overlays not migrated yet -->
+    <string name="nav_placeholder_title">Screen not migrated yet</string>
+    <string name="nav_placeholder_screen">%1$s · %2$s</string>
+    <string name="nav_placeholder_hint">This screen is not wired into NavHostLite yet; P3 migrates it screen by screen.</string>
+    <string name="overlay_placeholder_title">Overlay pending migration · %1$s</string>
+    <string name="overlay_placeholder_hint">This overlay is not wired into OverlayHost yet; P3 migrates them one by one.</string>
 </resources>
