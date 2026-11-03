@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -34,6 +33,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -41,9 +41,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -66,7 +66,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.components.SectionHeader
+import com.linguareader.app.components.SettingRow
 import com.linguareader.app.data.Book
+import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.tts.BookVoiceMap
 import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.MiMoVoiceStore
@@ -101,6 +105,7 @@ internal fun MultiVoiceSection(
     books: List<Book>,
     preselectedBook: Book?
 ) {
+    val t = LocalDesignTokens.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // 本区块住在 ModalBottomSheet / AI 抽屉里，全局 Snackbar 会被弹层整个盖住，
@@ -373,37 +378,41 @@ internal fun MultiVoiceSection(
         }
     }
 
-    Spacer(Modifier.height(18.dp))
-    HorizontalDivider(color = Ink.copy(alpha = .1f))
-    Spacer(Modifier.height(12.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                stringResource(R.string.multivoice_title),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                when {
-                    engineSupported -> stringResource(R.string.multivoice_subtitle)
-                    systemMode -> stringResource(R.string.multi_voice_annotate_hint)
-                    else -> stringResource(R.string.multivoice_unsupported)
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = InkSoft
+    Spacer(Modifier.height(SectionRuleGap))
+    HorizontalDivider(color = t.colors.outline)
+    Spacer(Modifier.height(SectionGap))
+    // 「多角色朗读」总开关行：标题 + 随状态变化的说明 + 尾部开关，由 SettingRow 统一
+    // 行高与开关配色。**开关走 trailing 槽而不是 checked 槽**：SettingRow 的 checked 槽
+    // 不支持 enabled，而这一行的开关在引擎不支持时必须置灰（MultiVoiceSupport 判定）。
+    // 与 AiDrawerSheet 的「联网语境翻译」行同一写法。
+    SettingRow(
+        title = stringResource(R.string.multivoice_title),
+        subtitle = when {
+            engineSupported -> stringResource(R.string.multivoice_subtitle)
+            systemMode -> stringResource(R.string.multi_voice_annotate_hint)
+            else -> stringResource(R.string.multivoice_unsupported)
+        },
+        trailing = {
+            Switch(
+                checked = settings.multiVoiceEnabled && engineSupported,
+                enabled = engineSupported,
+                onCheckedChange = { onSettingsChange(settings.copy(multiVoiceEnabled = it)) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = t.colors.onAccent,
+                    checkedTrackColor = t.colors.accent,
+                    checkedBorderColor = t.colors.accent,
+                    uncheckedThumbColor = t.colors.inkSoft,
+                    uncheckedTrackColor = t.colors.paperDeep,
+                    uncheckedBorderColor = t.colors.outline
+                )
             )
         }
-        Switch(
-            checked = settings.multiVoiceEnabled && engineSupported,
-            enabled = engineSupported,
-            onCheckedChange = { onSettingsChange(settings.copy(multiVoiceEnabled = it)) }
-        )
-    }
+    )
 
     // 放在「不支持即提前 return」之前：标注保存成功、引擎不支持时的操作反馈
     // 也必须能展示出来（历史上对话框渲染点就吃过提前 return 的亏）。
     inlineNotice?.let {
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(LabelGap))
         SettingsStatusText(it)
     }
 
@@ -416,9 +425,10 @@ internal fun MultiVoiceSection(
     }
 
     if (systemMode && !engineSupported) {
-        TextButton(onClick = { annotating = true }) {
-            Text(stringResource(R.string.multi_voice_annotate_entry))
-        }
+        LinguaTextButton(
+            text = stringResource(R.string.multi_voice_annotate_entry),
+            onClick = { annotating = true }
+        )
     }
 
     // 标注对话框必须放在提前 return 之前：SYSTEM 引擎未完成标注时 engineSupported == false，
@@ -446,30 +456,37 @@ internal fun MultiVoiceSection(
 
     if (!engineSupported || !settings.multiVoiceEnabled) return
 
-    Spacer(Modifier.height(10.dp))
+    Spacer(Modifier.height(FieldGap))
     if (preselectedBook == null) {
         if (books.isEmpty()) {
-            Text(stringResource(R.string.multivoice_no_books), color = InkSoft)
+            Text(stringResource(R.string.multivoice_no_books), color = t.colors.inkSoft)
             return
         }
         var bookMenu by remember { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.multivoice_book_label),
-                style = MaterialTheme.typography.labelLarge,
-                color = InkSoft
+                style = t.typography.label,
+                color = t.colors.inkSoft
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(FieldGap))
             Box(Modifier.weight(1f)) {
-                TextButton(onClick = { bookMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                // 刻意保留 Material TextButton：内容是「占满宽度的书名 + 下拉箭头」复合行，
+                // LinguaTextButton 只接受一个字符串。配色/字级全取 token。
+                // （组件层缺口：没有「图标+文字」原语，见提交信息。）
+                TextButton(
+                    onClick = { bookMenu = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.textButtonColors(contentColor = t.colors.ink)
+                ) {
                     Text(
                         bookTitle ?: stringResource(R.string.multivoice_pick_book),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
-                        color = Ink
+                        color = t.colors.ink
                     )
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = t.colors.inkSoft)
                 }
                 DropdownMenu(expanded = bookMenu, onDismissRequest = { bookMenu = false }) {
                     books.forEach { candidate ->
@@ -489,19 +506,19 @@ internal fun MultiVoiceSection(
     } else {
         Text(
             stringResource(R.string.multivoice_current_book, preselectedBook.title),
-            style = MaterialTheme.typography.labelMedium,
-            color = InkSoft
+            style = t.typography.caption,
+            color = t.colors.inkSoft
         )
     }
 
     status?.let {
-        Spacer(Modifier.height(6.dp))
-        Text(statusText(it), style = MaterialTheme.typography.labelSmall, color = InkSoft)
+        Spacer(Modifier.height(LabelGap))
+        Text(statusText(it), style = t.typography.label, color = t.colors.inkSoft)
     }
 
     if (loading) {
-        Spacer(Modifier.height(10.dp))
-        CircularProgressIndicator(color = Accent, modifier = Modifier.size(26.dp))
+        Spacer(Modifier.height(FieldGap))
+        CircularProgressIndicator(color = t.colors.accent, modifier = Modifier.size(LoadingSpinnerSize))
         return
     }
 
@@ -521,12 +538,9 @@ internal fun MultiVoiceSection(
         )
     }
 
-    Spacer(Modifier.height(12.dp))
-    Text(
-        stringResource(R.string.multivoice_narrator_section),
-        style = MaterialTheme.typography.labelLarge,
-        color = InkSoft
-    )
+    // 分区标题换成 SectionHeader：它的上下留白就是这一屏原本「区块间 12dp + 标题」的
+    // token 版（spacing.l / spacing.s），不再另外叠 Spacer。
+    SectionHeader(text = stringResource(R.string.multivoice_narrator_section))
     MultiVoiceSupport.NARRATOR_LANGUAGES.forEach { language ->
         val target = VoicePickerTarget(
             speaker = "narrator",
@@ -550,38 +564,43 @@ internal fun MultiVoiceSection(
         )
     }
 
-    Spacer(Modifier.height(12.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            stringResource(R.string.multivoice_characters_section),
-            style = MaterialTheme.typography.labelLarge,
-            color = InkSoft,
-            modifier = Modifier.weight(1f)
-        )
-        TextButton(onClick = { addingCharacter = true }) {
-            Icon(
-                Icons.Default.Add,
-                contentDescription = null,
-                tint = Accent,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(2.dp))
-            Text(stringResource(R.string.multivoice_add_character))
+    // 「角色」分区标题 + 尾部「添加角色」入口：SectionHeader 的 trailing 槽正是为此存在，
+    // 直接吃掉了原来手写的「标题 + weight(1f) + 按钮」三件套。
+    SectionHeader(
+        text = stringResource(R.string.multivoice_characters_section),
+        trailing = {
+            // 刻意保留 Material TextButton：按钮内容是「图标 + 文字」的复合行，
+            // LinguaTextButton 只接受一个字符串。配色与字级全取 token。
+            // （组件层缺口：LinguaIconTextButton —— 复习屏/生词本/听书屏三处都在各自封装，
+            //   是最值得下一轮补的原语。）
+            TextButton(
+                onClick = { addingCharacter = true },
+                colors = ButtonDefaults.textButtonColors(contentColor = t.colors.accent)
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = null,
+                    tint = t.colors.accent,
+                    modifier = Modifier.size(SmallIconSize)
+                )
+                Spacer(Modifier.width(InlineIconGap))
+                Text(stringResource(R.string.multivoice_add_character), style = t.typography.body)
+            }
         }
-    }
+    )
     if (bookId.isBlank()) {
         Text(
             stringResource(R.string.multivoice_book_required),
-            style = MaterialTheme.typography.labelSmall,
-            color = InkSoft
+            style = t.typography.label,
+            color = t.colors.inkSoft
         )
         return
     }
     if (characters.isEmpty()) {
         Text(
             stringResource(R.string.multivoice_no_characters),
-            style = MaterialTheme.typography.labelSmall,
-            color = InkSoft
+            style = t.typography.label,
+            color = t.colors.inkSoft
         )
         return
     }
@@ -609,18 +628,18 @@ internal fun MultiVoiceSection(
                 onDelete = { deleteTarget = character }
             )
         }
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(LabelGap))
     Text(
         stringResource(R.string.multivoice_lock_hint),
-        style = MaterialTheme.typography.labelSmall,
-        color = InkFaint
+        style = t.typography.label,
+        color = t.colors.inkFaint
     )
-    Spacer(Modifier.height(4.dp))
+    Spacer(Modifier.height(t.spacing.xs))
     // PLAN-MULTI-VOICE §12.3 红线：克隆音色的素材来源与 AI 合成标识。
     Text(
         stringResource(R.string.multivoice_clone_notice),
-        style = MaterialTheme.typography.labelSmall,
-        color = InkFaint
+        style = t.typography.label,
+        color = t.colors.inkFaint
     )
 
     picker?.let { target ->
@@ -677,21 +696,28 @@ internal fun MultiVoiceSection(
     deleteTarget?.let { character ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            containerColor = CardSurface,
+            containerColor = t.colors.cardSurface,
             title = { Text(stringResource(R.string.multivoice_confirm_delete_title)) },
             text = { Text(stringResource(R.string.multivoice_confirm_delete_body, character.name)) },
             confirmButton = {
-                TextButton(onClick = { deleteCharacter(character) }) {
+                // 删除是破坏性动作：刻意不是 LinguaTextButton（原语只有一种主色 accent），
+                // 保留 Material TextButton 但配色取 token 的 danger —— 与 PacksSheet 的
+                // DangerTextButton 同一打法，不写裸色值。文案与确认逻辑零改动。
+                TextButton(
+                    onClick = { deleteCharacter(character) },
+                    colors = ButtonDefaults.textButtonColors(contentColor = t.colors.danger)
+                ) {
                     Text(
                         stringResource(R.string.multivoice_delete_confirm),
-                        color = MaterialTheme.colorScheme.error
+                        color = t.colors.danger
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
+                LinguaTextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { deleteTarget = null }
+                )
             }
         )
     }
@@ -715,11 +741,12 @@ private fun AddCharacterDialog(
     onConfirm: (name: String, gender: String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var name by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = CardSurface,
+        containerColor = t.colors.cardSurface,
         title = { Text(stringResource(R.string.multivoice_add_character_title)) },
         text = {
             Column(Modifier.fillMaxWidth()) {
@@ -730,14 +757,14 @@ private fun AddCharacterDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(FieldGap))
                 Text(
                     stringResource(R.string.multivoice_gender_label),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(t.spacing.xs))
+                Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                     GenderChip(
                         label = stringResource(R.string.multivoice_gender_male),
                         selected = gender == "male",
@@ -757,18 +784,20 @@ private fun AddCharacterDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(name, gender) }) {
-                Text(stringResource(R.string.multivoice_add_character))
-            }
+            LinguaTextButton(
+                text = stringResource(R.string.multivoice_add_character),
+                onClick = { onConfirm(name, gender) }
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            LinguaTextButton(text = stringResource(R.string.common_cancel), onClick = onDismiss)
         }
     )
 }
 
 @Composable
 private fun GenderChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val t = LocalDesignTokens.current
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -788,6 +817,7 @@ private fun EditCharacterDialog(
     onRemoveAlias: (alias: String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var draft by remember { mutableStateOf("") }
     // 属性状态：随目标角色切换重置。GenderChip 是通用三态胶囊（选中/未选中）。
     var gender by remember(character.name) { mutableStateOf(character.gender) }
@@ -797,17 +827,17 @@ private fun EditCharacterDialog(
     val deleteTemplate = stringResource(R.string.multivoice_alias_delete, "%s")
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = CardSurface,
+        containerColor = t.colors.cardSurface,
         title = { Text(stringResource(R.string.multivoice_edit_character_title, character.name)) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 Text(
                     stringResource(R.string.multivoice_gender_label),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(t.spacing.xs))
+                Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                     GenderChip(
                         label = stringResource(R.string.multivoice_gender_male),
                         selected = gender == "male",
@@ -824,14 +854,14 @@ private fun EditCharacterDialog(
                         onClick = { gender = "" }
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(FieldGap))
                 Text(
                     stringResource(R.string.multivoice_age_group_label),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(t.spacing.xs))
+                Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                     GenderChip(
                         label = stringResource(R.string.multivoice_age_child),
                         selected = ageGroup == "child",
@@ -858,14 +888,14 @@ private fun EditCharacterDialog(
                         onClick = { ageGroup = "" }
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(FieldGap))
                 Text(
                     stringResource(R.string.multivoice_importance_label),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(t.spacing.xs))
+                Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                     GenderChip(
                         label = stringResource(R.string.multivoice_role_major),
                         selected = importance == "major",
@@ -882,7 +912,7 @@ private fun EditCharacterDialog(
                         onClick = { importance = "minor" }
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(FieldGap))
                 OutlinedTextField(
                     value = styleText,
                     onValueChange = { styleText = it },
@@ -891,15 +921,15 @@ private fun EditCharacterDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(12.dp))
-                HorizontalDivider(color = Ink.copy(alpha = .1f))
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(SectionGap))
+                HorizontalDivider(color = t.colors.outline)
+                Spacer(Modifier.height(FieldGap))
                 Text(
                     stringResource(R.string.multivoice_alias_subtitle),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = draft,
@@ -908,20 +938,19 @@ private fun EditCharacterDialog(
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(
+                    LinguaTextButton(
+                        text = stringResource(R.string.multivoice_alias_add),
                         onClick = {
                             if (onAddAlias(draft)) draft = ""
                         }
-                    ) {
-                        Text(stringResource(R.string.multivoice_alias_add))
-                    }
+                    )
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(LabelGap))
                 if (character.aliases.isEmpty()) {
                     Text(
                         stringResource(R.string.multivoice_alias_empty),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkFaint
+                        style = t.typography.label,
+                        color = t.colors.inkFaint
                     )
                 } else {
                     character.aliases.forEach { alias ->
@@ -931,8 +960,8 @@ private fun EditCharacterDialog(
                         ) {
                             Text(
                                 alias,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Ink,
+                                style = t.typography.caption,
+                                color = t.colors.ink,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
@@ -946,8 +975,8 @@ private fun EditCharacterDialog(
                                 Icon(
                                     Icons.Default.Close,
                                     contentDescription = null,
-                                    tint = InkFaint,
-                                    modifier = Modifier.size(16.dp)
+                                    tint = t.colors.inkFaint,
+                                    modifier = Modifier.size(SmallIconSize)
                                 )
                             }
                         }
@@ -956,15 +985,16 @@ private fun EditCharacterDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val style = styleText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                onSave(gender, ageGroup, style, importance)
-            }) {
-                Text(stringResource(R.string.multivoice_edit_save))
-            }
+            LinguaTextButton(
+                text = stringResource(R.string.multivoice_edit_save),
+                onClick = {
+                    val style = styleText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    onSave(gender, ageGroup, style, importance)
+                }
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            LinguaTextButton(text = stringResource(R.string.common_cancel), onClick = onDismiss)
         }
     )
 }
@@ -1020,6 +1050,7 @@ private fun VoiceRow(
     onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
+    val t = LocalDesignTokens.current
     // semantics{} 不是 composable 作用域，标签先取出来。
     val auditionLabel = stringResource(R.string.multivoice_audition, title)
     val stopAuditionLabel = stringResource(R.string.multivoice_audition_stop)
@@ -1027,7 +1058,7 @@ private fun VoiceRow(
     val editLabel = stringResource(R.string.multivoice_edit_character, title)
     val deleteLabel = stringResource(R.string.multivoice_delete_character, title)
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        Modifier.fillMaxWidth().padding(vertical = RowVerticalGap),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -1035,7 +1066,7 @@ private fun VoiceRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     title,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = t.typography.body,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
@@ -1044,23 +1075,23 @@ private fun VoiceRow(
                     Icon(
                         Icons.Default.Lock,
                         contentDescription = stringResource(R.string.multivoice_locked),
-                        tint = Accent,
-                        modifier = Modifier.padding(start = 4.dp).size(13.dp)
+                        tint = t.colors.accent,
+                        modifier = Modifier.padding(start = t.spacing.xs).size(LockIconSize)
                     )
                 }
             }
             Text(
                 currentVoice.ifBlank { stringResource(R.string.multivoice_auto) },
-                style = MaterialTheme.typography.labelSmall,
-                color = if (currentVoice.isBlank()) InkFaint else InkSoft,
+                style = t.typography.label,
+                color = if (currentVoice.isBlank()) t.colors.inkFaint else t.colors.inkSoft,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             subtitle?.let {
-                Text(it, style = MaterialTheme.typography.labelSmall, color = InkFaint)
+                Text(it, style = t.typography.label, color = t.colors.inkFaint)
             }
         }
-        TextButton(onClick = onOpenPicker) { Text(stringResource(R.string.multivoice_change)) }
+        LinguaTextButton(text = stringResource(R.string.multivoice_change), onClick = onOpenPicker)
         IconButton(
             onClick = onAudition,
             enabled = currentVoice.isNotBlank(),
@@ -1071,8 +1102,8 @@ private fun VoiceRow(
             Icon(
                 if (playing) Icons.Default.Stop else Icons.Default.PlayArrow,
                 contentDescription = null,
-                tint = if (playing) Accent else InkSoft,
-                modifier = Modifier.size(20.dp)
+                tint = if (playing) t.colors.accent else t.colors.inkSoft,
+                modifier = Modifier.size(MediumIconSize)
             )
         }
         if (locked) {
@@ -1083,8 +1114,8 @@ private fun VoiceRow(
                 Icon(
                     Icons.Default.LockOpen,
                     contentDescription = null,
-                    tint = InkFaint,
-                    modifier = Modifier.size(18.dp)
+                    tint = t.colors.inkFaint,
+                    modifier = Modifier.size(RowIconSize)
                 )
             }
         }
@@ -1096,8 +1127,8 @@ private fun VoiceRow(
                 Icon(
                     Icons.Default.Edit,
                     contentDescription = null,
-                    tint = InkFaint,
-                    modifier = Modifier.size(16.dp)
+                    tint = t.colors.inkFaint,
+                    modifier = Modifier.size(SmallIconSize)
                 )
             }
         }
@@ -1109,8 +1140,8 @@ private fun VoiceRow(
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = null,
-                    tint = InkFaint,
-                    modifier = Modifier.size(16.dp)
+                    tint = t.colors.inkFaint,
+                    modifier = Modifier.size(SmallIconSize)
                 )
             }
         }
@@ -1134,6 +1165,7 @@ private fun VoicePickerDialog(
     onRelease: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var query by remember { mutableStateOf("") }
     val auditionTemplate = stringResource(R.string.multivoice_audition, "%s")
     val auditionOf: (String) -> String = { id -> auditionTemplate.replace("%s", id) }
@@ -1142,7 +1174,7 @@ private fun VoicePickerDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = CardSurface,
+        containerColor = t.colors.cardSurface,
         title = { Text(stringResource(R.string.multivoice_picker_title, target.title)) },
         text = {
             Column(Modifier.fillMaxWidth()) {
@@ -1154,18 +1186,18 @@ private fun VoicePickerDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 if (groups.isEmpty()) {
-                    Text(stringResource(R.string.multivoice_no_match), color = InkSoft)
+                    Text(stringResource(R.string.multivoice_no_match), color = t.colors.inkSoft)
                 } else {
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = VoicePickerMaxHeight)) {
                         groups.forEach { group ->
                             item(key = "header-" + group.title) {
                                 Text(
                                     group.title,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = InkFaint,
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                                    style = t.typography.label,
+                                    color = t.colors.inkFaint,
+                                    modifier = Modifier.padding(top = t.spacing.s, bottom = ListHeaderBottomGap)
                                 )
                             }
                             items(group.options, key = { it.voice.id }) { option ->
@@ -1173,15 +1205,15 @@ private fun VoicePickerDialog(
                                 Row(
                                     Modifier
                                         .fillMaxWidth()
-                                        .background(if (selected) AccentSoft else CardSurface)
+                                        .background(if (selected) t.colors.accentSoft else t.colors.cardSurface)
                                         .clickable { onPick(option.voice.id) }
-                                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                                        .padding(horizontal = ListRowHorizontalPadding, vertical = t.spacing.s),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         VoicePicker.label(option.voice),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (selected) AccentDeep else Ink,
+                                        style = t.typography.caption,
+                                        color = if (selected) t.colors.accentDeep else t.colors.ink,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
@@ -1199,8 +1231,8 @@ private fun VoicePickerDialog(
                                                 Icons.Default.PlayArrow
                                             },
                                             contentDescription = null,
-                                            tint = if (playingVoice == option.voice.id) Accent else InkSoft,
-                                            modifier = Modifier.size(18.dp)
+                                            tint = if (playingVoice == option.voice.id) t.colors.accent else t.colors.inkSoft,
+                                            modifier = Modifier.size(RowIconSize)
                                         )
                                     }
                                 }
@@ -1211,11 +1243,11 @@ private fun VoicePickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) }
+            LinguaTextButton(text = stringResource(R.string.common_done), onClick = onDismiss)
         },
         dismissButton = {
             if (locked) {
-                TextButton(onClick = onRelease) { Text(stringResource(R.string.multivoice_release_action)) }
+                LinguaTextButton(text = stringResource(R.string.multivoice_release_action), onClick = onRelease)
             }
         }
     )
@@ -1228,6 +1260,7 @@ private fun VoicePickerDialog(
  */
 @Composable
 private fun SystemEngineGuidance(onOpenSettingsFailed: () -> Unit) {
+    val t = LocalDesignTokens.current
     val context = LocalContext.current
     val state = remember {
         SystemTtsEngines.guideState(
@@ -1245,12 +1278,13 @@ private fun SystemEngineGuidance(onOpenSettingsFailed: () -> Unit) {
                 SystemTtsEngines.Guide.NOT_INSTALLED ->
                     stringResource(R.string.multi_voice_system_not_installed)
             },
-            style = MaterialTheme.typography.labelSmall,
-            color = InkSoft
+            style = t.typography.label,
+            color = t.colors.inkSoft
         )
         if (state == SystemTtsEngines.Guide.SWITCH_AVAILABLE) {
             // startActivity 需在非 Activity context 下加 NEW_TASK；失败静默降级为 Snackbar。
-            TextButton(
+            LinguaTextButton(
+                text = stringResource(R.string.multi_voice_system_open_settings),
                 onClick = {
                     runCatching {
                         // Settings.ACTION_TTS_SETTINGS 未进公开 SDK，用其字面值。
@@ -1260,9 +1294,7 @@ private fun SystemEngineGuidance(onOpenSettingsFailed: () -> Unit) {
                         )
                     }.onFailure { onOpenSettingsFailed() }
                 }
-            ) {
-                Text(stringResource(R.string.multi_voice_system_open_settings))
-            }
+            )
         }
     }
 }
@@ -1287,6 +1319,7 @@ private fun SystemVoiceAnnotateDialog(
     onSave: (List<SystemVoiceAnnotation>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     val context = LocalContext.current
     val engine = remember { SystemTtsVoices.currentEngine(context) }
     var voices by remember { mutableStateOf<List<SystemVoiceInfo>>(emptyList()) }
@@ -1325,45 +1358,45 @@ private fun SystemVoiceAnnotateDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = CardSurface,
+        containerColor = t.colors.cardSurface,
         title = { Text(stringResource(R.string.multi_voice_annotate_title)) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 when {
                     engine.isBlank() -> Text(
                         stringResource(R.string.multi_voice_annotate_no_engine),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = InkSoft
+                        style = t.typography.caption,
+                        color = t.colors.inkSoft
                     )
 
                     loading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(color = Accent, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(10.dp))
+                        CircularProgressIndicator(color = t.colors.accent, modifier = Modifier.size(MediumIconSize))
+                        Spacer(Modifier.width(FieldGap))
                         Text(
                             stringResource(R.string.multi_voice_annotate_loading),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = InkSoft
+                            style = t.typography.caption,
+                            color = t.colors.inkSoft
                         )
                     }
 
                     voices.isEmpty() -> Text(
                         stringResource(R.string.multi_voice_annotate_empty),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = InkSoft
+                        style = t.typography.caption,
+                        color = t.colors.inkSoft
                     )
 
-                    else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+                    else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = AnnotateListMaxHeight)) {
                         items(voices, key = { it.name }) { voice ->
                             val draft = drafts[voice.name] ?: SystemVoiceDraft()
                             // semantics{} 不是 composable 作用域，标签先取出来。
                             val auditionLabel =
                                 stringResource(R.string.multivoice_audition, voice.name)
-                            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(vertical = AnnotateRowVerticalPadding)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         voice.displayName(),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Ink,
+                                        style = t.typography.caption,
+                                        color = t.colors.ink,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
@@ -1381,8 +1414,8 @@ private fun SystemVoiceAnnotateDialog(
                                                 Icons.Default.PlayArrow
                                             },
                                             contentDescription = null,
-                                            tint = if (playingVoice == voice.name) Accent else InkSoft,
-                                            modifier = Modifier.size(18.dp)
+                                            tint = if (playingVoice == voice.name) t.colors.accent else t.colors.inkSoft,
+                                            modifier = Modifier.size(RowIconSize)
                                         )
                                     }
                                     Switch(
@@ -1392,7 +1425,7 @@ private fun SystemVoiceAnnotateDialog(
                                         }
                                     )
                                 }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                                     GenderPill(
                                         label = stringResource(R.string.multivoice_gender_male),
                                         selected = draft.gender == "male",
@@ -1416,7 +1449,8 @@ private fun SystemVoiceAnnotateDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            LinguaTextButton(
+                text = stringResource(R.string.multi_voice_annotate_save),
                 enabled = !loading && !engine.isBlank() && voices.isNotEmpty(),
                 onClick = {
                     onSave(
@@ -1427,10 +1461,10 @@ private fun SystemVoiceAnnotateDialog(
                         }
                     )
                 }
-            ) { Text(stringResource(R.string.multi_voice_annotate_save)) }
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            LinguaTextButton(text = stringResource(R.string.common_cancel), onClick = onDismiss)
         }
     )
 }
@@ -1438,15 +1472,16 @@ private fun SystemVoiceAnnotateDialog(
 /** 性别三态小胶囊：选中反色，未选中淡底。 */
 @Composable
 private fun GenderPill(label: String, selected: Boolean, onSelect: () -> Unit) {
+    val t = LocalDesignTokens.current
     Text(
         label,
-        style = MaterialTheme.typography.labelSmall,
-        color = if (selected) CardSurface else InkSoft,
+        style = t.typography.label,
+        color = if (selected) t.colors.cardSurface else t.colors.inkSoft,
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
-            .background(if (selected) Accent else Ink.copy(alpha = .08f))
+            .clip(t.pillShape)
+            .background(if (selected) t.colors.accent else t.colors.ink.copy(alpha = PillWashAlpha))
             .clickable(onClick = onSelect)
-            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .padding(horizontal = PillHorizontalPadding, vertical = t.spacing.xs)
     )
 }
 
@@ -1465,6 +1500,7 @@ private fun MiMoCustomVoicesPanel(
     playingVoice: String?,
     onAudition: (MiMoVoiceStore.CustomVoice) -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var customVoices by remember { mutableStateOf(MiMoVoiceStore.installed(context)) }
     var designing by remember { mutableStateOf(false) }
     var cloning by remember { mutableStateOf(false) }
@@ -1537,44 +1573,46 @@ private fun MiMoCustomVoicesPanel(
     }
 
     Column(Modifier.fillMaxWidth()) {
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(MiMoPanelGap))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 stringResource(R.string.multivoice_mimo_panel_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = InkSoft,
+                style = t.typography.label,
+                color = t.colors.inkSoft,
                 modifier = Modifier.weight(1f)
             )
-            TextButton(onClick = { designing = true }) {
-                Text(stringResource(R.string.multivoice_mimo_design_button))
-            }
-            TextButton(onClick = { cloning = true }) {
-                Text(stringResource(R.string.multivoice_mimo_clone_button))
-            }
+            LinguaTextButton(
+                text = stringResource(R.string.multivoice_mimo_design_button),
+                onClick = { designing = true }
+            )
+            LinguaTextButton(
+                text = stringResource(R.string.multivoice_mimo_clone_button),
+                onClick = { cloning = true }
+            )
         }
         Text(
             stringResource(R.string.multivoice_mimo_panel_hint),
-            style = MaterialTheme.typography.labelSmall,
-            color = InkFaint
+            style = t.typography.label,
+            color = t.colors.inkFaint
         )
         if (customVoices.isEmpty()) {
             Text(
                 stringResource(R.string.multivoice_mimo_empty),
-                style = MaterialTheme.typography.labelSmall,
-                color = InkFaint
+                style = t.typography.label,
+                color = t.colors.inkFaint
             )
         } else {
             customVoices.forEach { voice ->
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    Modifier.fillMaxWidth().padding(vertical = RowVerticalGap),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
                             voice.name,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Ink,
+                            style = t.typography.caption,
+                            color = t.colors.ink,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1599,8 +1637,8 @@ private fun MiMoCustomVoicesPanel(
                                 } else {
                                     ""
                                 }),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = InkFaint
+                            style = t.typography.label,
+                            color = t.colors.inkFaint
                         )
                     }
                     val auditionLabel = if (playingVoice == voice.id) {
@@ -1617,8 +1655,8 @@ private fun MiMoCustomVoicesPanel(
                         Icon(
                             if (playingVoice == voice.id) Icons.Default.Stop else Icons.Default.PlayArrow,
                             contentDescription = null,
-                            tint = if (playingVoice == voice.id) Accent else InkSoft,
-                            modifier = Modifier.size(18.dp)
+                            tint = if (playingVoice == voice.id) t.colors.accent else t.colors.inkSoft,
+                            modifier = Modifier.size(RowIconSize)
                         )
                     }
                     val deleteLabel = stringResource(R.string.multivoice_mimo_delete, voice.name)
@@ -1640,8 +1678,8 @@ private fun MiMoCustomVoicesPanel(
                         Icon(
                             Icons.Default.Close,
                             contentDescription = null,
-                            tint = InkFaint,
-                            modifier = Modifier.size(16.dp)
+                            tint = t.colors.inkFaint,
+                            modifier = Modifier.size(SmallIconSize)
                         )
                     }
                 }
@@ -1652,7 +1690,7 @@ private fun MiMoCustomVoicesPanel(
     if (designing) {
         AlertDialog(
             onDismissRequest = { designing = false; designName = ""; designPrompt = "" },
-            containerColor = CardSurface,
+            containerColor = t.colors.cardSurface,
             title = { Text(stringResource(R.string.multivoice_mimo_design_title)) },
             text = {
                 Column(Modifier.fillMaxWidth()) {
@@ -1663,14 +1701,14 @@ private fun MiMoCustomVoicesPanel(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(FieldGap))
                     Text(
                         stringResource(R.string.multivoice_mimo_design_language_label),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(t.spacing.xs))
+                    Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                         GenderPill(
                             label = stringResource(R.string.multivoice_mimo_lang_zh),
                             selected = designLanguage == TtsLanguage.CHINESE,
@@ -1682,14 +1720,14 @@ private fun MiMoCustomVoicesPanel(
                             onSelect = { designLanguage = TtsLanguage.ENGLISH }
                         )
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(FieldGap))
                     Text(
                         stringResource(R.string.multivoice_gender_label),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(t.spacing.xs))
+                    Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                         GenderPill(
                             label = stringResource(R.string.multivoice_gender_female),
                             selected = designGender == "female",
@@ -1706,7 +1744,7 @@ private fun MiMoCustomVoicesPanel(
                             onSelect = { designGender = "" }
                         )
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(FieldGap))
                     OutlinedTextField(
                         value = designPrompt,
                         onValueChange = { designPrompt = it },
@@ -1718,7 +1756,8 @@ private fun MiMoCustomVoicesPanel(
                 }
             },
             confirmButton = {
-                TextButton(
+                LinguaTextButton(
+                    text = stringResource(R.string.multivoice_mimo_design_create),
                     onClick = {
                         MiMoVoiceStore.addDesign(
                             context = context,
@@ -1745,12 +1784,13 @@ private fun MiMoCustomVoicesPanel(
                             )
                         }
                     }
-                ) { Text(stringResource(R.string.multivoice_mimo_design_create)) }
+                )
             },
             dismissButton = {
-                TextButton(onClick = { designing = false; designName = ""; designPrompt = "" }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
+                LinguaTextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { designing = false; designName = ""; designPrompt = "" }
+                )
             }
         )
     }
@@ -1758,7 +1798,7 @@ private fun MiMoCustomVoicesPanel(
     if (cloning) {
         AlertDialog(
             onDismissRequest = { if (!cloningImporting) cloning = false },
-            containerColor = CardSurface,
+            containerColor = t.colors.cardSurface,
             title = { Text(stringResource(R.string.multivoice_mimo_clone_title)) },
             text = {
                 Column(Modifier.fillMaxWidth()) {
@@ -1769,14 +1809,14 @@ private fun MiMoCustomVoicesPanel(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(FieldGap))
                     Text(
                         stringResource(R.string.multivoice_mimo_design_language_label),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(t.spacing.xs))
+                    Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                         GenderPill(
                             label = stringResource(R.string.multivoice_mimo_lang_zh),
                             selected = cloneLanguage == TtsLanguage.CHINESE,
@@ -1788,14 +1828,14 @@ private fun MiMoCustomVoicesPanel(
                             onSelect = { cloneLanguage = TtsLanguage.ENGLISH }
                         )
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(FieldGap))
                     Text(
                         stringResource(R.string.multivoice_gender_label),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Spacer(Modifier.height(t.spacing.xs))
+                    Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                         GenderPill(
                             label = stringResource(R.string.multivoice_gender_female),
                             selected = cloneGender == "female",
@@ -1812,8 +1852,17 @@ private fun MiMoCustomVoicesPanel(
                             onSelect = { cloneGender = "" }
                         )
                     }
-                    Spacer(Modifier.height(10.dp))
-                    TextButton(
+                    Spacer(Modifier.height(FieldGap))
+                    // 复合「图标没有、但文案随状态切换」——LinguaTextButton 接受字符串，
+                    // 正好覆盖；enabled 与文案都随导入状态变，交互语义零改动。
+                    LinguaTextButton(
+                        text = stringResource(
+                            if (cloningImporting) {
+                                R.string.multivoice_mimo_clone_importing
+                            } else {
+                                R.string.multivoice_mimo_clone_sample_button
+                            }
+                        ),
                         enabled = !cloningImporting,
                         onClick = {
                             clonePicker.launch(
@@ -1822,36 +1871,110 @@ private fun MiMoCustomVoicesPanel(
                                 )
                             )
                         }
-                    ) {
-                        Text(
-                            stringResource(
-                                if (cloningImporting) {
-                                    R.string.multivoice_mimo_clone_importing
-                                } else {
-                                    R.string.multivoice_mimo_clone_sample_button
-                                }
-                            )
-                        )
-                    }
+                    )
                     Text(
                         stringResource(R.string.multivoice_mimo_clone_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkFaint
+                        style = t.typography.label,
+                        color = t.colors.inkFaint
                     )
                 }
             },
             confirmButton = {
-                TextButton(
+                LinguaTextButton(
+                    text = stringResource(R.string.common_done),
                     enabled = !cloningImporting,
                     onClick = { cloning = false }
-                ) { Text(stringResource(R.string.common_done)) }
+                )
             },
             dismissButton = {
-                TextButton(
+                LinguaTextButton(
+                    text = stringResource(R.string.common_cancel),
                     enabled = !cloningImporting,
                     onClick = { cloning = false }
-                ) { Text(stringResource(R.string.common_cancel)) }
+                )
             }
         )
     }
 }
+// ── 组件专有几何常量 ──────────────────────────────────────────────
+//
+// 这一屏是全项目第三大文件（1800 行、7 个对话框），dp 处理原则与 ReviewUi /
+// AiDrawerSheet 一致：**能落进间距梯的就落进去**（4/8/16/24 → t.spacing.xs/s/m/l），
+// 落不进去的聚成命名常量。它们不是「间距」而是这一组控件的形状参数：
+//
+//  * 10 / 6 / 2 —— 间距梯只有 4/8/16/24/32/48。10dp 是「标签与其控件」的专用档
+//    （套 spacing.s=8 会挤、套 spacing.m=16 会散），6dp 是「标题与其说明」的档，
+//    2dp 是「同一行内两个小元素」的缝。三者在 7 个对话框里被复用几十次，
+//    统一起来反而成了这一屏的视觉节奏 —— 硬套梯子档位会整体变松/变紧。
+//  * 12 / 14 / 18 —— 分区之间与「横向分割线」两侧的留白。这几档是这一屏的层级
+//    节奏（区块内 10、区块间 12、分割线两侧 18），套 16 会把三个层级压成一档。
+//  * 13 / 16 / 18 / 20 / 26 —— 图标尺寸。token 里只有 iconSize=24 一档，而这一屏
+//    的行内图标从 13（锁）到 26（加载圈）有五个层级，全部统一成 24 会让锁徽标与
+//    编辑/删除按钮一样大，行内一眼分不出主次。
+//  * 360 / 380 —— 两个 LazyColumn 的**最大高度**。这不是间距，是「弹层里能露出几行」
+//    的容量参数：音色选择器与系统音色标注列表各自滚动，改大改小直接改变首屏可见条数。
+//
+// P3 的验收前提是「迁移前后视觉等价」，所以这些值逐字照抄原实现、只做「起名」。
+
+/** 横向分割线（「多角色」区块的入口线）上下留白。 */
+private val SectionRuleGap = 18.dp
+
+/** 同一区块内相邻两块之间（如「标题行 → 角色列表」）的留白。 */
+private val SectionGap = 12.dp
+
+/** MiMo 专属音色面板与其他区块之间的留白（比 SectionGap 大一档，它是独立的二级面板）。 */
+private val MiMoPanelGap = 14.dp
+
+/** 「标签 / 说明文字」与其下方控件之间的留白（间距梯无 10 档）。 */
+private val FieldGap = 10.dp
+
+/** 「标题」与其紧邻的说明文字之间的留白（间距梯无 6 档）。 */
+private val LabelGap = 6.dp
+
+/** 同一行内两个小元素之间的缝（如「+」图标与其文字）。 */
+private val InlineIconGap = 2.dp
+
+/** 列表行之间的竖向留白（比 spacing.xs(4) 紧一档：这一屏行很密）。 */
+private val RowVerticalGap = 2.dp
+
+/** 列表分组标题的下留白。 */
+private val ListHeaderBottomGap = 2.dp
+
+/** 列表行内左右内边距（间距梯无 6 档）。 */
+private val ListRowHorizontalPadding = 6.dp
+
+/** 系统音色标注列表里每一行（音色名 + 开关 + 性别胶囊）的上下留白。 */
+private val AnnotateRowVerticalPadding = 6.dp
+
+/** 性别/语言胶囊的横向内边距（纵向取 spacing.xs）。 */
+private val PillHorizontalPadding = 12.dp
+
+/** 角色名旁「已锁定」小锁的尺寸（13dp：必须比行内其它图标小，否则与本行操作键混淆）。 */
+private val LockIconSize = 13.dp
+
+/** 行内小图标：编辑 / 删除 / 关闭（16dp）。 */
+private val SmallIconSize = 16.dp
+
+/** 行内中图标：试听 / 恢复自动 / 菜单（18dp）。 */
+private val RowIconSize = 18.dp
+
+/** 行内大图标：试听主键（20dp）。 */
+private val MediumIconSize = 20.dp
+
+/** 加载圈的直径（26dp：比正文图标大一圈，明确是「正在工作」而非装饰）。 */
+private val LoadingSpinnerSize = 26.dp
+
+/** 音色选择弹层里列表的最大高度（360dp：约 7~8 行，再多会盖住搜索框）。 */
+private val VoicePickerMaxHeight = 360.dp
+
+/** 系统音色标注弹层里列表的最大高度（380dp：比音色选择器略高，它每行有两排控件）。 */
+private val AnnotateListMaxHeight = 380.dp
+
+/**
+ * 未选中胶囊的淡底透明度（`ink.copy(alpha = …)`）。
+ *
+ * 这是**同一个语义色的深浅档**而不是独立颜色：底必须是当前墨色的极浅一档，
+ * 另配一份颜色在换肤时会与文字脱节。token 里没有「wash alpha」这一项
+ * （只有 chipWashAlpha 那类给状态徽章用的），所以留在这里。
+ */
+private const val PillWashAlpha = .08f
