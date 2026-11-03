@@ -2059,3 +2059,51 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 #### 仍未验证（必须真机）
 
 三屏的弹层拖拽/返回键/SAF 往返、复习卡片翻面与曲线拖动手势、阅读页 WebView 渲染与手势、TTS 高亮跟随、通知权限弹窗。
+
+### 2026-11-04 续二 · 状态层拆解 + 书架/听书屏 + 三处跨模块缺陷
+
+#### 状态层：AppViewModel 拆解（目标第一条「拆解单体状态」）
+
+| 项 | 前 | 后 |
+| --- | --- | --- |
+| `AppViewModel.kt` | 1999 行 | **1336 行（-33%）** |
+| `sync/AppSyncCoordinator.kt` | — | 415 行（新增） |
+| `ai/TranslationCoordinator.kt` | — | 640 行（新增） |
+| 公开 API | 64 个 fun | **64 个，名字集合完全一致** |
+
+策略是**「提取类 + 保留转发」**：实现搬走、调用点零改动。`SyncHost`/`TranslationHost`
+把三个真耦合点（`viewModelScope` / `mutableState` / `getApplication()`）收敛到宿主一处，
+协调器从此可脱离 Robolectric 单测（接口已就位，补测试是下一轮第一件事）。
+
+#### 三处跨模块缺陷（都不是本轮引入，但都会影响用户）
+
+1. **`LocalDesignTokens` 从未被 provide**（`f90a98e`）：`MainActivity` 只下发 `LocalLinguaPalette`，
+   唯一提供点 `provideLinguaTheme` 零生产调用点，于是所有已迁屏在深色外壳下取到**日间 token**
+   （近黑字落近黑底、弹层纸白刺眼）。**修复安全**：`SkinCompatTest:113-114` 已守住两套 palette
+   与两个 SkinSpec 逐值相等，日间路径零变化。
+2. **`LinguaScaffold` 零窗口 insets**（`b30d42b`）：`targetSdk=35` 强制 edge-to-edge，
+   M3 `Scaffold` 免费提供 insets，自建外壳不读任何 WindowInsets → 顶栏顶进状态栏、
+   列表伸到手势条下。**这类缺陷 Robolectric 永远测不出来**（insets 恒为 0）。
+3. **`PacksSheet` 滚动容器随外壳消失**（`34e5839`）：`verticalScroll` 原本挂在外壳 `Column` 上，
+   换 `LinguaSheet` 后一起没了。**静态 PNG 看不出「能不能滚」**。
+
+前两条已固化为常驻的**源码契约测试**：`ProductionThemeWiringTest`、`ScaffoldInsetsContractTest`。
+第三条的教训写进了 `手册-P3屏幕迁移.md` 的「换外壳必须核对外壳原本免费提供了什么」清单。
+
+#### P3 新增迁移
+
+| 屏 | dp | 提交 |
+| --- | --- | --- |
+| ListeningBar | 16 → 9 | `0972985` |
+| ListeningSettingsSheet | 33 → **0** | `16f44a6` |
+| BookshelfScreen（第一笔） | 55 → 37 | `559fa16` |
+
+`ListeningBar` 刻意**不从 `LocalDesignTokens` 取色**而仍跟 `ReaderTheme`——皮肤描述外壳、
+阅读主题描述贴正文的这条栏，护眼绿主题下听书条必须跟正文同色（历史事故），
+已用像素断言钉死并写进 KDoc。
+
+#### 本轮测试
+
+`:app:testDebugUnitTest`：112 suites / **597 tests** / 1 failure（CloudTts 路径，既有）/ 2 skipped。
+`ScaffoldInsetsContractTest` 2/0（改前红 → 改后绿）、`ProductionThemeWiringTest` 2/0、
+`BookshelfScreenShotTest` 3/0、`DesignTokenDisciplineTest` 7/0。
