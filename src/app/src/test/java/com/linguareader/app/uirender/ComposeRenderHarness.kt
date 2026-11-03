@@ -24,6 +24,11 @@ object ComposeRenderHarness {
     /**
      * 渲染一张图。
      *
+     * ⚠️ 参数是**像素**。Robolectric 的 `@Config(qualifiers = "...-xxhdpi")` 会让
+     * density = 3.0，于是 `render(name, 540, 960)` 实际给 Compose 的可用宽度只有
+     * 540 ÷ 3 = **180dp**——文字会被裁成半截、背景会在内容底部断层，看起来像实现 bug。
+     * **夹具请优先用 [renderDp]**，它按 dp 收尺寸再换算成像素。
+     *
      * @param name 文件名（不含扩展名），**快照基线用的名字要保持稳定**
      * @param widthPx 画布宽（像素）
      * @param heightPx 画布高（像素）
@@ -54,6 +59,29 @@ object ComposeRenderHarness {
         out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
         println("RENDER " + name + " -> " + out.absolutePath + " (" + out.length() + " bytes)")
         return bmp
+    }
+
+    /**
+     * 按 **dp** 渲染（推荐）。内部用当前 `displayMetrics.density` 换算成像素。
+     *
+     * 为什么要有它：本渲染台的 qualifier 是 `xxhdpi`（density 3.0），夹具里写
+     * `render(name, 411, 891)` 本意是「411dp 宽的手机」，实际只给了 137dp ——
+     * 文字被裁、背景断层，而且症状长得非常像屏幕实现有问题。
+     * 这个坑已经踩过一次（见 `SheetMigrationRenderTest` 的类注释），所以把它变成默认能力。
+     *
+     * @param widthDp 画布宽（dp），默认 411dp = 常见手机竖屏宽度
+     * @param heightDp 画布高（dp），默认 891dp
+     */
+    fun renderDp(
+        name: String,
+        widthDp: Int = 411,
+        heightDp: Int = 891,
+        content: @Composable () -> Unit
+    ): Bitmap {
+        val density = androidx.test.core.app.ApplicationProvider
+            .getApplicationContext<android.content.Context>()
+            .resources.displayMetrics.density
+        return render(name, (widthDp * density).toInt(), (heightDp * density).toInt(), content)
     }
 
     /**

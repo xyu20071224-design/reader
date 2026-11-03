@@ -2,48 +2,35 @@ package com.linguareader.app
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.Lifecycle
-import com.linguareader.app.BuildConfig
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.linguareader.app.components.LinguaSheet
+import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.components.PrimaryButton
+import com.linguareader.app.components.SecondaryButton
+import com.linguareader.app.components.SettingRow
+import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.update.ApkInstaller
 import com.linguareader.shared.update.AppUpdatePhase
 import com.linguareader.shared.update.AppUpdateUiState
@@ -55,8 +42,10 @@ private const val RELEASE_PAGE_BASE = "https://github.com/xyu20071224-design/rea
  * 检查更新弹层：版本信息、自动检查开关、检查/下载/安装的状态行。
  *
  * ModalBottomSheet 会盖住全局 Snackbar，所有检查/下载反馈都画在弹层内部。
+ *
+ * P3 迁移：外壳换成 [LinguaSheet]（拖柄/圆角/底部留白统一由组件给），
+ * 内部样式一律取 [LocalDesignTokens]。**交互与文案零改动**。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun UpdateSheet(
     update: AppUpdateUiState,
@@ -73,57 +62,83 @@ internal fun UpdateSheet(
         canInstall = ApkInstaller.canInstall(context)
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Paper) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
-        ) {
-            Text(
-                stringResource(R.string.update_sheet_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = Ink
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                stringResource(R.string.update_current_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
-                style = MaterialTheme.typography.labelMedium,
-                color = InkFaint
-            )
-            Spacer(Modifier.height(12.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        stringResource(R.string.update_auto_check_label),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Ink
-                    )
-                    Text(
-                        stringResource(R.string.update_auto_check_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkFaint
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Switch(checked = update.autoCheckEnabled, onCheckedChange = onAutoCheckChange)
+    LinguaSheet(onDismiss = onDismiss) {
+        UpdateSheetContent(
+            update = update,
+            canInstall = canInstall,
+            onAutoCheckChange = onAutoCheckChange,
+            onCheckNow = onCheckNow,
+            onDownload = onDownload,
+            onCancelDownload = onCancelDownload,
+            onGrantInstallPermission = {
+                context.startActivity(ApkInstaller.installPermissionIntent(context))
             }
-
-            Spacer(Modifier.height(16.dp))
-            UpdatePhaseBody(
-                update = update,
-                canInstall = canInstall,
-                onCheckNow = onCheckNow,
-                onDownload = onDownload,
-                onCancelDownload = onCancelDownload,
-                onGrantInstallPermission = {
-                    context.startActivity(ApkInstaller.installPermissionIntent(context))
-                }
-            )
-        }
+        )
     }
+}
+
+/**
+ * 弹层的**内容体**，与 sheet 外壳解耦。
+ *
+ * 抽出来的理由：`ModalBottomSheet` 在渲染台（Robolectric）里画不进位图，
+ * 于是迁移前/后的视觉对比根本没法做。把内容体单独拎出来之后，它可以被独立渲染、
+ * 也可以在没有 sheet 的场景（例如以后的平板双栏）里复用。
+ *
+ * ⚠️ **抽取是有代价的：本组件不再自带宽度/背景约束。**
+ * 真实使用时它继承弹层 `Column` 的宽度与 `ModalBottomSheet` 的纸色底；单独使用
+ * （渲染台、其它宿主）时必须由调用方提供——否则文字会按可用的窄宽度排版而被裁断、
+ * 内容底部以下会露出画布底色。渲染台里的正确用法见 `SheetMigrationRenderTest`：
+ * 外面套 `Box(Modifier.fillMaxSize().background(Paper))` 并用 `renderDp(411, 891)`。
+ *
+ * @param canInstall 系统「安装未知应用」授权是否已给——由外壳查（它需要 Activity），
+ *   这里只负责画，保持无副作用。
+ */
+@Composable
+internal fun ColumnScope.UpdateSheetContent(
+    update: AppUpdateUiState,
+    canInstall: Boolean,
+    onAutoCheckChange: (Boolean) -> Unit,
+    onCheckNow: () -> Unit,
+    onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onGrantInstallPermission: () -> Unit
+) {
+    val t = LocalDesignTokens.current
+
+    Text(
+        text = stringResource(R.string.update_sheet_title),
+        style = t.typography.title,
+        color = t.colors.ink
+    )
+    Spacer(Modifier.height(t.spacing.xs))
+    Text(
+        text = stringResource(
+            R.string.update_current_version,
+            BuildConfig.VERSION_NAME,
+            BuildConfig.VERSION_CODE
+        ),
+        style = t.typography.caption,
+        color = t.colors.inkFaint
+    )
+    Spacer(Modifier.height(t.spacing.m))
+
+    // 自动检查开关：标题 + 说明 + 开关一行，由 SettingRow 统一行高与开关配色。
+    SettingRow(
+        title = stringResource(R.string.update_auto_check_label),
+        subtitle = stringResource(R.string.update_auto_check_hint),
+        checked = update.autoCheckEnabled,
+        onCheckedChange = onAutoCheckChange
+    )
+
+    Spacer(Modifier.height(t.spacing.m))
+    UpdatePhaseBody(
+        update = update,
+        canInstall = canInstall,
+        onCheckNow = onCheckNow,
+        onDownload = onDownload,
+        onCancelDownload = onCancelDownload,
+        onGrantInstallPermission = onGrantInstallPermission
+    )
 }
 
 /** 按 [AppUpdatePhase] 渲染弹层的状态区。 */
@@ -136,28 +151,31 @@ private fun UpdatePhaseBody(
     onCancelDownload: () -> Unit,
     onGrantInstallPermission: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     when (update.phase) {
         AppUpdatePhase.IDLE -> {
-            Button(onClick = onCheckNow, shape = PillShape) {
-                Text(stringResource(R.string.update_check_now))
-            }
+            PrimaryButton(text = stringResource(R.string.update_check_now), onClick = onCheckNow)
         }
 
-        AppUpdatePhase.CHECKING -> PhaseRow {
-            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(8.dp))
+        AppUpdatePhase.CHECKING -> {
+            CircularProgressIndicator(
+                modifier = Modifier.height(t.spacing.l),
+                strokeWidth = t.hairline,
+                color = t.colors.accent
+            )
+            Spacer(Modifier.height(t.spacing.s))
             Text(
-                stringResource(R.string.update_checking),
-                style = MaterialTheme.typography.bodyMedium,
-                color = InkSoft
+                text = stringResource(R.string.update_checking),
+                style = t.typography.body,
+                color = t.colors.inkSoft
             )
         }
 
-        AppUpdatePhase.UP_TO_DATE -> PhaseRow {
+        AppUpdatePhase.UP_TO_DATE -> {
             Text(
-                stringResource(R.string.update_up_to_date),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Success
+                text = stringResource(R.string.update_up_to_date),
+                style = t.typography.body,
+                color = t.colors.success
             )
         }
 
@@ -170,19 +188,22 @@ private fun UpdatePhaseBody(
 
         AppUpdatePhase.DOWNLOADING -> {
             Text(
-                stringResource(R.string.update_downloading, update.progress),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Ink
+                text = stringResource(R.string.update_downloading, update.progress),
+                style = t.typography.body,
+                color = t.colors.ink
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(t.spacing.s))
             LinearProgressIndicator(
                 progress = { update.progress / 100f },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                color = t.colors.accent,
+                trackColor = t.colors.paperDeep
             )
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = onCancelDownload) {
-                Text(stringResource(R.string.update_download_cancel))
-            }
+            Spacer(Modifier.height(t.spacing.s))
+            LinguaTextButton(
+                text = stringResource(R.string.update_download_cancel),
+                onClick = onCancelDownload
+            )
         }
 
         AppUpdatePhase.DOWNLOADED -> DownloadedBody(
@@ -193,14 +214,12 @@ private fun UpdatePhaseBody(
 
         AppUpdatePhase.ERROR -> {
             Text(
-                stringResource(R.string.update_error, update.error ?: ""),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Danger
+                text = stringResource(R.string.update_error, update.error ?: ""),
+                style = t.typography.body,
+                color = t.colors.danger
             )
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onCheckNow) {
-                Text(stringResource(R.string.update_retry))
-            }
+            Spacer(Modifier.height(t.spacing.s))
+            SecondaryButton(text = stringResource(R.string.update_retry), onClick = onCheckNow)
         }
     }
 }
@@ -212,57 +231,56 @@ private fun AvailableBody(
     onDownload: () -> Unit,
     onGrantInstallPermission: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     val context = LocalContext.current
     val info = update.info
     if (info != null) {
         Text(
-            stringResource(R.string.update_available_title, info.versionName),
-            style = MaterialTheme.typography.titleSmall,
-            color = Accent
+            text = stringResource(R.string.update_available_title, info.versionName),
+            style = t.typography.title,
+            color = t.colors.accent
         )
         if (info.releaseNotes.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(t.spacing.xs))
             Text(
-                stringResource(R.string.update_notes_title),
-                style = MaterialTheme.typography.labelMedium,
-                color = InkFaint
+                text = stringResource(R.string.update_notes_title),
+                style = t.typography.label,
+                color = t.colors.inkFaint
             )
             Column(
                 Modifier
-                    .heightIn(max = 160.dp)
+                    .heightIn(max = t.proseMaxWidth)
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    info.releaseNotes,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkSoft
+                    text = info.releaseNotes,
+                    style = t.typography.caption,
+                    color = t.colors.inkSoft
                 )
             }
         }
-        Spacer(Modifier.height(12.dp))
-        Button(onClick = onDownload, shape = PillShape) {
-            Text(stringResource(R.string.update_download))
-        }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(t.spacing.m))
+        PrimaryButton(text = stringResource(R.string.update_download), onClick = onDownload)
+        Spacer(Modifier.height(t.spacing.xs))
         if (!canInstall) {
             Text(
-                stringResource(R.string.update_install_permission_hint),
-                style = MaterialTheme.typography.labelMedium,
-                color = InkFaint
+                text = stringResource(R.string.update_install_permission_hint),
+                style = t.typography.label,
+                color = t.colors.inkFaint
             )
-            Spacer(Modifier.height(4.dp))
-            OutlinedButton(onClick = onGrantInstallPermission) {
-                Text(stringResource(R.string.update_go_permission_settings))
-            }
+            Spacer(Modifier.height(t.spacing.xs))
+            SecondaryButton(
+                text = stringResource(R.string.update_go_permission_settings),
+                onClick = onGrantInstallPermission
+            )
         }
         val releasePage = RELEASE_PAGE_BASE + info.tag
-        TextButton(onClick = {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(releasePage)))
-        }) {
-            Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.update_open_release_page))
-        }
+        LinguaTextButton(
+            text = stringResource(R.string.update_open_release_page),
+            onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(releasePage)))
+            }
+        )
     }
 }
 
@@ -272,31 +290,23 @@ private fun DownloadedBody(
     canInstall: Boolean,
     onGrantInstallPermission: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     val context = LocalContext.current
     if (canInstall && apk != null) {
-        Button(
-            onClick = { context.startActivity(ApkInstaller.installIntent(context, apk)) },
-            shape = PillShape,
-            colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent)
-        ) {
-            Text(stringResource(R.string.update_install))
-        }
+        PrimaryButton(
+            text = stringResource(R.string.update_install),
+            onClick = { context.startActivity(ApkInstaller.installIntent(context, apk)) }
+        )
     } else {
         Text(
-            stringResource(R.string.update_install_permission_hint),
-            style = MaterialTheme.typography.labelMedium,
-            color = InkFaint
+            text = stringResource(R.string.update_install_permission_hint),
+            style = t.typography.label,
+            color = t.colors.inkFaint
         )
-        Spacer(Modifier.height(4.dp))
-        Button(onClick = onGrantInstallPermission) {
-            Text(stringResource(R.string.update_go_permission_settings))
-        }
-    }
-}
-
-@Composable
-private fun PhaseRow(content: @Composable () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        content()
+        Spacer(Modifier.height(t.spacing.xs))
+        PrimaryButton(
+            text = stringResource(R.string.update_go_permission_settings),
+            onClick = onGrantInstallPermission
+        )
     }
 }
