@@ -43,21 +43,21 @@ import com.linguareader.shared.sync.SyncSettings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import com.linguareader.app.components.EmptyState
+import com.linguareader.app.components.LinguaScaffold
+import com.linguareader.app.components.LinguaTopBarAction
+import com.linguareader.app.components.PrimaryButton
+import com.linguareader.app.skin.LocalDesignTokens
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -259,162 +259,127 @@ internal fun BookshelfScreen(
     var shelfAppearance by remember { mutableStateOf(ShelfAppearance.load(context)) }
     var showAppearanceSheet by rememberSaveable { mutableStateOf(false) }
 
+    // 设计 token：本屏所有样式从这里取（P3 硬约束）。背景层与书卡仍用旧调色板 API
+    // 的语义色名（Ink/Accent…）——它们由同一份 SkinSpec 派生，与 token 永远同源。
+    val t = LocalDesignTokens.current
+
     Box(Modifier.fillMaxSize()) {
         if (shelfAppearance.isCustomized) {
             ShelfBackgroundLayer(shelfAppearance)
         }
-        Scaffold(
-            containerColor = if (shelfAppearance.isCustomized) Color.Transparent else Paper,
-            topBar = {
-                TopAppBar(
-                    // 同步明细页是二级视图：顶栏是唯一返回位（系统返回由 BackHandler 兜底）。
-                    navigationIcon = {
-                        if (showSyncDetail) {
-                            IconButton(onClick = { showSyncDetail = false }) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = stringResource(R.string.sync_detail_back),
-                                    modifier = Modifier.size(20.dp),
-                                    tint = InkSoft
-                                )
-                            }
-                        }
-                    },
-                    title = {
-                        // 只显示书/词计数，不放应用名：顶栏动作多，放名字会把「语境阅读」挤成两行。
-                        // 同步明细页例外：顶栏直接报页面名，页内不再重复标题。
-                        if (showSyncDetail) {
-                            Text(
-                                stringResource(R.string.sync_detail_title),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = InkSoft
-                            )
-                        } else {
-                            Text(
-                                if (showVocabulary) {
-                                    pluralStringResource(
-                                        R.plurals.shelf_word_count,
-                                        state.savedWords.size,
-                                        state.savedWords.size
-                                    )
-                                } else {
-                                    pluralStringResource(
-                                        R.plurals.shelf_book_count,
-                                        state.books.size,
-                                        state.books.size
-                                    )
-                                },
-                                style = MaterialTheme.typography.titleMedium,
-                                color = InkSoft
-                            )
-                        }
-                    },
-                    actions = {
-                        // 同步明细页独占顶栏：书架动作与生词本切换图标全部隐藏（Lead 裁决 A′）。
-                        if (!showSyncDetail) {
-                        // Q2-c08：生词本是独立的次级视图，不再显示书架专属动作
-                        // （存储占用 / 外观 / 检查更新）。此前这些图标在生词本里照旧渲染，
-                        // 用户看到的是「生词本还有一部分书架的顶部图标」。
-                        if (!showVocabulary) {
-                        // 云同步（F-160）：自托管服务端的登录与手动同步入口。
-                        IconButton(onClick = { showSyncSheet = true }) {
-                            Icon(
-                                Icons.Default.Cloud,
-                                contentDescription = stringResource(R.string.sync_entry),
-                                modifier = Modifier.size(20.dp),
-                                tint = InkSoft
-                            )
-                        }
-                        // 存储占用：打开即扫盘（不在启动时扫，那会拖慢冷启动）。
-                        IconButton(onClick = {
-                            showStorageSheet = true
-                            onRefreshStorage()
-                        }) {
-                            Icon(
-                                Icons.Default.Storage,
-                                contentDescription = stringResource(R.string.storage_title),
-                                modifier = Modifier.size(20.dp),
-                                tint = InkSoft
-                            )
-                        }
-                        IconButton(onClick = { showAppearanceSheet = true }) {
-                            Icon(
-                                Icons.Default.Palette,
-                                contentDescription = stringResource(R.string.shelf_appearance_title),
-                                modifier = Modifier.size(20.dp),
-                                tint = if (shelfAppearance.isCustomized) Accent else InkSoft
-                            )
-                        }
-                        // 检查更新入口：本会话发现新版时给个小红点。
-                        IconButton(onClick = { showUpdateSheet = true }) {
-                            Box(contentAlignment = Alignment.TopEnd) {
-                                Icon(
-                                    Icons.Default.Refresh,
-                                    contentDescription = stringResource(R.string.update_sheet_title),
-                                    modifier = Modifier.size(20.dp),
-                                    tint = InkSoft
-                                )
-                                if (update.updateAvailable) {
-                                    Box(
-                                        Modifier
-                                            .size(8.dp)
-                                            .background(Danger, CircleShape)
-                                    )
-                                }
-                            }
-                        }
-                        }
-
-                        // 生词本/书架切换：只留图标，名字在标题（次级视图）与无障碍描述里。
-                        IconButton(
-                            onClick = { showVocabulary = !showVocabulary },
-                            modifier = Modifier.testTag(UiTags.SHELF_VOCABULARY)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.MenuBook,
-                                contentDescription = stringResource(
-                                    if (showVocabulary) R.string.shelf_tab_shelf
-                                    else R.string.shelf_vocabulary
-                                ),
-                                modifier = Modifier.size(20.dp),
-                                tint = if (showVocabulary) Accent else InkSoft
-                            )
-                        }
-                        if (!showVocabulary) {
-                            // AI 中心：图标入口，名字在抽屉头部与无障碍描述里。
-                            IconButton(
-                                onClick = { showAiDrawer = true },
-                                modifier = Modifier.testTag(UiTags.SHELF_AI_CENTER)
-                            ) {
-                                Icon(
-                                    Icons.Default.Settings,
-                                    contentDescription = stringResource(R.string.shelf_ai_center),
-                                    modifier = Modifier.size(20.dp),
-                                    tint = if (state.aiSettings.enabled) Accent else InkSoft
-                                )
-                            }
-                            IconButton(
-                                onClick = { launcher.launch(IMPORT_MIME_TYPES) },
-                                modifier = Modifier.testTag(UiTags.SHELF_IMPORT)
-                            ) {
-                                Icon(
-                                    Icons.Default.Add,
-                                    contentDescription = stringResource(R.string.shelf_import),
-                                    modifier = Modifier.size(22.dp),
-                                    tint = Accent
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = if (shelfAppearance.isCustomized) Color.Transparent else Paper
-                    )
+        // 外壳换成原语 LinguaScaffold：顶栏行高、图标尺寸、返回箭头语义（AutoMirrored）
+        // 与窗口 insets 全部由组件统一；本屏只提供「标题文本 + 动作槽 + 内容槽」。
+        //
+        // containerColor 只在**有自定义背景**时传透明 —— 背景层画在这个 Box 的最底层，
+        // 要能透过外壳露出来（那是书架外观设置的全部意义）。其余时候传 null，
+        // 组件用 token 的 paper，与迁移前的 Scaffold(containerColor = Paper) 等价。
+        LinguaScaffold(
+            // 文案一个字都没改：同步明细页报页面名，其余报「N 本书 / N 个词」。
+            title = if (showSyncDetail) {
+                stringResource(R.string.sync_detail_title)
+            } else if (showVocabulary) {
+                pluralStringResource(
+                    R.plurals.shelf_word_count,
+                    state.savedWords.size,
+                    state.savedWords.size
                 )
+            } else {
+                pluralStringResource(
+                    R.plurals.shelf_book_count,
+                    state.books.size,
+                    state.books.size
+                )
+            },
+            // 同步明细页是二级视图：顶栏是唯一返回位（系统返回由 BackHandler 兜底）。
+            onBack = if (showSyncDetail) {
+                { showSyncDetail = false }
+            } else {
+                null
+            },
+            containerColor = if (shelfAppearance.isCustomized) Color.Transparent else null,
+            actions = {
+                // 同步明细页独占顶栏：书架动作与生词本切换图标全部隐藏（Lead 裁决 A′）。
+                if (!showSyncDetail) {
+                    // Q2-c08：生词本是独立的次级视图，不再显示书架专属动作
+                    // （存储占用 / 外观 / 检查更新）。此前这些图标在生词本里照旧渲染，
+                    // 用户看到的是「生词本还有一部分书架的顶部图标」。
+                    if (!showVocabulary) {
+                        // 云同步（F-160）：自托管服务端的登录与手动同步入口。
+                        LinguaTopBarAction(
+                            icon = Icons.Default.Cloud,
+                            contentDescription = stringResource(R.string.sync_entry),
+                            onClick = { showSyncSheet = true }
+                        )
+                        // 存储占用：打开即扫盘（不在启动时扫，那会拖慢冷启动）。
+                        LinguaTopBarAction(
+                            icon = Icons.Default.Storage,
+                            contentDescription = stringResource(R.string.storage_title),
+                            onClick = {
+                                showStorageSheet = true
+                                onRefreshStorage()
+                            }
+                        )
+                        // 激活态用 accent：这一项当前「已生效」（装了自定义背景）。
+                        LinguaTopBarAction(
+                            icon = Icons.Default.Palette,
+                            contentDescription = stringResource(R.string.shelf_appearance_title),
+                            onClick = { showAppearanceSheet = true },
+                            tint = if (shelfAppearance.isCustomized) Accent else null
+                        )
+                        // 检查更新入口：本会话发现新版时给个小红点。
+                        // 读屏语义也在 contentDescription 里（只画红点读屏用户收不到）。
+                        LinguaTopBarAction(
+                            icon = Icons.Default.Refresh,
+                            contentDescription = if (update.updateAvailable) {
+                                // 读屏语义：红点本身对无障碍用户不可见，必须落到描述里。
+                                // 复用既有文案「发现新版本 %s」，不为一个红点新增 key。
+                                stringResource(
+                                    R.string.update_available_title,
+                                    update.info?.versionName ?: ""
+                                )
+                            } else {
+                                stringResource(R.string.update_sheet_title)
+                            },
+                            onClick = { showUpdateSheet = true },
+                            badge = update.updateAvailable
+                        )
+                    }
+
+                    // 生词本/书架切换：只留图标，名字在标题（次级视图）与无障碍描述里。
+                    LinguaTopBarAction(
+                        icon = Icons.AutoMirrored.Filled.MenuBook,
+                        contentDescription = stringResource(
+                            if (showVocabulary) R.string.shelf_tab_shelf
+                            else R.string.shelf_vocabulary
+                        ),
+                        onClick = { showVocabulary = !showVocabulary },
+                        modifier = Modifier.testTag(UiTags.SHELF_VOCABULARY),
+                        tint = if (showVocabulary) Accent else null
+                    )
+                    if (!showVocabulary) {
+                        // AI 中心：图标入口，名字在抽屉头部与无障碍描述里。
+                        LinguaTopBarAction(
+                            icon = Icons.Default.Settings,
+                            contentDescription = stringResource(R.string.shelf_ai_center),
+                            onClick = { showAiDrawer = true },
+                            modifier = Modifier.testTag(UiTags.SHELF_AI_CENTER),
+                            tint = if (state.aiSettings.enabled) Accent else null
+                        )
+                        // 导入是这一屏的主动作：恒定 accent（未激活态的语义不适用）。
+                        LinguaTopBarAction(
+                            icon = Icons.Default.Add,
+                            contentDescription = stringResource(R.string.shelf_import),
+                            onClick = { launcher.launch(IMPORT_MIME_TYPES) },
+                            modifier = Modifier.testTag(UiTags.SHELF_IMPORT),
+                            tint = Accent
+                        )
+                    }
+                }
             }
-        ) { padding ->
-            Box(Modifier.fillMaxSize().padding(padding)) {
+        ) {
+            // 内容区不再需要给顶栏留出 padding：LinguaScaffold 的顶栏是 Column 的第一段，
+            // 内容槽天然接在它下面；窗口 insets 也已由组件处理。
+            Box(Modifier.fillMaxSize()) {
                 if (showVocabulary) {
                     VocabularyScreen(
                         words = state.savedWords,
@@ -483,14 +448,15 @@ internal fun BookshelfScreen(
                     }
                 }
                 if (state.loading) {
+                    // 半透明纸底压在书架内容上：只是「正在整理」的提示，不是遮断式loading 页。
                     Box(
-                        Modifier.fillMaxSize().background(Paper.copy(alpha = .72f)),
+                        Modifier.fillMaxSize().background(t.colors.paper.copy(alpha = LoadingScrimAlpha)),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = Accent)
-                            Spacer(Modifier.height(12.dp))
-                            Text(stringResource(R.string.shelf_loading), color = InkSoft)
+                            CircularProgressIndicator(color = t.colors.accent)
+                            Spacer(Modifier.height(t.spacing.m))
+                            Text(stringResource(R.string.shelf_loading), color = t.colors.inkSoft)
                         }
                     }
                 }
@@ -1071,43 +1037,36 @@ private fun RosterSheet(
     }
 }
 
+/**
+ * 空书架引导（P3 迁移第一笔）。
+ *
+ * 换成原语 [EmptyState]：图标底盘、标题/说明的字号与行宽、动作按钮的间距全部由
+ * 设计系统统一，本屏不再各写一套。**文案一个字没改**（三条都在 strings.xml 里）。
+ *
+ * 保留了外层这个 Column：它负责「在剩余空间里垂直居中」，而 [EmptyState] 自己只
+ * fillMaxWidth（与生词本空态同一处理，见 VocabularyScreen.VocabList 的注释）。
+ */
 @Composable
 private fun EmptyBookshelf(onImport: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp)
             .testTag(UiTags.SHELF_EMPTY),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            Icons.AutoMirrored.Filled.MenuBook,
-            contentDescription = null,
-            modifier = Modifier.size(96.dp),
-            tint = Accent.copy(alpha = .55f)
+        EmptyState(
+            icon = Icons.AutoMirrored.Filled.MenuBook,
+            title = stringResource(R.string.shelf_empty_title),
+            body = stringResource(R.string.shelf_empty_body),
+            action = {
+                PrimaryButton(
+                    text = stringResource(R.string.shelf_empty_action),
+                    onClick = onImport,
+                    icon = Icons.Default.Add
+                )
+            }
         )
-        Spacer(Modifier.height(20.dp))
-        Text(
-            stringResource(R.string.shelf_empty_title),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            stringResource(R.string.shelf_empty_body),
-            color = InkSoft
-        )
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = onImport,
-            colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
-            shape = PillShape
-        ) {
-            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.shelf_empty_action))
-        }
     }
 }
 
@@ -1393,6 +1352,15 @@ private fun EmptyBookshelfLightPreview() {
 private fun EmptyBookshelfDarkPreview() {
     PreviewScaffold(dark = true) { EmptyBookshelf(onImport = {}) }
 }
+
+// ── 组件专有常量 ──────────────────────────────────────────────────
+//
+// 与 ShelfAppearanceSheet / ReviewUi 同一口径：**不进间距梯**的值集中命名在这里。
+// 间距梯的语义是「同一语义在不同屏上表现一致」（区块间距 / 卡内边距 / 行内间隙）；
+// 透明度这种「这一屏自己的观感参数」塞进梯子只会让梯子变成杂物间。
+
+/** 书架「正在整理图书」遮罩的不透明度：能看清下面有书、又读得清提示字。 */
+private const val LoadingScrimAlpha = 0.72f
 
 private fun decodeSampledCover(file: File, targetWidth: Int): android.graphics.Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
