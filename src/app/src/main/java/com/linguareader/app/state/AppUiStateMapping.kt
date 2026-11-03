@@ -64,7 +64,13 @@ object AppUiStateMapping {
         "syncBusy",
         "cloudBooks",
         "cloudBooksLoaded",
-        "cloudBooksLoading"
+        "cloudBooksLoading",
+        // F-160 云同步明细（2026-11-04 从 main 合入）。归属 SETTINGS：它们是云同步
+        // 这一功能的状态，与 syncSettings/syncStatus 同族。
+        "syncDetail",
+        "syncDetailLoading",
+        "cloudBlobSizes",
+        "lastSyncAt"
     )
 
     /**

@@ -78,7 +78,11 @@ fun AppUiState.split(): AppSlices = AppSlices(
         syncBusy = syncBusy,
         cloudBooks = cloudBooks,
         cloudBooksLoaded = cloudBooksLoaded,
-        cloudBooksLoading = cloudBooksLoading
+        cloudBooksLoading = cloudBooksLoading,
+        syncDetail = syncDetail,
+        syncDetailLoading = syncDetailLoading,
+        cloudBlobSizes = cloudBlobSizes,
+        lastSyncAt = lastSyncAt
     ),
     appOnly = AppOnlyState(
         launchPrompt = launchPrompt,

@@ -3,6 +3,7 @@ package com.linguareader.shared.ui.state
 import com.linguareader.shared.ai.AiSettings
 import com.linguareader.shared.data.StorageReport
 import com.linguareader.shared.sync.CloudBook
+import com.linguareader.shared.sync.SyncDetail
 import com.linguareader.shared.sync.SyncSettings
 import com.linguareader.shared.update.AppUpdateUiState
 
@@ -33,5 +34,18 @@ data class SettingsState(
     val cloudBooks: List<CloudBook> = emptyList(),
     /** 是否已成功拉取过一次云端书单（区分「没拉过」与「拉过但为空」）。 */
     val cloudBooksLoaded: Boolean = false,
-    val cloudBooksLoading: Boolean = false
+    val cloudBooksLoading: Boolean = false,
+    /**
+     * 同步明细快照（F-160）：本地全部书/生词逐条三态 + 只在云端的书 + 汇总计数。
+     * null = 尚未构建。由 `:app` 的 `SyncDetailBuilder`（纯函数）算出。
+     */
+    val syncDetail: SyncDetail? = null,
+    val syncDetailLoading: Boolean = false,
+    /**
+     * 云端正文 blob 的 bookId → size；null = 尚未成功拉到。
+     * 与 [cloudBooks] 语义不同：这里含**全部**云端完整 blob（含本机也有的书）。
+     */
+    val cloudBlobSizes: Map<String, Long>? = null,
+    /** 上次同步动作成功的时间（毫秒）；0 = 从未成功。 */
+    val lastSyncAt: Long = 0L
 )
