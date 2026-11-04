@@ -9,15 +9,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,9 +25,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.components.PrimaryButtonFullWidth
 import com.linguareader.app.data.Greeting
 import com.linguareader.app.data.GreetingPeriod
 import com.linguareader.app.data.UpdateNote
+import com.linguareader.app.skin.LocalDesignTokens
 
 /** Launch greeting scene card, or one-time update note after an app update (F-144). */
 @Composable
@@ -47,17 +44,28 @@ internal fun LaunchPromptDialog(
     }
 }
 
+/**
+ * 问候场景卡（F-144）。
+ *
+ * P3 补迁：样式改由 [LocalDesignTokens] 提供。**是 `Dialog`，画不进渲染台的位图**
+ * （走独立 Window），所以这一屏只有编译验证与代码审阅，**没有像素基线**——
+ * 真机验收时请单独看一眼深色主题下的观感。
+ *
+ * 保留的排版特例：标题 26sp / 正文 15sp·行高 26sp。它们是这张「场景卡」的版式
+ * 比例（标题需要大于 `display` 的 28sp 太多会溢出卡片宽度），间距梯里没有字号档位，
+ * 故沿用原值并在这里写明理由。
+ */
 @Composable
 private fun GreetingSceneDialog(greeting: Greeting, onDismiss: () -> Unit) {
+    val t = LocalDesignTokens.current
     val accent = greeting.period.accent()
     Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = CardSurface,
-            shadowElevation = 10.dp
+        androidx.compose.material3.Surface(
+            shape = t.largeShape,
+            color = t.colors.cardSurface
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                modifier = Modifier.padding(horizontal = t.spacing.l, vertical = t.spacing.s),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
@@ -65,60 +73,58 @@ private fun GreetingSceneDialog(greeting: Greeting, onDismiss: () -> Unit) {
                         .fillMaxWidth()
                         .background(
                             Brush.verticalGradient(
-                                listOf(accent.copy(alpha = 0.16f), Color.Transparent)
+                                listOf(accent.copy(alpha = GreetingSceneWashAlpha), Color.Transparent)
                             )
                         )
-                        .padding(vertical = 22.dp),
+                        .padding(vertical = t.spacing.l),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(
                             modifier = Modifier
-                                .size(56.dp)
-                                .background(accent.copy(alpha = 0.18f), CircleShape),
+                                .size(GreetingBadgeSize)
+                                .background(accent.copy(alpha = GreetingBadgeAlpha), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 painter = painterResource(greeting.period.iconRes()),
                                 contentDescription = null,
                                 tint = accent,
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(GreetingIconSize)
                             )
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(t.spacing.m))
                         Text(
                             text = stringResource(greeting.titleRes),
+                            // 版式特例：26sp 场景标题（见函数注释）。
                             fontFamily = FontFamily.Serif,
-                            fontSize = 26.sp,
+                            fontSize = GreetingTitleSize,
                             fontWeight = FontWeight.Medium,
-                            color = Ink
+                            color = t.colors.ink
                         )
-                        Spacer(Modifier.height(2.dp))
+                        Spacer(Modifier.height(GreetingTinyGap))
                         Text(
                             text = stringResource(greeting.period.hoursLabelRes),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = InkSoft
+                            style = t.typography.label,
+                            color = t.colors.inkSoft
                         )
                     }
                 }
                 Text(
                     text = stringResource(greeting.messageRes),
+                    // 版式特例：15sp / 26sp 行高（见函数注释）。
                     fontFamily = FontFamily.Serif,
-                    fontSize = 15.sp,
-                    lineHeight = 26.sp,
+                    fontSize = GreetingBodySize,
+                    lineHeight = GreetingBodyLineHeight,
                     textAlign = TextAlign.Center,
-                    color = Ink,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 22.dp)
+                    color = t.colors.ink,
+                    modifier = Modifier.padding(top = t.spacing.xs, bottom = t.spacing.l)
                 )
-                Button(
-                    onClick = onDismiss,
-                    shape = PillShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.launch_greeting_start), modifier = Modifier.padding(vertical = 2.dp))
-                }
-                Spacer(Modifier.height(10.dp))
+                PrimaryButtonFullWidth(
+                    text = stringResource(R.string.launch_greeting_start),
+                    onClick = onDismiss
+                )
+                Spacer(Modifier.height(t.spacing.s))
             }
         }
     }
@@ -126,29 +132,34 @@ private fun GreetingSceneDialog(greeting: Greeting, onDismiss: () -> Unit) {
 
 @Composable
 private fun UpdateNoteDialog(note: UpdateNote, onDismiss: () -> Unit) {
+    val t = LocalDesignTokens.current
     // joinToString 的 lambda 不是组合作用域，用 context 取文案而不是 stringResource。
     val context = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_got_it), color = Accent) }
+            LinguaTextButton(
+                text = stringResource(R.string.common_got_it),
+                onClick = onDismiss
+            )
         },
         title = {
             Text(
-                stringResource(R.string.launch_update_note_title, note.versionName),
-                style = MaterialTheme.typography.headlineSmall
+                text = stringResource(R.string.launch_update_note_title, note.versionName),
+                style = t.typography.title,
+                color = t.colors.ink
             )
         },
         text = {
             Text(
-                note.items.joinToString("\n") { "· ${context.getString(it)}" },
-                style = MaterialTheme.typography.bodyMedium,
-                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
-                modifier = Modifier.padding(top = 4.dp)
+                text = note.items.joinToString("\n") { "· ${'$'}{context.getString(it)}" },
+                style = t.typography.body.copy(lineHeight = t.typography.display.lineHeight),
+                color = t.colors.ink,
+                modifier = Modifier.padding(top = t.spacing.xs)
             )
         },
-        containerColor = CardSurface,
-        shape = CardShape
+        containerColor = t.colors.cardSurface,
+        shape = t.cardShape
     )
 }
 
@@ -167,3 +178,20 @@ private fun GreetingPeriod.iconRes(): Int = when (this) {
     GreetingPeriod.DUSK -> R.drawable.ic_greeting_dusk
     GreetingPeriod.NIGHT -> R.drawable.ic_greeting_night
 }
+
+// ── 场景卡专有尺寸与透明度 ────────────────────────────────────────
+//
+// 这几个是「这张问候卡自己的版式比例」，不是全局间距：
+// - GreetingTitleSize 26sp 比排版梯最大档 display(28sp) 略小，但 greeting 标题是单行
+//   短词（「清晨」「正午」），用 28sp 会在窄卡里换行；
+// - GreetingBodySize 15sp / 行高 26sp 是「引言」的版式（比 body 的 15/22 行距更松）；
+// - 两个 alpha 是渐变/底盘浓度，属于配色而非间距。
+// 硬套 token 会改变这张卡的比例，故按原值保留并命名。
+private val GreetingTitleSize = 26.sp
+private val GreetingBodySize = 15.sp
+private val GreetingBodyLineHeight = 26.sp
+private val GreetingTinyGap = 2.dp
+private val GreetingBadgeSize = 56.dp
+private val GreetingIconSize = 30.dp
+private const val GreetingSceneWashAlpha = 0.16f
+private const val GreetingBadgeAlpha = 0.18f
