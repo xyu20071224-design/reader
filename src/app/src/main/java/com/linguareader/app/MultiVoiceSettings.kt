@@ -71,6 +71,25 @@ import com.linguareader.app.components.SectionHeader
 import com.linguareader.app.components.SettingRow
 import com.linguareader.app.data.Book
 import com.linguareader.app.skin.LocalDesignTokens
+import com.linguareader.app.multivoice.AnnotateListMaxHeight
+import com.linguareader.app.multivoice.AnnotateRowVerticalPadding
+import com.linguareader.app.multivoice.FieldGap
+import com.linguareader.app.multivoice.InlineIconGap
+import com.linguareader.app.multivoice.LabelGap
+import com.linguareader.app.multivoice.ListHeaderBottomGap
+import com.linguareader.app.multivoice.ListRowHorizontalPadding
+import com.linguareader.app.multivoice.LoadingSpinnerSize
+import com.linguareader.app.multivoice.LockIconSize
+import com.linguareader.app.multivoice.MediumIconSize
+import com.linguareader.app.multivoice.MiMoPanelGap
+import com.linguareader.app.multivoice.PillHorizontalPadding
+import com.linguareader.app.multivoice.PillWashAlpha
+import com.linguareader.app.multivoice.RowIconSize
+import com.linguareader.app.multivoice.RowVerticalGap
+import com.linguareader.app.multivoice.SectionGap
+import com.linguareader.app.multivoice.SectionRuleGap
+import com.linguareader.app.multivoice.SmallIconSize
+import com.linguareader.app.multivoice.VoicePickerMaxHeight
 import com.linguareader.app.tts.BookVoiceMap
 import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.MiMoVoiceStore
@@ -1896,85 +1915,3 @@ private fun MiMoCustomVoicesPanel(
         )
     }
 }
-// ── 组件专有几何常量 ──────────────────────────────────────────────
-//
-// 这一屏是全项目第三大文件（1800 行、7 个对话框），dp 处理原则与 ReviewUi /
-// AiDrawerSheet 一致：**能落进间距梯的就落进去**（4/8/16/24 → t.spacing.xs/s/m/l），
-// 落不进去的聚成命名常量。它们不是「间距」而是这一组控件的形状参数：
-//
-//  * 10 / 6 / 2 —— 间距梯只有 4/8/16/24/32/48。10dp 是「标签与其控件」的专用档
-//    （套 spacing.s=8 会挤、套 spacing.m=16 会散），6dp 是「标题与其说明」的档，
-//    2dp 是「同一行内两个小元素」的缝。三者在 7 个对话框里被复用几十次，
-//    统一起来反而成了这一屏的视觉节奏 —— 硬套梯子档位会整体变松/变紧。
-//  * 12 / 14 / 18 —— 分区之间与「横向分割线」两侧的留白。这几档是这一屏的层级
-//    节奏（区块内 10、区块间 12、分割线两侧 18），套 16 会把三个层级压成一档。
-//  * 13 / 16 / 18 / 20 / 26 —— 图标尺寸。token 里只有 iconSize=24 一档，而这一屏
-//    的行内图标从 13（锁）到 26（加载圈）有五个层级，全部统一成 24 会让锁徽标与
-//    编辑/删除按钮一样大，行内一眼分不出主次。
-//  * 360 / 380 —— 两个 LazyColumn 的**最大高度**。这不是间距，是「弹层里能露出几行」
-//    的容量参数：音色选择器与系统音色标注列表各自滚动，改大改小直接改变首屏可见条数。
-//
-// P3 的验收前提是「迁移前后视觉等价」，所以这些值逐字照抄原实现、只做「起名」。
-
-/** 横向分割线（「多角色」区块的入口线）上下留白。 */
-private val SectionRuleGap = 18.dp
-
-/** 同一区块内相邻两块之间（如「标题行 → 角色列表」）的留白。 */
-private val SectionGap = 12.dp
-
-/** MiMo 专属音色面板与其他区块之间的留白（比 SectionGap 大一档，它是独立的二级面板）。 */
-private val MiMoPanelGap = 14.dp
-
-/** 「标签 / 说明文字」与其下方控件之间的留白（间距梯无 10 档）。 */
-private val FieldGap = 10.dp
-
-/** 「标题」与其紧邻的说明文字之间的留白（间距梯无 6 档）。 */
-private val LabelGap = 6.dp
-
-/** 同一行内两个小元素之间的缝（如「+」图标与其文字）。 */
-private val InlineIconGap = 2.dp
-
-/** 列表行之间的竖向留白（比 spacing.xs(4) 紧一档：这一屏行很密）。 */
-private val RowVerticalGap = 2.dp
-
-/** 列表分组标题的下留白。 */
-private val ListHeaderBottomGap = 2.dp
-
-/** 列表行内左右内边距（间距梯无 6 档）。 */
-private val ListRowHorizontalPadding = 6.dp
-
-/** 系统音色标注列表里每一行（音色名 + 开关 + 性别胶囊）的上下留白。 */
-private val AnnotateRowVerticalPadding = 6.dp
-
-/** 性别/语言胶囊的横向内边距（纵向取 spacing.xs）。 */
-private val PillHorizontalPadding = 12.dp
-
-/** 角色名旁「已锁定」小锁的尺寸（13dp：必须比行内其它图标小，否则与本行操作键混淆）。 */
-private val LockIconSize = 13.dp
-
-/** 行内小图标：编辑 / 删除 / 关闭（16dp）。 */
-private val SmallIconSize = 16.dp
-
-/** 行内中图标：试听 / 恢复自动 / 菜单（18dp）。 */
-private val RowIconSize = 18.dp
-
-/** 行内大图标：试听主键（20dp）。 */
-private val MediumIconSize = 20.dp
-
-/** 加载圈的直径（26dp：比正文图标大一圈，明确是「正在工作」而非装饰）。 */
-private val LoadingSpinnerSize = 26.dp
-
-/** 音色选择弹层里列表的最大高度（360dp：约 7~8 行，再多会盖住搜索框）。 */
-private val VoicePickerMaxHeight = 360.dp
-
-/** 系统音色标注弹层里列表的最大高度（380dp：比音色选择器略高，它每行有两排控件）。 */
-private val AnnotateListMaxHeight = 380.dp
-
-/**
- * 未选中胶囊的淡底透明度（`ink.copy(alpha = …)`）。
- *
- * 这是**同一个语义色的深浅档**而不是独立颜色：底必须是当前墨色的极浅一档，
- * 另配一份颜色在换肤时会与文字脱节。token 里没有「wash alpha」这一项
- * （只有 chipWashAlpha 那类给状态徽章用的），所以留在这里。
- */
-private const val PillWashAlpha = .08f
