@@ -157,9 +157,18 @@ import com.linguareader.app.SettingsStatusText
  * `window.lr*` 协议 / `ReaderBridge` 回调 / TTS 高亮——它只负责「把已经拿到的数据画出来」
  * 和「把用户的动作回调出去」。
  *
- * **没做的事**：本文件里的硬编码 dp 仍是原值（53 处），`MaterialTheme.typography` 引用
- * 也仍是原样。**那次样式 token 化没有覆盖到这块**——如果要补，请在单独一笔里做并出图
- * 对比，不要和结构搬迁混在一起（搬迁的判据是逐行等价，改样式会破坏这个判据）。
+ * **样式 token 化（已完成）**：dp 53 → **0**、`MaterialTheme.typography` 28 → **0**、
+ * 旧调色板 55 → **0**。与结构搬迁**分成了两笔**（搬迁的判据是逐行等价，改样式会破坏
+ * 那个判据）——这正是上一版 KDoc 里要求的做法。
+ *
+ * **配色口径**：本面板全部取 [LocalDesignTokens]（外壳皮肤语义）。它**没有**任何颜色
+ * 来自 `ReaderTheme`——查词面板是浮在正文之上的一层纸，跟着皮肤走才能与书架、其余
+ * 弹层保持一致。这与顶栏/底栏/听书条刻意跟 `ReaderTheme` 是**相反**的取舍，
+ * 因为后三者是「贴着正文的一条栏」，而本面板不是。
+ *
+ * ⚠️ **待真机验证**：渲染台只能覆盖 Compose 静态排版，以下一条都测不到——
+ * 点词弹出的手感、三个 Tab 的切换、整句翻译/重翻后的刷新与行内反馈、
+ * 长释义的滚动、以及深色皮肤下的实际对比度。
  */
 /**
  * 译本对照的展示文本：词级对照命中时把中文句里对应的词着色加粗；未命中（或
@@ -176,7 +185,8 @@ internal fun highlightedTranslation(result: TranslationLookupResult): AnnotatedS
     ) {
         return AnnotatedString(text)
     }
-    val accent = Accent
+    val t = LocalDesignTokens.current
+    val accent = t.colors.accent
     return buildAnnotatedString {
         append(text.substring(0, alignment.start))
         withStyle(SpanStyle(color = accent, fontWeight = FontWeight.Bold)) {
@@ -222,30 +232,34 @@ internal fun ReaderLookupSheet(
     onTranslateSentence: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    // 设计 token：本面板的颜色全部是「外壳」语义。
+    // 它不像顶栏/底栏/听书条那样贴正文——查词面板是浮在正文之上的一层纸，
+    // 跟着皮肤走才能与书架、其余弹层保持一致（阅读主题只管正文那一层）。
+    val t = LocalDesignTokens.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Paper,
+        containerColor = t.colors.paper,
         modifier = Modifier.testTag(UiTags.READER_LOOKUP_SHEET)
     ) {
         Column(
             Modifier.fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 30.dp)
+                .padding(horizontal = t.spacing.l)
+                .padding(bottom = t.spacing.xl)
         ) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     lookup.word,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = t.typography.display,
                     fontWeight = FontWeight.SemiBold
                 )
                 if (!entry?.phonetic.isNullOrBlank()) {
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(t.spacing.s))
                     Text(
                         "/${entry?.phonetic}/",
                         // 5-6：音标属次级文字，原 .58 在浅色最弱表面 3.91:1
-                        color = InkSoft,
-                        modifier = Modifier.padding(bottom = 3.dp)
+                        color = t.colors.inkSoft,
+                        modifier = Modifier.padding(bottom = t.spacing.xs)
                     )
                 }
             }
@@ -259,19 +273,19 @@ internal fun ReaderLookupSheet(
                     } else {
                         stringResource(R.string.reader_phrase_first, matchedPhrase)
                     },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Accent
+                    style = t.typography.label,
+                    color = t.colors.accent
                 )
             } else if (entry != null && !entry.headword.equals(lookup.word, ignoreCase = true)) {
                 Text(
                     stringResource(R.string.reader_lemma, entry.headword),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Accent
+                    style = t.typography.label,
+                    color = t.colors.accent
                 )
             }
             if (relatedPhrase != null && !isPhraseView) {
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    Modifier.fillMaxWidth().padding(top = t.spacing.xs),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -279,8 +293,8 @@ internal fun ReaderLookupSheet(
                             R.string.reader_related_phrase,
                             relatedPhrase.matchedPhrase ?: relatedPhrase.headword
                         ),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Ink.copy(alpha = .72f),
+                        style = t.typography.label,
+                        color = t.colors.ink.copy(alpha = InkSecondaryAlpha),
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = onShowPhrase) { Text(stringResource(R.string.reader_view)) }
@@ -295,22 +309,22 @@ internal fun ReaderLookupSheet(
                         R.string.reader_pos_inferred,
                         stringResource(entry.inferredPartOfSpeech.labelRes.resolve())
                     ),
-                    style = MaterialTheme.typography.labelMedium,
+                    style = t.typography.label,
                     // 5-6：原 .56 在浅色最弱表面（cardSurface）仅 3.70:1，不足 4.5:1
-                    color = InkSoft
+                    color = t.colors.inkSoft
                 )
             }
             if (entry != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                     TextButton(onClick = onSpeak) {
-                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
+                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(t.iconSize))
+                        Spacer(Modifier.width(t.spacing.xs))
                         Text(stringResource(R.string.common_speak))
                     }
                     if (isSaved && showReviewEntry) {
                         TextButton(onClick = onReviewSaved) {
-                            Icon(Icons.Filled.School, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Filled.School, contentDescription = null, modifier = Modifier.size(t.iconSize))
+                            Spacer(Modifier.width(t.spacing.xs))
                             Text(stringResource(R.string.common_review))
                         }
                     }
@@ -318,10 +332,10 @@ internal fun ReaderLookupSheet(
                         Icon(
                             Icons.Filled.BookmarkAdd,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = if (isSaved) Accent else InkSoft
+                            modifier = Modifier.size(t.iconSize),
+                            tint = if (isSaved) t.colors.accent else t.colors.inkSoft
                         )
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(t.spacing.xs))
                         Text(
                             if (isSaved) stringResource(R.string.reader_remove_from_vocab)
                             else stringResource(R.string.reader_add_to_vocab)
@@ -331,85 +345,85 @@ internal fun ReaderLookupSheet(
             }
             // 收藏/移出生词的行内反馈：弹层开着时全局 Snackbar 被盖住，只能画在面板里。
             if (saveStatus != null) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(t.spacing.xs))
                 SettingsStatusText(saveStatus)
             }
             if (aiLoading) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     LinearProgressIndicator(
                         modifier = Modifier
-                            .width(72.dp)
-                            .height(4.dp),
-                        color = Accent,
-                        trackColor = Accent.copy(alpha = .12f)
+                            .width(t.spacing.xxl + t.spacing.l)
+                            .height(t.spacing.xs),
+                        color = t.colors.accent,
+                        trackColor = t.colors.accent.copy(alpha = ProgressTrackAlpha)
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(t.spacing.s))
                     Text(
                         stringResource(R.string.reader_ai_loading),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
                 }
             }
             // 远程 AI 尝试失败：无论本地兜底有没有给出结果，都要留下可见痕迹
             // （#3：Key/端点配错后点词「毫无动静」的根因就是失败被静默吞掉）。
             if (!aiLoading && aiRemoteFailed) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 Text(
                     stringResource(
                         if (aiContext != null) R.string.reader_ai_lookup_degraded
                         else R.string.reader_ai_lookup_failed
                     ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Danger
+                    style = t.typography.label,
+                    color = t.colors.danger
                 )
             }
             if (!aiLoading && aiFailed && aiContext == null && !aiRemoteFailed) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 Text(
                     stringResource(R.string.reader_ai_lookup_failed),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
             }
             if (!aiLoading && aiContext != null) {
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 Text(
                     stringResource(R.string.reader_ai_context_title, aiContext.source),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Accent,
+                    style = t.typography.label,
+                    color = t.colors.accent,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(Modifier.height(5.dp))
+                Spacer(Modifier.height(t.spacing.xs))
                 Text(
                     aiContext.contextualMeaning,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = t.typography.body,
                     fontWeight = FontWeight.Medium
                 )
                 aiContext.phrase?.let {
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(t.spacing.xs))
                     Text(
                         stringResource(R.string.reader_ai_phrase, it),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
                 }
                 if (aiContext.explanation.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(t.spacing.xs))
                     Text(
                         aiContext.explanation,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Ink.copy(alpha = .72f)
+                        style = t.typography.body,
+                        color = t.colors.ink.copy(alpha = InkSecondaryAlpha)
                     )
                 }
             }
             if (translationLoading) {
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 Text(
                     stringResource(R.string.reader_translation_loading),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
             }
             var pairingExpanded by remember(lookup.word, lookup.sentence) { mutableStateOf(false) }
@@ -422,20 +436,20 @@ internal fun ReaderLookupSheet(
                 mutableStateOf("")
             }
             translation?.let { result ->
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 Text(
                     stringResource(R.string.reader_translation_title),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Accent,
+                    style = t.typography.label,
+                    color = t.colors.accent,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(Modifier.height(5.dp))
+                Spacer(Modifier.height(t.spacing.xs))
                 Text(
                     highlightedTranslation(result),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = t.typography.body,
                     fontWeight = FontWeight.Medium
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(t.spacing.xs))
                 Text(
                     stringResource(
                         if (result.matchLevel == TranslationMatchLevel.SENTENCE) {
@@ -446,43 +460,43 @@ internal fun ReaderLookupSheet(
                         result.translationTitle,
                         (result.confidence * 100).roundToInt()
                     ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
                 if (pairingExpanded) {
                     // 整句对照：并排给出配对到的英文原句与译文段落，便于判断配对是否正确。
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(t.spacing.s))
                     Text(
                         stringResource(R.string.reader_translation_english, result.english),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Ink.copy(alpha = .78f)
+                        style = t.typography.body,
+                        color = t.colors.ink.copy(alpha = InkTertiaryAlpha)
                     )
                     if (result.chineseParagraph.isNotBlank() &&
                         result.chineseParagraph != result.chinese
                     ) {
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(t.spacing.xs))
                         Text(
                             stringResource(
                                 R.string.reader_translation_paragraph,
                                 result.chineseParagraph
                             ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Ink.copy(alpha = .78f)
+                            style = t.typography.body,
+                            color = t.colors.ink.copy(alpha = InkTertiaryAlpha)
                         )
                     }
                 }
             }
             // 配了译本却没查到：直说是「这段/这章没参与对齐」，而不是让面板凭空少一块。
             if (hasTranslation && translation == null && !translationLoading) {
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 Text(
                     stringResource(R.string.reader_translation_miss),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = InkSoft
+                    style = t.typography.label,
+                    color = t.colors.inkSoft
                 )
             }
             if (sentenceTranslationReady || translation != null) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(t.spacing.m))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // 云端整句翻译只在真配好了提供方时出现：没配就别摆一个按不动的按钮。
                     if (sentenceTranslationReady) {
@@ -493,19 +507,19 @@ internal fun ReaderLookupSheet(
                             Icon(
                                 Icons.Filled.Translate,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Accent
+                                modifier = Modifier.size(t.iconSize),
+                                tint = t.colors.accent
                             )
-                            Spacer(Modifier.width(4.dp))
-                            Text(stringResource(R.string.translate_sentence), color = Accent)
+                            Spacer(Modifier.width(t.spacing.xs))
+                            Text(stringResource(R.string.translate_sentence), color = t.colors.accent)
                         }
                         if (sentenceTranslationLoading) {
                             LinearProgressIndicator(
                                 modifier = Modifier
-                                    .width(72.dp)
-                                    .height(4.dp),
-                                color = Accent,
-                                trackColor = Accent.copy(alpha = .12f)
+                                    .width(t.spacing.xxl + t.spacing.l)
+                                    .height(t.spacing.xs),
+                                color = t.colors.accent,
+                                trackColor = t.colors.accent.copy(alpha = ProgressTrackAlpha)
                             )
                         }
                     }
@@ -515,16 +529,16 @@ internal fun ReaderLookupSheet(
                             Icon(
                                 Icons.Filled.CompareArrows,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Accent
+                                modifier = Modifier.size(t.iconSize),
+                                tint = t.colors.accent
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(t.spacing.xs))
                             Text(
                                 stringResource(
                                     if (pairingExpanded) R.string.reader_translation_collapse
                                     else R.string.reader_translation_expand
                                 ),
-                                color = Accent
+                                color = t.colors.accent
                             )
                         }
                     }
@@ -542,13 +556,13 @@ internal fun ReaderLookupSheet(
                             Icon(
                                 Icons.Filled.Refresh,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Accent
+                                modifier = Modifier.size(t.iconSize),
+                                tint = t.colors.accent
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(t.spacing.xs))
                             Text(
                                 stringResource(R.string.reader_translation_retranslate),
-                                color = Accent
+                                color = t.colors.accent
                             )
                         }
                     }
@@ -558,19 +572,19 @@ internal fun ReaderLookupSheet(
                     translation?.matchLevel == TranslationMatchLevel.SENTENCE &&
                     retranslateAvailable
                 ) {
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(t.spacing.s))
                     if (retranslateLoading) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             LinearProgressIndicator(
-                                modifier = Modifier.width(72.dp).height(4.dp),
-                                color = Accent,
-                                trackColor = Accent.copy(alpha = .12f)
+                                modifier = Modifier.width(t.spacing.xxl + t.spacing.l).height(t.spacing.xs),
+                                color = t.colors.accent,
+                                trackColor = t.colors.accent.copy(alpha = ProgressTrackAlpha)
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(t.spacing.s))
                             Text(
                                 stringResource(R.string.reader_translation_retranslating),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = InkSoft
+                                style = t.typography.label,
+                                color = t.colors.inkSoft
                             )
                         }
                     } else {
@@ -580,7 +594,7 @@ internal fun ReaderLookupSheet(
                             placeholder = {
                                 Text(
                                     stringResource(R.string.reader_translation_retranslate_hint),
-                                    style = MaterialTheme.typography.bodySmall
+                                    style = t.typography.caption
                                 )
                             },
                             minLines = 2,
@@ -588,12 +602,12 @@ internal fun ReaderLookupSheet(
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             TextButton(onClick = { retranslateEditing = false }) {
-                                Text(stringResource(R.string.common_cancel), color = InkSoft)
+                                Text(stringResource(R.string.common_cancel), color = t.colors.inkSoft)
                             }
                             TextButton(onClick = { onRetranslate(retranslateFeedback) }) {
                                 Text(
                                     stringResource(R.string.reader_translation_retranslate_go),
-                                    color = Accent
+                                    color = t.colors.accent
                                 )
                             }
                         }
@@ -601,35 +615,35 @@ internal fun ReaderLookupSheet(
                 }
             }
             sentenceTranslationError?.let { message ->
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 Text(
                     message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Danger
+                    style = t.typography.body,
+                    color = t.colors.danger
                 )
             }
             sentenceTranslation?.let { result ->
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 Text(
                     stringResource(R.string.translate_sentence_result, result.provider, result.text),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Ink
+                    style = t.typography.body,
+                    color = t.colors.ink
                 )
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(t.spacing.m))
             // 中文句里高亮那个词来自哪条义项（`WordAligner` 记下的 `sourceSense`，与
             // 面板 `sense.text` 是同一个串）：标出该行、并用与高亮词完全相同的
             // 强调色 + 粗体，用户才能把「高亮的词」与「具体义项」互相指认（Q1-t09 ④）。
             val alignedSense = translation?.wordAlignment?.sourceSense
             when {
-                loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent)
+                loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = t.colors.accent)
                 entry != null -> {
                     entry.senses.take(8).forEachIndexed { index, sense ->
                         val preferred = sense.contextPreferred && index == 0
                         // 是来源义项但不是「本句优先」时才占用标号位：两枚标记都不丢。
                         val aligned = alignedSense != null && sense.text == alignedSense
                         Row(
-                            Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            Modifier.fillMaxWidth().padding(vertical = t.spacing.xs),
                             verticalAlignment = Alignment.Top
                         ) {
                             Text(
@@ -638,17 +652,20 @@ internal fun ReaderLookupSheet(
                                     preferred -> stringResource(R.string.reader_sense_preferred)
                                     else -> "•"
                                 },
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (aligned || preferred) Accent
+                                style = t.typography.label,
+                                color = if (aligned || preferred) t.colors.accent
                                 // 5-6：项目符号也是文字，原 .38 在浅/深最弱表面仅 2.27/3.01:1
-                                else InkFaint,
-                                modifier = Modifier.width(if (aligned || preferred) 64.dp else 20.dp)
+                                else t.colors.inkFaint,
+                                modifier = Modifier.width(
+                                    if (aligned || preferred) t.spacing.xl * 2
+                                    else t.spacing.gutter
+                                )
                             )
                             Text(
                                 sense.text,
-                                style = MaterialTheme.typography.bodyLarge,
-                                // 与中文句里被着色的词同一套样式（Accent + Bold）。
-                                color = if (aligned) Accent else Color.Unspecified,
+                                style = t.typography.body,
+                                // 与中文句里被着色的词同一套样式（t.colors.accent + Bold）。
+                                color = if (aligned) t.colors.accent else Color.Unspecified,
                                 fontWeight = if (aligned) FontWeight.Bold else null,
                                 modifier = Modifier.weight(1f)
                             )
@@ -657,14 +674,14 @@ internal fun ReaderLookupSheet(
                     if (entry.senses.isEmpty()) {
                         Text(
                             stringResource(R.string.reader_no_senses),
-                            color = InkSoft
+                            color = t.colors.inkSoft
                         )
                     }
                     if (entry.definitions.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(t.spacing.s))
                         Text(
                             entry.definitions.take(2).joinToString("\n"),
-                            color = InkSoft,
+                            color = t.colors.inkSoft,
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -672,28 +689,42 @@ internal fun ReaderLookupSheet(
                 }
                 else -> Text(
                     stringResource(R.string.reader_word_not_found),
-                    color = InkSoft
+                    color = t.colors.inkSoft
                 )
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(t.spacing.m))
             Text(
                 stringResource(R.string.reader_current_context),
-                style = MaterialTheme.typography.labelLarge,
-                color = Accent
+                style = t.typography.label,
+                color = t.colors.accent
             )
-            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.height(t.spacing.xs))
             Text(
                 lookup.sentence.ifBlank { lookup.paragraph },
                 fontFamily = FontFamily.Serif,
-                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight
+                lineHeight = t.typography.body.lineHeight
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(t.spacing.m))
             Text(
                 stringResource(R.string.reader_dict_source),
-                style = MaterialTheme.typography.labelSmall,
+                style = t.typography.label,
                 // 5-6：原 .45 在浅/深最弱表面仅 2.71/3.69:1；实色后 5.56/4.63:1
-                color = InkFaint
+                color = t.colors.inkFaint
             )
         }
     }
 }
+
+// ── 本面板专有的 alpha 值 ──────────────────────────────────────────────
+//
+// token 里没有 alpha 梯，这些值保留原样（**一个都没改**：改值属于视觉改版，
+// 不属于样式迁移），但给它们名字并写明含义，而不是散在调用点里。
+
+/** 相关短语行的墨色透明度（次级于释义正文，但仍需可读）。 */
+private const val InkSecondaryAlpha = .72f
+
+/** 整句对照里英文/中文段落的墨色透明度（再压一档，与主译文拉开层级）。 */
+private const val InkTertiaryAlpha = .78f
+
+/** 加载进度条轨道相对强调色的透明度。 */
+private const val ProgressTrackAlpha = .12f
