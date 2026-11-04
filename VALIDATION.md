@@ -3327,3 +3327,67 @@ SkinPickerSection 点击
 #### 待真机
 
 **选图后界面是否立刻变色、重启后是否保持** —— 这是本链路唯一无法用单测覆盖的部分。
+
+### 2026-11-04 续二十一 · 图片也能推导风格（P20）
+
+#### 发现的缺口
+
+`SkinSpec` 有**六个维度**（colors / typography / spacing / radii / motion / elevation），
+但 `ImageSkinBuilder.fromClusters` **只用图片推导 `colors`**，其余五个全写死 `default()`：
+
+```kotlin
+typography = SkinTypography.default(),
+spacing = SkinSpacing.default(),
+radii = SkinRadii.default(),
+motion = SkinMotion.default(),
+elevation = SkinElevation.default(),
+```
+
+结果是**图片只能换颜色，不能换风格** —— 而目标要的是「快速接受由图片提供的风格」。
+
+#### 为什么不五维全推
+
+字体、间距、动效与图片**没有可信的对应关系**，硬推等于编。但有两维是真实的视觉对应：
+
+| 维度 | 从图片的什么推导 |
+| --- | --- |
+| **圆角** | **柔和度** = 低饱和 + 明度分布窄 → 更圆；高对比硬边界 → 更方 |
+| **阴影** | **层次强度** = 色簇离散度（前景与背景分得多开）|
+
+#### 推导有界
+
+| 常量 | 值 | 理由 |
+| --- | --- | --- |
+| `RADII_MIN` / `RADII_MAX` | 0.55 / 1.35 | 极端形状会破坏可点面积与对齐关系 |
+| `SHADOW_THRESHOLD` | 0.35 | 层次弱时加阴影会脏，改用描边 |
+
+#### 实测推导幅度（不是「有数值」而是「有差异」）
+
+| 图片 | 圆角 md | 阴影 |
+| --- | --- | --- |
+| 柔和（晨雾/柔光书桌）| **16.0** | 否（用描边）|
+| 硬（夜景霓虹/高对比海报）| **11.1** | 是（low 4.0 / high 6.4）|
+
+#### 实现时踩的坑（若不打印实际值会一直绿）
+
+第一版推导写完、断言也绿了，但打印实际值发现**阴影的 `low`/`high` 永远是 0** ——
+因为 `SkinElevation.default()` 本身就是 `low = 0, high = 0`，**缩放 0 还是 0**。
+
+已给 `default()` 补上非零参考量（`low = 2.0, high = 8.0`）并写明原因。
+**这条如果只跑断言不打印实际值，会一直绿下去。**
+
+#### 一条旧测试的断言被推翻了
+
+`builtInTypographySpacingRadiiAreInherited` 原本断言「圆角必须等于 `SkinRadii.default()`」。
+**那条断言把要修的缺陷固化成了规格。**已改名并拆分：
+- `typographySpacingAndMotionAreInherited`（只保留三个与图片无关的维度）；
+- `radiiAndElevationAreDerivedNotInherited`（新维度确实在推导）。
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:shared:test` | 142 suites / **786 tests** / 1 failure（既有 PythonServerE2E，需本地 python3）|
+| `:shared` skin 包 | 7 suites / **88 tests / 0 failures** |
+| `:app:testDebugUnitTest` | 129 suites / **648 tests** / 1 failure（既有 CloudTts）|
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
