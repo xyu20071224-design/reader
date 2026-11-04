@@ -82,6 +82,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.R
 import com.linguareader.app.res.resolve
+import com.linguareader.app.review.PacePreview
+import com.linguareader.app.review.firstDelayOptions
 import com.linguareader.app.review.ReviewPromptBanner
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
@@ -924,24 +926,6 @@ private fun ReviewCurvePicker(
     }
 }
 
-@Composable
-private fun PacePreview(pace: ReviewPace) {
-    val t = LocalDesignTokens.current
-    Column {
-        Text(
-            text = stringResource(R.string.review_pace_preview_title),
-            style = t.typography.label,
-            color = t.colors.inkSoft
-        )
-        Spacer(Modifier.height(t.spacing.xs))
-        // 这几行是「按此节奏」的预测值，数字本身来自 ReviewScheduler，一个字没改。
-        Text(stringResource(R.string.review_pace_preview_first, firstDelayLabel(pace.firstDelayMillis)), style = t.typography.caption, color = t.colors.ink)
-        Text(stringResource(R.string.review_pace_preview_nth, 2, formatApproxDuration(ReviewScheduler.intervalFor(1, pace))), style = t.typography.caption, color = t.colors.ink)
-        Text(stringResource(R.string.review_pace_preview_nth, 3, formatApproxDuration(ReviewScheduler.intervalFor(2, pace))), style = t.typography.caption, color = t.colors.ink)
-        Text(stringResource(R.string.review_pace_preview_nth, 4, formatApproxDuration(ReviewScheduler.intervalFor(3, pace))), style = t.typography.caption, color = t.colors.ink)
-    }
-}
-
 // ── 组件专有几何常量 ──────────────────────────────────────────────
 //
 // 这些值**不进间距梯**，理由与 `ShelfAppearanceSheet` 同一口径：它们不是「间距」，
@@ -1076,26 +1060,3 @@ private object ReviewCurve {
 
 private fun retentionPercentOf(mode: ReviewMode): Int =
     ReviewPace.retentionPercent(ReviewPace.retentionForMultiplier(mode.intervalMultiplier))
-
-@Composable
-private fun firstDelayOptions(): List<Pair<Long, String>> = listOf(
-    5 * 60_000L to stringResource(R.string.review_delay_5m),
-    30 * 60_000L to stringResource(R.string.review_delay_30m),
-    2 * 3_600_000L to stringResource(R.string.review_delay_2h),
-    24 * 3_600_000L to stringResource(R.string.review_delay_next_day)
-)
-
-@Composable
-private fun firstDelayLabel(millis: Long): String =
-    firstDelayOptions().firstOrNull { it.first == millis }?.second
-        ?: formatApproxDuration(millis)
-
-@Composable
-private fun formatApproxDuration(millis: Long): String {
-    val minutes = millis / 60_000L
-    return when {
-        minutes < 60 -> stringResource(R.string.review_in_minutes_approx, minutes)
-        minutes < 24 * 60 -> stringResource(R.string.review_in_hours_approx, minutes / 60)
-        else -> stringResource(R.string.review_in_days_approx, minutes / (24 * 60))
-    }
-}
