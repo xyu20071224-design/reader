@@ -42,6 +42,7 @@ import com.linguareader.app.nav.rememberAppNavState
 import com.linguareader.app.nav.screenRegistry
 import com.linguareader.shared.ui.nav.Route
 import com.linguareader.app.skin.LocalDesignTokens
+import com.linguareader.app.state.split
 import com.linguareader.app.skin.SkinRegistry
 import com.linguareader.app.skin.SkinStore
 import com.linguareader.app.skin.paletteForSkin
@@ -186,9 +187,17 @@ private fun LinguaReaderApp(
     // 为什么不反过来让 Route 当真相源：`Route.Reader` 只有一个 bookId，而
     // `currentBook` 是整个书实体。改成以 Route 为准要重建当前书，会动到打开/关闭书的
     // 时机（`closeBook()` 要落盘进度）——**接线不该改行为**。
+    // 状态切片（P15 接线）：AppUiState 的五个纯 Kotlin 切片在 P2 就建好了
+    // （ShellState / BookshelfState / ReaderState / VocabState / SettingsState），
+    // 但**在生产代码里零引用** —— 屏幕仍然各自吃整个 AppUiState。
+    //
+    // 这里接上第一处也是最关键的一处：**路由由 ShellState.route 提供**，
+    // 而不是在这里再写一遍 `if (currentBook == null)`。
+    // 那条二元判断本来就写在 AppSlices.kt 里（注释还标着「迁移期把 MainActivity:155 的
+    // currentBook == null 二态判断收成一个路由」）——只是没人调用它。
     val nav = rememberAppNavState()
-    val desiredRoute: Route =
-        if (currentBook == null) Route.Bookshelf else Route.Reader(currentBook.id)
+    val slices = state.split()
+    val desiredRoute: Route = slices.shell.route
     LaunchedEffect(desiredRoute) {
         if (nav.navigator.current == desiredRoute) return@LaunchedEffect
         val current = nav.navigator.current
