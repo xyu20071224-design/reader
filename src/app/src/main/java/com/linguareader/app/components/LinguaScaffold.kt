@@ -177,15 +177,3 @@ fun LinguaTopBarAction(
     }
 }
 
-/** 顶栏下的细分割线（现有 `HorizontalDivider` 的 token 版）。 */
-@Composable
-fun LinguaDivider(modifier: Modifier = Modifier) {
-    val t = LocalDesignTokens.current
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(t.hairline)
-    ) {
-        Surface(color = t.colors.outline, modifier = Modifier.fillMaxSize(), shape = CircleShape) {}
-    }
-}

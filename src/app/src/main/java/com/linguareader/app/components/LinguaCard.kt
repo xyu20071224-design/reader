@@ -98,18 +98,6 @@ fun CardTitleRow(
     }
 }
 
-/** 卡片内的小节标签（比 [SectionHeader] 更小、更贴内容）。 */
-@Composable
-fun CardSectionLabel(text: String, modifier: Modifier = Modifier) {
-    val t = LocalDesignTokens.current
-    Text(
-        text = text,
-        style = t.typography.label,
-        color = t.colors.inkSoft,
-        modifier = modifier.padding(vertical = t.spacing.xs)
-    )
-}
-
 /** 卡片内的分隔线（带上下留白）。 */
 @Composable
 fun CardDivider(modifier: Modifier = Modifier) {

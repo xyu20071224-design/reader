@@ -154,11 +154,7 @@ class NavigationWiringGuardTest {
      * 目标是把这张表清空（删组件 + 删对应测试），而不是往里面加东西。
      */
     private val exemptComponents: Map<String, String> = mapOf(
-        // —— 以下 4 个连测试都没有，纯粹是写出来没用过 ——
-        "CardSectionLabel" to "死代码：无生产调用、无测试。待删（清理需与 CardTitleRow/CardDivider 一起做）",
-        "LinguaDivider" to "死代码：无生产调用、无测试。注意 SheetDragHandle 不是同类——它被 LinguaSheet 内部调用",
-        "EmptyStateHint" to "死代码：无生产调用、无测试",
-        // —— 以下 4 个有渲染测试在用，删它们要同步改测试 ——
+        // —— 以下 5 个有渲染测试在用，删它们要同步改测试 ——
         "ButtonRow" to "死代码（仅测试在用）。生产里的按钮组都是各屏手写 Row",
         "CardTitleRow" to "死代码（仅测试在用）。书卡标题是 ShelfBookCard 自己画的",
         "CardDivider" to "死代码（仅测试在用）",

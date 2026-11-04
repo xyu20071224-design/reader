@@ -156,23 +156,3 @@ fun EmptyState(
     }
 }
 
-/** 空状态里的「箭头去别处」这类次级引导行。 */
-@Composable
-fun EmptyStateHint(text: String, onClick: () -> Unit) {
-    val t = LocalDesignTokens.current
-    Row(
-        modifier = Modifier
-            .background(t.colors.accentSoft, RoundedCornerShape(t.radii.pill))
-            .padding(horizontal = t.spacing.m, vertical = t.spacing.s),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(t.spacing.xs)
-    ) {
-        Text(text = text, style = t.typography.caption, color = t.colors.accentDeep)
-        Icon(
-            imageVector = Icons.Filled.ArrowForward,
-            contentDescription = null,
-            tint = t.colors.accentDeep,
-            modifier = Modifier.size(t.spacing.m)
-        )
-    }
-}
