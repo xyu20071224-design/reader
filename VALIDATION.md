@@ -2720,3 +2720,59 @@ screen-vocab-no-match  差异 13.573%
 | `:app:testDebugUnitTest` | 121 suites / **628 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
 | 视觉基线 | 36 张全部通过 |
+
+### 2026-11-04 续十一 · 视觉基线红了之后的正确反应：修根因而不是放弃统一
+
+#### 前情
+
+`007ee9d` 把生词本顶栏的按钮从 `LinguaTextButton` 改回本地封装 `VocabIconTextButton` ——
+因为基线抓到标题被挤成三行竖排（19.2% 差异）。**但那只是止血。**
+
+#### 根因修复：组件补 `TextButtonLayout`
+
+```kotlin
+enum class TextButtonLayout {
+    /** 页面级动作：48dp 最小高度 + 横向 spacing.m。默认值。 */
+    PAGE,
+    /** 行内/顶栏动作：无最小高度 + 横向 spacing.s。多个并排时用。 */
+    INLINE
+}
+```
+
+`LinguaTextButton` 与 `LinguaIconTextButton` 都接受 `layout`，**默认 `PAGE`，既有调用方零改动**。
+
+**这不是样式参数**：调用方表达的是「按钮处在什么布局位置」，几何仍由 token 决定 ——
+与 `TextButtonTone` 同一设计原则（表达语义，不表达自由样式）。
+
+#### 同一个改动方向，一次红一次绿
+
+| 尝试 | 结果 |
+| --- | --- |
+| `LinguaTextButton`（`layout = PAGE`，默认） | 标题三行竖排，差异 **19.2%** |
+| `LinguaTextButton`（`layout = INLINE`） | **零差异**，与本地封装像素一致 |
+
+**这条对照是本节最重要的一句结论**：
+> 基线不是「阻止改动」的闸门，而是「告诉你这个改动有没有意外后果」的仪器。
+> 它红了的时候，正确反应不是放弃统一，而是找出「为什么统一会坏」并修掉那个原因。
+
+#### 顺手清掉另一份同源重复
+
+`PacksSheet` 里的 `DangerTextButton` 本地封装 —— **它正是 `TextButtonTone` 当初要消灭的东西**
+（`e337996` 的 KDoc 明写：「复习屏、生词本、听书屏各自封装了一遍」），但 `PacksSheet` 漏了没换。
+
+已换成 `LinguaTextButton(..., tone = TextButtonTone.DANGER)`，4 处调用点 + 删函数 +
+删不再使用的 `TextButton`/`ButtonDefaults` import + 修一处陈旧 KDoc。
+
+色值等价：`DangerTextButton` 的 `contentColor = t.colors.danger` 与
+`LinguaTextButton` 在 `tone = DANGER` 分支下完全相同。4 处都在弹层里（不是窄槽位），
+用默认 `PAGE` 布局正确。
+
+#### 验证
+
+| 项 | 结果 |
+| --- | --- |
+| `:app:compileDebugKotlin` + `compileDebugUnitTestKotlin` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+| 受影响的 5 个渲染测试套件 | **32 tests / 0 failures** |
+| 其中 `DesignSystemVisualRegressionTest` | 6 tests / 0 failures（**证明默认 PAGE 未改变既有基线**）|
+| `VocabularyRenderTest` | 3 tests / 0 failures（INLINE 生词本基线零差异）|
+| `SheetMigrationRenderTest` | 4 tests / 0 failures（PacksSheet 基线未变）|
