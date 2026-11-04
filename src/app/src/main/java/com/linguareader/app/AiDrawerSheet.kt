@@ -192,8 +192,13 @@ internal fun AiDrawerContent(
  *
  * 刻意仍是 Material `TextButton` 而不是 [com.linguareader.app.components.LinguaTextButton]：
  * 选中态靠**字重 + 颜色**两个维度表达（选中＝accent+SemiBold，未选中＝inkSoft+Normal），
- * 而原语只有一种主色、不接受字重参数。套上去会把「当前在哪个 Tab」这个唯一线索抹掉。
- * 这是组件层缺口（还没有「可选中文字按钮」原语），已在提交信息里记给 Lead。
+ * 而 `LinguaTextButton` 有 `tone`（3 档语义色）与 `layout`（2 档几何），
+ * **但没有「选中态」概念、也不接受字重**。套上去会只剩颜色一个维度，
+ * 「当前在哪个 Tab」这条线索变弱（尤其对色觉障碍用户）。
+ *
+ * 所以这仍是**组件层缺口**，但缺口内容要写明：缺的是「可选中文字按钮」原语
+ * （需要 `selected: Boolean` + 选中/未选中的字重差），**不是**缺 `tone`/`icon`/`layout`——
+ * 那三项 `e337996` / `01461c0` 已补齐。
  */
 @Composable
 private fun DrawerTabButton(label: String, selected: Boolean, onClick: () -> Unit) {

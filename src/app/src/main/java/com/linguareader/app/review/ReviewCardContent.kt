@@ -245,9 +245,13 @@ internal fun ReviewCardContent(
 /**
  * 「朗读这个单词」的行内文字按钮（图标 + 文字）。
  *
- * 单独抽出来是因为 `components/Buttons.kt` 目前只有**纯文字**的 [LinguaTextButton]，
- * 没有图标版；这一处需要喇叭图标，而 IconButton 又会丢掉「Speak」这层文字提示。
- * 配色走 token，等组件层补出 icon 版再换（与生词本的处理一致，组件缺口已反馈）。
+ * 这一处**故意保留本地实现**：它是复习卡片内的行内动作，横向空间与卡片内边距都很窄，
+ * 而 [LinguaTextButton] 的默认 `PAGE` 几何（48dp 最小高 + 16dp 横向留白）会把它撑大。
+ * 若将来要统一，应传 `layout = TextButtonLayout.INLINE` —— 这正是「窄横向槽位」的处理方式
+ * （见 `手册-P3屏幕迁移.md` 的槽位表），而不是等组件补能力。
+ *
+ * ~~等组件层补出 icon 版再换~~ ← 该理由已过时：`LinguaIconTextButton` 自 `01461c0` 起已存在。
+ * 保留代码的真实原因是**布局角色**，不是缺组件。
  */
 @Composable
 private fun SpeakButton(text: String, onClick: () -> Unit) {

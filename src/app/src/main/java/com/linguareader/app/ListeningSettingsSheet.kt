@@ -753,9 +753,9 @@ private fun AudioCacheSection(
  * 缓存上限的候选值（256MB / 512MB / 1024MB / 不限）。
  *
  * 刻意仍是 Material `TextButton`：选中态靠**字重 + 颜色**两个维度表达，
- * 而 [LinguaTextButton] 只有一种主色、不接受字重参数 —— 套上去「当前选中哪一档」
- * 这条唯一线索就没了。这是组件层缺口（还没有「可选中文字按钮」原语），
- * 与 AiDrawerSheet 的 DrawerTabButton 同一处缺口，已在提交信息里记给 Lead。
+ * 而 [LinguaTextButton] 有 `tone` 与 `layout` 但**没有选中态、不接受字重**——
+ * 套上去「当前选中哪一档」只剩颜色一条线索。
+ * 与 AiDrawerSheet 的 DrawerTabButton 同一处缺口：缺的是「可选中文字按钮」原语。
  * 配色与字级取 token，不写裸色值。
  */
 @Composable
