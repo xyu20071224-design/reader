@@ -105,4 +105,12 @@ class ReviewCardRenderTest {
 
     @Test
     fun cardDoneStateRenders() = renderCard("review-card-done", allDone = true, revealed = false)
+
+    /** 与视觉基线比对（P8）。基线在 src/app/src/test/resources/visual-baseline/。 */
+    private fun assertAgainstBaseline(name: String, bmp: android.graphics.Bitmap) {
+        val result = VisualBaseline.compare(name, bmp)
+        val summary = VisualBaseline.describe(name, result)
+        println(summary)
+        org.junit.Assert.assertTrue(summary, result.passed)
+    }
 }

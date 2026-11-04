@@ -109,6 +109,7 @@ class VocabularyRenderTest {
             }
         }
         assertTrue("生词本列表必须画出词卡与统计条（实际 ${hasContent(bmp)} 个非纸色采样点）", hasContent(bmp) > 1000)
+        assertAgainstBaseline("screen-vocab-list", bmp)
     }
 
     @Test
@@ -128,6 +129,7 @@ class VocabularyRenderTest {
         }
         // 空态仍然要画标题/统计/搜索框，只是列表位换成引导 —— 不能整屏空白。
         assertNotEquals("空生词本不能渲染成整屏纯纸色", 0, hasContent(bmp))
+        assertAgainstBaseline("screen-vocab-empty", bmp)
     }
 
     @Test
@@ -146,5 +148,14 @@ class VocabularyRenderTest {
             }
         }
         assertNotEquals("搜不到时也必须渲染内容（搜索框 + 空态引导）", 0, hasContent(bmp))
+        assertAgainstBaseline("screen-vocab-no-match", bmp)
+    }
+
+    /** 与视觉基线比对（P8）。基线在 src/app/src/test/resources/visual-baseline/。 */
+    private fun assertAgainstBaseline(name: String, bmp: android.graphics.Bitmap) {
+        val result = VisualBaseline.compare(name, bmp)
+        val summary = VisualBaseline.describe(name, result)
+        println(summary)
+        org.junit.Assert.assertTrue(summary, result.passed)
     }
 }

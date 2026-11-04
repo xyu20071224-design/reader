@@ -188,6 +188,19 @@ class BookshelfScreenShotTest {
         }
     }
 
+    /**
+     * 与视觉基线比对（P8）。基线在 `src/app/src/test/resources/visual-baseline/`。
+     *
+     * 这是**整屏级别**的回归网：书架的 678 行里任何一个组件被改动、任何一处间距/配色
+     * 偏移，只要画到像素上就会让这条红。比「出图后人眼看」强一个量级。
+     */
+    private fun assertAgainstBaseline(name: String, bmp: android.graphics.Bitmap) {
+        val result = VisualBaseline.compare(name, bmp)
+        val summary = VisualBaseline.describe(name, result)
+        println(summary)
+        assertTrue(summary, result.passed)
+    }
+
     @Test
     fun populatedShelfLight() {
         val bmp = renderBookshelf("bookshelf-list-light", dark = false, books = sampleBooks)
@@ -195,6 +208,7 @@ class BookshelfScreenShotTest {
         assertTrue("书架必须画出三张书卡与顶栏（实际 $content 个非纸色采样点）", content > 2000)
         val out = File("build/ui-render-probe/bookshelf-list-light.png")
         assertTrue("出图应当落盘：" + out.absolutePath, out.isFile)
+        assertAgainstBaseline("screen-bookshelf-list-light", bmp)
     }
 
     @Test
@@ -213,6 +227,7 @@ class BookshelfScreenShotTest {
         assertTrue("夜间书架底色必须暗，实测平均 $lum（若是 247 说明取到了日间 token）", lum < 60)
         val out = File("build/ui-render-probe/bookshelf-list-dark.png")
         assertTrue("出图应当落盘：" + out.absolutePath, out.isFile)
+        assertAgainstBaseline("screen-bookshelf-list-dark", bmp)
     }
 
     @Test
@@ -224,5 +239,6 @@ class BookshelfScreenShotTest {
         )
         val out = File("build/ui-render-probe/bookshelf-empty-light.png")
         assertTrue("出图应当落盘：" + out.absolutePath, out.isFile)
+        assertAgainstBaseline("screen-bookshelf-empty-light", bmp)
     }
 }
