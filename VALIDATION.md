@@ -2583,3 +2583,84 @@ val tokens = SkinRegistry.toDesignTokens(
 
 相册选图（SAF 往返）、大图解码耗时、选图后全局换色的实际观感、深色系统下图片皮肤的明暗判定。
 渲染台测不到 SAF 与真实解码。
+
+### 2026-11-04 续九 · P3 的 5 个漏网屏幕补完 + 迁移覆盖守卫（P10）
+
+#### 发现：P3 清单按「文件行数」排序，漏了 5 个真屏幕
+
+核对主源全部 `.kt` 的 token 化状态后发现这 5 个**完全没有迁移**（`token=0`，全用旧调色板 + 裸 dp）：
+
+| 文件 | 行数 | 迁移前旧调色板引用 |
+| --- | --- | --- |
+| `AiProviderSettings.kt` | 551 | 22 |
+| `GlossaryEditor.kt` | 434 | 16 |
+| `SyncDetailScreen.kt` | 390 | 29 |
+| `LaunchPromptDialog.kt` | 169 | 5 |
+| `ReaderThemePicker.kt` | 101 | 4 |
+
+**根因**：清单是人按行数写的，复查的人也照着同一份清单看 —— **同一个遗漏会被漏两次**。
+
+#### 补完结果（全部归零）
+
+| 文件 | 旧调色板 | typography | 裸 dp | 提交 |
+| --- | --- | --- | --- | --- |
+| `AiProviderSettings.kt` | 22 → **0** | 12 → **0** | 14 → 6（命名常量） | `29274b3` + `0dcb081` |
+| `SyncDetailScreen.kt` | 29 → **0** | 14 → **0** | 20 → 5（命名常量） | `ea1a6f5` |
+| `GlossaryEditor.kt` | 16 → **0** | 全部 → **0** | 24 → 4（命名常量） | `52e98d4` |
+| `LaunchPromptDialog.kt` | 5 → **0** | 4 → **0** | 12 → 3（命名常量） | `19487d6` |
+| `ReaderThemePicker.kt` | 4 → **0** | 全部 → **0** | 8（全为命名常量） | `52e98d4` |
+
+#### 新增 `MigrationCoverageGuardTest`（`1d9057c`）—— 让「漏掉」不能再靠人工发现
+
+扫所有含 `@Composable` 的源文件，统计旧调色板引用数，**超过 4 就红**。
+
+**阈值定 4 而不是 12**：12 太松，能容忍「迁了一半」的文件 —— 而那在深色下恰恰是最难看的状态。
+
+当前豁免（**每条都写了书面理由**）：
+| 文件 | 理由 |
+| --- | --- |
+| `ThemeColors.kt` | 旧调色板的定义处，它必须包含这些符号 |
+| `ReaderScreen.kt` | 阅读页外壳刻意跟随 `ReaderTheme`（护眼绿下米白横杠横在绿色正文上是真机事故） |
+
+**收紧阈值时它确实红过一次**（`ReaderScreen.kt: 7 处`）——那是个正确的命中，
+我据此加了带理由的豁免，**而不是把阈值调回 12 让它闭嘴**。
+
+#### 守卫测试自己的 bug（值得记）
+
+第一版 `stripCommentsAndStrings` 用正则 `Regex("\"(\\\"|[^\"\\])*\"")`，
+在成段中文 KDoc 上**灾难性回溯**，抛 `StackOverflowError` —— **看上去像测试框架坏了，实际是测试自己的 bug**。
+
+是 `sheet-migrator` 报上来的：他查到自己从未改过的三个文件也在命中列表里，
+据此判断「守卫与仓库现状不兼容，不是我的改动引入的」，把排查结果交给我，**没有去改别人的测试**。
+那个判断和克制都是对的。已改成**单次线性扫描**（O(n)、无回溯）。
+
+#### 本轮沉淀的三条判据（写进 `手册-P3屏幕迁移.md`，`350d7f7`）
+
+**1. 夹具必须复刻生产**：
+> 只要旧实现里出现 `MaterialTheme.*`，before/after 夹具就必须给真实 `colorScheme`。
+> 否则比的不是「旧实现 vs 新实现」，而是「紫色默认主题 vs 我的主题」。
+
+**2. 组件按「语义」判，不按「长得像」判**：
+- `AlertDialog` 的 confirm/dismiss 槽位不该套页面级按钮（`defaultMinSize(48dp)` + `contentPadding` 与对话框等分宽度硬冲突）；
+- `SectionHeader` 是 **eyebrow 语义**（小号、字距、次要色），不是页面分段标题 —— 它没有居中能力、不是大标题语义。
+
+**3. 何时该「有意保留」硬编码**：
+> 问「换皮肤时这个颜色**应该**变吗？」—— 应该变 → 语义色走 token；不应该变 → 内容色保留并注释。
+
+实例：`GreetingPeriod.accent()` 的四个时段情绪色（F-144 时段语义，不是皮肤语义）、
+`ReaderThemePicker` 的 7 个色块本体（预览正文配色）。**换肤不该改变它们。**
+
+#### 最终验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 121 suites / **628 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+| `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+| 分支 | 已推送，工作区干净 |
+
+#### 仍未解决：真机验收
+
+`HypervisorPresent=False`、`adb devices` 无设备。本轮新增的 5 个屏全部只有编译门 + 像素基线，
+`LaunchPromptDialog` / `ProviderEditorDialog` / `ModelPickerDialog` 是 `Dialog`、**画不进 Robolectric 位图**，
+连基线都没有，只能真机看。
