@@ -274,26 +274,64 @@ private fun VocabHeader(
                 style = t.typography.label
             )
         }
-        // 图标 + 文字的行内动作。直接走 [LinguaTextButton]（它自 e337996 起支持 icon 与 tone），
-        // 不再保留本地封装 —— 组件层能做的不该在每个屏里靠手写 TextButton 兜。
-        LinguaTextButton(
+        // ⚠️ 这里**刻意不用** [LinguaTextButton]，尽管它已有 icon 与 tone。
+        //
+        // 原因不是「组件缺能力」，而是**页面级几何与这个窄槽位硬冲突**：
+        // LinguaTextButton 内部强制 defaultMinSize(minHeight = 48dp) +
+        // contentPadding(horizontal = spacing.m, vertical = spacing.xs)，三个按钮并排
+        // 会吃掉过多横向空间，把 weight(1f) 的标题列挤到只剩两三个字宽。
+        //
+        // 实证：2026-11-04 换成 LinguaTextButton 后，标题「My words」被压成
+        // **三行竖排**（视觉基线抓到的，差异 19.2%）；改回紧凑封装后恢复。
+        //
+        // 这与手册「按槽位判」是同一条：这个位置要的是**行内动作**，
+        // 不是页面级按钮。若将来要统一，得先让 LinguaTextButton 支持紧凑变体。
+        VocabIconTextButton(
+            icon = Icons.Filled.School,
             text = stringResource(R.string.common_review),
-            onClick = onReviewClick,
             enabled = state.words.isNotEmpty(),
-            icon = Icons.Filled.School
+            onClick = onReviewClick
         )
-        LinguaTextButton(
+        VocabIconTextButton(
+            icon = Icons.Filled.FileDownload,
             text = stringResource(R.string.vocab_export),
-            onClick = onExportClick,
             enabled = state.words.isNotEmpty(),
-            icon = Icons.Filled.FileDownload
+            onClick = onExportClick
         )
-        LinguaTextButton(
+        VocabIconTextButton(
+            icon = Icons.Filled.Settings,
             text = stringResource(R.string.common_settings),
-            onClick = onSettingsClick,
             enabled = true,
-            icon = Icons.Filled.Settings
+            onClick = onSettingsClick
         )
+    }
+}
+
+/**
+ * 图标 + 文字的行内动作。颜色全部来自 token，不读 MaterialTheme 默认值。
+ *
+ * **为什么不用 [LinguaTextButton]**：它带页面级几何（48dp 最小高度 + 横向 contentPadding），
+ * 三个并排会把左边 weight(1f) 的标题列挤成竖排。详见调用处的注释与实证记录。
+ */
+@Composable
+private fun VocabIconTextButton(
+    icon: ImageVector,
+    text: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val t = LocalDesignTokens.current
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = t.colors.accent,
+            disabledContentColor = t.colors.inkFaint
+        )
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(IconSize))
+        Spacer(Modifier.width(VocabIconGap))
+        Text(text, style = t.typography.label)
     }
 }
 
