@@ -2260,3 +2260,50 @@ P3 的每一屏迁移做的是「样式 token 化」——把裸 dp/裸色换成
    职责（顶栏、底栏、4 个弹层、TTS 高亮接线），拆开后每个文件都能独立理解。
 
 **结论：目标未完成。** 单体状态已拆解，巨型屏幕只完成了样式迁移、尚未结构拆解。
+
+### 2026-11-04 续四 · 结构性拆解（补上「拆解巨型屏幕」这一半）
+
+上一节的「诚实评估」指出：样式迁移让文件**变大**了，目标要的「拆解」没做。本节补上。
+
+#### 结果
+
+| 文件 | 样式迁移后 | 结构拆解后 | 变化 |
+| --- | --- | --- | --- |
+| `BookshelfScreen.kt` | 1580 | **678** | −902（−57%）|
+| `ReaderScreen.kt` | 1991 | **1629** | −362（−18%）|
+| `ReviewUi.kt` | 1146 | 1146 | 未拆（下轮）|
+| `MultiVoiceSettings.kt` | 1980 | 1980 | 未拆（下轮）|
+| `AppViewModel.kt` | 1999 | **1342** | −657（−33%，协调器抽出）|
+
+**拆出的文件**（每个职责单一，KDoc 写明「负责什么、依赖什么」）：
+- `shelf/` 5 个：ShelfBookCard(373) / ShelfTranslationDialogs(351) / ShelfDialogs(256) / ShelfBackground(158) / ShelfEditorSheets(129)
+- `reader/` 3 个：ReaderSettingsSheet(299) / ReaderContentsSheet(139) / ReaderPageJumpDialog(132)
+- `sync/AppSyncCoordinator`(421)、`ai/TranslationCoordinator`(649)
+
+#### 关键判断：什么该拆、什么不该拆
+
+**不拆的例子（两个，都写进了代码注释）**：
+1. **书架顶栏**：同时读 5 个来源（`showVocabulary` / `showSyncDetail` / `shelfAppearance` /
+   `aiSettings.enabled` / `updateAvailable`）+ 6 个回调，硬抽要传 11 个参数，抽完更难读。
+2. **阅读页外壳**（`LinguaScaffold` 不适配）：顶栏高度经 `onSizeChanged` → `chromeTopPx` →
+   `--lr-chrome-top` 决定 WebView 正文预留量，套进通用外壳就拿不到测量点，**等于动正文布局**。
+
+**判据是「单文件职责单一」，不是「行数下降」**。`BookshelfScreen` 拆到 678 行时仍有 110 行是
+54 个参数的签名（红线不能改）、120 行是 8 个弹层接线——**那些不该为了数字好看而硬拆**。
+
+#### 拆解过程抓到的两个真问题
+
+1. **`@Preview` 静默丢失**：搬 `EmptyBookshelf` 时两个 preview 被 slice 边界截掉。
+   发现方式不是「看 diff」，而是**把拆解前 12 个顶层声明与拆解后 17 个逐条对照**。
+2. **回归网盲区**（性质更严重）：`ReaderPageJumpTest` 的包是 `com.linguareader.app`（不带 `.reader`），
+   而它测的 `parsePageInput` 被搬进了 `reader` 包 → 跑 `--tests 'com.linguareader.app.reader.*'` 时
+   **它永远不在覆盖范围内**。而它是该函数的**唯一**测试。
+   根源：**搬产品代码时没把测试一起搬**——重构搬包的通用陷阱。已修复（31 suites / 200 tests）。
+
+#### 新增的两条工程实践
+
+1. **`scripts/verify-pure-move.ps1`**：纯搬移的机械比对判据。老文件某段 vs 新文件（去注释/import/空行后）
+   逐行相等。**二元判据**，比 git diff 可靠——diff 把移动显示成一堆 −/+，70 行里改一个字人眼看不出来。
+   设计要点：任何差异必须用 `-IgnoreLine` **显式声明**，不能沉默通过。
+2. **`规则-并行worktree的git操作.md`**：三 agent 共用一个 worktree 的三条规则——
+   `git commit -F msg -- <pathspec>`（根治索引竞态）、动历史前确认未推送、编译红了先看 git status。
