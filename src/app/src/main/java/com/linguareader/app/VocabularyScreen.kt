@@ -274,49 +274,26 @@ private fun VocabHeader(
                 style = t.typography.label
             )
         }
-        // 图标 + 文字的动作按钮：components/ 目前只有纯文字版 [LinguaTextButton]，
-        // 这里先用 TextButton + token 配色兜住，等组件层补出 icon 版再换（已反馈）。
-        VocabIconTextButton(
-            icon = Icons.Filled.School,
+        // 图标 + 文字的行内动作。直接走 [LinguaTextButton]（它自 e337996 起支持 icon 与 tone），
+        // 不再保留本地封装 —— 组件层能做的不该在每个屏里靠手写 TextButton 兜。
+        LinguaTextButton(
             text = stringResource(R.string.common_review),
+            onClick = onReviewClick,
             enabled = state.words.isNotEmpty(),
-            onClick = onReviewClick
+            icon = Icons.Filled.School
         )
-        VocabIconTextButton(
-            icon = Icons.Filled.FileDownload,
+        LinguaTextButton(
             text = stringResource(R.string.vocab_export),
+            onClick = onExportClick,
             enabled = state.words.isNotEmpty(),
-            onClick = onExportClick
+            icon = Icons.Filled.FileDownload
         )
-        VocabIconTextButton(
-            icon = Icons.Filled.Settings,
+        LinguaTextButton(
             text = stringResource(R.string.common_settings),
+            onClick = onSettingsClick,
             enabled = true,
-            onClick = onSettingsClick
+            icon = Icons.Filled.Settings
         )
-    }
-}
-
-/** 图标 + 文字的行内动作。颜色全部来自 token，不读 MaterialTheme 默认值。 */
-@Composable
-private fun VocabIconTextButton(
-    icon: ImageVector,
-    text: String,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    val t = LocalDesignTokens.current
-    TextButton(
-        onClick = onClick,
-        enabled = enabled,
-        colors = ButtonDefaults.textButtonColors(
-            contentColor = t.colors.accent,
-            disabledContentColor = t.colors.inkFaint
-        )
-    ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(IconSize))
-        Spacer(Modifier.width(VocabIconGap))
-        Text(text, style = t.typography.label)
     }
 }
 
