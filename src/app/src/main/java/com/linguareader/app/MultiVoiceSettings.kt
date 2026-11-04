@@ -93,6 +93,7 @@ import com.linguareader.app.multivoice.VoicePickerMaxHeight
 import com.linguareader.app.multivoice.AddCharacterDialog
 import com.linguareader.app.multivoice.EditCharacterDialog
 import com.linguareader.app.multivoice.VoicePickerTarget
+import com.linguareader.app.multivoice.VoicePickerDialog
 import com.linguareader.app.tts.BookVoiceMap
 import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.MiMoVoiceStore
@@ -893,111 +894,6 @@ private fun VoiceRow(
             }
         }
     }
-}
-
-/**
- * 音色选择弹层：搜索 + 「推荐 / 语言·性别」分组 + 逐项试听。
- *
- * Kokoro 一台服务器就有 100+ 音色，所以用可搜索的分组列表代替长下拉。
- */
-@Composable
-private fun VoicePickerDialog(
-    target: VoicePickerTarget,
-    library: VoiceLibrary,
-    currentVoice: String,
-    locked: Boolean,
-    playingVoice: String?,
-    onAudition: (String) -> Unit,
-    onPick: (String) -> Unit,
-    onRelease: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val t = LocalDesignTokens.current
-    var query by remember { mutableStateOf("") }
-    val auditionTemplate = stringResource(R.string.multivoice_audition, "%s")
-    val auditionOf: (String) -> String = { id -> auditionTemplate.replace("%s", id) }
-    val groups = remember(library, query, target) {
-        VoicePicker.groups(library.voices, target.language, target.gender, query)
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = t.colors.cardSurface,
-        title = { Text(stringResource(R.string.multivoice_picker_title, target.title)) },
-        text = {
-            Column(Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text(stringResource(R.string.multivoice_search)) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(t.spacing.s))
-                if (groups.isEmpty()) {
-                    Text(stringResource(R.string.multivoice_no_match), color = t.colors.inkSoft)
-                } else {
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = VoicePickerMaxHeight)) {
-                        groups.forEach { group ->
-                            item(key = "header-" + group.title) {
-                                Text(
-                                    group.title,
-                                    style = t.typography.label,
-                                    color = t.colors.inkFaint,
-                                    modifier = Modifier.padding(top = t.spacing.s, bottom = ListHeaderBottomGap)
-                                )
-                            }
-                            items(group.options, key = { it.voice.id }) { option ->
-                                val selected = option.voice.id == currentVoice
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .background(if (selected) t.colors.accentSoft else t.colors.cardSurface)
-                                        .clickable { onPick(option.voice.id) }
-                                        .padding(horizontal = ListRowHorizontalPadding, vertical = t.spacing.s),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        VoicePicker.label(option.voice),
-                                        style = t.typography.caption,
-                                        color = if (selected) t.colors.accentDeep else t.colors.ink,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    IconButton(
-                                        onClick = { onAudition(option.voice.id) },
-                                        modifier = Modifier.semantics {
-                                            contentDescription = auditionOf(option.voice.id)
-                                        }
-                                    ) {
-                                        Icon(
-                                            if (playingVoice == option.voice.id) {
-                                                Icons.Default.Stop
-                                            } else {
-                                                Icons.Default.PlayArrow
-                                            },
-                                            contentDescription = null,
-                                            tint = if (playingVoice == option.voice.id) t.colors.accent else t.colors.inkSoft,
-                                            modifier = Modifier.size(RowIconSize)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            LinguaTextButton(text = stringResource(R.string.common_done), onClick = onDismiss)
-        },
-        dismissButton = {
-            if (locked) {
-                LinguaTextButton(text = stringResource(R.string.multivoice_release_action), onClick = onRelease)
-            }
-        }
-    )
 }
 
 /**
