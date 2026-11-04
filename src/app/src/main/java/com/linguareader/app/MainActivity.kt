@@ -35,6 +35,12 @@ import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.linguareader.app.data.ReaderTheme
+import com.linguareader.app.nav.AppNavHost
+import com.linguareader.app.nav.RouteKey
+import com.linguareader.app.nav.overlayRegistry
+import com.linguareader.app.nav.rememberAppNavState
+import com.linguareader.app.nav.screenRegistry
+import com.linguareader.shared.ui.nav.Route
 import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.skin.SkinRegistry
 import com.linguareader.app.skin.SkinStore
@@ -166,6 +172,38 @@ private fun LinguaReaderApp(
     val speak = rememberEnglishSpeaker()
     val snackbar = LocalAppSnackbar.current
 
+    // ── 导航（P13 接线）──────────────────────────────────────────
+    //
+    // 在此之前屏幕切换是 `if (currentBook == null)` 一个隐式布尔，而 P2 建好的整套
+    // 导航层（Route / NavStack / OverlayStack / AppNavHost，1000+ 行、20+ 单测）
+    // **在生产代码里零调用**。这跟 P9 的图片换肤是同一类缺陷：能力建好了但没接线，
+    // 于是「这套设计是否成立」永远无法被验证。
+    //
+    // 接法**刻意保持行为等价**：
+    // - `currentBook` 仍是唯一真相源（ViewModel 拥有，跨配置变更存活）；
+    // - 导航栈是它的**镜像**：书变了就同步栈，不新增状态、不产生第二真相源。
+    //
+    // 为什么不反过来让 Route 当真相源：`Route.Reader` 只有一个 bookId，而
+    // `currentBook` 是整个书实体。改成以 Route 为准要重建当前书，会动到打开/关闭书的
+    // 时机（`closeBook()` 要落盘进度）——**接线不该改行为**。
+    val nav = rememberAppNavState()
+    val desiredRoute: Route =
+        if (currentBook == null) Route.Bookshelf else Route.Reader(currentBook.id)
+    LaunchedEffect(desiredRoute) {
+        if (nav.navigator.current == desiredRoute) return@LaunchedEffect
+        val current = nav.navigator.current
+        when {
+            // 换书：原地换页，不叠栈。
+            current is Route.Reader && desiredRoute is Route.Reader ->
+                nav.navigator.replaceTop(desiredRoute)
+            // 开书：压栈，返回键能回书架。
+            current == Route.Bookshelf && desiredRoute is Route.Reader ->
+                nav.navigator.navigate(desiredRoute)
+            // 关书或其它：回到以目标为根的单层栈。
+            else -> nav.navigator.reset(desiredRoute)
+        }
+    }
+
     // 一次性提示（导入/删除等）统一走全局 Snackbar，弹过即清空。
     // 提示带语义（成功/失败），渲染端据此换容器配色（见 snackbarColorsFor）。
     LaunchedEffect(state.notice) {
@@ -176,83 +214,98 @@ private fun LinguaReaderApp(
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = Paper) {
-        if (currentBook == null) {
-            BookshelfScreen(
-                state = state,
-                onReaderThemeChanged = onReaderThemeChanged,
-                onLoadRemotePacks = viewModel::loadRemotePacks,
-                onInstallRemotePack = viewModel::installRemotePack,
-                onImport = viewModel::importBook,
-                onOpen = viewModel::openBook,
-                onDelete = viewModel::deleteBook,
-                onAttachTranslation = viewModel::attachTranslation,
-                onDetachTranslation = viewModel::detachTranslation,
-                onRealignTranslation = viewModel::realignTranslation,
-                onPrepareAiTranslation = viewModel::prepareAiTranslation,
-                onStartAiTranslation = viewModel::startAiTranslation,
-                onCancelAiTranslation = viewModel::cancelAiTranslation,
-                onDismissAiTranslationPrepare = viewModel::dismissAiTranslationPrepare,
-                onPrepareManualTranslation = viewModel::prepareManualTranslation,
-                onDismissManualTranslationPrepare = viewModel::dismissManualTranslationPrepare,
-                onExportManualTranslation = viewModel::buildManualExport,
-                onTakeManualExport = viewModel::takeManualExport,
-                onManualExportReady = viewModel::writeManualExport,
-                onCancelManualExport = viewModel::cancelManualExport,
-                onImportManualResults = viewModel::importManualResults,
-                onClearManualImportRejected = viewModel::clearManualImportRejected,
-                onAiSettingsChange = viewModel::setAiSettings,
-                onRefreshStorage = viewModel::refreshStorageReport,
-                onCleanOrphans = viewModel::deleteOrphans,
-                onCleanPackResiduals = viewModel::cleanPackResiduals,
-                onInstallPack = viewModel::installPack,
-                onSetActiveDictionary = viewModel::setActiveDictionary,
-                onUninstallPack = viewModel::uninstallPack,
-                onVerifyPack = viewModel::verifyPack,
-                onLoadGlossary = viewModel::glossary,
-                onAddGlossary = viewModel::addGlossaryEntry,
-                onUpdateGlossary = viewModel::updateGlossaryEntry,
-                onRemoveGlossary = viewModel::removeGlossaryEntry,
-                onRemoveWord = viewModel::removeSavedWord,
-                onReviewModeChange = viewModel::setReviewMode,
-                onCustomReviewChange = viewModel::setCustomReview,
-                onRemindersChange = viewModel::setReminders,
-                onReviewWord = viewModel::reviewWord,
-                onExportVocabulary = viewModel::exportVocabulary,
-                onSpeak = speak,
-                update = state.update,
-                onCheckForUpdate = { viewModel.checkForUpdate(silent = false) },
-                onAutoCheckChange = viewModel::setAutoCheck,
-                onDownloadUpdate = viewModel::downloadUpdate,
-                onCancelUpdateDownload = viewModel::cancelUpdateDownload,
-                onDismissMessage = viewModel::clearMessage,
-                onSaveSyncSettings = viewModel::saveSyncSettings,
-                onSyncLogin = viewModel::syncLogin,
-                onSyncNow = viewModel::syncNow,
-                onSyncLogout = viewModel::syncLogout,
-                onRefreshCloudBooks = viewModel::refreshCloudBooks,
-                onDownloadCloudBook = viewModel::downloadCloudBook,
-                onRefreshSyncDetail = viewModel::refreshSyncDetail,
-                uiAnimSpeed = uiAnimSpeed,
-                onAnimSpeedChange = onAnimSpeedChange
-            )
-        } else {
-            ReaderScreen(
-                book = currentBook,
-                viewModel = viewModel,
-                aiSettings = state.aiSettings,
-                savedWords = state.savedWords,
-                reviewPace = state.reviewPace,
-                reviewPreset = state.reviewPreset,
-                customReview = state.customReview,
-                reminders = state.reminders,
-                onReviewModeChange = viewModel::setReviewMode,
-                onCustomReviewChange = viewModel::setCustomReview,
-                onRemindersChange = viewModel::setReminders,
-                onSpeak = speak,
-                onClose = viewModel::closeBook,
-                onAppearanceChanged = onReaderThemeChanged
-            )
+        // 屏幕注册表：Route → 该屏的 Composable（P13 接线）。
+        //
+        // 在此之前屏幕切换是 `if (currentBook == null)` 一个隐式布尔。现在走 Route：
+        // 加新屏幕时 `Route.key` 的 when 会编译失败，强制作者表态由哪屏画
+        // （见 NavHostLite.kt 的 RouteKey）。**两屏的渲染内容与接线逐字未改。**
+        val screens = remember(viewModel, speak, state) {
+            screenRegistry {
+                screen(RouteKey.BOOKSHELF) {
+                BookshelfScreen(
+                    state = state,
+                    onReaderThemeChanged = onReaderThemeChanged,
+                    onLoadRemotePacks = viewModel::loadRemotePacks,
+                    onInstallRemotePack = viewModel::installRemotePack,
+                    onImport = viewModel::importBook,
+                    onOpen = viewModel::openBook,
+                    onDelete = viewModel::deleteBook,
+                    onAttachTranslation = viewModel::attachTranslation,
+                    onDetachTranslation = viewModel::detachTranslation,
+                    onRealignTranslation = viewModel::realignTranslation,
+                    onPrepareAiTranslation = viewModel::prepareAiTranslation,
+                    onStartAiTranslation = viewModel::startAiTranslation,
+                    onCancelAiTranslation = viewModel::cancelAiTranslation,
+                    onDismissAiTranslationPrepare = viewModel::dismissAiTranslationPrepare,
+                    onPrepareManualTranslation = viewModel::prepareManualTranslation,
+                    onDismissManualTranslationPrepare = viewModel::dismissManualTranslationPrepare,
+                    onExportManualTranslation = viewModel::buildManualExport,
+                    onTakeManualExport = viewModel::takeManualExport,
+                    onManualExportReady = viewModel::writeManualExport,
+                    onCancelManualExport = viewModel::cancelManualExport,
+                    onImportManualResults = viewModel::importManualResults,
+                    onClearManualImportRejected = viewModel::clearManualImportRejected,
+                    onAiSettingsChange = viewModel::setAiSettings,
+                    onRefreshStorage = viewModel::refreshStorageReport,
+                    onCleanOrphans = viewModel::deleteOrphans,
+                    onCleanPackResiduals = viewModel::cleanPackResiduals,
+                    onInstallPack = viewModel::installPack,
+                    onSetActiveDictionary = viewModel::setActiveDictionary,
+                    onUninstallPack = viewModel::uninstallPack,
+                    onVerifyPack = viewModel::verifyPack,
+                    onLoadGlossary = viewModel::glossary,
+                    onAddGlossary = viewModel::addGlossaryEntry,
+                    onUpdateGlossary = viewModel::updateGlossaryEntry,
+                    onRemoveGlossary = viewModel::removeGlossaryEntry,
+                    onRemoveWord = viewModel::removeSavedWord,
+                    onReviewModeChange = viewModel::setReviewMode,
+                    onCustomReviewChange = viewModel::setCustomReview,
+                    onRemindersChange = viewModel::setReminders,
+                    onReviewWord = viewModel::reviewWord,
+                    onExportVocabulary = viewModel::exportVocabulary,
+                    onSpeak = speak,
+                    update = state.update,
+                    onCheckForUpdate = { viewModel.checkForUpdate(silent = false) },
+                    onAutoCheckChange = viewModel::setAutoCheck,
+                    onDownloadUpdate = viewModel::downloadUpdate,
+                    onCancelUpdateDownload = viewModel::cancelUpdateDownload,
+                    onDismissMessage = viewModel::clearMessage,
+                    onSaveSyncSettings = viewModel::saveSyncSettings,
+                    onSyncLogin = viewModel::syncLogin,
+                    onSyncNow = viewModel::syncNow,
+                    onSyncLogout = viewModel::syncLogout,
+                    onRefreshCloudBooks = viewModel::refreshCloudBooks,
+                    onDownloadCloudBook = viewModel::downloadCloudBook,
+                    onRefreshSyncDetail = viewModel::refreshSyncDetail,
+                    uiAnimSpeed = uiAnimSpeed,
+                    onAnimSpeedChange = onAnimSpeedChange
+                )
+                }
+                screen(RouteKey.READER) {
+                ReaderScreen(
+                    book = currentBook!!,
+                    viewModel = viewModel,
+                    aiSettings = state.aiSettings,
+                    savedWords = state.savedWords,
+                    reviewPace = state.reviewPace,
+                    reviewPreset = state.reviewPreset,
+                    customReview = state.customReview,
+                    reminders = state.reminders,
+                    onReviewModeChange = viewModel::setReviewMode,
+                    onCustomReviewChange = viewModel::setCustomReview,
+                    onRemindersChange = viewModel::setReminders,
+                    onSpeak = speak,
+                    onClose = viewModel::closeBook,
+                    onAppearanceChanged = onReaderThemeChanged
+                )
+                }
+            }
         }
+        AppNavHost(
+            screens = screens,
+            overlays = remember { overlayRegistry { } },
+            nav = nav
+        )
     }
 
     state.launchPrompt?.let { prompt ->
