@@ -3097,3 +3097,65 @@ val desiredRoute: Route = slices.shell.route
 | `:app:testDebugUnitTest` | 126 suites / **641 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
 | `state.*` | 3 suites / 10 tests / 0 failures |
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续十七 · `shared.alignment` 零生产调用（P16）——第五例
+
+#### 发现
+
+核查 `:shared` 各包在 `:app` 生产代码里的引用：
+
+| 包 | 文件 | :app 引用 |
+| --- | --- | --- |
+| `shared.ai` / `shared.data` / `shared.sync` / `shared.tts` / … | 各 5-22 | 6-14 ✅ |
+| **`shared.alignment`** | **18（约 9000 行）** | **0** ❌ |
+
+`:shared` 内部也没有任何人用它。**生产实际走的是另一条线**：
+`shared.translation`（`TranslationAligner` / `WordAligner`）
++ `:app/translation/TranslationMemoryRepository`（546 行）。
+
+#### 为什么这一例不删（与前四例的区别）
+
+前四例都在前端重构范围内，删了不影响业务。这一例不同：
+
+- **16 个测试、5206 行**，其中两个各跑 **22 秒**
+  （`LotrIndependentAlignmentVerificationTest` / `LotrSpanDistributionTest`）；
+- 测试名透露性质：**LotR 语料验证、召回率上限实验、繁简差异诊断、中文分词诊断** ——
+  这些是**算法探索/研究性代码**，不像是「写完忘了接」；
+- **删它超出「前端重构」的范围**，应由了解那段研究背景的人决定。
+
+#### 做法：把债务钉在明面上
+
+`AlignmentModuleIsUnwiredTest`（2 例，都是**反向守卫**）：
+1. 断言 `shared.alignment` 零生产调用 —— 哪天它被接进生产，这条会红，
+   提醒把 KDoc 与 `VALIDATION.md` 的「零调用」记录一起更新；
+2. 断言目录仍存在 —— 如果它被删了，提醒同时删掉这个守卫文件，
+   否则守卫每次跑都绿得毫无意义。
+
+**不是为了拦住什么，而是为了让一个不可见的现状保持可见。**
+
+#### 五例「建好但零调用」完整清单
+
+| 阶段 | 零调用 | 规模 | 处理 |
+| --- | --- | --- | --- |
+| P9 | 图片换肤管线 | ~700 行 | **已接通** |
+| P13 | 导航层 | ~1000 行 | **已接通** |
+| P14 | 组件原语 ×8 | ~200 行 | **已删除** |
+| P15 | 状态切片 ×5 | ~800 行 | **ShellState 已接通**，其余记录在案 |
+| **P16** | **`shared.alignment`** | **~9000 行 + 5206 行测试** | **登记事实，不删**（超出范围）|
+
+#### 为什么反复出现
+
+这些模块的单元测试**全部是绿的** —— 因为它们直接 `new` / 直接调那些类。
+**测试能证明「它能工作」，证明不了「有人在用它」。这是单元测试的能力边界，不是测试写得不好。**
+
+抓这类缺陷需要专门断言「生产代码里至少有一个调用点」，现在有四个守卫在做：
+`NavigationWiringGuardTest`（导航+组件）、`MigrationCoverageGuardTest`（屏幕迁移）、
+`ComponentCapabilityDocGuardTest`（文档一致性）、`AlignmentModuleIsUnwiredTest`（已知不接线的模块）。
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 127 suites / **643 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `AlignmentModuleIsUnwiredTest` | 2 tests / 0 failures |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
