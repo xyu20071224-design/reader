@@ -2429,3 +2429,78 @@ P3 的每一屏迁移做的是「样式 token 化」——把裸 dp/裸色换成
 | `:app:assembleDebug` | BUILD SUCCESSFUL |
 | `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
 | 分支 | **71 commits**，140 文件，+26306/−7260，已推送，工作区干净 |
+
+### 2026-11-04 续七 · 补「可验收」缺失的一半：视觉回归基线（P8）
+
+目标是「**可构建可验收**」。此前只做到「可构建」：视觉验收靠「出图后人眼看一眼」，
+有三个硬伤——不可回归（改坏了两周后没人发现）、不可自动化（CI 跑不了人眼）、判据模糊（「看着差不多」不是判据）。
+
+本节把「图」变成「可断言的东西」。
+
+#### 机制
+
+`src/app/src/test/java/.../uirender/VisualBaseline.kt`：
+- 基线 PNG 入库（`src/app/src/test/resources/visual-baseline/`）；
+- 实际渲染与基线做逐像素差；
+- **两个可调阈值**：差异像素占比 ≤ **0.5%** 且 单通道差值 > **12/255** 才计为「不同像素」。
+  两者同时超限才判红——避免「大面积 1/255 抖动」和「少数点大变化」互相误伤；
+- 另有一条更早的判据：**尺寸不一致直接判红**（布局塌了，比逐像素比对更早发现）。
+
+更新基线：`$env:UPDATE_VISUAL_BASELINE='1'` 后重跑。
+
+#### 闭环验证（证明它不是摆设）
+
+故意把 `PrimaryButton` 的 containerColor 从 accent 改成 accentDeep：
+```
+emptyStateWithActionDay   FAILED  差异像素 40169/3295809（1.219%，阈值 0.500%）/ 最大通道差 30
+emptyStateWithActionNight FAILED  差异像素 40385/3295809（1.225%）/ 最大通道差 37
+```
+恢复后全绿。**判据可读、可定位、可恢复。**
+
+#### 覆盖：28 张基线，全部 12 个迁移屏的视觉面
+
+| 层 | 数量 | 守什么 |
+| --- | --- | --- |
+| 设计系统（skin + components，日夜） | 6 | 所有屏幕的地基 |
+| 书架 | 3 | 列表日夜 + 空态 |
+| 生词本 | 3 | 列表 / 空 / 搜不到 |
+| 阅读页 | 4 | 外壳日夜（含 chromeTopPx 预留）+ 目录 + 设置 |
+| 听书条 | 7 | 7 种状态 |
+| 多角色音色 | 3 | 系统不支持 / 云引擎 / 深色 |
+| 复习 | 2 | 遗忘曲线 + 设置 |
+
+**其中 3 张守的是历史真机事故点**：
+1. `listening-bar-green`：听书条底色必须跟 `ReaderTheme` 而非外壳 palette（护眼绿主题下米白横杠横在绿色正文上）；
+2. `listening-bar-offscreen`：离屏提示曾挤爆控制行（48dp 图标撑成 ~110dp 文字按钮，把「停止」顶出屏幕）；
+3. `multivoice-dark`：深色皮肤下 token 必须真的切换（`f90a98e` 修复前恒为日间）。
+
+#### 与既有像素断言的分工（两层都需要）
+
+既有的 `countNonPaper(...) > 1000` 守的是「画出来没有」（内容塌陷检测），
+基线比对守的是「画成什么样」（外观回归）：
+- 只有阈值断言：内容画出来了，但配色变了没人发现；
+- 只有基线：外观对，但若连基线一起被更新，塌陷也会被「接受」。
+
+#### 夹具踩坑（写进 KDoc 防复发）
+
+第一版夹具直接用 `Column { EmptyState(...) }`，没包背景 Surface。渲染台画布是白底，
+夜间 token 文字是浅色 → 出图变成「浅灰字浮在白底上几乎看不见」，**看起来像 EmptyState 深色有 bug**。
+实际是夹具漏了真实使用的 `Surface(Paper)` 包裹（`MainActivity` 根就是它）。
+**基线图是「当前认可的外观」的契约，夹具错了契约就错了。**
+
+#### 最终验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 116 suites / **612 tests** / 1 failure（CloudTts 路径，既有）/ 2 skipped |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+| `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+| 分支 | **76 commits**，已推送，工作区干净 |
+
+#### 仍未解决：真机验收
+
+确认本机**无法**起模拟器：`HypervisorPresent = False`，Hyper-V / WHPX 均需管理员权限启用并重启；
+x86_64 系统镜像强制要求硬件加速；`adb devices` 无设备。
+**这不是可以靠写代码绕过的**。所有 P3 屏幕的交互（弹层拖拽、返回键、SAF 往返）、
+阅读页 7 项（翻页手势、点词、TTS 跟随、目录跳转、字号重排、滚动模式、旋转）、
+深色模式整体复核、排版梯字号变化 —— 全部仍是「待真机」。
