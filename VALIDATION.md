@@ -2367,3 +2367,65 @@ P3 的每一屏迁移做的是「样式 token 化」——把裸 dp/裸色换成
 | `:shared:test` | 141 suites / **779 tests** / 1 failure（PythonServer，既有）|
 | `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
 | 分支 | 69 commits，已推送，工作区干净 |
+
+### 2026-11-04 续六 · P3 样式迁移全部收口（含最后一块 LookupSheet）
+
+#### 最后一块：`ReaderLookupSheet.kt`（查词面板，699 行）
+
+| 项 | 前 | 后 |
+| --- | --- | --- |
+| 硬编码 `N.dp` | **53** | **0** |
+| `MaterialTheme.typography` | **28** | **0** |
+| 旧调色板（`Ink`/`Accent`/`Paper`…） | **55** | **0** |
+| `LocalDesignTokens` 引用 | 0 | **131** |
+
+**至此全项目不再有未 token 化的 UI 区域。**
+
+#### 一条可复用的判断标准（比结论重要）
+
+> **贴着正文的跟 `ReaderTheme`，浮在正文之上的跟 token。**
+
+实例对照：
+| 组件 | 位置关系 | 配色来源 | 理由 |
+| --- | --- | --- | --- |
+| 阅读页顶栏 / 底栏 / 听书条 | **贴着正文的一条栏** | `ReaderTheme` | 护眼绿主题下米白横杠横在绿色正文上 = 历史事故 |
+| 查词面板 / 各弹层 / 书架 | **浮在正文之上的一层纸** | `LocalDesignTokens` | 与其余弹层、书架一致 |
+
+**这条标准的价值在于它能判定「下一个新组件该走哪条」**，而不只是解释已有结论。
+（核实方式：`ReaderTheme` 在 `ReaderLookupSheet.kt` 里只是一行**从未使用的死 import**——说明这块从来就不跟正文配色。）
+
+#### 未出图：渲染台的已知边界
+
+`ReaderLookupSheet` 顶层是 `ModalBottomSheet`，Robolectric 里走 Dialog/Window、**画不进位图**。
+（同样限制适用于书架的 9 个对话框。）
+
+其它弹层能出图，是因为它们的**内容体已在早前被拆成独立 Composable**（`ContentsBody` / `ReaderSettingsBody`）。
+本文件没有对应拆分，所以：**先拆内容体（单独一笔），才能补 before/after 图**。
+
+试过合并做，但那是结构改动、会污染「纯样式」判据，且拼接时损坏了函数签名——已回滚。
+
+#### 唯一预期内的视觉变化（待真机确认）
+
+排版梯 5 档 vs Material3 15 档，必然产生细微字号变化，已逐条记录差值：
+- `labelLarge` 14 → 12（小 2sp）、`bodyLarge` 16 → 15（小 1sp）、`labelSmall` 11 → 12（大 1sp）
+- `headlineMedium` 28/400 → `display` 28/600：字号相同、**字重变重**（词头）
+
+**没有真机就是没法确认，这条留着。**
+
+#### 一条工程教训（负面，来自实际失败两次）
+
+> 700 行文件的多处坐标替换，**不该用「算行号切片 + 重新拼装」**。
+> 正确做法是**纯文本替换**——它自带「原文必须存在」的校验，错了会 MISS 而不是静默产生错文件。
+
+另：**任何依赖行号的批量替换，第一步就该提交一次**（或 stash）。因为这类操作的失败模式是
+「文件结构被破坏」，`git checkout` 是唯一快速恢复手段，而**它不保护别的未提交内容**。
+
+#### 本轮最终验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 115 suites / **606 tests** / 1 failure（CloudTts 路径，既有）/ 2 skipped |
+| `:shared:test` | 141 suites / **779 tests** / 1 failure（PythonServer，既有）|
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+| `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+| 分支 | **71 commits**，140 文件，+26306/−7260，已推送，工作区干净 |
