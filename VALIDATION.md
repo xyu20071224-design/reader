@@ -2834,3 +2834,72 @@ enum class TextButtonLayout {
 | `:app:testDebugUnitTest` | 122 suites / **630 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
 | `ComponentCapabilityDocGuardTest` | 2 tests / 0 failures |
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续十三 · 接入导航层——「建好但零调用」的第二次实例（P13）
+
+#### 发现
+
+查 P9（图片换肤）同类缺陷时发现：`MainActivity` 切屏是 `if (currentBook == null)` 一个隐式布尔，
+而 P2 建好的整套导航层在生产代码里**零调用**：
+
+| 组件 | 行数 |
+| --- | --- |
+| `:shared/ui/nav/`（Route / NavStack / Navigator） | 211 |
+| `:shared/ui/state/`（Overlay / OverlayStack / 五切片） | 431 |
+| `:app/nav/`（AppNavHost / NavHostLite / OverlayHost / ComposeNavigator / AppNavState） | 642 |
+| 单测 | 20+ |
+
+**1000+ 行、测试全绿，`AppNavHost` 在 nav 包外零引用。**
+
+**这类缺陷单测抓不到**：测试直接 new 那些类，当然全绿。抓它需要断言
+「生产代码里至少有一个人在调用」——这正是 `NavigationWiringGuardTest` 做的事。
+
+#### 接法：镜像，不换真相源
+
+```kotlin
+val nav = rememberAppNavState()
+val desiredRoute: Route =
+    if (currentBook == null) Route.Bookshelf else Route.Reader(currentBook.id)
+LaunchedEffect(desiredRoute) { /* 换书 replaceTop / 开书 navigate / 关书 reset */ }
+```
+
+- `currentBook` 仍是**唯一真相源**（ViewModel 拥有，跨配置变更存活）；
+- 导航栈是它的镜像，**不新增状态、不产生第二真相源**。
+
+**为什么不反过来让 Route 当真相源**：`Route.Reader` 只有 bookId，`currentBook` 是整个书实体。
+改成以 Route 为准要重建当前书，会动到 `closeBook()` 落盘进度的时机。**接线不该改行为。**
+
+渲染路径也接了：`if/else` → `ScreenRegistry` + `AppNavHost`，两屏渲染内容**逐字未改**。
+弹层注册表**刻意留空**：各屏弹层仍由自己的 `showXxx` 布尔驱动，搬进 `OverlayStack`
+要改状态归属，是行为改动，留给下一轮。
+
+#### 两个守卫（先立契约再动代码）
+
+**`AppNavigationContractTest`（4 例）** —— 动手前钉死三条约定：开书压栈/可返回、
+换书原地换页不叠栈、返回键优先级（弹层 → 导航栈 → 系统）。
+
+**`NavigationWiringGuardTest`（2 例）** —— 防止退回零调用。
+
+#### 守卫自己先抓了一次假绿（值得记）
+
+第一版守卫用 `src.contains("AppNavHost")`，**被 MainActivity 里一句解释性 KDoc 命中了** ——
+测试通过，但那个类根本没被调用。**注释里提到 ≠ 代码在用**，这和「定义了但没接线」同一个坑。
+已加注释剥离并改匹配 `AppNavHost(`；收紧后它立刻红了并指出真问题，接上后转绿。
+
+#### 实施过程的教训
+
+这次用**文本切片**改 `MainActivity.kt` 失败了 3 次（大括号不平衡），最后改用**脚本切片 +
+人眼核对边界**才成功。`git checkout` 回滚了 3 次。
+
+**教训**：结构变换不要靠「按行号手工拼接」——`read` 的窗口偏移会让人算错边界。
+正确做法是脚本先输出「切到哪几行、首尾内容是什么」，核对后再写。
+（同一条已写进复盘：`read` 默认 limit 2000 的截断问题也是同一类。）
+
+#### 最终验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 124 suites / **636 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `nav.* + uirender.*`（38 suites） | 148 tests / 0 failures |
+| `NavigationWiringGuardTest` | 2/0（**由真实接线满足，不是豁免**）|
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
