@@ -12,7 +12,17 @@ import com.linguareader.shared.update.GitHubReleaseParser
  * 计入 —— 用户看得到占用却找不到可删的东西。界面据此显式列出并给清理入口。
  */
 data class PackResidual(
-    val path: java.io.File,
+    /**
+     * 残留目录的**绝对路径**（字符串，不是 File）。
+     *
+     * 为什么用 String 而不是 File：这个类型是搬家到 `:shared` 的候选
+     * （见 `AppOnlyState` 的 KDoc —— 它把 PackUiState 列为「下一步该搬家」的清单）。
+     * 而这个字段**只用于删除**（`PackRepository` 里 `File(path).deleteRecursively()`），
+     * 界面从不显示它（只显示 `bytes` 与 `size`）。
+     *
+     * 换成 String 之后这个 data class 只剩 `Kind` 与 `bytes` 两个纯值，没有外部依赖。
+     */
+    val path: String,
     val kind: Kind,
     val bytes: Long
 ) {

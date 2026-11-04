@@ -132,7 +132,7 @@ class PackRepository(
                     val rel = "${type.wire}/${packDir.name}/${versionDir.name}"
                     if (rel !in registered) {
                         out += PackResidual(
-                            path = versionDir,
+                            path = versionDir.absolutePath,
                             kind = PackResidual.Kind.UNREGISTERED,
                             bytes = PackValidator.directoryBytes(versionDir)
                         )
@@ -144,7 +144,7 @@ class PackRepository(
         if (tempRoot.isDirectory) {
             for (leftover in tempRoot.listFiles().orEmpty()) {
                 out += PackResidual(
-                    path = leftover,
+                    path = leftover.absolutePath,
                     kind = PackResidual.Kind.TEMP,
                     bytes = PackValidator.directoryBytes(leftover)
                 )
@@ -158,7 +158,7 @@ class PackRepository(
         var freed = 0L
         for (residual in residuals()) {
             val bytes = residual.bytes
-            if (runCatching { residual.path.deleteRecursively() }.getOrDefault(false)) freed += bytes
+            if (runCatching { File(residual.path).deleteRecursively() }.getOrDefault(false)) freed += bytes
         }
         return freed
     }

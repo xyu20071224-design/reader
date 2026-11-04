@@ -340,7 +340,7 @@ class SettingsSheetRenderTest {
             packItem("bundle-starter", PackType.BUNDLE, "入门合集", "Starter bundle", bundleMembers = 3)
         ),
         totalBytes = 232_000_000L,
-        residuals = listOf(PackResidual(java.io.File("packs/.tmp"), PackResidual.Kind.TEMP, 4_200_000L)),
+        residuals = listOf(PackResidual("packs/.tmp", PackResidual.Kind.TEMP, 4_200_000L)),
         installing = false,
         verifying = null,
         loadWarning = LoadWarning.REGISTRY_DAMAGED,

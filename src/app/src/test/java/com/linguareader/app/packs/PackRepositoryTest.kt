@@ -563,8 +563,8 @@ class PackRepositoryTest {
         File(staging, "half.zip").writeBytes(ByteArray(300))
 
         val residuals = repo.residuals()
-        val hasUnregistered = residuals.any { it.kind == PackResidual.Kind.UNREGISTERED && it.path == ghost }
-        val hasTemp = residuals.any { it.kind == PackResidual.Kind.TEMP && it.path == staging }
+        val hasUnregistered = residuals.any { it.kind == PackResidual.Kind.UNREGISTERED && it.path == ghost.absolutePath }
+        val hasTemp = residuals.any { it.kind == PackResidual.Kind.TEMP && it.path == staging.absolutePath }
         val residualBytes = residuals.sumOf { it.bytes }
 
         assertEquals(2, residuals.size)
