@@ -11,7 +11,7 @@ import com.linguareader.app.AppShapes
 import com.linguareader.app.LightLinguaPalette
 import com.linguareader.app.LocalLinguaPalette
 import com.linguareader.app.Paper
-import com.linguareader.app.ReviewCardContent
+import com.linguareader.app.review.ReviewCardContent
 import com.linguareader.app.colorSchemeFor
 import com.linguareader.shared.data.SavedWord
 import org.junit.Assert.assertNotEquals

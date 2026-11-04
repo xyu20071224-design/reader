@@ -12,7 +12,7 @@ import com.linguareader.app.AppShapes
 import com.linguareader.app.LightLinguaPalette
 import com.linguareader.app.LocalLinguaPalette
 import com.linguareader.app.Paper
-import com.linguareader.app.ReviewSettingsContent
+import com.linguareader.app.review.ReviewSettingsContent
 import com.linguareader.app.colorSchemeFor
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
