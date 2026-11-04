@@ -1,5 +1,7 @@
 package com.linguareader.app
 
+import com.linguareader.app.reader.parsePageInput
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull

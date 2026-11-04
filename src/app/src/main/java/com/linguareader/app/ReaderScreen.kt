@@ -115,6 +115,7 @@ import com.linguareader.app.reader.ReaderBackAction
 import com.linguareader.app.reader.ReaderController
 import com.linguareader.app.reader.ReaderLookupSession
 import com.linguareader.app.reader.ReaderOverlays
+import com.linguareader.app.reader.ReaderPageJumpDialog
 import com.linguareader.app.reader.ReaderPosition
 import com.linguareader.app.reader.ReaderScripts
 import com.linguareader.app.reader.SentenceTranslationCache
@@ -910,7 +911,7 @@ internal fun ReaderScreen(
     }
 
     if (overlays.pageJump) {
-        PageJumpDialog(
+        ReaderPageJumpDialog(
             currentPage = position.page,
             pageCount = position.pageCount,
             onJump = controller::jumpToPage,
@@ -1358,69 +1359,6 @@ internal fun ReaderSettingsBody(
 }
 
 
-@Composable
-private fun PageJumpDialog(
-    currentPage: Int,
-    pageCount: Int,
-    onJump: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val t = LocalDesignTokens.current
-    var input by remember { mutableStateOf((currentPage + 1).toString()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    // onClick 不是 @Composable 作用域，错误文案先在这里取出来。
-    val jumpErrorText = stringResource(R.string.reader_jump_error, pageCount)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        modifier = Modifier.testTag(UiTags.READER_PAGE_JUMP_DIALOG),
-        title = { Text(stringResource(R.string.reader_jump_title)) },
-        text = {
-            Column {
-                Text(
-                    stringResource(R.string.reader_jump_hint, pageCount, pageCount),
-                    color = t.colors.inkSoft,
-                    style = t.typography.caption
-                )
-                Spacer(Modifier.height(t.spacing.s))
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { raw ->
-                        input = raw.filter { it.isDigit() }.take(6)
-                        error = null
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    label = { Text(stringResource(R.string.reader_jump_page_label)) },
-                    isError = error != null,
-                    supportingText = {
-                        val message = error
-                        if (message != null) Text(message)
-                    }
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val target = parsePageInput(input, pageCount)
-                    if (target == null) {
-                        error = jumpErrorText
-                    } else {
-                        onJump(target)
-                        onDismiss()
-                    }
-                }
-            ) { Text(stringResource(R.string.reader_jump_action)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
-        },
-        containerColor = CardSurface,
-        shape = CardShape
-    )
-}
-
 /**
  * 顶栏/底栏的遮罩不透明度（迁移前的字面量，这里只给它们名字）。
  *
@@ -1445,13 +1383,6 @@ private const val ChromeIndicatorAlpha = .6f
  * 这是**布局**约束不是样式值，因此待在调用点、不进 token。
  */
 private const val ContentsMaxHeightFraction = .72f
-
-internal fun parsePageInput(raw: String, pageCount: Int): Int? {
-    if (pageCount <= 0) return null
-    val page = raw.toIntOrNull() ?: return null
-    if (page < 1 || page > pageCount) return null
-    return page - 1
-}
 
 /**
  * 译本对照的展示文本：词级对照命中时把中文句里对应的词着色加粗；未命中（或
