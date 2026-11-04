@@ -76,6 +76,97 @@ class NavigationWiringGuardTest {
     }
 
     /**
+     * **公开组件原语不能只有测试在用**（P14）。
+     *
+     * ## 为什么这条重要
+     *
+     * 本轮已发现两次「建好但零调用」：图片换肤管线（P9）、导航层（P13）。
+     * 这是同一模式的第三类：**组件原语**。
+     *
+     * 一个「只有测试在调」的公开组件，危害是三重的：
+     * 1. 读者会以为它在生产里有用，据此推断屏幕结构（错误信息）；
+     * 2. 它为它写的测试（渲染测试、基线）是纯成本；
+     * 3. 它会让人以为「某个能力已经具备」，从而不去实现真正需要的东西。
+     *
+     * ## 判据
+     *
+     * `components/` 下每个 `fun Xxx(`，必须在 **components 目录之外**的 main 源码里至少被调用一次。
+     * 例外用 [exemptComponents] 声明并写理由。
+     */
+    @Test
+    fun publicComponentsAreUsedSomewhereInProduction() {
+        val componentsDir = File("src/main/java/com/linguareader/app/components")
+        assertTrue("components 目录应当存在", componentsDir.isDirectory)
+
+        // 收集 component 里声明的公开 composable 名（顶层 fun，不是 private）。
+        val declared = linkedMapOf<String, String>() // name -> 文件
+        componentsDir.listFiles { f -> f.extension == "kt" }?.forEach { file ->
+            Regex("""^fun ([A-Z]\w*)\(s*$""", RegexOption.MULTILINE)
+                .findAll(file.readText())
+                .forEach { declared[it.groupValues[1]] = file.name }
+        }
+        assertTrue("应当能扫到组件声明（扫到 ${declared.size} 个）", declared.isNotEmpty())
+
+        // 收集所有 main 源（**包含 components 自身**）。
+        //
+        // 第一版把 components/ 排除了，于是 `SheetDragHandle` 被判成死代码 ——
+        // 它其实被同目录的 `LinguaSheet` 内部调用（`dragHandle = { SheetDragHandle() }`）。
+        // **组件之间互相复用是正当的**，判据要的是「有人在用」，不是「包外有人在用」。
+        //
+        // 判据修正后仍然能抓真正的死代码：一个没人调用的函数，在整棵树里都不会有 `名字(`。
+        val prodSources = File("src/main/java/com/linguareader/app")
+            .walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .map { it.readText() }
+            .toList()
+
+        val offenders = declared.filter { (name, file) ->
+            if (exemptComponents.containsKey(name)) return@filter false
+            // 必须出现「调用形态」——名字后跟 (，避免被 KDoc 里的提及命中。
+            prodSources.none { it.contains("$name(") }
+        }.map { (name, file) -> "$name（定义于 $file）" }
+
+        assertTrue(
+            buildString {
+                appendLine("以下公开组件在 components/ 之外**没有任何调用**（只有测试在用）：")
+                offenders.sorted().forEach { appendLine("  - $it") }
+                appendLine()
+                appendLine("修法：要么接上（推荐），要么删掉 —— 只有测试在调的组件会持续误导后来人")
+                appendLine("以为某能力已在生产中使用。确需保留就加进 exemptComponents 并写理由。")
+            },
+            offenders.isEmpty()
+        )
+    }
+
+    /**
+     * 允许「生产未调用」的组件 → 理由。
+     *
+     * 加一条就要写清「为什么它现在该留着」。当前为空 —— 说明组件层没有死代码。
+     */
+    /**
+     * 组件层已知的**死代码债务**（生产零调用的公开原语）。
+     *
+     * 这些是 2026-11-04 审计发现的：组件层 21 个公开原语里 8 个在生产代码中零调用。
+     * 其中一部分还有测试在用（渲染测试、基线），删它们要同步改测试——
+     * 那是一次独立的清理，不该混在守卫提交里。
+     *
+     * **每一条都必须写清「为什么它现在还在」**，否则下一个人会以为它们有用。
+     * 目标是把这张表清空（删组件 + 删对应测试），而不是往里面加东西。
+     */
+    private val exemptComponents: Map<String, String> = mapOf(
+        // —— 以下 4 个连测试都没有，纯粹是写出来没用过 ——
+        "CardSectionLabel" to "死代码：无生产调用、无测试。待删（清理需与 CardTitleRow/CardDivider 一起做）",
+        "LinguaDivider" to "死代码：无生产调用、无测试。注意 SheetDragHandle 不是同类——它被 LinguaSheet 内部调用",
+        "EmptyStateHint" to "死代码：无生产调用、无测试",
+        // —— 以下 4 个有渲染测试在用，删它们要同步改测试 ——
+        "ButtonRow" to "死代码（仅测试在用）。生产里的按钮组都是各屏手写 Row",
+        "CardTitleRow" to "死代码（仅测试在用）。书卡标题是 ShelfBookCard 自己画的",
+        "CardDivider" to "死代码（仅测试在用）",
+        "SettingGroup" to "死代码（仅测试在用）。各屏设置列表是手写 Column + SettingRow",
+        "SettingValue" to "死代码（仅测试在用）",
+    )
+
+    /**
      * 反向：导航层的公开入口不该只剩自己的测试在调。
      *
      * 这条只查 `AppNavHost` —— 它是 P2 设计的「唯一接入点」，
