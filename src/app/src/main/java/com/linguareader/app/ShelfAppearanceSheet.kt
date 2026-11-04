@@ -164,7 +164,15 @@ internal fun ShelfAppearanceContent(
     /** 行内状态展示满 3 秒后由外壳清空（状态是外壳持有的，内容体只负责画与计时）。 */
     onImageStatusShown: () -> Unit,
     onPickImage: () -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    /** 皮肤选择（P9）。默认值让既有调用方与渲染夹具零改动。 */
+    skinBuiltIns: List<com.linguareader.shared.ui.skin.SkinSpec> =
+        com.linguareader.shared.ui.skin.SkinBuiltIns.all,
+    selectedSkinId: String = com.linguareader.shared.ui.skin.SkinBuiltIns.light.id,
+    customSkin: com.linguareader.shared.ui.skin.SkinSpec? = null,
+    onSelectSkin: (String) -> Unit = {},
+    onPickSkinImage: () -> Unit = {},
+    onRemoveCustomSkin: () -> Unit = {}
 ) {
     val t = LocalDesignTokens.current
     // 自带宽度的 Column + 统一行距：原实现是 `Column(spacedBy(16.dp))`，
@@ -256,6 +264,18 @@ internal fun ShelfAppearanceContent(
         )
 
         UiAnimSpeedSelector(animSpeed = animSpeed, onAnimSpeedChange = onAnimSpeedChange)
+
+        // 皮肤选择（P9）：与上面的「书架背景」是两件事 ——
+        // 背景只影响书架那张纸下面的图，皮肤影响所有已迁移的屏（弹层、生词本、复习屏…）。
+        // 放在这里是因为它是用户找「外观」时的自然落点，不必再开一屏。
+        com.linguareader.app.skin.SkinPickerSection(
+            builtIns = skinBuiltIns,
+            selectedId = selectedSkinId,
+            customSkin = customSkin,
+            onSelectBuiltIn = onSelectSkin,
+            onPickImage = onPickSkinImage,
+            onRemoveCustom = onRemoveCustomSkin
+        )
 
         SecondaryButton(
             text = stringResource(R.string.shelf_background_reset),

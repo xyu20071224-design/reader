@@ -37,6 +37,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.linguareader.app.data.ReaderTheme
 import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.skin.SkinRegistry
+import com.linguareader.app.skin.SkinStore
+import com.linguareader.app.skin.paletteForSkin
 import com.linguareader.app.tts.SpeechReadiness
 import com.linguareader.shared.ui.skin.SkinBuiltIns
 import java.util.Locale
@@ -70,7 +72,11 @@ class MainActivity : ComponentActivity() {
             var readerTheme by remember { mutableStateOf(storedReaderTheme(context)) }
             // 交互动画速度：进 App 时读缓存，书架外观弹层里可改，改完立刻作用于全局动画。
             var uiAnimSpeed by remember { mutableStateOf(storedUiAnimSpeed(context)) }
-            val palette = paletteFor(readerTheme, isSystemInDarkTheme())
+            // 自定义皮肤（P9）：用户从相册选图生成的皮肤。
+            // 为 null 时走原来的「阅读主题 + 系统夜间」逻辑，**默认行为一个字没变**。
+            var customSkin by remember { mutableStateOf(SkinStore.currentCustom(context)) }
+            val palette = customSkin?.let { paletteForSkin(it) }
+                ?: paletteFor(readerTheme, isSystemInDarkTheme())
             ApplySystemBars(palette)
             val snackbar = rememberAppSnackbar()
             // 设计 token 必须与调色板**同源同明暗**。
@@ -82,8 +88,10 @@ class MainActivity : ComponentActivity() {
             // 测不到生产接线；渲染台默认也只跑日间。
             // 明暗判定复用 chromeIsDark 的那条规则（经 paletteFor），不另起一套，
             // 否则会出现「外壳夜里、组件日间」的第二类错配。
+            // 自定义皮肤生效时，token 直接从它翻译（palette 也来自它，见上），
+            // 两者仍然同源同明暗 —— 那条纪律不因为新增换肤能力而放松。
             val tokens = SkinRegistry.toDesignTokens(
-                if (palette.isDark) SkinBuiltIns.dark else SkinBuiltIns.light
+                customSkin ?: if (palette.isDark) SkinBuiltIns.dark else SkinBuiltIns.light
             )
             CompositionLocalProvider(
                 LocalDesignTokens provides tokens,

@@ -853,4 +853,12 @@
     <string name="sync_detail_not_logged_in">云同步尚未启用或未登录。打开「云同步」填好服务器与账号并登录后，这里会逐项列出已同步、待同步和仅存本机的内容。</string>
     <string name="sync_detail_empty_books">书库还没有书。</string>
     <string name="sync_detail_empty_words">还没有生词。</string>
+    <!-- 皮肤（P9）：图片换肤。7 条，与 values-en 必须同 key。 -->
+    <string name="skin_section_title">皮肤</string>
+    <string name="skin_custom_hint">选一张照片，自动生成配色。适合做皮肤的图：有大片纯色背景、色彩柔和的照片。</string>
+    <string name="skin_custom_active">当前使用图片皮肤：%1$s</string>
+    <string name="skin_pick_image">选图片生成皮肤</string>
+    <string name="skin_remove_custom">移除图片皮肤</string>
+    <string name="skin_import_failed">这张图读不出来，已保留原皮肤</string>
+    <string name="skin_import_done">皮肤已更新</string>
 </resources>

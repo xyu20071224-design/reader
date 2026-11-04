@@ -862,4 +862,12 @@
     <string name="sync_detail_not_logged_in">Cloud sync is off or you are not signed in. Open "Cloud sync", enter the server and account, and sign in — synced, pending, and local-only items will be listed here.</string>
     <string name="sync_detail_empty_books">No books yet.</string>
     <string name="sync_detail_empty_words">No vocabulary yet.</string>
+    <!-- Skin (P9): image-based theming. 7 entries, keys must match values/. -->
+    <string name="skin_section_title">Skin</string>
+    <string name="skin_custom_hint">Pick a photo to generate a palette. Best results: soft-toned photos with large areas of one colour.</string>
+    <string name="skin_custom_active">Using image skin: %1$s</string>
+    <string name="skin_pick_image">Generate from photo</string>
+    <string name="skin_remove_custom">Remove image skin</string>
+    <string name="skin_import_failed">Couldn\'t read that image. Your current skin is unchanged.</string>
+    <string name="skin_import_done">Skin updated</string>
 </resources>
