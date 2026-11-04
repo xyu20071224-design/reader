@@ -97,6 +97,9 @@ import com.linguareader.app.multivoice.VoicePickerDialog
 import com.linguareader.app.multivoice.GenderPill
 import com.linguareader.app.multivoice.SystemEngineGuidance
 import com.linguareader.app.multivoice.SystemVoiceAnnotateDialog
+import com.linguareader.app.multivoice.VoiceRow
+import com.linguareader.app.multivoice.characterSubtitle
+import com.linguareader.app.multivoice.statusText
 import com.linguareader.app.tts.BookVoiceMap
 import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.MiMoVoiceStore
@@ -749,155 +752,6 @@ internal fun MultiVoiceSection(
     }
 }
 
-
-@Composable
-private fun characterSubtitle(character: VoiceCharacter): String {
-    val parts = mutableListOf<String>()
-    parts += when (character.importance.lowercase()) {
-        "major" -> stringResource(R.string.multivoice_role_major)
-        "medium" -> stringResource(R.string.multivoice_role_medium)
-        else -> stringResource(R.string.multivoice_role_minor)
-    }
-    when (character.gender.lowercase()) {
-        "male" -> parts += stringResource(R.string.multivoice_gender_male)
-        "female" -> parts += stringResource(R.string.multivoice_gender_female)
-    }
-    if (character.style.isNotEmpty()) parts += character.style.take(2).joinToString("/")
-    return parts.joinToString(" · ")
-}
-
-/** 状态提示文案：把 [MultiVoiceStatus] 映射到资源字符串。 */
-@Composable
-private fun statusText(status: MultiVoiceStatus): String = when (status.kind) {
-    MultiVoiceStatusKind.NO_LIBRARY -> stringResource(R.string.multivoice_status_no_library)
-    MultiVoiceStatusKind.NO_ROSTER -> stringResource(R.string.multivoice_status_no_roster)
-    MultiVoiceStatusKind.RULE_MODE -> stringResource(R.string.multivoice_status_rule_mode)
-    MultiVoiceStatusKind.NO_MAP -> stringResource(R.string.multivoice_status_no_map)
-    MultiVoiceStatusKind.SHARED_VOICES -> pluralStringResource(
-        R.plurals.multivoice_status_shared,
-        status.characters,
-        status.characters,
-        status.shared
-    )
-
-    MultiVoiceStatusKind.READY -> pluralStringResource(
-        R.plurals.multivoice_status_ready,
-        status.characters,
-        status.characters
-    )
-}
-
-/** 一行可分配的说话人：名字、当前音色、试听/停止、恢复自动。 */
-@Composable
-private fun VoiceRow(
-    title: String,
-    currentVoice: String,
-    locked: Boolean,
-    playing: Boolean,
-    onOpenPicker: () -> Unit,
-    onAudition: () -> Unit,
-    onRelease: () -> Unit,
-    subtitle: String? = null,
-    onEdit: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
-) {
-    val t = LocalDesignTokens.current
-    // semantics{} 不是 composable 作用域，标签先取出来。
-    val auditionLabel = stringResource(R.string.multivoice_audition, title)
-    val stopAuditionLabel = stringResource(R.string.multivoice_audition_stop)
-    val releaseLabel = stringResource(R.string.multivoice_release, title)
-    val editLabel = stringResource(R.string.multivoice_edit_character, title)
-    val deleteLabel = stringResource(R.string.multivoice_delete_character, title)
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = RowVerticalGap),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    title,
-                    style = t.typography.body,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false)
-                )
-                if (locked) {
-                    Icon(
-                        Icons.Default.Lock,
-                        contentDescription = stringResource(R.string.multivoice_locked),
-                        tint = t.colors.accent,
-                        modifier = Modifier.padding(start = t.spacing.xs).size(LockIconSize)
-                    )
-                }
-            }
-            Text(
-                currentVoice.ifBlank { stringResource(R.string.multivoice_auto) },
-                style = t.typography.label,
-                color = if (currentVoice.isBlank()) t.colors.inkFaint else t.colors.inkSoft,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            subtitle?.let {
-                Text(it, style = t.typography.label, color = t.colors.inkFaint)
-            }
-        }
-        LinguaTextButton(text = stringResource(R.string.multivoice_change), onClick = onOpenPicker)
-        IconButton(
-            onClick = onAudition,
-            enabled = currentVoice.isNotBlank(),
-            modifier = Modifier.semantics {
-                contentDescription = if (playing) stopAuditionLabel else auditionLabel
-            }
-        ) {
-            Icon(
-                if (playing) Icons.Default.Stop else Icons.Default.PlayArrow,
-                contentDescription = null,
-                tint = if (playing) t.colors.accent else t.colors.inkSoft,
-                modifier = Modifier.size(MediumIconSize)
-            )
-        }
-        if (locked) {
-            IconButton(
-                onClick = onRelease,
-                modifier = Modifier.semantics { contentDescription = releaseLabel }
-            ) {
-                Icon(
-                    Icons.Default.LockOpen,
-                    contentDescription = null,
-                    tint = t.colors.inkFaint,
-                    modifier = Modifier.size(RowIconSize)
-                )
-            }
-        }
-        if (onEdit != null) {
-            IconButton(
-                onClick = onEdit,
-                modifier = Modifier.semantics { contentDescription = editLabel }
-            ) {
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = null,
-                    tint = t.colors.inkFaint,
-                    modifier = Modifier.size(SmallIconSize)
-                )
-            }
-        }
-        if (onDelete != null) {
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.semantics { contentDescription = deleteLabel }
-            ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = null,
-                    tint = t.colors.inkFaint,
-                    modifier = Modifier.size(SmallIconSize)
-                )
-            }
-        }
-    }
-}
 
 
 /**
