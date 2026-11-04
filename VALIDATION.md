@@ -3502,3 +3502,70 @@ P20 让圆角与阴影从图片推导，`:shared` 单测断言了「值确实不
 | `:app:testDebugUnitTest` | 131 suites / **651 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
 | `MotionTokenIsUnwiredTest` | 1 test / 0 failures |
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续二十四 · `motion` token 接上第一个消费方（P23）
+
+#### 从「登记债务」到「实际交付」
+
+P22 登记了 `motion` token 零消费方，但选择不硬接（无安全消费方 + 不可验证）。
+本轮给它找到了**安全的第一个消费方**。
+
+#### 改动
+
+`SettingRow` 的副标题现在用 `AnimatedVisibility` 做 fade 过渡：
+
+```kotlin
+AnimatedVisibility(
+    visible = subtitle != null,
+    enter = androidx.compose.animation.fadeIn(animationSpec = t.motion.normalSpec),
+    exit = androidx.compose.animation.fadeOut(animationSpec = t.motion.fastSpec)
+) {
+    Text(text = subtitle ?: "", style = t.typography.caption, color = t.colors.inkSoft)
+}
+```
+
+| 设计点 | 理由 |
+| --- | --- |
+| 选 `SettingRow` | 副标题显隐只跟文案有无有关，**不绑定任何阅读交互状态** |
+| 用 `AnimatedVisibility` 而非 `if` | 退场也要有过渡，否则副标题会「啪」地消失 |
+| 退场用 `fastSpec`、入场用 `normalSpec` | 退场比入场快是交互惯例 |
+| 退场文案用 `subtitle ?: ""` | `visible` 变 false 时 `subtitle` 可能已 null，空串保证不闪「null」 |
+
+#### 守卫翻转了方向（这是设计意图）
+
+`MotionTokenIsUnwiredTest`（P22）原本断言「零消费方」，现在**如预期地红了**，
+并给出精确指引：「如果这是有意接上的：很好，请更新 KDoc 与 VALIDATION.md」。
+
+已改名并翻转为 `MotionTokenConsumptionTest`（2 例）：
+1. **断言 token 确实有消费方** —— 哪天消费点被删（比如为简化改回 `if`），这条会红；
+2. **断言消费方用的是具体 spec**（`normalSpec` / `fastSpec`）而不是只读字段 ——
+   防「读了 `t.motion.easing` 却仍写死 `tween(300)`」的假接线。
+
+**守卫的方向随代码状态翻转，这不是测试不稳定，是它跟着事实走。**
+P22 那次它红了并给出更新指引，就是设计意图的兑现。
+
+#### 验证
+
+| 项 | 结果 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 131 suites / **652 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `MotionTokenConsumptionTest` | 2 tests / 0 failures |
+| **全部 `uirender.*`（含 36 张视觉基线）** | BUILD SUCCESSFUL —— **动画改动未破坏任何静态基线** |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+#### 六例清单更新
+
+| 阶段 | 零调用 | 规模 | 处置 |
+| --- | --- | --- | --- |
+| P9 | 图片换肤管线 | ~700 行 | **已接通** |
+| P13 | 导航层 | ~1000 行 | **已接通** |
+| P14 | 组件原语 ×8 | ~200 行 | **已删除** |
+| P15 | 状态切片 ×5 | ~800 行 | **ShellState 已接通** |
+| P16 | `shared.alignment` | ~9000 行 | **登记不删**（超出范围）|
+| **P22→P23** | **`motion` token** | ~30 行 | **已接通**（SettingRow 副标题 fade）|
+
+**六例里五例已收口，只剩 P16 的 `shared.alignment` 作为有意保留的登记。**
+
+#### 待真机
+
+副标题 fade 的实际观感（Robolectric 渲染单帧，测不到过渡过程）。
