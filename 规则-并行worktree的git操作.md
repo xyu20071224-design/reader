@@ -58,6 +58,40 @@ git status --porcelain
 本轮实际遇到两次（`AppViewModel` 缺转发层、`ReaderScreen` 缺 import），
 都是别人改到一半。**不要因为报错在自己文件里就以为是自己**，也不要急着去改别人的文件。
 
+
+### 6. 搬移类重构必须跑**两道**编译门
+
+搬 Composable / 类 / 函数到新文件时，**主源集编译绿 ≠ 搬完了**：
+
+```
+:app:compileDebugKotlin        ← 主源集（新文件在、旧声明删了、import 都对）
+:app:compileDebugUnitTestKotlin ← 测试源集（还 import 着旧全限定名）
+```
+
+**只有第二道门会暴露「测试还在引用旧符号」**。本轮出现过两次同类问题：
+1. 测试文件**包名**没跟着搬（`ReaderPageJumpTest`）；
+2. 测试文件 **import** 没跟着搬（`ReviewCardRenderTest` / `ReviewSettingsRenderTest`）。
+
+**两次的共同形态**：主源集编译绿 → 以为搬完了 → 直到跑测试才炸。
+
+**判据应该写成两条机械检查，而不是「记得检查测试」**：
+
+```powershell
+# 1. 搬完后立刻 grep 旧全限定名，确认零残留
+git grep -n 'com.linguareader.app.OldPackage.SymbolName'
+
+# 2. 两道编译门并列，不是可选项
+:app:compileDebugKotlin
+:app:compileDebugUnitTestKotlin
+```
+
+### 7. 「定义了但没接线」的常量，grep 计数抓不到
+
+本轮实例：`CurveGridAlpha` / `CurveMarkerAlpha` **定义了、注释里提到了、但代码仍写字面量 `.10f`**。
+纯 grep 计数会认为它「有引用」（注释里提到也算命中），**实际从未生效**。
+
+**更可靠的判据是值重复检测**：同一字面量（如 `.10f`）是否既出现在常量定义、又出现在使用点。
+这个检查还没做成工具，下一轮可考虑。
 ## 纯代码移动的验收判据（配套）
 
 拆解巨型文件时，`git diff` 会把「移动」显示成一堆 `-`/`+`，人眼很难在几十上百行里
