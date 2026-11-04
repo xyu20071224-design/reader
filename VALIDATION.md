@@ -3391,3 +3391,55 @@ elevation = SkinElevation.default(),
 | `:shared` skin 包 | 7 suites / **88 tests / 0 failures** |
 | `:app:testDebugUnitTest` | 129 suites / **648 tests** / 1 failure（既有 CloudTts）|
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续二十二 · 验证 P20 的推导在像素上可见（P21）
+
+#### 为什么需要这一层
+
+P20 让圆角与阴影从图片推导，`:shared` 单测断言了「值确实不同」（柔和图 md 16.0 vs 硬图 11.1）。
+但**「值不同」不等于「画出来不一样」**：
+
+| 可能失效的环节 |
+| --- |
+| 组件若用 `t.pillShape`（`radii.pill = 999`，永远胶囊），圆角推导白做 |
+| 组件若不读 `t.elevation`，阴影推导白做 |
+| 两者都读了，但差 4.9dp 在 411dp 屏幕上肉眼不可辨，等于没做 |
+
+**这正是本项目反复出现的「接了一半」形态：算出来了、断言过了、但用户看不到。**
+
+#### 前置检查：影响面有多大
+
+| 组件 | 受圆角推导影响 | 胶囊（不受影响）|
+| --- | --- | --- |
+| `LinguaCard` | **2 处** `cardShape` | 0 |
+| `Buttons` | 0 | 2 处 `pillShape` |
+| 屏幕层 | **12 个文件**用 `cardShape`/`smallShape`/`largeShape` | |
+
+**有影响面，但不是全部** —— 按钮是胶囊（`radii.pill` 恒为 999），圆角推导对按钮无效。
+**这一点如实记录，不夸大推导效果。**
+
+#### 测试设计：排除颜色干扰
+
+`SkinCharacterVisuallyDistinctTest`（2 例）：
+
+1. `softAndHardSkinsRenderVisiblyDifferent` —— 两张完整皮肤渲染必须不同（差异率 > 1%）；
+2. **`radiiAndElevationAloneProduceVisibleDifference`（关键那条）** ——
+   把硬图的颜色换成柔和图的颜色，**只保留圆角与阴影差异**，再看像素是否可辨（> 0.2%）。
+
+**第 2 条排除了「颜色不同导致图不同」的干扰，直接回答「推导可见吗」。**
+
+#### 出图目检
+
+两张 1233×1200 图并排看：
+- 柔和图（`character-radii-soft.png`）：圆角**明显更圆**（md 16.0）；
+- 硬图（`character-radii-hard.png`）：圆角**明显更方**（md 11.1）。
+
+**差异肉眼可辨**，不是「数值上不同」。
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 130 suites / **650 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `SkinCharacterVisuallyDistinctTest` | 2 tests / 0 failures |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
