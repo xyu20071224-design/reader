@@ -112,6 +112,7 @@ import com.linguareader.app.data.WordLookup
 import com.linguareader.app.reader.EpubPage
 import com.linguareader.app.reader.LocusOrigin
 import com.linguareader.app.reader.ReaderBackAction
+import com.linguareader.app.reader.ReaderContentsSheet
 import com.linguareader.app.reader.ReaderController
 import com.linguareader.app.reader.ReaderLookupSession
 import com.linguareader.app.reader.ReaderOverlays
@@ -875,7 +876,7 @@ internal fun ReaderScreen(
     }
 
     if (overlays.contents) {
-        ContentsSheet(
+        ReaderContentsSheet(
             book = book,
             currentChapter = position.chapter,
             onSelect = {
@@ -1069,86 +1070,6 @@ internal fun ReaderScreen(
                 lookupSession = lookupSession.setShowingRelatedPhrase(false).clearStatus()
             }
         )
-    }
-}
-
-/**
- * 目录弹层：外壳走 [LinguaSheet]，内容体是 [ContentsBody]。
- *
- * 迁移前这里是手写 `ModalBottomSheet(containerColor = Paper)` + 自己写的标题排版
- * 与 24dp 内边距。**只换外壳与样式，章节列表的渲染口径一个字没改**：
- * 序号仍然拼进标题文本、当前章仍然用强调色 + 粗体、点击仍然整行命中。
- */
-@Composable
-private fun ContentsSheet(
-    book: Book,
-    currentChapter: Int,
-    onSelect: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    LinguaSheet(
-        onDismiss = onDismiss,
-        title = stringResource(R.string.reader_contents),
-        // 内容体自己带 LazyColumn（列表自身不产生块间距），关掉容器的默认 spacedBy，
-        // 否则标题与列表之间会多出一份 spacing.m。
-        contentArrangement = Arrangement.Top
-    ) {
-        ContentsBody(
-            book = book,
-            currentChapter = currentChapter,
-            onSelect = onSelect
-        )
-    }
-}
-
-/**
- * 目录的**内容体**，与 sheet 外壳解耦。
- *
- * 理由与其余已迁弹层一致：`ModalBottomSheet` 在渲染台里画不进位图，抽出内容体才能
- * 出迁移前后的对照图。代价也一样——**不再自带纸色底**，单独使用时调用方必须补齐
- * （渲染台见 `ReaderShellRenderTest`）。
- *
- * 横向留白不再自己写：由 [LinguaSheet] 的 content 槽提供 `spacing.l`。
- * 滚动容器 `LazyColumn` **仍然由本组件自己拥有**——换外壳时最容易丢的就是它
- * （PacksSheet 迁移踩过：`verticalScroll` 挂在外壳上，换壳后长内容拖不动）。
- */
-@Composable
-internal fun ContentsBody(
-    book: Book,
-    currentChapter: Int,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val t = LocalDesignTokens.current
-    // ⚠️ 高度上限必须保留：迁移前是 `LazyColumn(Modifier.fillMaxHeight(.72f))`。
-    // 拿掉上限后列表会「撑到弹层满高」，章节多的书目录会顶到状态栏下面 —— 那是
-    // 可见的布局变化，不属于「只换外壳」。这里原样保留 72%，只把字面量命名化。
-    // READER_CONTENTS_SHEET 原本挂在 ModalBottomSheet 上（LinguaSheet 不收 modifier，
-    // 与 ReviewUi 的 REVIEW_SHEET 同一处理）；内容体是它的子树，语义查找照样命中。
-    LazyColumn(
-        modifier
-            .fillMaxWidth()
-            .fillMaxHeight(ContentsMaxHeightFraction)
-            .testTag(UiTags.READER_CONTENTS_SHEET)
-    ) {
-        itemsIndexed(book.chapters) { index, chapter ->
-            Row(
-                Modifier.fillMaxWidth()
-                    .clickable { onSelect(index) }
-                    .defaultMinSize(minHeight = t.controlHeight)
-                    .padding(vertical = t.spacing.s)
-            ) {
-                // 序号作为标题文本一部分渲染（书源标题常不带编号，
-                // 纯序号列太淡易被当成没有序号）。
-                Text(
-                    "${index + 1}. ${chapter.title}",
-                    color = if (index == currentChapter) Accent else Ink,
-                    style = t.typography.body,
-                    fontWeight = if (index == currentChapter) FontWeight.Bold else FontWeight.Normal
-                )
-            }
-            SheetDivider()
-        }
     }
 }
 
@@ -1375,14 +1296,6 @@ private const val ChromeTrackAlpha = .12f
 
 /** 底栏页码文字的不透明度（次级信息，压暗一档）。 */
 private const val ChromeIndicatorAlpha = .6f
-
-/**
- * 目录列表相对弹层可用高度的占比（迁移前就是 `.72f`）。
- *
- * 必须保留：不加上限时 LazyColumn 会把弹层撑到满高，长目录会顶进状态栏。
- * 这是**布局**约束不是样式值，因此待在调用点、不进 token。
- */
-private const val ContentsMaxHeightFraction = .72f
 
 /**
  * 译本对照的展示文本：词级对照命中时把中文句里对应的词着色加粗；未命中（或

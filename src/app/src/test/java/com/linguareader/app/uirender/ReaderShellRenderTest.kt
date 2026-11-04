@@ -207,7 +207,7 @@ class ReaderShellRenderTest {
             addedAt = 1_700_000_000_000L
         )
         val bmp = renderSheetBody("reader-sheet-contents") {
-            com.linguareader.app.ContentsBody(
+            com.linguareader.app.reader.ContentsBody(
                 book = book,
                 currentChapter = 2,
                 onSelect = {}
