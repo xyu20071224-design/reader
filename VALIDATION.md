@@ -2971,3 +2971,65 @@ LaunchedEffect(desiredRoute) { /* 换书 replaceTop / 开书 navigate / 关书 r
 | `:app:testDebugUnitTest` | 124 suites / **637 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
 | `nav.* + uirender.*` | 38 suites / 149 tests / 0 failures |
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续十五 · 组件死代码债务清零（P14 完成）
+
+#### 第二批：5 个「有测试在用」的死组件
+
+`5051198` 删了 3 个连测试都没有的（`CardSectionLabel` / `LinguaDivider` / `EmptyStateHint`）。
+剩下 5 个有渲染测试在用：`ButtonRow` / `CardTitleRow` / `CardDivider` / `SettingGroup` / `SettingValue`。
+
+#### 关键决定：改夹具，不是删测试
+
+第一反应是「删组件 + 删引用」，但那会让 `ComponentRenderTest` 的 `SettingsScreen` /
+`ComponentMatrix` 夹具失去一半内容。**真正的问题是那些夹具测的是一种不存在的页面结构。**
+
+生产里实际是怎么写的：
+
+| 结构 | 生产实现 |
+| --- | --- |
+| 书卡标题行 | `shelf/ShelfBookCard.kt` 手写 `Row { Column { title; subtitle } }` |
+| 设置列表 | 各屏手写 `Column + SettingRow`（见 `ListeningSettingsSheet`）|
+| 分割线 | `Box(...height(hairline).background(outline))` |
+| 按钮组 | 手写 `Row(Arrangement.spacedBy(s, Alignment.End))` |
+
+**从来没有 `SettingGroup` 包一层、`CardDivider()` 插一行。**
+
+所以这一笔把三个测试文件的夹具**改写成生产里的实际结构** ——
+组件删掉，夹具仍然有意义（而且比原来更接近真实页面）。
+每个改写点都留了注释说明「为什么不用那个组件了 —— 它在生产里从未被调用」。
+
+#### 债务表清空
+
+`NavigationWiringGuardTest.exemptComponents` 从 5 条改为 **`emptyMap()`**，
+KDoc 写明「这张表已经清空，往里加之前先问：这个组件真的需要存在吗？」
+
+**守卫 3 tests / 0 failures —— 零豁免下仍然通过**，说明组件层确实没有死代码了。
+
+#### 8 个死组件的最终去向
+
+| 组件 | 处理 |
+| --- | --- |
+| `CardSectionLabel` / `LinguaDivider` / `EmptyStateHint` | 直接删除（无任何引用）|
+| `ButtonRow` / `CardTitleRow` / `CardDivider` / `SettingGroup` / `SettingValue` | 删除 + 夹具改写 |
+
+**组件层 21 个公开原语 → 13 个，全部在生产代码中有调用。**
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 124 suites / **637 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+#### 三次「建好但零调用」全部收口
+
+| 阶段 | 零调用的东西 | 结果 |
+| --- | --- | --- |
+| P9 | 图片换肤管线（`ImageSkinBuilder` / `ImagePaletteExtractor`） | **已接通**（持久化 + Uri 导入 + 用户入口）|
+| P13 | 导航层（`Route` / `NavStack` / `AppNavHost`，1000+ 行） | **已接通**（屏幕切换走 Route）|
+| P14 | 8 个组件原语 | **全部删除**，债务表清零 |
+
+**共同点**：这些缺陷的单元测试全是绿的 —— 测试直接 new 那些类。
+抓它们需要断言「生产代码里至少有人在调它」，现在由两个守卫承担：
+`NavigationWiringGuardTest`（导航层 + 组件层）、`MigrationCoverageGuardTest`（屏幕迁移覆盖）。
