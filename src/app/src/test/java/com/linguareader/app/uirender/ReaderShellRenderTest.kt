@@ -224,7 +224,7 @@ class ReaderShellRenderTest {
     @Test
     fun settingsSheetBodyRenders() {
         val bmp = renderSheetBody("reader-sheet-settings") {
-            com.linguareader.app.ReaderSettingsBody(
+            com.linguareader.app.reader.ReaderSettingsBody(
                 preferences = com.linguareader.app.data.ReaderPreferences(
                     fontPercent = 110,
                     lineHeight = 1.65f,
