@@ -2664,3 +2664,59 @@ val tokens = SkinRegistry.toDesignTokens(
 `HypervisorPresent=False`、`adb devices` 无设备。本轮新增的 5 个屏全部只有编译门 + 像素基线，
 `LaunchPromptDialog` / `ProviderEditorDialog` / `ModelPickerDialog` 是 `Dialog`、**画不进 Robolectric 位图**，
 连基线都没有，只能真机看。
+
+### 2026-11-04 续十 · 视觉基线第一次抓到真实回归（它自己的价值证明）
+
+#### 事件
+
+清掉 `VocabularyScreen` 里一个本地封装 `VocabIconTextButton`，理由是它的注释写着过时前提
+（「components/ 目前只有纯文字版 LinguaTextButton，等组件层补出 icon 版再换」——
+但 `LinguaTextButton` 自 `e337996` 起已有 `icon` 与 `tone`）。
+
+**视觉基线立刻红了三条：**
+```
+screen-vocab-list      差异 19.223% / 最大通道差 216
+screen-vocab-empty     差异 14.554%
+screen-vocab-no-match  差异 13.573%
+```
+
+看 actual 图才发现：**标题「My words」被压成三行竖排**。
+
+原因：`LinguaTextButton` 内部强制 `defaultMinSize(minHeight = 48dp)` +
+`contentPadding(horizontal = spacing.m, vertical = spacing.xs)`，三个并排吃掉过多横向空间，
+`weight(1f)` 的标题列只剩两三个字宽。
+
+已撤销（`007ee9d`），三条基线恢复。
+
+#### 这次失败的三层意义
+
+**1. 视觉基线证明了自己值钱。**
+这是它上线后第一次抓到**真实回归**（不是故意改坏来演示）。没有它，这个改动会「编译绿、
+单测绿、提交干净」，然后等到某天用户在真机上看到标题竖排。
+
+**2. 我犯了刚写进手册的同一条错。**
+`19cd2a4` 里 `skin-engineer` 写的判据是「**按钮按槽位判，不按长得像判**」——
+`AlertDialog` 槽位不套页面级按钮，因为页面级几何与窄槽位硬冲突。
+**我拿着这条判据去要求别人，然后自己在生词本顶栏犯了同一个错。**
+
+**3. 错误的根源不是「组件能力判断错」，是「没问它当初解决什么问题」。**
+那个本地封装的注释确实过时了，但**过时的只是它给的理由，不是它的存在**。
+我错在由「理由过时」推出「实现也该换」，而没有先问「它当初解决的问题还在不在」。
+**那个问题是横向空间不够 —— 它还在。**
+
+#### 已改进的地方
+
+撤销时不是简单 revert，而是把注释从「等组件补 icon 版」改成了**真实理由 + 实证**：
+> ⚠️ 这里**刻意不用** LinguaTextButton，尽管它已有 icon 与 tone。原因不是「组件缺能力」，
+> 而是**页面级几何与这个窄槽位硬冲突**……实证：2026-11-04 换成 LinguaTextButton 后，
+> 标题「My words」被压成**三行竖排**（视觉基线抓到的，差异 19.2%）；改回紧凑封装后恢复。
+
+**这样下一个人看到时，知道的是「为什么不能换」，而不是「有人留了个没清理的封装」。**
+
+#### 最终验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 121 suites / **628 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+| 视觉基线 | 36 张全部通过 |
