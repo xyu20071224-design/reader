@@ -151,6 +151,7 @@ class ReaderShellRenderTest {
                 countNonBackground(bmp, android.graphics.Color.parseColor("#F7F3EA")) + " 个采样点）",
             countNonBackground(bmp, android.graphics.Color.parseColor("#F7F3EA")) > 500
         )
+        assertAgainstBaseline("screen-reader-shell-light", bmp)
     }
 
     @Test
@@ -166,6 +167,7 @@ class ReaderShellRenderTest {
             android.graphics.Color.green(corner) +
             android.graphics.Color.blue(corner)) / 3
         assertTrue("夜间外壳底色必须暗，实测平均 " + lum, lum < 60)
+        assertAgainstBaseline("screen-reader-shell-dark", bmp)
     }
 
     // ── 弹层内容体（ModalBottomSheet 画不进位图，只能画内容体）────────────
@@ -219,6 +221,7 @@ class ReaderShellRenderTest {
             "目录内容体必须画出章节行（实际 " + countNonBackground(bmp, PalettePaper.toArgb()) + " 个采样点）",
             countNonBackground(bmp, PalettePaper.toArgb()) > 300
         )
+        assertAgainstBaseline("screen-reader-contents", bmp)
     }
 
     @Test
@@ -243,5 +246,14 @@ class ReaderShellRenderTest {
             "设置内容体必须画出滑块与七个主题色块（实际 " + countNonBackground(bmp, PalettePaper.toArgb()) + " 个采样点）",
             countNonBackground(bmp, PalettePaper.toArgb()) > 1500
         )
+        assertAgainstBaseline("screen-reader-settings", bmp)
+    }
+
+    /** 与视觉基线比对（P8）。基线在 src/app/src/test/resources/visual-baseline/。 */
+    private fun assertAgainstBaseline(name: String, bmp: android.graphics.Bitmap) {
+        val result = VisualBaseline.compare(name, bmp)
+        val summary = VisualBaseline.describe(name, result)
+        println(summary)
+        org.junit.Assert.assertTrue(summary, result.passed)
     }
 }
