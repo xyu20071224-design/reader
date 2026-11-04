@@ -2504,3 +2504,82 @@ x86_64 系统镜像强制要求硬件加速；`adb devices` 无设备。
 **这不是可以靠写代码绕过的**。所有 P3 屏幕的交互（弹层拖拽、返回键、SAF 往返）、
 阅读页 7 项（翻页手势、点词、TTS 跟随、目录跳转、字号重排、滚动模式、旋转）、
 深色模式整体复核、排版梯字号变化 —— 全部仍是「待真机」。
+
+### 2026-11-04 续八 · 接通图片换肤管线（P9）——「能力建好了但用户摸不到」
+
+#### 发现的问题
+
+P1 建了完整的图片换肤管线（中位切分量化 → 角色分配 → WCAG 对比度校正 → `SkinSpec`），
+80 多个测试全绿。但实际核查发现：
+
+| 检查项 | 结果 |
+| --- | --- |
+| `ImageSkinBuilder` / `ImagePaletteExtractor` 的生产调用点 | **0 个**（只有测试在调） |
+| 皮肤持久化 | **无**（`MainActivity` 硬编码按阅读主题日夜挑内置皮肤） |
+| 用户换肤入口 | **无** |
+
+**「图片 → 皮肤」这条管线的验收路径是断的**：能力存在，但用户用不到，
+也无法证明它在真实 App 里成立。**这类缺陷单元测试抓不到**——
+只有「从用户入口走到最后一步」的测试才抓得住。
+
+#### 补上的三段生产代码
+
+**1. `SkinStore`（持久化）**
+- 只存 `selectedId` 与「仅当是图片皮肤时」的 JSON；
+- **内置皮肤不存 JSON** —— 否则内置皮肤升级后会被旧 JSON 永久锁住；
+- 读时内置 id 优先走 `SkinBuiltIns.byId`（永远最新），否则解析 JSON；
+- **JSON 坏了退回内置**，不让坏数据把 App 卡在黑屏。
+- 跟随项目既有约定用 `SharedPreferences`，不为一个字段引入 DataStore。
+
+**2. `ImageSkinImporter`（Uri → SkinSpec）**
+`fromImage` 要的是 ARGB 像素数组，相册给的是 `content://` Uri。这段桥接此前只存在于测试里。
+三个必须做对的：集中采样到 128×128（防 48MB 分配）、`inJustDecodeBounds` 先读尺寸再定 `inSampleSize`、
+**任何失败都退回内置皮肤不抛异常**。
+
+**3. `SkinPickerSection`（用户入口）**
+做成独立可渲染的内容体：弹层本体是 `ModalBottomSheet` 画不进位图，拆出来才能出图做基线。
+**自定义皮肤固定占一个色块位置**（没有时画占位），避免选图后整排色块突然重排。
+
+#### 接进 `MainActivity`（默认行为零变化）
+
+```kotlin
+var customSkin by remember { mutableStateOf(SkinStore.currentCustom(context)) }
+val palette = customSkin?.let { paletteForSkin(it) }
+    ?: paletteFor(readerTheme, isSystemInDarkTheme())
+val tokens = SkinRegistry.toDesignTokens(
+    customSkin ?: if (palette.isDark) SkinBuiltIns.dark else SkinBuiltIns.light
+)
+```
+
+没有自定义皮肤时完全走原逻辑。有自定义皮肤时 palette 与 tokens 都来自它，
+**仍然同源同明暗**——那条纪律不因为新增换肤能力而放松。
+
+#### 测试：测「接线」不是算法
+
+算法在 `:shared` 已有 80 个测试。新增 `SkinPipelineWiringTest` 7 个用例：
+图片→SkinSpec（暖木照必须生成浅色纸）、持久化往返、内置不落 JSON、清除退回、
+**坏 JSON 不崩**、读回的皮肤能翻译成 DesignTokens、采样率边界。
+
+采样率那条测试**第一次写错了期望值**（写成 8，实际应是 16：3000/16=187≥128，3000/32=93<128）。
+**代码是对的，测试错了**——已改为两条不变量（采样后仍 ≥128，且再采样一倍就 <128），
+这样将来改 `TARGET_SIZE` 时测试依然成立。
+
+#### 视觉基线 +2 张（共 **30** 张）
+
+- `skin-picker-empty`：无自定义皮肤（占位 + 引导）；
+- `skin-picker-custom`：**有**自定义皮肤（暖木配色 + 「移除」按钮）——证明「图片 → 皮肤 → UI 配色」通到底。
+
+#### 最终验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 118 suites / **621 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `StringResourcesTest`（中英 key 集合一致性） | 3 tests / **0 failures** |
+| `:app:assembleDebug` | BUILD SUCCESSFUL |
+| `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+| 分支 | **78 commits**，177 文件，+27437/−7261，已推送，工作区干净 |
+
+#### 待真机
+
+相册选图（SAF 往返）、大图解码耗时、选图后全局换色的实际观感、深色系统下图片皮肤的明暗判定。
+渲染台测不到 SAF 与真实解码。
