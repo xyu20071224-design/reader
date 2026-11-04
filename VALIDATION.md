@@ -2903,3 +2903,71 @@ LaunchedEffect(desiredRoute) { /* 换书 replaceTop / 开书 navigate / 关书 r
 | `nav.* + uirender.*`（38 suites） | 148 tests / 0 failures |
 | `NavigationWiringGuardTest` | 2/0（**由真实接线满足，不是豁免**）|
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续十四 · 组件死代码审计（P14）——「建好但零调用」的第三类实例
+
+#### 审计结果
+
+顺着 P9（图片换肤）/ P13（导航层）的同一条线，本轮扫组件层：
+
+| 原语 | 生产调用 |
+| --- | --- |
+| `LinguaTextButton` / `SectionHeader` / `PrimaryButton` | 62 / 24 / 15 |
+| `LinguaSheet` / `SettingRow` / `SecondaryButton` / `LinguaTopBarAction` | 12 / 11 / 9 / 7 |
+| `LinguaCard` / `StatusChip` / `EmptyState` / `LinguaScaffold` / `LinguaIconTextButton` | 5 / 5 / 2 / 1 / 1 |
+| **`CardSectionLabel` / `LinguaDivider` / `EmptyStateHint`** | **0（连测试都没有）** |
+| **`ButtonRow` / `CardTitleRow` / `CardDivider` / `SettingGroup` / `SettingValue`** | **0（仅测试在用）** |
+
+**21 个公开原语里 8 个在生产代码中零调用。**
+
+#### 危害与 P9/P13 不同
+
+- P9/P13 是「能力没接到用户手上」；
+- 这里是「**写着没人用的 API，还配了渲染测试与视觉基线**」：
+  读者会以为它在生产里有用，据此推断屏幕结构（错误信息）；为它写的测试是纯成本；
+  **最坏的是它会让人以为某能力已具备**，从而不去实现真正需要的东西。
+
+#### 分两批处理
+
+**第一批已删 3 个**（`5051198`）：`CardSectionLabel` / `LinguaDivider` / `EmptyStateHint` ——
+连测试引用都没有，零风险。
+
+**第二批 5 个留到下一轮**：`ButtonRow` / `CardTitleRow` / `CardDivider` / `SettingGroup` / `SettingValue`
+有渲染测试在用，删它们要同步改 3 个测试文件。已登记在 `exemptComponents` 里，
+每条注明「死代码（仅测试在用）」，并明确「目标是把这张表清空」。
+
+#### 过程中两次失败（同一根因）
+
+**1. 按行号裁剪误伤**：先按「第 N 行裁到底」删 `LinguaScaffold.kt` 尾部，
+把排在 `LinguaDivider` 之前的 `LinguaTopBarAction`（**7 处生产调用**）一起删了。
+`git checkout` 恢复后改用**精确文本匹配**。
+
+**2. 改 `MainActivity.kt` 时按行号切片 3 次大括号不平衡**（P13 那节记过）。
+
+**结论：按行号裁剪不可靠，`read` 的窗口偏移会让人算错边界；删除一律用精确文本匹配。**
+
+#### 守卫判据也修了一次
+
+第一版 `publicComponentsAreUsedSomewhereInProduction` 排除了 `components/` 目录，
+于是 `SheetDragHandle` 被判死代码 —— 但它被同目录的 `LinguaSheet` 内部调用。
+**组件之间互相复用是正当的**，判据要的是「有人在用」而不是「包外有人在用」。
+改为扫全树后仍能抓真正的死代码。
+
+#### 三次「建好但零调用」的完整清单
+
+| 阶段 | 零调用的东西 | 状态 |
+| --- | --- | --- |
+| P9 | `ImageSkinBuilder` / `ImagePaletteExtractor` 换肤管线 | **已接通** |
+| P13 | `Route` / `NavStack` / `AppNavHost` 导航层（1000+ 行） | **已接通** |
+| P14 | 8 个组件原语 | **删 3 / 登记债务 5** |
+
+**共同点**：单元测试全部通过，因为它们直接 new 那些类。
+抓这类缺陷需要断言「生产代码里至少有人在调它」——这就是 `NavigationWiringGuardTest` 现在做的事。
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 124 suites / **637 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `nav.* + uirender.*` | 38 suites / 149 tests / 0 failures |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
