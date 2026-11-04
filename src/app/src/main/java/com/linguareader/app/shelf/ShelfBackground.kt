@@ -23,7 +23,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.linguareader.app.PreviewScaffold
 import com.linguareader.app.R
 import com.linguareader.app.ShelfAppearance
 import com.linguareader.app.ShelfBackgroundStore
@@ -136,4 +138,21 @@ internal fun ShelfBackgroundLayer(appearance: ShelfAppearance) {
         }
         Box(Modifier.fillMaxSize().background(scrim))
     }
+}
+
+// ── 预览（纯设计稿，不参与运行）────────────────────────────────────
+//
+// 这两个 preview 原在 BookshelfScreen.kt 底部，拆解时随 EmptyBookshelf 一起搬过来。
+// `PreviewScaffold` 是 internal，同模块可用。
+
+@Preview(name = "空书架 · 日间", showBackground = true, widthDp = 380, heightDp = 620)
+@Composable
+private fun ShelfEmptyStateLightPreview() {
+    PreviewScaffold { ShelfEmptyState(onImport = {}) }
+}
+
+@Preview(name = "空书架 · 夜间", showBackground = true, widthDp = 380, heightDp = 620)
+@Composable
+private fun ShelfEmptyStateDarkPreview() {
+    PreviewScaffold(dark = true) { ShelfEmptyState(onImport = {}) }
 }
