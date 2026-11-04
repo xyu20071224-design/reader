@@ -2144,3 +2144,88 @@ EMIT a=[2] b=[1] conf=1.0    ratio=0.980  merged=false
 2. 可选中文字按钮（选中态靠字重 + 颜色）—— 缓存档位 / 抽屉 Tab / 书架分组。
 
 补齐后可一并收掉各屏保留的 Material `TextButton`（听书三屏剩 3 处、复习屏 2 处）。
+
+
+### 2026-11-04 续四 · 阅读页外壳迁移（第一笔：顶栏 + 目录 + 设置面板）
+
+#### P3 新增迁移（续）
+
+| 屏 | dp（官方 scanner 口径） | 提交 |
+| --- | --- | --- |
+| ReaderScreen（第一笔） | 86 → **53** | 见本条 |
+
+**53 处残留全部位于 `LookupSheet`（第二笔范围）**，第一笔的目标区域已归零：
+
+| 区域 | 迁移前 dp | 迁移后 dp |
+| --- | --- | --- |
+| 顶栏（toolbar） | 4 | **0** |
+| 底栏（pager bar） | 3 | **0** |
+| ContentsSheet | 4 | **0** |
+| SettingsSheet | 19 | **0** |
+| PageJumpDialog | 1 | **0** |
+| LookupSheet（**第二笔**） | 53 | 53（未动） |
+
+> 口径同上节：一律以 `HardcodedStyleBaselineTest` 为准，不临时 grep。
+
+#### 本屏**刻意不用** `LinguaScaffold`（结论已写进 `ReaderScreen.kt` 类注释）
+
+三条理由，第一条是硬伤：
+
+1. **顶栏高度是 WebView 正文预留量的输入**：`onSizeChanged` → `chromeTopPx` →
+   `EpubPage` → `ReaderController.applyChromeInsets` → `window.lrSetChromeInsets` →
+   CSS `--lr-chrome-top`。`LinguaScaffold` 把顶栏封在内部、不暴露测量点，
+   套进去等于改正文布局 —— 而正文布局正是 `known-pitfalls` 反复出事的地方。
+2. **主体是 Box 叠层不是 Column 流**：`EpubPage` 打底，顶栏/底栏/听书条/复习横幅
+   各自 `align` 到同一 Box 的 TopCenter/BottomCenter，且顶栏用 `AnimatedVisibility` 包裹。
+3. **配色不归皮肤管**：顶栏取外壳调色板 `Paper`，底栏与听书条取 `ReaderTheme`。
+
+**结论**：外壳统一不适用于"主体是 WebView + 多层叠放"的屏幕。后人不要来"统一"它。
+
+#### 三处「刻意不统一」的保留（都属行为，不属样式）
+
+1. **听书按钮不用 `LinguaIconTextButton`**：该组件的 `tone` 会把图标与文字一起染色，
+   而这里的图标是**状态指示**（本书正在听 → accent），文字恒为 ink。硬套会丢状态。
+2. **顶栏「Aa」按钮不改成 `color = Ink`**：迁移前它是 TextButton 默认强调色，
+   改 ink 是可见的强弱变化，不属迁移。
+3. **顶栏 `Paper` / 底栏 `ReaderTheme.background` 原样保留**：阅读页外壳必须跟正文
+   同色系（`ListeningBar` 同一口径）。新增的 4 个 alpha 常量只是**给原有字面量起名**，
+   值一个没变（`.96f` / `.94f` / `.12f` / `.6f`）。
+
+#### 修回的两处「迁移时差点丢掉的行为」
+
+1. **目录列表高度上限**：迁移前是 `LazyColumn(Modifier.fillMaxHeight(.72f))`，
+   第一版迁移漏掉了 —— 章节多的书目录会撑满弹层、顶进状态栏。已恢复并命名化
+   （`ContentsMaxHeightFraction = .72f`）。
+2. **两个滚动容器**：目录的 `LazyColumn` 与设置的 `verticalScroll` 都**留在内容体自己身上**，
+   没有随外壳消失（`PacksSheet` 当年踩过的坑）。
+
+#### 红线核对（本条最重要）
+
+迁移**零改动**以下六处，`git diff` 中仅以 KDoc 文字形式提及：
+
+- 16 个 `window.lrXxx` 的调用时序；
+- `followRangeIntoView` 的三道护栏（只在句子不在当前页时翻 / 300ms 合并 / 用户接管窗口内不翻）；
+- `ReaderBridge` 的回调链（`onReady` / `onPageChanged` / `onWord` / `onSentenceTapped` …）；
+- `ReaderOverlays.onBack()` 的返回键优先级链（lookup > settings > contents > pageJump > LeaveReader）；
+- TTS 高亮定位（`showTtsHighlight` / `scrollToLocus` / `backToSpeaking` 的调用点）；
+- `EpubPage` / `ReaderController` / `ReaderScreenState` 的任何一行。
+
+#### 本轮测试
+
+`testDebugUnitTest --tests 'com.linguareader.app.reader.*' --tests 'com.linguareader.app.uirender.*'`：
+**198 tests / 0 failures / 0 errors**（30 个 suite）。
+
+新增 `ReaderShellRenderTest`（4 图）：`reader-shell-{light,dark}.png`、
+`reader-sheet-{contents,settings}.png`，均 1233×2673（411×891dp @ xxhdpi）。
+
+#### 待真机验证（渲染台测不到，**本笔不算验收完成**）
+
+阅读页主体是 WebView，渲染台只能画 Compose 外壳。以下 7 项**必须真机过一遍**：
+
+1. **翻页手势**（左右滑）—— 顶栏/底栏 padding 改动后正文预留量是否仍精确；
+2. **点词弹面板**；
+3. **TTS 播放时高亮跟随**，且跟随时**不抢用户翻页**（三道护栏在真机上的表现）；
+4. **目录跳转**（含长目录滚动、72% 高度上限是否合适）；
+5. **设置面板改动字号/行距后的重排**（`chromeTopPx` 会随顶栏实测高度变化）；
+6. **滚动模式进出**（底栏「分页」按钮与进度文本）；
+7. **旋转屏幕后位置是否正确**（历史事故点：`ReaderPositionSaver` 锚点字段）。

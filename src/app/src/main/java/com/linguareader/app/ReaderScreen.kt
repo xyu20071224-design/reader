@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -45,7 +45,6 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -53,6 +52,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -92,6 +92,12 @@ import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.SentenceTranslationResult
 import com.linguareader.app.ai.SentenceTranslatorFactory
+import com.linguareader.app.components.LinguaIconTextButton
+import com.linguareader.app.components.LinguaSheet
+import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.components.SectionHeader
+import com.linguareader.app.components.SettingRow
+import com.linguareader.app.components.SheetDivider
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.PartOfSpeech
@@ -113,6 +119,7 @@ import com.linguareader.app.reader.ReaderPosition
 import com.linguareader.app.reader.ReaderScripts
 import com.linguareader.app.reader.SentenceTranslationCache
 import com.linguareader.app.res.resolve
+import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.translation.TranslationLookupResult
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.tts.TtsPlaybackController
@@ -180,6 +187,39 @@ private fun highlightCurrentTts(controller: ReaderController, ttsState: TtsPlayb
     }
 }
 
+/**
+ * 阅读页外壳（顶栏 / 底栏 / 目录 / 设置 / 查词面板）+ WebView 宿主装配。
+ *
+ * ## 本屏**刻意不用** `LinguaScaffold`
+ *
+ * 三条理由，第一条是硬伤（套上去会引入真机事故，不是观感问题）：
+ *
+ * 1. **顶栏高度是 WebView 正文预留量的输入**。全屏工具栏的 `onSizeChanged` 把实测
+ *    高度写进 `chromeTopPx` → `EpubPage` → `ReaderController.applyChromeInsets` →
+ *    `window.lrSetChromeInsets` → CSS 变量 `--lr-chrome-top`，直接决定正文从哪里开始。
+ *    `LinguaScaffold` 把顶栏封在内部、不暴露测量点，套进去就拿不到这个值 ——
+ *    等于改正文布局，而正文布局正是 `known-pitfalls` 里反复出事的地方。
+ * 2. **主体是 Box 叠层，不是 Column 流式内容**：`EpubPage` 打底，顶栏 / 底栏 /
+ *    听书条 / 复习横幅各自 `align` 到同一个 Box 的 TopCenter / BottomCenter，
+ *    并且顶栏显隐用 `AnimatedVisibility` 包着。`LinguaScaffold` 的 content 槽是
+ *    `Column(weight(1f))`，塞进去会改变叠放语义。
+ * 3. **配色不归皮肤管**：顶栏取外壳调色板的 `Paper`，底栏与听书条取 `ReaderTheme`
+ *    的 `background`/`foreground` —— 阅读页外壳必须跟正文同色系，
+ *    见 `ListeningBar` 的类注释（护眼绿主题下的历史事故）。
+ *
+ * **结论**：外壳统一不适用于「主体是 WebView + 多层叠放」的屏幕。迁移本屏时只换
+ * 内部排版（间距 / 图标尺寸 / 排版梯），不换外壳、不换色源。
+ *
+ * ## 红线（迁移时一行都不能动）
+ *
+ * - 16 个 `window.lrXxx` 的调用时序（桌面 JCEF 依赖同一套协议）；
+ * - `followRangeIntoView` 的三道护栏（只在句子不在当前页时翻 / 300ms 合并 /
+ *   用户接管窗口内不翻）；
+ * - `ReaderBridge` 的回调链；
+ * - [ReaderBackAction] 的返回键优先级链（lookup > settings > contents > pageJump > 退出）；
+ * - TTS 高亮定位（`showTtsHighlight` / `scrollToLocus` / `backToSpeaking` 的调用点）；
+ * - `EpubPage` / `ReaderController` / `ReaderScreenState` 的任何一行（引擎侧，不是 UI）。
+ */
 @Composable
 internal fun ReaderScreen(
     book: Book,
@@ -202,6 +242,10 @@ internal fun ReaderScreen(
     val scope = rememberCoroutineScope()
     val controller = remember { ReaderController() }
     val density = LocalDensity.current.density
+    // 设计 token：本屏只用来取「布局/间距/图标尺寸」。
+    // **配色不在这里取**——顶栏 Paper 来自外壳调色板，底栏/听书条来自 ReaderTheme，
+    // 两者都是「贴正文」的语义，换成皮肤 token 会与正文不同源（ListeningBar 同款理由）。
+    val t = LocalDesignTokens.current
     // 实测顶栏/底栏高度（px → dp，1dp = 1 CSS px），注入 WebView 作为正文
     // 预留量。targetSdk 35 强制 edge-to-edge 后底栏含导航栏 inset，写死的
     // 70px 预留不够，会遮住正文最后一行；改为动态注入后永远精确。
@@ -583,29 +627,39 @@ internal fun ReaderScreen(
                     .onSizeChanged { size ->
                         // 工具栏隐藏时高度归零，保留最后一次实测值，
                         // 避免每次开关工具栏都触发整章重排。
+                        // ⚠️ 这行把实测高度喂给 WebView 的 --lr-chrome-top，
+                        // 是正文预留量的唯一来源，**不能删也不能换成固定值**。
                         if (size.height > 0) chromeTopPx = size.height / density
                     }
-                    .background(Paper.copy(alpha = .96f))
+                    // 顶栏底色刻意仍取外壳调色板的 Paper（不换成 token）：
+                    // 迁移范围只到「布局/间距/图标尺寸」，换色源属于行为改动。
+                    // 底栏相反，本来就取 preferences.theme.background —— 两者
+                    // 在自定义皮肤下会不同源，那是既有实现，不是本次引入的。
+                    .background(Paper.copy(alpha = ChromeScrimAlpha))
             ) {
                 Row(
                     Modifier.fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                        .padding(horizontal = t.spacing.xs, vertical = t.spacing.xs)
                         .testTag(UiTags.READER_TOP_BAR),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = ::closeWithFlush) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.reader_back)
+                            contentDescription = stringResource(R.string.reader_back),
+                            tint = InkSoft,
+                            modifier = Modifier.size(t.iconSize)
                         )
                     }
                     Text(
-                        book.chapters[position.chapter].title,
+                        text = book.chapters[position.chapter].title,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        fontWeight = FontWeight.Medium
+                        style = t.typography.body,
+                        fontWeight = FontWeight.Medium,
+                        color = Ink
                     )
                     if (reminders.toolbarBadge && dueWords.isNotEmpty()) {
                         // BUG-032 余项（Q1-t05）：复习牌组给**全部**到期词。
@@ -613,40 +667,55 @@ internal fun ReaderScreen(
                         // 却不知道还有更多待复习；sessionMaxWords 不再截断牌组。
                         TextButton(onClick = { reviewDeckIds = dueWords.map { it.id } }) {
                             Text(
-                                pluralStringResource(R.plurals.reader_review_badge, dueWords.size, dueWords.size),
+                                text = pluralStringResource(
+                                    R.plurals.reader_review_badge,
+                                    dueWords.size,
+                                    dueWords.size
+                                ),
+                                style = t.typography.label,
                                 color = Accent,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
-                    TextButton(onClick = { overlays = overlays.copy(contents = true) }) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.reader_contents))
-                    }
+                    LinguaIconTextButton(
+                        text = stringResource(R.string.reader_contents),
+                        icon = Icons.AutoMirrored.Filled.List,
+                        onClick = { overlays = overlays.copy(contents = true) }
+                    )
+                    // 听书按钮**不用 LinguaIconTextButton**：它的图标与文字不是一个颜色
+                    // （图标在「本书正在听」时转 accent，文字恒为 ink），而该组件的 tone
+                    // 会把两者一起染色。这是状态指示，不是样式选择，故保留手写结构，
+                    // 只把尺寸/间距换成 token。
                     TextButton(onClick = ::startOrToggleListening) {
                         Icon(
-                            Icons.Filled.Headphones,
+                            imageVector = Icons.Filled.Headphones,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(t.iconSize),
                             tint = if (ttsForThisBook) Accent else InkSoft
                         )
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(t.spacing.xs))
                         Text(
-                            if (ttsForThisBook) stringResource(R.string.reader_listening_active)
-                            else stringResource(R.string.reader_listening),
+                            text = if (ttsForThisBook) {
+                                stringResource(R.string.reader_listening_active)
+                            } else {
+                                stringResource(R.string.reader_listening)
+                            },
+                            style = t.typography.body,
                             color = Ink
                         )
                     }
+                    // 「Aa」是设置入口的图形化表达（不是文字）。文字色保持 TextButton 的
+                    // 默认强调色（迁移前就是这个观感，不要改成 Ink）。
                     TextButton(onClick = { overlays = overlays.copy(settings = true) }) {
-                        Text("Aa", fontWeight = FontWeight.Bold)
+                        Text("Aa", style = t.typography.body, fontWeight = FontWeight.Bold)
                     }
                 }
                 LinearProgressIndicator(
                     progress = { position.progress(book.chapters.size) },
-                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    modifier = Modifier.fillMaxWidth().height(t.hairline * 2),
                     color = Accent,
-                    trackColor = Accent.copy(alpha = .12f)
+                    trackColor = Accent.copy(alpha = ChromeTrackAlpha)
                 )
             }
         }
@@ -666,9 +735,9 @@ internal fun ReaderScreen(
                     .onSizeChanged { size ->
                         if (size.height > 0) chromeBottomPx = size.height / density
                     }
-                    .background(Color(android.graphics.Color.parseColor(preferences.theme.background)).copy(alpha = .94f))
+                    .background(Color(android.graphics.Color.parseColor(preferences.theme.background)).copy(alpha = ChromeBarAlpha))
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(horizontal = 18.dp, vertical = 7.dp),
+                    .padding(horizontal = t.spacing.m, vertical = t.spacing.s),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -692,15 +761,19 @@ internal fun ReaderScreen(
                             book.chapters.size,
                             (position.scrollRatio * 100).roundToInt()
                         ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
+                        style = t.typography.label,
+                        color = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
+                            .copy(alpha = ChromeIndicatorAlpha),
                         modifier = Modifier
                             .semantics { contentDescription = pageIndicatorLabel }
                             .clickable { overlays = overlays.copy(pageJump = true) }
                     )
+                    // 「分页」按钮的文字色跟正文前景（阅读主题），不是外壳 token：
+                    // 底栏贴在正文底部，必须与正文同色系，理由见 ListeningBar 的 KDoc。
                     TextButton(onClick = controller::exitScrollMode) {
                         Text(
-                            stringResource(R.string.reader_pagination),
+                            text = stringResource(R.string.reader_pagination),
+                            style = t.typography.body,
                             color = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
                         )
                     }
@@ -713,8 +786,9 @@ internal fun ReaderScreen(
                             position.page + 1,
                             position.pageCount
                         ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color(android.graphics.Color.parseColor(preferences.theme.foreground)).copy(alpha = .6f),
+                        style = t.typography.label,
+                        color = Color(android.graphics.Color.parseColor(preferences.theme.foreground))
+                            .copy(alpha = ChromeIndicatorAlpha),
                         modifier = Modifier
                             .semantics { contentDescription = pageIndicatorLabel }
                             .clickable { overlays = overlays.copy(pageJump = true) }
@@ -997,7 +1071,13 @@ internal fun ReaderScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 目录弹层：外壳走 [LinguaSheet]，内容体是 [ContentsBody]。
+ *
+ * 迁移前这里是手写 `ModalBottomSheet(containerColor = Paper)` + 自己写的标题排版
+ * 与 24dp 内边距。**只换外壳与样式，章节列表的渲染口径一个字没改**：
+ * 序号仍然拼进标题文本、当前章仍然用强调色 + 粗体、点击仍然整行命中。
+ */
 @Composable
 private fun ContentsSheet(
     book: Book,
@@ -1005,38 +1085,78 @@ private fun ContentsSheet(
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Paper,
-        modifier = Modifier.testTag(UiTags.READER_CONTENTS_SHEET)
+    LinguaSheet(
+        onDismiss = onDismiss,
+        title = stringResource(R.string.reader_contents),
+        // 内容体自己带 LazyColumn（列表自身不产生块间距），关掉容器的默认 spacedBy，
+        // 否则标题与列表之间会多出一份 spacing.m。
+        contentArrangement = Arrangement.Top
     ) {
-        Text(
-            stringResource(R.string.reader_contents),
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
+        ContentsBody(
+            book = book,
+            currentChapter = currentChapter,
+            onSelect = onSelect
         )
-        LazyColumn(Modifier.fillMaxHeight(.72f)) {
-            itemsIndexed(book.chapters) { index, chapter ->
-                Row(
-                    Modifier.fillMaxWidth()
-                        .clickable { onSelect(index) }
-                        .padding(horizontal = 24.dp, vertical = 14.dp)
-                ) {
-                    // 序号作为标题文本一部分渲染（书源标题常不带编号，
-                    // 纯序号列太淡易被当成没有序号）。
-                    Text(
-                        "${index + 1}. ${chapter.title}",
-                        color = if (index == currentChapter) Accent else Ink,
-                        fontWeight = if (index == currentChapter) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
-                HorizontalDivider(color = Ink.copy(alpha = .08f))
+    }
+}
+
+/**
+ * 目录的**内容体**，与 sheet 外壳解耦。
+ *
+ * 理由与其余已迁弹层一致：`ModalBottomSheet` 在渲染台里画不进位图，抽出内容体才能
+ * 出迁移前后的对照图。代价也一样——**不再自带纸色底**，单独使用时调用方必须补齐
+ * （渲染台见 `ReaderShellRenderTest`）。
+ *
+ * 横向留白不再自己写：由 [LinguaSheet] 的 content 槽提供 `spacing.l`。
+ * 滚动容器 `LazyColumn` **仍然由本组件自己拥有**——换外壳时最容易丢的就是它
+ * （PacksSheet 迁移踩过：`verticalScroll` 挂在外壳上，换壳后长内容拖不动）。
+ */
+@Composable
+internal fun ContentsBody(
+    book: Book,
+    currentChapter: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val t = LocalDesignTokens.current
+    // ⚠️ 高度上限必须保留：迁移前是 `LazyColumn(Modifier.fillMaxHeight(.72f))`。
+    // 拿掉上限后列表会「撑到弹层满高」，章节多的书目录会顶到状态栏下面 —— 那是
+    // 可见的布局变化，不属于「只换外壳」。这里原样保留 72%，只把字面量命名化。
+    // READER_CONTENTS_SHEET 原本挂在 ModalBottomSheet 上（LinguaSheet 不收 modifier，
+    // 与 ReviewUi 的 REVIEW_SHEET 同一处理）；内容体是它的子树，语义查找照样命中。
+    LazyColumn(
+        modifier
+            .fillMaxWidth()
+            .fillMaxHeight(ContentsMaxHeightFraction)
+            .testTag(UiTags.READER_CONTENTS_SHEET)
+    ) {
+        itemsIndexed(book.chapters) { index, chapter ->
+            Row(
+                Modifier.fillMaxWidth()
+                    .clickable { onSelect(index) }
+                    .defaultMinSize(minHeight = t.controlHeight)
+                    .padding(vertical = t.spacing.s)
+            ) {
+                // 序号作为标题文本一部分渲染（书源标题常不带编号，
+                // 纯序号列太淡易被当成没有序号）。
+                Text(
+                    "${index + 1}. ${chapter.title}",
+                    color = if (index == currentChapter) Accent else Ink,
+                    style = t.typography.body,
+                    fontWeight = if (index == currentChapter) FontWeight.Bold else FontWeight.Normal
+                )
             }
+            SheetDivider()
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 阅读设置弹层：外壳走 [LinguaSheet]，内容体是 [ReaderSettingsBody]。
+ *
+ * 字号 / 行距 / 主题 / 字体的**行为零改动**：两个 Slider 的 valueRange、steps
+ * 与 `onChange` 的调用时机（拖动即写 prefs，无「确定」）全部原样保留。
+ */
 @Composable
 private fun SettingsSheet(
     preferences: ReaderPreferences,
@@ -1046,149 +1166,197 @@ private fun SettingsSheet(
     onChange: (ReaderPreferences) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var fontSize by remember(preferences.fontPercent) { mutableFloatStateOf(preferences.fontPercent.toFloat()) }
-    var lineHeight by remember(preferences.lineHeight) { mutableFloatStateOf(preferences.lineHeight) }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = Paper,
-        modifier = Modifier.testTag(UiTags.READER_SETTINGS_SHEET)
+    LinguaSheet(
+        onDismiss = onDismiss,
+        title = stringResource(R.string.reader_settings_title),
+        contentArrangement = Arrangement.Top
     ) {
-        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 28.dp)) {
-            Text(stringResource(R.string.reader_settings_title), style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(20.dp))
-            Text(stringResource(R.string.reader_font_size, fontSize.roundToInt()))
-            Slider(
-                value = fontSize,
-                onValueChange = {
-                    fontSize = it
-                    onChange(preferences.copy(fontPercent = it.roundToInt()))
-                },
-                valueRange = 80f..150f,
-                steps = 6
-            )
-            Text(stringResource(R.string.reader_line_height, "%.1f".format(lineHeight)))
-            Slider(
-                value = lineHeight,
-                onValueChange = {
-                    lineHeight = it
-                    onChange(preferences.copy(lineHeight = it))
-                },
-                valueRange = 1.2f..2.2f,
-                steps = 4
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.reader_theme_label), color = InkSoft)
-            Spacer(Modifier.height(8.dp))
-            // FlowRow：7 个主题一行放不下（7×48 + 6×18 = 444dp，而面板左右各留
-            // 24dp 后只有约 312dp），普通 Row 会把溢出部分压成堆叠的文字。换行后
-            // 全部选项可见——主题是「选一次就很少动」的设置，可发现性优先于省高度。
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                itemVerticalAlignment = Alignment.Top
-            ) {
-                ReaderTheme.entries.forEach { theme ->
-                    val selected = theme == preferences.theme
-                    // 命中区盖住「色块 + 文字标签」整列：真机曾实测只有色块可点、
-                    // 点文字落空还容易误触相邻选项，clickable 必须放在外层容器。
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable { onChange(preferences.copy(theme = theme)) }
-                    ) {
-                        Box(
-                            Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .background(Color(android.graphics.Color.parseColor(theme.background)))
-                                .border(
-                                    width = if (selected) 3.dp else 1.dp,
-                                    color = if (selected) Accent else Ink.copy(alpha = .18f),
-                                    shape = CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (selected) {
-                                Icon(
-                                    Icons.Default.Check,
-                                    contentDescription = null,
-                                    tint = Color(android.graphics.Color.parseColor(theme.foreground)),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            stringResource(theme.labelRes.resolve()),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (selected) Accent else InkSoft,
-                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(stringResource(R.string.reader_font_label), color = InkSoft)
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ReaderFont.entries.forEach { font ->
-                    val fontLabel = stringResource(font.labelRes.resolve())
-                    TextButton(onClick = { onChange(preferences.copy(fontFamily = font)) }) {
-                        Text(
-                            if (font == preferences.fontFamily) {
-                                stringResource(R.string.reader_font_selected, fontLabel)
-                            } else {
-                                fontLabel
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = Ink.copy(alpha = .1f))
-            // 整行（文字 + 右侧 › 箭头）都是命中区：此前只有箭头按钮可点，
-            // 真机两次点文字均无反应。heightIn 保持原 TextButton 的 48dp 触控高度。
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp)
-                    .heightIn(min = 48.dp)
-                    .clickable(onClick = onOpenReviewSettings),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    stringResource(R.string.review_pace_section),
-                    modifier = Modifier.weight(1f),
-                    color = Ink,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    "${stringResource(reviewPace.labelRes.resolve())} ›",
-                    color = Accent,
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp)
-                    .heightIn(min = 48.dp)
-                    .clickable(onClick = onOpenListeningSettings),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    stringResource(R.string.tts_settings_title),
-                    modifier = Modifier.weight(1f),
-                    color = Ink,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text("›", color = Accent, style = MaterialTheme.typography.labelLarge)
-            }
-        }
+        ReaderSettingsBody(
+            preferences = preferences,
+            reviewPace = reviewPace,
+            onOpenReviewSettings = onOpenReviewSettings,
+            onOpenListeningSettings = onOpenListeningSettings,
+            onChange = onChange
+        )
     }
 }
+
+/**
+ * 阅读设置的**内容体**，与 sheet 外壳解耦（理由同 [ContentsBody]）。
+ *
+ * ⚠️ 两处**刻意不换成 token**，都是「跟着正文配色」的语义：
+ * 1. 主题色块本身就是七个阅读主题的预览色（`theme.background`/`theme.foreground`），
+ *    它渲染的是**正文**长什么样，不是外壳皮肤长什么样 —— 换成 token 会让七个色块
+ *    全变成一个颜色。这与 `ListeningBar` 刻意不换是同一个理由。
+ * 2. 选中描边用 `Accent`（外壳调色板的强调色），与该色块上的对勾同源；
+ *    token 的 accent 在自定义皮肤下可能与之不同源。
+ *
+ * 横向留白由 [LinguaSheet] 给（`spacing.l`），这里不再自带。
+ * 滚动容器 `verticalScroll` 仍由本组件自己拥有。
+ */
+@Composable
+internal fun ReaderSettingsBody(
+    preferences: ReaderPreferences,
+    reviewPace: ReviewPace,
+    onOpenReviewSettings: () -> Unit,
+    onOpenListeningSettings: () -> Unit,
+    onChange: (ReaderPreferences) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val t = LocalDesignTokens.current
+    var fontSize by remember(preferences.fontPercent) {
+        mutableFloatStateOf(preferences.fontPercent.toFloat())
+    }
+    var lineHeight by remember(preferences.lineHeight) { mutableFloatStateOf(preferences.lineHeight) }
+
+    // READER_SETTINGS_SHEET 原本挂在 ModalBottomSheet 上（LinguaSheet 不收 modifier）；
+    // 内容体是它的子树，语义查找照样命中。
+    // 滚动容器在这里：这一屏在手机上会超出弹层可视高度，丢了它真机就拖不动。
+    Column(
+        modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .testTag(UiTags.READER_SETTINGS_SHEET)
+    ) {
+        Text(
+            text = stringResource(R.string.reader_font_size, fontSize.roundToInt()),
+            style = t.typography.caption,
+            color = t.colors.inkSoft
+        )
+        Spacer(Modifier.height(t.spacing.xs))
+        Slider(
+            value = fontSize,
+            onValueChange = {
+                fontSize = it
+                onChange(preferences.copy(fontPercent = it.roundToInt()))
+            },
+            valueRange = 80f..150f,
+            steps = 6,
+            colors = SliderDefaults.colors(
+                thumbColor = t.colors.accent,
+                activeTrackColor = t.colors.accent,
+                inactiveTrackColor = t.colors.paperDeep
+            )
+        )
+        Text(
+            text = stringResource(R.string.reader_line_height, "%.1f".format(lineHeight)),
+            style = t.typography.caption,
+            color = t.colors.inkSoft
+        )
+        Spacer(Modifier.height(t.spacing.xs))
+        Slider(
+            value = lineHeight,
+            onValueChange = {
+                lineHeight = it
+                onChange(preferences.copy(lineHeight = it))
+            },
+            valueRange = 1.2f..2.2f,
+            steps = 4,
+            colors = SliderDefaults.colors(
+                thumbColor = t.colors.accent,
+                activeTrackColor = t.colors.accent,
+                inactiveTrackColor = t.colors.paperDeep
+            )
+        )
+
+        SectionHeader(text = stringResource(R.string.reader_theme_label))
+        // FlowRow：7 个主题一行放不下（7×48 + 6×18 = 444dp，而面板左右各留
+        // spacing.l 后只有约 312dp），普通 Row 会把溢出部分压成堆叠的文字。换行后
+        // 全部选项可见——主题是「选一次就很少动」的设置，可发现性优先于省高度。
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(t.spacing.m),
+            verticalArrangement = Arrangement.spacedBy(t.spacing.s),
+            itemVerticalAlignment = Alignment.Top
+        ) {
+            ReaderTheme.entries.forEach { theme ->
+                val selected = theme == preferences.theme
+                // 命中区盖住「色块 + 文字标签」整列：真机曾实测只有色块可点、
+                // 点文字落空还容易误触相邻选项，clickable 必须放在外层容器。
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { onChange(preferences.copy(theme = theme)) }
+                ) {
+                    Box(
+                        Modifier
+                            .size(t.spacing.xxl)
+                            .clip(CircleShape)
+                            .background(Color(android.graphics.Color.parseColor(theme.background)))
+                            .border(
+                                // 选中描边加粗一档（原 3dp）——取 token 间距梯的最小档，
+                                // 不新造 dp 常量：换肤时间距梯跟着皮肤走。
+                                width = if (selected) t.spacing.xs else t.hairline,
+                                color = if (selected) Accent else Ink.copy(alpha = .18f),
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (selected) {
+                            Icon(
+                                Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color(android.graphics.Color.parseColor(theme.foreground)),
+                                modifier = Modifier.size(t.iconSize)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(t.spacing.xs))
+                    Text(
+                        stringResource(theme.labelRes.resolve()),
+                        style = t.typography.label,
+                        color = if (selected) Accent else InkSoft,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+
+        SectionHeader(text = stringResource(R.string.reader_font_label))
+        // 五款字体横向可滚：窄屏放不下，滚动容器是内容体自己带的（不依赖外壳）。
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(t.spacing.xs)
+        ) {
+            ReaderFont.entries.forEach { font ->
+                val fontLabel = stringResource(font.labelRes.resolve())
+                val selected = font == preferences.fontFamily
+                // 选中标记「●」本来就在 reader_font_selected 这条文案里，
+                // 所以这里**不能**再加图标（会变成「● ✓ 字体」双标记）。
+                LinguaTextButton(
+                    text = if (selected) {
+                        stringResource(R.string.reader_font_selected, fontLabel)
+                    } else {
+                        fontLabel
+                    },
+                    onClick = { onChange(preferences.copy(fontFamily = font)) }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(t.spacing.s))
+        SheetDivider()
+        // 整行（文字 + 右侧值/箭头）都是命中区：此前只有箭头按钮可点，
+        // 真机两次点文字均无反应。
+        SettingRow(
+            title = stringResource(R.string.review_pace_section),
+            onClick = onOpenReviewSettings,
+            trailing = {
+                Text(
+                    text = "${stringResource(reviewPace.labelRes.resolve())} ›",
+                    style = t.typography.caption,
+                    color = t.colors.accent
+                )
+            }
+        )
+        SettingRow(
+            title = stringResource(R.string.tts_settings_title),
+            onClick = onOpenListeningSettings,
+            trailing = {
+                Text(text = "›", style = t.typography.caption, color = t.colors.accent)
+            }
+        )
+    }
+}
+
 
 @Composable
 private fun PageJumpDialog(
@@ -1197,6 +1365,7 @@ private fun PageJumpDialog(
     onJump: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var input by remember { mutableStateOf((currentPage + 1).toString()) }
     var error by remember { mutableStateOf<String?>(null) }
     // onClick 不是 @Composable 作用域，错误文案先在这里取出来。
@@ -1210,10 +1379,10 @@ private fun PageJumpDialog(
             Column {
                 Text(
                     stringResource(R.string.reader_jump_hint, pageCount, pageCount),
-                    color = InkSoft,
-                    style = MaterialTheme.typography.bodySmall
+                    color = t.colors.inkSoft,
+                    style = t.typography.caption
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = input,
                     onValueChange = { raw ->
@@ -1251,6 +1420,31 @@ private fun PageJumpDialog(
         shape = CardShape
     )
 }
+
+/**
+ * 顶栏/底栏的遮罩不透明度（迁移前的字面量，这里只给它们名字）。
+ *
+ * 刻意**不走间距/圆角梯**：alpha 是「这条栏要透出多少正文」的颜色参数，
+ * 不属于 spacing/radii 的语义位；token 里目前也没有 alpha 梯。
+ */
+private const val ChromeScrimAlpha = .96f
+
+/** 底栏底色不透明度（比顶栏略低，让正文末行透出一丝纹理）。 */
+private const val ChromeBarAlpha = .94f
+
+/** 顶栏进度条轨道的不透明度。 */
+private const val ChromeTrackAlpha = .12f
+
+/** 底栏页码文字的不透明度（次级信息，压暗一档）。 */
+private const val ChromeIndicatorAlpha = .6f
+
+/**
+ * 目录列表相对弹层可用高度的占比（迁移前就是 `.72f`）。
+ *
+ * 必须保留：不加上限时 LazyColumn 会把弹层撑到满高，长目录会顶进状态栏。
+ * 这是**布局**约束不是样式值，因此待在调用点、不进 token。
+ */
+private const val ContentsMaxHeightFraction = .72f
 
 internal fun parsePageInput(raw: String, pageCount: Int): Int? {
     if (pageCount <= 0) return null
