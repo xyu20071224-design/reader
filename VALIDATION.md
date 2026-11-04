@@ -2776,3 +2776,61 @@ enum class TextButtonLayout {
 | 其中 `DesignSystemVisualRegressionTest` | 6 tests / 0 failures（**证明默认 PAGE 未改变既有基线**）|
 | `VocabularyRenderTest` | 3 tests / 0 failures（INLINE 生词本基线零差异）|
 | `SheetMigrationRenderTest` | 4 tests / 0 failures（PacksSheet 基线未变）|
+
+### 2026-11-04 续十二 · 判据的生命周期：把「文档会过期」机械化（P12）
+
+#### 问题
+
+本轮发生两次「判据过期误导后来人」：
+1. 手册写「窄横向槽位 ❌ 不换」—— 写的时候**完全正确**（组件还没有布局变体），
+   加了 `TextButtonLayout.INLINE` 后变成**误导**，会把后来人挡在能做的事外面；
+2. `VocabularyScreen` 注释写「等组件层补出 icon 版再换」—— 组件早就有 `icon` 了。
+
+**共同点：代码有编译器与测试兜底，判据和注释没有。**
+代码过期了会报错、会变红；**判据过期了只会静静地误导下一个人**。
+
+#### 两种 grep 方向（这个区分是关键）
+
+| 方向 | 问题 | 能否靠搜组件名找到 |
+| --- | --- | --- |
+| **正向** | 关于 X 有什么说明？ | ✅ 搜 `X` 就能找到 |
+| **反向** | 还有谁在**等** X？ | ❌ 这些注释里往往**不写 X 的名字**，写的是「组件层缺口」「等组件补」 |
+
+`nav-state-engineer` 顺着这条路查出 **5 处**守卫抓不到的过时注释（`fe49d1c` / `6ba55e1`），
+其中一处是**悬空 KDoc**（`DangerTextButton` 删了、注释留在原地且自相矛盾）。
+
+#### `ComponentCapabilityDocGuardTest`（`a17d400` → `d73c5e7`）
+
+两条断言：
+1. **手册与组件实际能力一致**：有 `layout` 就必须提 `INLINE`；有 `tone` 就必须提 `DANGER`；
+   有 `icon` 就不能说「只有纯文字版」；
+2. **全 main 源树无「组件层缺口」注释**（在缺口已补齐前提下），搜的是**句式**不是名字。
+
+判据**刻意保持窄**（只认 7 种确定表达「缺能力」的说法）：宁可漏（靠 code review 补），
+**不要因为宽泛匹配误报而被关掉 —— 一个被关掉的守卫等于没有。**
+
+#### 守卫先抓到自己人（两次误报，改的都是守卫不是代码）
+
+扩展后第一次跑就红了，命中 `ReviewCardContent.kt:251`：
+```
+* 若将来要统一，应传 layout = TextButtonLayout.INLINE …… 而不是等组件补能力。
+```
+**那行本身在否定缺口**，是正确的修正后写法。第一次只排除了「已过时/已存在」类词、漏了「而不是」；
+补上后仍红，因为 `:253` 写着 `~~等组件层补出 icon 版再换~~ ← 该理由已过时` ——
+那正是**我们鼓励的**写法（划掉旧结论并说明），不能反被判红。
+
+已加白名单：同行内含「而不是 / 不是等 / 已过时 / 已存在 / 已补齐 / 不再成立 / ~~」则跳过。
+
+#### 规则第 8 条（`规则-并行worktree的git操作.md`）
+
+> 改了组件能力（加参数 / 加变体 / 加枚举值）之后，`git grep` 一遍提到它的文档，全部重看。
+
+这条和「改了代码要跑测试」是同一类动作，但**前者长期没有任何机制守着**。现在有守卫了。
+
+#### 最终验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 122 suites / **630 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `ComponentCapabilityDocGuardTest` | 2 tests / 0 failures |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
