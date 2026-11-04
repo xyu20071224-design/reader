@@ -84,25 +84,76 @@ class ComponentCapabilityDocGuardTest {
     }
 
     /**
-     * 源码注释里不能留「等 X 实现后再换」这类表述，除非 X 确实还没实现。
+     * **反向扫描**：全 main 源树里不能留「组件层缺口」类注释，若那个缺口已补齐。
      *
-     * 只查已出现过实例的那一处（`VocabularyScreen` 的旧注释），
-     * 因为这类句式一旦扩散就没法用文本匹配可靠判断。
+     * ## 为什么这是另一个方向的 grep（2026-11-04 的实证）
+     *
+     * 正向 grep 是「关于 LinguaTextButton 有什么说明」——搜组件名就能找到。
+     * 但**缺口注释里往往不写组件名**，写的是「组件层还没有…」「等组件补」「目前只有纯文字版」。
+     * 搜 `LinguaTextButton` 一个都抓不到。
+     *
+     * 所以这里搜的是**句式**而不是名字。两种 grep 方向不同，都要做。
+     *
+     * ## 判据为什么保持窄
+     *
+     * 只认几种**确定表达「缺能力」**的句式。宁可漏（靠 code review 补），
+     * 不要因为宽泛匹配误报而被关掉 —— 一个被关掉的守卫等于没有。
      */
     @Test
-    fun sourceCommentsDoNotAwaitCapabilitiesThatAlreadyExist() {
+    fun noStaleCapabilityGapCommentsInMainSources() {
         val src = buttonsKt
-        if (!src.contains("layout: TextButtonLayout")) return // 组件还没有该能力时不适用
+        val hasLayout = src.contains("layout: TextButtonLayout")
+        val hasIcon = src.contains("icon: ImageVector?")
+        if (!(hasLayout && hasIcon)) return // 能力还没补齐时不适用
 
-        val vocab = read("src/main/java/com/linguareader/app/VocabularyScreen.kt")
-        assertTrue(
-            "VocabularyScreen 不该再写「等组件层补出 icon 版」——LinguaTextButton 既有 icon 也有 layout。" +
-                "它现在应当在 CALL SITE 用 layout = INLINE 并说明理由。",
-            !vocab.contains("等组件层补出 icon 版")
+        // 这些句式一旦出现，几乎一定是在说「组件缺某能力、先用本地实现兜着」。
+        val gapPhrases = listOf(
+            "等组件层补出",
+            "等组件补",
+            "组件层还没有",
+            "组件层只有纯文字版",
+            "目前只有纯文字版",
+            "没有『图标+文字』原语",
+            "最值得下一轮补"
         )
+
+        val root = File("src/main/java/com/linguareader/app")
+        assertTrue("源码目录不存在：${root.absolutePath}", root.isDirectory)
+
+        val offenders = mutableListOf<String>()
+        root.walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .forEach { file ->
+                val lines = file.readLines()
+                lines.forEachIndexed { idx, line ->
+                    val isComment = line.trimStart().startsWith("//") ||
+                        line.trimStart().startsWith("*") ||
+                        line.trimStart().startsWith("/*")
+                    if (!isComment) return@forEachIndexed
+                    // 排除两类**不是缺口声明**的行：
+                    //  1) 在同一行内就否定了缺口（「而不是等组件补能力」）；
+                    //  2) 说明这条理由已过时（「~~…~~ ← 该理由已过时」）。
+                    // 后者是修正后的正确写法 —— 正是我们鼓励的，不能反被判红。
+                    val negatedInLine = line.contains("而不是") || line.contains("不是等") ||
+                        line.contains("已过时") || line.contains("已存在") ||
+                        line.contains("已补齐") || line.contains("不再成立") ||
+                        line.contains("~~")
+                    if (negatedInLine) return@forEachIndexed
+                    gapPhrases.firstOrNull { line.contains(it) }?.let { phrase ->
+                        offenders += "${file.name}:${idx + 1} 含缺口句式「$phrase」→ $line"
+                    }
+                }
+            }
+
         assertTrue(
-            "VocabularyScreen 顶栏应当用 layout = TextButtonLayout.INLINE。",
-            vocab.contains("TextButtonLayout.INLINE")
+            buildString {
+                appendLine("以下注释仍在描述「组件层缺口」，但那个缺口已补齐：")
+                offenders.forEach { appendLine("  - $it") }
+                appendLine()
+                appendLine("修法：要么删掉这段注释，要么把它改成「真实为什么不换」（如几何冲突、")
+                appendLine("结构不同），而不是「等组件实现」。后者的寿命极短，会静静误导下一个人。")
+            },
+            offenders.isEmpty()
         )
     }
 }
