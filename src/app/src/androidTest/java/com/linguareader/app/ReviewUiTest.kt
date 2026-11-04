@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.linguareader.app.data.ReviewMode
+import com.linguareader.app.review.ReviewPromptBanner
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
 import org.junit.Assert.assertEquals

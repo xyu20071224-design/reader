@@ -82,6 +82,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.R
 import com.linguareader.app.res.resolve
+import com.linguareader.app.review.ReviewPromptBanner
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
@@ -1000,14 +1001,6 @@ private const val CurveGridAlpha = .10f
 /** 参考点透明度。 */
 private const val CurveMarkerAlpha = .45f
 
-/** 复习提醒横幅的纸底不透明度（略透，暗示它不是页面常驻内容）。 */
-private const val BannerAlpha = .97f
-
-/** 复习提醒横幅抬起的高度。 */
-private val BannerShadow = 3.dp
-
-/** 复习提醒横幅的左右内边距（间距梯无 18 档，硬套 16 会改变像素）。 */
-private val BannerHorizontalPadding = 18.dp
 
 
 //
@@ -1104,43 +1097,5 @@ private fun formatApproxDuration(millis: Long): String {
         minutes < 60 -> stringResource(R.string.review_in_minutes_approx, minutes)
         minutes < 24 * 60 -> stringResource(R.string.review_in_hours_approx, minutes / 60)
         else -> stringResource(R.string.review_in_days_approx, minutes / (24 * 60))
-    }
-}
-
-/** Non-modal pause prompt shown at chapter boundaries / before leaving the reader. */
-@Composable
-internal fun ReviewPromptBanner(
-    count: Int,
-    dwellMillis: Long,
-    onStart: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val t = LocalDesignTokens.current
-    LaunchedEffect(dwellMillis) {
-        if (dwellMillis > 0) {
-            delay(dwellMillis)
-            onDismiss()
-        }
-    }
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        // 半透明纸底 + 抬起阴影：这是一条**浮在正文之上**的非模态提示，
-        // 需要与身后滚动的内容拉开一层，所以保留阴影而不是纸感的描边分层。
-        color = t.colors.paperDeep.copy(alpha = BannerAlpha),
-        shadowElevation = BannerShadow
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = BannerHorizontalPadding, vertical = t.spacing.s),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = pluralStringResource(R.plurals.review_banner_due, count, count),
-                modifier = Modifier.weight(1f),
-                style = t.typography.body,
-                color = t.colors.ink
-            )
-            LinguaTextButton(text = stringResource(R.string.review_banner_start), onClick = onStart)
-            LinguaTextButton(text = stringResource(R.string.review_banner_dismiss), onClick = onDismiss)
-        }
     }
 }
