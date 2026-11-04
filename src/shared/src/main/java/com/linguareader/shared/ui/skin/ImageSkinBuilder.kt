@@ -40,6 +40,17 @@ object ImageSkinBuilder {
     /** 强调色至少要和底色拉开这么多对比度（按钮/链接要能看清）。 */
     private const val ACCENT_MIN_CONTRAST = 3.0
 
+    // ── 形状与层次的推导边界（见 deriveCharacter）────────────────────
+
+    /** 圆角缩放系数的下限：图片再「硬」也不会把卡片推成直角。 */
+    private const val RADII_MIN = 0.55
+
+    /** 圆角缩放系数的上限：图片再「软」也不会推成全胶囊（可点面积与对齐会坏）。 */
+    private const val RADII_MAX = 1.35
+
+    /** 层次强度低于此值时不加阴影，改用描边（弱层次 + 阴影会显得脏）。 */
+    private const val SHADOW_THRESHOLD = 0.35
+
     /** 判断「这是不是一张纸」时，各维度的权重（合计 1.0）。 */
     private const val PAPERS_SUITABILITY_WEIGHT_SATURATION = 0.34
     private const val PAPERS_SUITABILITY_WEIGHT_LIGHTNESS = 0.10
@@ -78,6 +89,102 @@ object ImageSkinBuilder {
         return fromClusters(clusters, name = name, id = id ?: fingerprint(clusters))
     }
 
+    /**
+     * 从图片的**视觉性格**推导形状与层次（P20）。
+     *
+     * ## 为什么需要这个
+     *
+     * P1 建的 [SkinSpec] 有六个维度，但 [fromClusters] 只用图片推导了 `colors`，
+     * 其余五个维度全部写死 `default()`。结果是**图片只能换颜色，不能换风格** ——
+     * 而目标 10 要的是「快速接受由图片提供的风格」。
+     *
+     * 五维全推是不对的（字体、间距、动效与图片没有可信的对应关系，硬推等于编），
+     * 但**两个维度有真实对应**：
+     *
+     * - **圆角**：图片的「柔和度」。大片低饱和、明度渐变平滑的图（晨雾、柔光书桌）→ 更圆；
+     *   高对比、硬边界、饱和的图（海报、夜景霓虹）→ 更方。
+     * - **阴影**：图片的「层次强度」。色簇离散度大（前景/背景分得开）→ 用阴影加强层次；
+     *   色簇集中（一片纯色）→ 用描边而非阴影，否则浮起来的东西没有依托。
+     *
+     * ## 推导是有界的
+     *
+     * 每种取值都夹在 [RADII_RANGE] / [SHADOW_RANGE] 里 —— **图片只能在这个范围内表达倾向**，
+     * 不能把 UI 推成全圆或全方。理由：极端形状会破坏可点面积与对齐关系（48dp 按钮变胶囊、
+     * 卡片变圆形），那不是「风格」，那是坏掉。
+     *
+     * @param clusters 已量化的色簇
+     * @param isDark 已判定的明暗阵营
+     */
+    internal fun deriveCharacter(
+        clusters: List<ColorCluster>,
+        isDark: Boolean
+    ): Character {
+        if (clusters.isEmpty()) return Character.flat()
+
+        // 柔和度 = 低饱和 + 明度分布窄（渐变更平滑）的组合，0..1。
+        val avgSat = clusters.sumOf { it.saturation } / clusters.size
+        val lightnessSpread = (clusters.maxOf { it.lightness } - clusters.minOf { it.lightness })
+        val softness = ((1.0 - avgSat.coerceIn(0.0, 1.0)) * 0.65 +
+            (1.0 - lightnessSpread.coerceIn(0.0, 1.0)) * 0.35).coerceIn(0.0, 1.0)
+
+        // 层次强度 = 色簇离散度（前景与背景分得多开）。
+        val hierarchy = lightnessSpread.coerceIn(0.0, 1.0)
+
+        // 圆角：softness 0..1 → 范围两端。
+        val radiusScale = RADII_MIN + (RADII_MAX - RADII_MIN) * softness
+        // 阴影：0.35 以下用描边（层次本来就弱，再加阴影会脏）；以上按层次强度给高度。
+        val useShadow = hierarchy >= SHADOW_THRESHOLD
+        val shadowScale = if (useShadow) {
+            ((hierarchy - SHADOW_THRESHOLD) / (1.0 - SHADOW_THRESHOLD)).coerceIn(0.0, 1.0)
+        } else 0.0
+
+        return Character(
+            radiusScale = radiusScale,
+            useShadow = useShadow,
+            shadowScale = shadowScale,
+            isDark = isDark
+        )
+    }
+
+    /** 图片推导出的「性格」，只含形状与层次两件事。 */
+    internal data class Character(
+        /** 圆角缩放系数，落在 [RADII_MIN]..[RADII_MAX]。 */
+        val radiusScale: Double,
+        /** 是否用阴影表达层次（否则用描边）。 */
+        val useShadow: Boolean,
+        /** 阴影强度 0..1；[useShadow] 为 false 时无意义。 */
+        val shadowScale: Double,
+        val isDark: Boolean
+    ) {
+        fun radii(): SkinRadii {
+            val d = SkinRadii.default()
+            return SkinRadii(
+                sm = (d.sm * radiusScale).coerceIn(2.0, 10.0),
+                md = (d.md * radiusScale).coerceIn(4.0, 18.0),
+                lg = (d.lg * radiusScale).coerceIn(6.0, 26.0),
+                pill = d.pill
+            )
+        }
+
+        fun elevation(): SkinElevation {
+            val d = SkinElevation.default()
+            if (!useShadow) {
+                // 层次弱：不用阴影，靠描边区分（`useShadow = false` 时组件层会画 outline）。
+                return SkinElevation(none = 0.0, low = 0.0, high = 0.0, useShadow = false)
+            }
+            return SkinElevation(
+                none = d.none,
+                low = d.low * (0.6 + 0.4 * shadowScale),
+                high = d.high * (0.5 + 0.5 * shadowScale),
+                useShadow = true
+            )
+        }
+
+        companion object {
+            fun flat() = Character(radiusScale = 1.0, useShadow = false, shadowScale = 0.0, isDark = false)
+        }
+    }
+
     /** 已是色簇列表时走这里（导入管线可以先自己量化；测试也直接用这个入口）。 */
     fun fromClusters(
         clusters: List<ColorCluster>,
@@ -92,6 +199,8 @@ object ImageSkinBuilder {
 
         val mapping = assignRoles(clusters)
         val colors = SkinValidator.conform(mapping.colors)
+        // 形状与层次也从图片推导（见 deriveCharacter 的 KDoc：只有这两维有可信对应）。
+        val character = deriveCharacter(clusters, mapping.isDark)
         return SkinSpec(
             id = id,
             name = name,
@@ -99,9 +208,9 @@ object ImageSkinBuilder {
             colors = colors,
             typography = SkinTypography.default(),
             spacing = SkinSpacing.default(),
-            radii = SkinRadii.default(),
+            radii = character.radii(),
             motion = SkinMotion.default(),
-            elevation = SkinElevation.default(),
+            elevation = character.elevation(),
             origin = SkinOrigin.IMAGE
         )
     }

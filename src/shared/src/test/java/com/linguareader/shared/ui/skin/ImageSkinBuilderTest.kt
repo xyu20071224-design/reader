@@ -227,14 +227,27 @@ class ImageSkinBuilderTest {
     }
 
     @Test
-    fun builtInTypographySpacingRadiiAreInherited() {
-        // 图片只决定颜色；排版/间距/圆角/动效沿用基准，避免「选张图字就变了」。
+    fun typographySpacingAndMotionAreInherited() {
+        // 这三维新刻意沿用基准：它们与图片没有可信的对应关系，硬推等于编。
+        // 「选张图字就变了」依然是禁止的。
         val spec = build(TestImages.solid(8, 8, 0xFF888888.toInt()), 8, 8)
         assertEquals(SkinTypography.default(), spec.typography)
         assertEquals(SkinSpacing.default(), spec.spacing)
-        assertEquals(SkinRadii.default(), spec.radii)
         assertEquals(SkinMotion.default(), spec.motion)
-        assertEquals(SkinElevation.default(), spec.elevation)
+    }
+
+    @Test
+    fun radiiAndElevationAreDerivedNotInherited() {
+        // P20：圆角与阴影**从图片推导**（不再是 default）。
+        // 理由：这两维有真实的视觉对应——圆角反映图片的柔和度，
+        // 阴影反映层次强度。而旧断言「圆角必须等于 default」会把
+        // 「图片只能换颜色不能换风格」这个缺陷固化下来。
+        val spec = build(TestImages.solid(8, 8, 0xFF888888.toInt()), 8, 8)
+        // 纯色图：柔和度中等偏柔 → 圆角大于等于下限且不越界。
+        assertTrue("圆角应由图片推导且在下限之上，实际 ${spec.radii.md}", spec.radii.md >= 4.0)
+        assertTrue("圆角不应越界，实际 ${spec.radii.md}", spec.radii.md <= 18.0)
+        // 纯色图层次为 0 → 不用阴影（用描边）。
+        assertTrue("纯色图不该用阴影", !spec.elevation.useShadow)
     }
 
     // ── 角色分配的可观测性 ───────────────────────────────────────────

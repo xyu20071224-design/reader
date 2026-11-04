@@ -244,7 +244,20 @@ data class SkinElevation(
     val useShadow: Boolean
 ) {
     companion object {
-        fun default(): SkinElevation = SkinElevation(none = 0.0, low = 0.0, high = 0.0, useShadow = false)
+        /**
+         * 默认不使用阴影（现有实现全是描边）。
+         *
+         * `low` / `high` 给出**非零的参考量**：图片推导（`ImageSkinBuilder.deriveCharacter`）
+         * 需要在此基础上按层次强度缩放。若这里全给 0，缩放出来永远是 0 ——
+         * 那正是 P20 实现时踩到的坑（推导写了，但乘的是 0）。
+         * 使用方仍以 [useShadow] 为准：它为 false 时这两个值不会被读。
+         */
+        fun default(): SkinElevation = SkinElevation(
+            none = 0.0,
+            low = 2.0,
+            high = 8.0,
+            useShadow = false
+        )
     }
 }
 
