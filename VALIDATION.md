@@ -3569,3 +3569,68 @@ P22 那次它红了并给出更新指引，就是设计意图的兑现。
 #### 待真机
 
 副标题 fade 的实际观感（Robolectric 渲染单帧，测不到过渡过程）。
+
+### 2026-11-04 续二十五 · 仪器测试的文案契约守卫（P24）
+
+#### 发现：4 个 UI 交互仪器测试一次都没跑过
+
+本项目有 4 个按**中文文案定位节点**的仪器测试：
+
+```kotlin
+composeRule.onNodeWithText("从一本英文书开始").assertIsDisplayed()
+```
+
+它们需要设备才能跑，而**当前无设备**（`HypervisorPresent=False`、`adb devices` 为空），
+所以**一次都没跑过**。本轮重构替换了大量组件（`SectionHeader` → 手写、
+`SettingRow` 加动画、9 个死组件删除）——**组件替换可能让某条文案不再被渲染**，
+而这在编译期完全看不出来：`strings.xml` 里 key 还在，只是没人显示了。
+
+#### 能做的静态核对（已全部通过）
+
+| 检查 | 结果 |
+| --- | --- |
+| `:app:compileDebugAndroidTestKotlin` | **BUILD SUCCESSFUL**（14 个仪器测试文件全部可编译）|
+| UI 测试断言的中文文案是否仍在 `strings.xml` | 全部存在 |
+| UI 测试是否依赖 `UiTags` | 不依赖（纯文案定位），故无 tag 失效风险 |
+
+#### `InstrumentedTestTextContractTest`（2 例）
+
+1. **判据**：仪器测试断言的中文文案必须仍能从资源里产出；
+2. **反向**：确认确实扫到了那 4 个测试文件 —— 防止「目录变化导致扫到 0 个文件」时假绿。
+
+#### 它覆盖不到什么（写在 KDoc 里，不粉饰）
+
+**它只能证明「文案还在资源里」，不能证明「它被渲染出来了」。**
+组件替换导致的「文案不再显示」它抓不到 —— 那仍然只能靠设备。
+**这条测试的价值是把「资源缺失」这类最便宜发现的错误提前，不是替代设备验证。**
+
+#### 写这条守卫时踩的两个坑
+
+**1. 第一版 `resources.contains(text)` 直接判，4 条全误报**：
+
+| 断言文本 | 实际资源 |
+| --- | --- |
+| 版本更新 1.2.0 | `版本更新 %1$s` |
+| 复习时约剩 85% 记忆 | `复习时约剩 %1$d%% 记忆` |
+| 有 3 个词可快速复习 | `<plurals 有 %1$d 个词可快速复习>` |
+| Acceptance Book | 测试自造书名，本就不在资源里 |
+
+**2. 第二版「去数字后前缀匹配」仍漏了 `版本更新 1.2.0`**（`1.2.0` 里的点号让前缀切不齐）。
+
+最终改成**片段匹配**：把断言文本切成「字母/汉字片段」，数字、空格、标点一律忽略
+（它们正是格式化占位符的位置），要求每个片段都能在资源里找到；
+测试自造数据用 `testFabricatedTexts` 显式列出。
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 132 suites / **654 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `InstrumentedTestTextContractTest` | 2 tests / 0 failures |
+| `:app:compileDebugAndroidTestKotlin` | BUILD SUCCESSFUL |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+#### 仍未解决
+
+4 个 UI 交互仪器测试**仍未在设备上执行过**。它们覆盖的正是本轮重构最该验的部分：
+书架空态与三按钮、启动问候卡、阅读页跳转与查词、复习设置三档。
