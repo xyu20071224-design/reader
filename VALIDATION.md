@@ -3159,3 +3159,58 @@ val desiredRoute: Route = slices.shell.route
 | `:app:testDebugUnitTest` | 127 suites / **643 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
 | `AlignmentModuleIsUnwiredTest` | 2 tests / 0 failures |
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续十八 · 量化切片与屏幕的吻合度（P17）——20/29
+
+#### 为什么先量化而不是直接接线
+
+P15 接上了 `ShellState.route`（一行），但其余四个切片仍零引用。
+把它们接进 `BookshelfScreen` 前，先量了一个数：
+**这个屏实际读的 29 个 `state.xxx` 字段里，多少个已经在切片里？**
+
+#### 结果：20 / 29
+
+9 个不在任何与书架相关的切片里：
+
+| 字段 | 所属 |
+| --- | --- |
+| `aiTranslationPrepare` / `aiTranslationProgress` / `manualTranslationPrepare` / `pendingManualExport` / `packs` | `AppOnlyState` |
+| `customReview` / `reminders` / `reviewPreset` / `savedWords` | `ReaderState` 或 `VocabState` |
+
+#### 这个数字本身就是产出
+
+它说明：**切片是按「领域」划的，屏幕是按「页面」取数据的，两者天然不完全对齐。**
+
+书架屏要用复习节奏（书卡上的徽章）、要用术语表 `packs`（挂在书架弹层里）、
+要用 AI 翻译进度（书卡上的进度条）。**这些跨领域读取是合理的，不是设计缺陷。**
+
+所以「把切片接进屏幕」**不可能是一次纯粹的机械替换** —— 它必然涉及
+「这个字段该属于哪个切片」的判断。**这就是为什么 P15 只接了最无争议的那一个（route）。**
+
+#### 这改变了下一步的做法
+
+原计划「把四个切片接进各屏」现在看是不成立的：接 `BookshelfState` 会让 9 个字段**无处安放**。
+
+正确顺序应该是：
+1. 先确定 `AppOnlyState` 的归属（它现在是「:app 专属残留」，本身就不该长期存在）；
+2. 再决定 `ReaderState` / `VocabState` 是否该被书架屏直接读，
+   还是该有一个「书架书卡需要的复习信息」子集；
+3. 最后才改屏幕参数签名。
+
+**在没想清楚 1 和 2 之前改签名，会把「跨领域读取」固化进接口。**
+
+#### 测试
+
+`SliceCoverageFactTest`（2 例）把当前吻合度钉成数字：
+1. `BookshelfScreen` 读 29 字段、切片覆盖 20 —— 数字变了提示重新评估方案；
+2. 未覆盖的 9 个字段必须确实在切片外 —— 防有人把字段加进切片后忘了更新记录。
+
+**它不判断好坏，只记录事实。这类测试的价值不在「跑绿」，而在「当它变红时说明设计假设变了」。**
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 128 suites / **645 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `SliceCoverageFactTest` | 2 tests / 0 failures |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
