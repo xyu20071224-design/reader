@@ -3,6 +3,9 @@ package com.linguareader.app.uirender
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,9 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.linguareader.app.components.ButtonRow
-import com.linguareader.app.components.CardDivider
-import com.linguareader.app.components.CardTitleRow
 import com.linguareader.app.components.EmptyState
 import com.linguareader.app.components.LinguaCard
 import com.linguareader.app.components.LinguaScaffold
@@ -30,9 +30,7 @@ import com.linguareader.app.components.LinguaTopBarAction
 import com.linguareader.app.components.PrimaryButton
 import com.linguareader.app.components.SecondaryButton
 import com.linguareader.app.components.SectionHeader
-import com.linguareader.app.components.SettingGroup
 import com.linguareader.app.components.SettingRow
-import com.linguareader.app.components.SettingValue
 import com.linguareader.app.components.StatusChip
 import com.linguareader.app.components.StatusChipTone
 import com.linguareader.app.skin.DesignTokens
@@ -178,7 +176,13 @@ class ComponentRenderTest {
         assertTrue("photo skin should be readable", t.colors.ink != t.colors.paper)
     }
 
-    // ── ② 设置列表（LinguaScaffold + SectionHeader + SettingGroup + StatusChip） ──
+    // ── ② 设置列表（LinguaScaffold + SectionHeader + SettingRow + StatusChip） ──
+    //
+    // 夹具刻意用**生产里的等价结构**而不是「一个组件包住一切」：
+    // 2026-11-04 删掉的 `SettingGroup` / `SettingValue` / `CardDivider` / `ButtonRow`
+    // 在生产代码里从未被调用过——各屏的设置列表本来就是手写 Column + SettingRow
+    // （见 ListeningSettingsSheet / ShelfAppearanceSheet）。用死组件搭出来的夹具
+    // 测的是一种**不存在的页面结构**，删掉它们之后夹具才和生产对齐。
 
     @Composable
     private fun SettingsScreen() {
@@ -189,34 +193,34 @@ class ComponentRenderTest {
                 verticalArrangement = Arrangement.spacedBy(t.spacing.s)
             ) {
                 SectionHeader("阅读")
-                SettingGroup {
-                    SettingRow(
-                        title = "字号跟随系统",
-                        subtitle = "关闭后使用下方的手动字号",
-                        checked = true,
-                        onCheckedChange = {}
-                    )
-                    CardDivider()
-                    SettingRow(title = "正文主题", trailing = { SettingValue("纸·日间") })
-                    CardDivider()
-                    SettingRow(title = "行距", trailing = { SettingValue("1.65") })
-                }
+                SettingRow(
+                    title = "字号跟随系统",
+                    subtitle = "关闭后使用下方的手动字号",
+                    checked = true,
+                    onCheckedChange = {}
+                )
+                SettingRow(
+                    title = "正文主题",
+                    trailing = { Text("纸·日间", style = t.typography.caption, color = t.colors.inkSoft) }
+                )
+                SettingRow(
+                    title = "行距",
+                    trailing = { Text("1.65", style = t.typography.caption, color = t.colors.inkSoft) }
+                )
                 SectionHeader("听书")
-                SettingGroup {
-                    SettingRow(
-                        title = "自动朗读下一章",
-                        subtitle = "章节结束后继续播报",
-                        checked = false,
-                        onCheckedChange = {}
-                    )
-                    CardDivider()
-                    SettingRow(
-                        title = "离线语音包",
-                        trailing = {}
-                    )
-                }
+                SettingRow(
+                    title = "自动朗读下一章",
+                    subtitle = "章节结束后继续播报",
+                    checked = false,
+                    onCheckedChange = {}
+                )
+                SettingRow(title = "离线语音包", trailing = {})
                 Spacer(Modifier.height(t.spacing.m))
-                ButtonRow {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(t.spacing.s, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     SecondaryButton(text = "重置", onClick = {})
                     PrimaryButton(text = "保存", onClick = {})
                 }
@@ -263,8 +267,20 @@ class ComponentRenderTest {
             verticalArrangement = Arrangement.spacedBy(t.spacing.m)
         ) {
             LinguaCard {
-                CardTitleRow(title = "卡片标题", subtitle = "副标题说明这一行是什么")
-                CardDivider()
+                // 卡片标题行：生产里（shelf/ShelfBookCard.kt）就是这个结构手写的，
+                // 所以夹具也照它写——而不是用一个生产从未调用过的 CardTitleRow。
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(
+                        Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(t.spacing.xs)
+                    ) {
+                        Text("卡片标题", style = t.typography.title, color = t.colors.ink)
+                        Text("副标题说明这一行是什么", style = t.typography.caption, color = t.colors.inkSoft)
+                    }
+                }
+                Box(Modifier.fillMaxWidth().padding(vertical = t.spacing.s)) {
+                    Box(Modifier.fillMaxWidth().height(t.hairline).background(t.colors.outline))
+                }
                 Text("卡片正文内容", style = t.typography.body, color = t.colors.inkSoft)
             }
             Column(verticalArrangement = Arrangement.spacedBy(t.spacing.s)) {
@@ -274,7 +290,11 @@ class ComponentRenderTest {
                 StatusChip("进行中", StatusChipTone.ACCENT)
                 StatusChip("无状态", StatusChipTone.NEUTRAL)
             }
-            ButtonRow {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(t.spacing.s, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 SecondaryButton(text = "取消", onClick = {})
                 PrimaryButton(text = "确认", onClick = {})
             }

@@ -1,17 +1,19 @@
 package com.linguareader.app.uirender
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
-import com.linguareader.app.components.CardDivider
-import com.linguareader.app.components.CardTitleRow
 import com.linguareader.app.components.LinguaCard
 import com.linguareader.app.components.LinguaScaffold
 import com.linguareader.app.components.PrimaryButton
@@ -58,8 +60,24 @@ class ImageSkinRenderTest {
                     ) {
                         Spacer(Modifier.height(tokens.spacing.s))
                         LinguaCard {
-                            CardTitleRow(title = "傲慢与偏见", subtitle = "Jane Austen · 第 12 章")
-                            CardDivider()
+                            // 标题行与分割线照生产（shelf/ShelfBookCard.kt）手写，
+                            // 不用 2026-11-04 审计出的死组件 CardTitleRow / CardDivider。
+                            Text(
+                                "傲慢与偏见",
+                                style = tokens.typography.title,
+                                color = tokens.colors.ink
+                            )
+                            Text(
+                                "Jane Austen · 第 12 章",
+                                style = tokens.typography.caption,
+                                color = tokens.colors.inkSoft
+                            )
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(tokens.hairline)
+                                    .background(tokens.colors.outline)
+                            )
                             Text(
                                 "It is a truth universally acknowledged, that a single man in " +
                                     "possession of a good fortune, must be in want of a wife.",

@@ -253,21 +253,6 @@ fun LinguaIconTextButton(
     )
 }
 
-/** 并排按钮行：主按钮右、次按钮左（与系统对话框的按钮顺序一致）。 */
-@Composable
-fun ButtonRow(
-    modifier: Modifier = Modifier,
-    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
-) {
-    val t = LocalDesignTokens.current
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(t.spacing.s, Alignment.End),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content
-    )
-}
-
 /** 占满整行的主按钮（空状态引导、表单提交）。 */
 @Composable
 fun PrimaryButtonFullWidth(

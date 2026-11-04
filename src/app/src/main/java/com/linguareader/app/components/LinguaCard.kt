@@ -71,38 +71,3 @@ fun LinguaCard(
     }
 }
 
-/**
- * 卡片标题行：左边标题（+ 可选副标题），右边尾部插槽。
- *
- * 这是「每张书卡、每个设置分组」重复率最高的结构，抽出来统一字重与间距。
- */
-@Composable
-fun CardTitleRow(
-    title: String,
-    subtitle: String? = null,
-    trailing: @Composable RowScope.() -> Unit = {}
-) {
-    val t = LocalDesignTokens.current
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(t.spacing.xs)) {
-            Text(text = title, style = t.typography.title, color = t.colors.ink)
-            if (subtitle != null) {
-                Text(text = subtitle, style = t.typography.caption, color = t.colors.inkSoft)
-            }
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(t.spacing.s),
-            verticalAlignment = Alignment.CenterVertically,
-            content = trailing
-        )
-    }
-}
-
-/** 卡片内的分隔线（带上下留白）。 */
-@Composable
-fun CardDivider(modifier: Modifier = Modifier) {
-    val t = LocalDesignTokens.current
-    Box(modifier.fillMaxWidth().padding(vertical = t.spacing.s)) {
-        Box(Modifier.fillMaxWidth().height(t.hairline).background(t.colors.outline))
-    }
-}

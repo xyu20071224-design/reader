@@ -16,9 +16,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
-import com.linguareader.app.components.ButtonRow
-import com.linguareader.app.components.CardDivider
-import com.linguareader.app.components.CardTitleRow
 import com.linguareader.app.components.EmptyState
 import com.linguareader.app.components.LinguaCard
 import com.linguareader.app.components.LinguaScaffold
@@ -93,13 +90,17 @@ class PrimitiveComponentShotsTest {
         }
     }
 
-    // ② LinguaCard（+ CardTitleRow / CardDivider）
+    // ② LinguaCard
+    //
+    // 这一格原本还用 CardTitleRow / CardDivider 画标题行与分割线，
+    // 但它们 2026-11-04 被审计为死代码（生产零调用，书卡的标题行是
+    // shelf/ShelfBookCard.kt 手写的）。夹具随之改成生产里的实际结构。
     @Test
     fun linguaCard() = shot("prim-2-card", 360, 140) {
         Column(Modifier.padding(16.dp)) {
             LinguaCard {
-                CardTitleRow(title = "卡片标题", subtitle = "副标题")
-                CardDivider()
+                Text("卡片标题")
+                Text("副标题")
                 Text("正文内容")
             }
         }
@@ -145,7 +146,7 @@ class PrimitiveComponentShotsTest {
     @Test
     fun buttons() = shot("prim-6-buttons", 360, 90) {
         Box(Modifier.padding(16.dp)) {
-            ButtonRow {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SecondaryButton(text = "取消", onClick = {})
                 PrimaryButton(text = "确认", onClick = {})
             }

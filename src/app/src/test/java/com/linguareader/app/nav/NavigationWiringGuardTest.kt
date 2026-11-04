@@ -144,23 +144,19 @@ class NavigationWiringGuardTest {
      * 加一条就要写清「为什么它现在该留着」。当前为空 —— 说明组件层没有死代码。
      */
     /**
-     * 组件层已知的**死代码债务**（生产零调用的公开原语）。
+     * 组件层允许「生产未调用」的清单。
      *
-     * 这些是 2026-11-04 审计发现的：组件层 21 个公开原语里 8 个在生产代码中零调用。
-     * 其中一部分还有测试在用（渲染测试、基线），删它们要同步改测试——
-     * 那是一次独立的清理，不该混在守卫提交里。
+     * **当前为空 —— 这张表已经清空了。**
      *
-     * **每一条都必须写清「为什么它现在还在」**，否则下一个人会以为它们有用。
-     * 目标是把这张表清空（删组件 + 删对应测试），而不是往里面加东西。
+     * 2026-11-04 审计发现组件层 21 个公开原语里 8 个在生产代码中零调用，分两批删除：
+     * - 第一批：`CardSectionLabel` / `LinguaDivider` / `EmptyStateHint`（连测试都没有）
+     * - 第二批：`ButtonRow` / `CardTitleRow` / `CardDivider` / `SettingGroup` / `SettingValue`
+     *   （有渲染测试在用，删组件时必须同步把夹具改写成生产里的实际结构）
+     *
+     * 保留这张表是为了**将来加豁免时有地方写理由**。
+     * 往里加东西之前先问：这个组件真的需要存在吗？还是应该删掉？
      */
-    private val exemptComponents: Map<String, String> = mapOf(
-        // —— 以下 5 个有渲染测试在用，删它们要同步改测试 ——
-        "ButtonRow" to "死代码（仅测试在用）。生产里的按钮组都是各屏手写 Row",
-        "CardTitleRow" to "死代码（仅测试在用）。书卡标题是 ShelfBookCard 自己画的",
-        "CardDivider" to "死代码（仅测试在用）",
-        "SettingGroup" to "死代码（仅测试在用）。各屏设置列表是手写 Column + SettingRow",
-        "SettingValue" to "死代码（仅测试在用）",
-    )
+    private val exemptComponents: Map<String, String> = emptyMap()
 
     /**
      * 反向：导航层的公开入口不该只剩自己的测试在调。

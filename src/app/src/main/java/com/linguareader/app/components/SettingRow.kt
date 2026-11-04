@@ -79,36 +79,3 @@ fun SettingRow(
     }
 }
 
-/**
- * 设置分组：一组 [SettingRow] 外面套一张 [LinguaCard]，行间自动加分割线。
- *
- * 这样「组与组之间的间距、组内行距」在整屏范围内只定义一次。
- */
-@Composable
-fun SettingGroup(
-    title: String? = null,
-    content: @Composable () -> Unit
-) {
-    val t = LocalDesignTokens.current
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(t.spacing.xs)
-    ) {
-        if (title != null) {
-            Text(
-                text = title,
-                style = t.typography.label,
-                color = t.colors.inkSoft,
-                modifier = Modifier.padding(start = t.spacing.s)
-            )
-        }
-        LinguaCard { content() }
-    }
-}
-
-/** 尾部「当前值 + 箭头」那种设置的纯文本值。 */
-@Composable
-fun SettingValue(text: String) {
-    val t = LocalDesignTokens.current
-    Text(text = text, style = t.typography.caption, color = t.colors.inkSoft)
-}
