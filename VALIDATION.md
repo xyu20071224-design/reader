@@ -3214,3 +3214,55 @@ P15 接上了 `ShellState.route`（一行），但其余四个切片仍零引用
 | `:app:testDebugUnitTest` | 128 suites / **645 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
 | `SliceCoverageFactTest` | 2 tests / 0 failures |
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续十九 · 消除 `AppOnlyState` 的第一道真实障碍（P18）
+
+#### 背景：`AppOnlyState` 的 KDoc 说它搬不动的两个理由
+
+> `LaunchPromptUi` 里带 @StringRes Int（:shared 拿不到 R），
+> `PackUiState` 里带 java.io.File 与 :app/packs 专属枚举。
+
+复核后发现这个判断**部分不成立**：
+
+| 障碍 | 实际 |
+| --- | --- |
+| `PackUiItem` / `DictionaryInfo` / `AudioInfo` / `VoiceInfo` | **已全部依赖 `shared.packs` 的类型** |
+| 「:app/packs 专属枚举」| **不存在**（`PackType` 在 `:shared`）|
+| `PackUiState` 其余字段 | 纯值（`Long` / `Boolean` / `String?` / `List`）|
+| **`PackResidual.path: java.io.File`** | **唯一的文件系统依赖** |
+
+#### 改动
+
+`PackResidual.path` 从 `java.io.File` 改成 `String`（绝对路径）。
+
+**为什么安全**：这个字段**只用于删除**——`PackRepository.cleanResiduals()` 里
+`File(residual.path).deleteRecursively()`。界面从不显示它
+（`PacksSheet` 只读 `residuals.size` 与 `residuals.sumOf { it.bytes }`）。
+
+改完后 `PackResidual` 只剩 `Kind`（枚举）与 `bytes`（Long）两个纯值。
+
+#### 这个改动的意义
+
+`PackUiState` 现在**只依赖 `:shared/packs` 的类型**，理论上可直接搬到 `:shared`。
+（实际搬家还要处理 `LoadWarning` / `RemotePacksState` 等相邻类型，但**障碍性质变了**：
+从「有文件系统依赖」变成「纯粹的工作量」——这是本质区别。）
+
+#### 编译器精确定位了全部改动点
+
+改类型后编译器报出 4 处：2 处构造（`PackRepository`）、1 处使用（`deleteRecursively`）、
+2 处测试断言。**不需要 grep 找调用点** —— 这是类型安全带来的好处，
+也说明这个 data class 的使用面确实很窄（只有 3 个文件）。
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 128 suites / **645 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `packs.*` + `SettingsSheetRenderTest` | 全绿 |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+#### 下一轮
+
+`AppOnlyState` 还剩 `LaunchPromptUi`（`@StringRes Int`）这一个真实障碍。
+它的解法已经存在：`SharedString`（40 个键）—— 但还需要为问候/更新说明文案补约 20 个键。
+那是机械工作，不涉及设计判断。
