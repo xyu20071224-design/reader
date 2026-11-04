@@ -145,6 +145,14 @@ dependencies {
     testImplementation("com.tom-roush:pdfbox-android:2.0.27.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
+    // Compose UI 测试搬到 JVM（P25）：
+    // 4 个 UI 交互仪器测试原本只在 androidTest 里，需要设备 —— 而本项目长期无设备
+    // （HypervisorPresent=False），它们一次都没跑过。Robolectric 支持 Compose 语义树，
+    // 所以「文案在不在、能不能点、点了之后出现什么」这类断言可以搬到 JVM 上跑。
+    //
+    // 注意：这不替代设备验证 —— 手势、真实布局测量、WebView、insets 仍然只有设备能测。
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     // 桌面迁移 M1：词典 SQL 双引擎对账用（DictionarySqlParityTest，不进 APK）
     testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
 
