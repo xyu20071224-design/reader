@@ -19,10 +19,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -198,6 +198,7 @@ internal fun ProviderEditorDialog(
     onDelete: ((AiProviderProfile) -> Unit)?,
     onDismiss: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(initial.name) }
@@ -228,12 +229,14 @@ internal fun ProviderEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = CardSurface,
+        containerColor = t.colors.cardSurface,
+        shape = t.cardShape,
         title = {
             Text(
-                stringResource(
+                text = stringResource(
                     if (isNew) R.string.aidrawer_provider_new else R.string.aidrawer_provider_edit
-                )
+                ),
+                style = t.typography.title
             )
         },
         text = {
@@ -249,7 +252,7 @@ internal fun ProviderEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = baseUrl,
                     onValueChange = { baseUrl = it },
@@ -257,7 +260,7 @@ internal fun ProviderEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it },
@@ -269,20 +272,20 @@ internal fun ProviderEditorDialog(
                 if (protocol == AiProtocol.OPENAI_COMPAT) {
                     Text(
                         stringResource(R.string.aidrawer_provider_local_key_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(EditorFieldGap))
                 Text(
                     stringResource(R.string.aidrawer_provider_protocol_label),
-                    style = MaterialTheme.typography.labelMedium
+                    style = t.typography.label
                 )
                 // FlowRow：放不下的 chip 整颗换行。普通 Row 会把最后一颗挤成
                 // 零宽并纵向堆叠，撑出一个隐形高块（协议与模型之间的大间隔）。
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(EditorChipGap),
+                    verticalArrangement = Arrangement.spacedBy(t.spacing.xs)
                 ) {
                     AiProtocol.ALL.forEach { candidate ->
                         FilterChip(
@@ -296,11 +299,11 @@ internal fun ProviderEditorDialog(
                 if (protocol != AiProtocol.OPENAI_COMPAT) {
                     Text(
                         stringResource(R.string.aidrawer_provider_discovery_hint),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft
+                        style = t.typography.label,
+                        color = t.colors.inkSoft
                     )
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = model,
                     onValueChange = { model = it },
@@ -308,9 +311,9 @@ internal fun ProviderEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(EditorProbeGap))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
+                    LinguaTextButton(
                         onClick = {
                             val probe = draft()
                             when {
@@ -348,33 +351,30 @@ internal fun ProviderEditorDialog(
                             }
                         },
                         enabled = masterEnabled && !fetchingModels &&
-                            protocol == AiProtocol.OPENAI_COMPAT
-                    ) {
-                        Text(
-                            stringResource(
-                                if (fetchingModels) R.string.aidrawer_fetch_models_fetching
-                                else R.string.aidrawer_fetch_models
-                            )
+                            protocol == AiProtocol.OPENAI_COMPAT,
+                        text = stringResource(
+                            if (fetchingModels) R.string.aidrawer_fetch_models_fetching
+                            else R.string.aidrawer_fetch_models
                         )
-                    }
+                    )
                     fetchStatus?.let {
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(EditorProbeGap))
                         Text(
                             it,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Danger
+                            style = t.typography.label,
+                            color = t.colors.danger
                         )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
+                    LinguaTextButton(
                         onClick = {
                             val probe = draft()
                             if (probe.apiKey.isEmpty()) {
                                 testOk = false
                                 testStatus =
                                     context.getString(R.string.aidrawer_deepseek_test_need_key)
-                                return@TextButton
+                                return@LinguaTextButton
                             }
                             testingConnection = true
                             testStatus = null
@@ -399,31 +399,34 @@ internal fun ProviderEditorDialog(
                                 )
                             }
                         },
-                        enabled = masterEnabled && !testingConnection
-                    ) { Text(stringResource(R.string.aidrawer_deepseek_test)) }
+                        enabled = masterEnabled && !testingConnection,
+                        text = stringResource(R.string.aidrawer_deepseek_test)
+                    )
                     val statusText = when {
                         testingConnection -> context.getString(R.string.aidrawer_deepseek_testing)
                         testStatus != null -> testStatus
                         else -> null
                     }
                     statusText?.let {
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(EditorProbeGap))
                         Text(
                             it,
-                            style = MaterialTheme.typography.labelSmall,
+                            style = t.typography.label,
                             color = when {
-                                testingConnection -> InkSoft
-                                testOk -> Success
-                                else -> Danger
+                                testingConnection -> t.colors.inkSoft
+                                testOk -> t.colors.success
+                                else -> t.colors.danger
                             }
                         )
                     }
                 }
                 validation?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = Danger)
+                    Text(it, style = t.typography.label, color = t.colors.danger)
                 }
             }
         },
+        // ⚠️ AlertDialog 的 confirm/dismiss 槽位**不换** LinguaTextButton
+        // （手册「按槽位判」：页面级几何 48dp + contentPadding 与对话框的等分宽度排布硬冲突）。
         confirmButton = {
             TextButton(onClick = {
                 val candidate = draft()
@@ -439,13 +442,17 @@ internal fun ProviderEditorDialog(
         dismissButton = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onDelete != null) {
+                    // 删除是破坏性动作：LinguaTextButton 只有一种主色，套上去会丢掉
+                    // 「危险」语义，故保留 TextButton 但配色取 token danger
+                    // （与 PacksSheet 的 DangerTextButton 同一口径）。
                     TextButton(
                         onClick = { confirmingDelete = true },
-                        enabled = masterEnabled
+                        enabled = masterEnabled,
+                        colors = ButtonDefaults.textButtonColors(contentColor = t.colors.danger)
                     ) {
                         Text(
-                            stringResource(R.string.common_delete),
-                            color = Danger
+                            text = stringResource(R.string.common_delete),
+                            style = t.typography.body
                         )
                     }
                 }
@@ -468,8 +475,9 @@ internal fun ProviderEditorDialog(
     if (confirmingDelete) {
         AlertDialog(
             onDismissRequest = { confirmingDelete = false },
-            containerColor = CardSurface,
-            title = { Text(stringResource(R.string.aidrawer_provider_delete)) },
+            containerColor = t.colors.cardSurface,
+            shape = t.cardShape,
+            title = { Text(stringResource(R.string.aidrawer_provider_delete), style = t.typography.title) },
             text = {
                 Text(
                     stringResource(
@@ -481,8 +489,11 @@ internal fun ProviderEditorDialog(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { onDelete?.invoke(initial) }) {
-                    Text(stringResource(R.string.common_delete), color = Danger)
+                TextButton(
+                    onClick = { onDelete?.invoke(initial) },
+                    colors = ButtonDefaults.textButtonColors(contentColor = t.colors.danger)
+                ) {
+                    Text(text = stringResource(R.string.common_delete), style = t.typography.body)
                 }
             },
             dismissButton = {
@@ -505,6 +516,7 @@ private fun ModelPickerDialog(
     onPick: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var query by remember { mutableStateOf("") }
     val filtered = remember(candidates, query) {
         if (query.isBlank()) candidates
@@ -515,8 +527,9 @@ private fun ModelPickerDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = CardSurface,
-        title = { Text(stringResource(R.string.aidrawer_model_picker_title)) },
+        containerColor = t.colors.cardSurface,
+        shape = t.cardShape,
+        title = { Text(stringResource(R.string.aidrawer_model_picker_title), style = t.typography.title) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 OutlinedTextField(
@@ -527,32 +540,36 @@ private fun ModelPickerDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(t.spacing.s))
                 if (filtered.isEmpty()) {
-                    Text(stringResource(R.string.aidrawer_model_picker_no_match), color = InkSoft)
+                    Text(
+                        text = stringResource(R.string.aidrawer_model_picker_no_match),
+                        style = t.typography.caption,
+                        color = t.colors.inkSoft
+                    )
                 } else {
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = ModelPickerMaxHeight)) {
                         items(filtered, key = { it.id }) { candidate ->
                             val selected = candidate.id.equals(current, ignoreCase = true)
                             Column(
                                 Modifier
                                     .fillMaxWidth()
-                                    .background(if (selected) AccentSoft else CardSurface)
+                                    .background(if (selected) t.colors.accentSoft else t.colors.cardSurface)
                                     .clickable { onPick(candidate.id) }
-                                    .padding(horizontal = 6.dp, vertical = 8.dp)
+                                    .padding(horizontal = ModelPickerRowHorizontalPadding, vertical = t.spacing.s)
                             ) {
                                 Text(
                                     candidate.id,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (selected) AccentDeep else Ink,
+                                    style = t.typography.caption,
+                                    color = if (selected) t.colors.accentDeep else t.colors.ink,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 if (candidate.subtitle.isNotBlank()) {
                                     Text(
                                         candidate.subtitle,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = InkSoft,
+                                        style = t.typography.label,
+                                        color = t.colors.inkSoft,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -575,3 +592,8 @@ private fun ModelPickerDialog(
 // 间距梯只有 4/8/16/24/32/48；下面这些是这一屏自己的排布常量，梯子里没有对应档位，
 // 硬套会改变像素。集中命名，注释写明每个值从哪里来。
 private val ProviderEmptyGap = 6.dp
+private val EditorFieldGap = 10.dp
+private val EditorProbeGap = 2.dp
+private val EditorChipGap = 6.dp
+private val ModelPickerMaxHeight = 360.dp
+private val ModelPickerRowHorizontalPadding = 6.dp
