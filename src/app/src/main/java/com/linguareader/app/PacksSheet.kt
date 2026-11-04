@@ -466,14 +466,6 @@ private fun PackActions(
 }
 
 /**
- * 破坏性动作的文字按钮（清理残留、卸载资源包）。
- *
- * 刻意**不是** [LinguaTextButton]：原语只有一种主色（accent），套上去「这是删除操作」
- * 的语义就丢了 —— 而本项目的设计约定正是「危险动作用独立色调，别让用户点错」。
- * 所以走 [LinguaTextButton] 的 `tone = TextButtonTone.DANGER`（语义枚举，颜色仍由 token 决定）。
- * 组件层缺口：`components/` 还没有 danger 语义的按钮原语，已在提交信息里记给 Lead。
- */
-/**
  * 卸载确认框。
  *
  * 没有「弹层确认」原语，沿用 Material `AlertDialog`，但容器色/形状/按钮配色全部取 token

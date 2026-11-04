@@ -151,9 +151,11 @@ internal fun StorageContent(
                 style = t.typography.label,
                 color = t.colors.inkFaint
             )
-            // 危险动作（删数据）刻意不用 [LinguaTextButton]：组件只有一种主色，
-            // 套上去「这是破坏性操作」的语义就丢了。保留 Material TextButton，配色取自 token。
-            // 组件层缺口，已在提交信息里记给 Lead。
+            // 危险动作（删数据）这里刻意仍是 Material `TextButton`，但**不是因为组件缺 danger 色**
+            // ——`LinguaTextButton` 自 `e337996` 起已有 `tone = TextButtonTone.DANGER`。
+            // 真实原因是它是**密集列表里的行内动作**（孤儿清单可能很长），
+            // `PAGE` 几何的 48dp 最小高会让每行变高、列表变松散；
+            // 若将来要统一，应传 `layout = TextButtonLayout.INLINE`（见手册的槽位表）。
             TextButton(
                 onClick = onCleanOrphans,
                 colors = ButtonDefaults.textButtonColors(contentColor = t.colors.danger)

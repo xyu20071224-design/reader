@@ -502,8 +502,9 @@ internal fun MultiVoiceSection(
             Spacer(Modifier.width(FieldGap))
             Box(Modifier.weight(1f)) {
                 // 刻意保留 Material TextButton：内容是「占满宽度的书名 + 下拉箭头」复合行，
-                // LinguaTextButton 只接受一个字符串。配色/字级全取 token。
-                // （组件层缺口：没有「图标+文字」原语，见提交信息。）
+                // 需要同时放**两段可伸缩文本 + 一个尾部图标**，不是「图标 + 一段文字」。
+                // `LinguaIconTextButton` 是后者（icon 在左、text 单段），套不上这个结构。
+                // 配色/字级全取 token。
                 TextButton(
                     onClick = { bookMenu = true },
                     modifier = Modifier.fillMaxWidth(),
@@ -599,10 +600,11 @@ internal fun MultiVoiceSection(
     SectionHeader(
         text = stringResource(R.string.multivoice_characters_section),
         trailing = {
-            // 刻意保留 Material TextButton：按钮内容是「图标 + 文字」的复合行，
-            // LinguaTextButton 只接受一个字符串。配色与字级全取 token。
-            // （组件层缺口：LinguaIconTextButton —— 复习屏/生词本/听书屏三处都在各自封装，
-            //   是最值得下一轮补的原语。）
+            // 刻意保留 Material TextButton：这个槽位需要 accent 色的「图标 + 文字」小按钮，
+            // 且要贴着 SectionHeader 的 trailing 边缘。
+            // `LinguaIconTextButton` 已存在（`01461c0`），但它默认 `PAGE` 几何（48dp 最小高），
+            // 放进 trailing 会把 SectionHeader 整行撑高；若改用 `layout = INLINE` 则可行。
+            // 当前保留本地写法是因为改动未验证视觉基线——**不是组件缺能力**。
             TextButton(
                 onClick = { addingCharacter = true },
                 colors = ButtonDefaults.textButtonColors(contentColor = t.colors.accent)
