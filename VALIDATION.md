@@ -2307,3 +2307,63 @@ P3 的每一屏迁移做的是「样式 token 化」——把裸 dp/裸色换成
    设计要点：任何差异必须用 `-IgnoreLine` **显式声明**，不能沉默通过。
 2. **`规则-并行worktree的git操作.md`**：三 agent 共用一个 worktree 的三条规则——
    `git commit -F msg -- <pathspec>`（根治索引竞态）、动历史前确认未推送、编译红了先看 git status。
+
+### 2026-11-04 续五 · 全部巨型文件结构性拆解完成（目标「拆解巨型屏幕」达成）
+
+#### 最终形态
+
+| 文件 | 重构前 | 样式迁移后 | **结构拆解后** | 总降幅 |
+| --- | --- | --- | --- | --- |
+| `ReviewUi.kt` | 835 | 1146 | **188** | −84% |
+| `MultiVoiceSettings.kt` | 1800 | 1980 | **754** | −62% |
+| `ReaderScreen.kt` | 1753 | 1991 | **1094** | −45% |
+| `BookshelfScreen.kt` | 1314 | 1580 | **678** | −57% |
+| `AppViewModel.kt` | 1828 | 1999 | **1342** | −33% |
+
+**新增 6 个职责单一的包**（共 37 文件 / 9314 行）：
+`review/` 6 文件 1205 行、`multivoice/` 6 文件 1594 行、`shelf/` 5 文件 1267 行、
+`reader/` 9 文件 2266 行、`sync/` 3 文件 615 行、`ai/` 8 文件 2367 行。
+
+#### 拆解方法：`scripts/verify-pure-move.ps1` 机械比对
+
+纯搬移的判据不是「git diff 看着对」，而是**二元相等**：
+老文件某段 vs 新文件（去注释/import/空行后）逐行比对。
+
+本轮累计 **约 1500 行逐行相等**，其中**大量为零 `-IgnoreLine`**（完全纯搬移）。
+
+**设计要点**：任何差异必须用 `-IgnoreLine` **显式声明**，不能沉默通过。
+实际使用时它抓到过搬移时多写的 2 行注释——没有放宽规则绕过，而是显式声明后才通过。
+**放宽判据让工具通过，和为了让测试绿而放宽断言是同一类错误。**
+
+#### 关键判断：什么该拆、什么不该拆（四条，全部写进代码注释）
+
+| 不拆的地方 | 理由 |
+| --- | --- |
+| `BookshelfScreen` 顶栏 | 读 5 个来源 + 6 个回调，硬抽要传 11 个参数，抽完更难读 |
+| `ReaderScreen` 外围不套 `LinguaScaffold` | 顶栏测量链喂 WebView，套通用外壳等于动正文布局 |
+| `MultiVoiceSettings` 主列表（754 行） | 620 行职责单一，再切要改签名或建状态类，会碰 `characters()`/`library()` 调用时机红线 |
+| `ReviewUi` 两个 Sheet 本体 | 带 `POST_NOTIFICATIONS` 权限流程 + `rememberSaveable`，抽走要反向 import Android API；**改为只抽纯展示的孩子**，调用方零改动 |
+
+**判据是「单文件职责单一」而不是「行数下降」。**
+
+#### 拆解过程抓到的问题
+
+1. **`@Preview` 静默丢失**（书架拆解）：发现方式是把拆解前 12 个顶层声明与拆解后 17 个**逐条对照**。
+2. **回归网盲区**（阅读页）：`ReaderPageJumpTest` 包名不带 `.reader`，而它测的函数被搬进了 `reader` 包 →
+   跑 `reader.*` filter 时**永远漏掉它**，而它是该函数的唯一测试。已修复（31 suites / 200 tests）。
+3. **测试源集 import 未更新**（复习屏，同类问题第二次）：搬 Composable 时只想着主源集，
+   忘了 `ReviewCardRenderTest` / `ReviewSettingsRenderTest` 还 import 着旧全限定名。
+
+**3 和 2 是同一类「搬移盲区」**，已固化成规则第 6 条：搬移必须跑**两道**编译门
+（`compileDebugKotlin` + `compileDebugUnitTestKotlin`），并 grep 旧全限定名确认零残留。
+4. **「定义了但没接线」的死代码**：`CurveGridAlpha` / `CurveMarkerAlpha` 定义了、注释提到了、
+   代码仍写字面量 `.10f`。**grep 计数抓不到这种形态**（注释里提到也算命中）。已修，并记入规则第 7 条。
+
+#### 本轮验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 115 suites / **606 tests** / 1 failure（CloudTts 路径，既有）/ 2 skipped |
+| `:shared:test` | 141 suites / **779 tests** / 1 failure（PythonServer，既有）|
+| `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+| 分支 | 69 commits，已推送，工作区干净 |
