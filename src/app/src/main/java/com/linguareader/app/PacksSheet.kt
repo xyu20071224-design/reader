@@ -14,9 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.components.LinguaSheet
 import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.components.TextButtonTone
 import com.linguareader.app.components.PrimaryButton
 import com.linguareader.app.components.SectionHeader
 import com.linguareader.app.components.StatusChip
@@ -226,9 +225,10 @@ internal fun PacksContent(
                 style = t.typography.label,
                 color = t.colors.inkFaint
             )
-            DangerTextButton(
+            LinguaTextButton(
                 text = stringResource(R.string.packs_residuals_clean),
-                onClick = onCleanResiduals
+                onClick = onCleanResiduals,
+                tone = TextButtonTone.DANGER
             )
             Spacer(Modifier.height(PacksSectionGap))
         }
@@ -449,7 +449,7 @@ private fun DictionaryActions(
             onClick = { onSetActiveDictionary(item.packId) }
         )
     }
-    DangerTextButton(text = stringResource(R.string.packs_uninstall), onClick = onUninstall)
+    LinguaTextButton(text = stringResource(R.string.packs_uninstall), onClick = onUninstall, tone = TextButtonTone.DANGER)
 }
 
 @Composable
@@ -462,7 +462,7 @@ private fun PackActions(
         text = stringResource(R.string.packs_verify),
         onClick = { onVerify(item.packId) }
     )
-    DangerTextButton(text = stringResource(R.string.packs_uninstall), onClick = onUninstall)
+    LinguaTextButton(text = stringResource(R.string.packs_uninstall), onClick = onUninstall, tone = TextButtonTone.DANGER)
 }
 
 /**
@@ -470,26 +470,15 @@ private fun PackActions(
  *
  * 刻意**不是** [LinguaTextButton]：原语只有一种主色（accent），套上去「这是删除操作」
  * 的语义就丢了 —— 而本项目的设计约定正是「危险动作用独立色调，别让用户点错」。
- * 所以这里保留 Material `TextButton`，但配色全部取 token（danger），不写裸色值。
+ * 所以走 [LinguaTextButton] 的 `tone = TextButtonTone.DANGER`（语义枚举，颜色仍由 token 决定）。
  * 组件层缺口：`components/` 还没有 danger 语义的按钮原语，已在提交信息里记给 Lead。
  */
-@Composable
-private fun DangerTextButton(text: String, onClick: () -> Unit) {
-    val t = LocalDesignTokens.current
-    TextButton(
-        onClick = onClick,
-        colors = ButtonDefaults.textButtonColors(contentColor = t.colors.danger)
-    ) {
-        Text(text = text, style = t.typography.body)
-    }
-}
-
 /**
  * 卸载确认框。
  *
  * 没有「弹层确认」原语，沿用 Material `AlertDialog`，但容器色/形状/按钮配色全部取 token
  * （与 `VocabularyScreen` 的确认框同一打法）。**确认按钮是危险动作**，故走
- * [DangerTextButton] 而不是 [LinguaTextButton]。
+ * [LinguaTextButton] 的 `tone = TextButtonTone.DANGER`。
  */
 @Composable
 private fun PacksUninstallDialog(
@@ -512,7 +501,7 @@ private fun PacksUninstallDialog(
             )
         },
         confirmButton = {
-            DangerTextButton(text = stringResource(R.string.packs_uninstall), onClick = onConfirm)
+            LinguaTextButton(text = stringResource(R.string.packs_uninstall), onClick = onConfirm, tone = TextButtonTone.DANGER)
         },
         dismissButton = {
             LinguaTextButton(text = stringResource(R.string.packs_cancel), onClick = onDismiss)
