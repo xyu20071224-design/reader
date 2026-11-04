@@ -3443,3 +3443,62 @@ P20 让圆角与阴影从图片推导，`:shared` 单测断言了「值确实不
 | `:app:testDebugUnitTest` | 130 suites / **650 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
 | `SkinCharacterVisuallyDistinctTest` | 2 tests / 0 failures |
 | `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+### 2026-11-04 续二十三 · `motion` token 零消费方（P22，第六例）
+
+#### 现状
+
+`SkinSpec.motion` → `TokenMotion`（`fastMillis` / `normalMillis` / `slowMillis` / `easing`）
++ 便捷属性 `fastSpec` / `normalSpec`，转换链路完整。但核查结果：
+
+| 检查 | 结果 |
+| --- | --- |
+| `t.motion.` 在整个 `src/main` 的出现 | **0 次** |
+| `fastSpec` / `normalSpec` 的调用点 | **只有它们自己的 getter** |
+| `components/` 层动画 | **0 处**（`Switch` 用 Material 默认时长）|
+
+#### 为什么不硬接
+
+唯一「看起来该接」的地方是阅读页的 3 处 `AnimatedVisibility`（顶栏 / 听书条 / 复习横幅）。
+但它们的 `visible` 直接绑定阅读交互状态：
+`overlays.toolbarVisible` / `ttsForThisBook` / `overlays.reviewPrompt`。
+
+**改动画曲线就等于改这些状态的观感节奏** —— 而阅读页是本项目历史事故最多的地方
+（章末死循环、TTS 高亮错位），且**当前无真机可验**。
+
+`components/` 层没有任何动画，所以也没有「安全的第一个消费方」。
+
+**在不可验证的前提下改阅读页动画，是把一个「零成本的技术债」换成「有风险的行为改动」。**
+
+#### 处置：登记事实
+
+`MotionTokenIsUnwiredTest`（1 例）断言 `t.motion.` 零消费方。
+哪天有地方用上了，这条会红，提醒把 KDoc 与 `VALIDATION.md` 的记录一起更新。
+与 `AlignmentModuleIsUnwiredTest`（P16）同一模式。
+
+#### 六例清单已完整
+
+| 阶段 | 零调用 | 规模 | 处置 |
+| --- | --- | --- | --- |
+| P9 | 图片换肤管线 | ~700 行 | **已接通** |
+| P13 | 导航层 | ~1000 行 | **已接通** |
+| P14 | 组件原语 ×8 | ~200 行 | **已删除** |
+| P15 | 状态切片 ×5 | ~800 行 | **ShellState 已接通**，其余记录在案 |
+| P16 | `shared.alignment` | ~9000 行 | **登记不删**（超出范围）|
+| **P22** | **`motion` token** | ~30 行 | **登记不硬接**（无安全消费方 + 不可验证）|
+
+#### 顺带澄清一个易混的事
+
+`spacing` 与 `typography` 两个维度**在生产代码里大量使用**
+（`Buttons` 10 处 spacing / 3 处 typography，`SectionHeader` 10 / 4，`LinguaScaffold` 8 / 1……），
+所以它们**不属于「零调用」**；只是**图片推导没覆盖它们**（P20 已解释：与图片无可信对应）。
+
+**「token 没被用」与「token 的值不由图片推导」是两件事，不要混为一谈。**
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 131 suites / **651 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `MotionTokenIsUnwiredTest` | 1 test / 0 failures |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
