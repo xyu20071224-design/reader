@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.ai.GlossaryEntry
 import com.linguareader.app.data.Book
+import com.linguareader.app.skin.LocalDesignTokens
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -79,6 +80,7 @@ internal fun GlossaryEditorBody(
     onUpdate: suspend (String, GlossaryEntry) -> BookGlossary,
     onRemove: suspend (String, String) -> BookGlossary
 ) {
+    val t = LocalDesignTokens.current
     val scope = rememberCoroutineScope()
     var selectedId by rememberSaveable { mutableStateOf(lockedBookId ?: books.firstOrNull()?.id ?: "") }
     val book = books.firstOrNull { it.id == selectedId }
@@ -118,8 +120,8 @@ internal fun GlossaryEditorBody(
     if (books.isEmpty()) {
         Text(
             stringResource(R.string.glossary_no_books),
-            style = MaterialTheme.typography.bodyMedium,
-            color = InkSoft
+            style = t.typography.body,
+            color = t.colors.inkSoft
         )
         return
     }
@@ -127,7 +129,7 @@ internal fun GlossaryEditorBody(
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         if (lockedBookId == null) {
             BookPickerRow(books, book) { selectedId = it.id }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(t.spacing.xs))
         }
 
         OutlinedTextField(
@@ -145,11 +147,11 @@ internal fun GlossaryEditorBody(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(t.spacing.s))
 
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(t.spacing.xs)
         ) {
             FilterChip(
                 selected = originFilter == null,
@@ -164,7 +166,7 @@ internal fun GlossaryEditorBody(
                 )
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(t.spacing.s))
 
         OutlinedTextField(
             value = newTerm,
@@ -173,7 +175,7 @@ internal fun GlossaryEditorBody(
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(t.spacing.xs))
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = newTranslation,
@@ -182,7 +184,7 @@ internal fun GlossaryEditorBody(
                 singleLine = true,
                 modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(t.spacing.s))
             Button(
                 onClick = {
                     val target = book ?: return@Button
@@ -196,19 +198,19 @@ internal fun GlossaryEditorBody(
                     }
                 },
                 enabled = newTerm.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = OnAccent)
+                colors = ButtonDefaults.buttonColors(containerColor = t.colors.accent, contentColor = OnAccent)
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(t.spacing.m))
+                Spacer(Modifier.width(GapTight))
                 Text(stringResource(R.string.glossary_add))
             }
         }
         Text(
             stringResource(R.string.glossary_hint),
-            style = MaterialTheme.typography.labelSmall,
-            color = InkSoft
+            style = t.typography.caption,
+            color = t.colors.inkSoft
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(t.spacing.s))
 
         val needle = query.trim().lowercase()
         val filtered = entries.filter { entry ->
@@ -218,16 +220,16 @@ internal fun GlossaryEditorBody(
                     entry.translation.contains(needle))
         }
         when {
-            loading -> CircularProgressIndicator(color = Accent, modifier = Modifier.size(28.dp))
-            entries.isEmpty() -> Text(stringResource(R.string.glossary_empty), color = InkSoft)
-            filtered.isEmpty() -> Text(stringResource(R.string.glossary_no_match), color = InkSoft)
+            loading -> CircularProgressIndicator(color = t.colors.accent, modifier = Modifier.size(SmallSpinnerSize))
+            entries.isEmpty() -> Text(stringResource(R.string.glossary_empty), color = t.colors.inkSoft)
+            filtered.isEmpty() -> Text(stringResource(R.string.glossary_no_match), color = t.colors.inkSoft)
             else -> groupedEntries(filtered).forEach { (origin, list) ->
                 Text(
                     "${originLabel(origin)} · ${list.size}",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = t.typography.caption,
                     fontWeight = FontWeight.SemiBold,
-                    color = InkSoft,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                    color = t.colors.inkSoft,
+                    modifier = Modifier.padding(top = t.spacing.xs, bottom = PaddingHairline)
                 )
                 list.forEach { entry ->
                     GlossaryEntryRow(
@@ -261,22 +263,22 @@ internal fun GlossaryEditorBody(
                             }
                         }
                     )
-                    HorizontalDivider(color = InkFaint.copy(alpha = .18f))
+                    HorizontalDivider(color = t.colors.inkFaint.copy(alpha = .18f))
                 }
             }
         }
 
         notice?.let {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(t.spacing.xs))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Default.CheckCircle,
                     contentDescription = null,
-                    tint = Success,
-                    modifier = Modifier.size(16.dp)
+                    tint = t.colors.success,
+                    modifier = Modifier.size(t.spacing.m)
                 )
-                Spacer(Modifier.width(6.dp))
-                Text(it, style = MaterialTheme.typography.labelMedium, color = Success)
+                Spacer(Modifier.width(t.spacing.xs))
+                Text(it, style = t.typography.caption, color = t.colors.success)
             }
         }
     }
@@ -309,10 +311,11 @@ private fun BookPickerRow(
     selected: Book?,
     onSelect: (Book) -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var menu by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(R.string.multivoice_book_label), style = MaterialTheme.typography.labelLarge, color = InkSoft)
-        Spacer(Modifier.width(10.dp))
+        Text(stringResource(R.string.multivoice_book_label), style = t.typography.caption, color = t.colors.inkSoft)
+        Spacer(Modifier.width(t.spacing.s))
         Box(Modifier.weight(1f)) {
             TextButton(onClick = { menu = true }, modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -320,9 +323,9 @@ private fun BookPickerRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
-                    color = Ink
+                    color = t.colors.ink
                 )
-                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = InkSoft)
+                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = t.colors.inkSoft)
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 books.forEach { candidate ->
@@ -354,10 +357,11 @@ internal fun GlossaryEntryRow(
     onToggleEnabled: (Boolean) -> Unit,
     onRemove: () -> Unit
 ) {
+    val t = LocalDesignTokens.current
     var translation by remember(entry.key, entry.translation) {
         mutableStateOf(entry.translation)
     }
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Column(Modifier.fillMaxWidth().padding(vertical = t.spacing.xs)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(
                 Modifier
@@ -367,28 +371,28 @@ internal fun GlossaryEntryRow(
                 Text(entry.term, fontWeight = FontWeight.Medium)
                 Text(
                     entry.translation.ifBlank { stringResource(R.string.glossary_keep_original) },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (entry.translation.isBlank()) InkFaint else InkSoft,
+                    style = t.typography.caption,
+                    color = if (entry.translation.isBlank()) t.colors.inkFaint else t.colors.inkSoft,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(t.spacing.s))
             OriginBadge(entry.origin)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(t.spacing.s))
             Switch(checked = entry.enabled, onCheckedChange = onToggleEnabled)
         }
         if (!editing && entry.note.isNotBlank()) {
             Text(
                 entry.note,
-                style = MaterialTheme.typography.labelSmall,
-                color = InkFaint,
+                style = t.typography.caption,
+                color = t.colors.inkFaint,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
         if (editing) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(GapTight))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = translation,
@@ -397,7 +401,7 @@ internal fun GlossaryEntryRow(
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(t.spacing.xs))
                 TextButton(onClick = {
                     onUpdate(entry.copy(translation = translation.trim(), origin = "manual"))
                 }) { Text(stringResource(R.string.glossary_save)) }
@@ -405,8 +409,8 @@ internal fun GlossaryEntryRow(
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = stringResource(R.string.glossary_delete),
-                        tint = Danger,
-                        modifier = Modifier.size(18.dp)
+                        tint = t.colors.danger,
+                        modifier = Modifier.size(BadgeIconSize)
                     )
                 }
             }
@@ -416,19 +420,36 @@ internal fun GlossaryEntryRow(
 
 @Composable
 private fun OriginBadge(origin: String) {
+    val t = LocalDesignTokens.current
     val label = originLabel(origin)
     val color = when (origin) {
-        "manual" -> Accent
+        "manual" -> t.colors.accent
         // 当文字用（徽章标签 + 半透明底）⇒ 取 on-paper 变体：浅色 gold 只有 2.30:1（审查 5-3）
-        "auto" -> GoldOnPaper
-        else -> InkFaint
+        "auto" -> t.colors.goldOnPaper
+        else -> t.colors.inkFaint
     }
     Surface(color = color.copy(alpha = 0.12f), shape = PillShape) {
         Text(
             label,
-            style = MaterialTheme.typography.labelSmall,
+            style = t.typography.caption,
             color = color,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+            modifier = Modifier.padding(horizontal = t.spacing.s, vertical = PaddingHairline)
         )
     }
 }
+
+// ── 几何常量 ────────────────────────────────────────────────
+//
+// 这几个值在间距梯里没有对应档位，强套会改像素（逐条注明来源）。
+
+/** 紧凑间隙 4dp（间距梯最细档是 6dp，比原文大 2dp）。 */
+private val GapTight = 4.dp
+
+/** 小号加载转圈的直径 28dp。 */
+private val SmallSpinnerSize = 28.dp
+
+/** 细内边距 2dp（徽章上下、行内边距）。 */
+private val PaddingHairline = 2.dp
+
+/** 来源徽标里的图标直径 18dp。 */
+private val BadgeIconSize = 18.dp
