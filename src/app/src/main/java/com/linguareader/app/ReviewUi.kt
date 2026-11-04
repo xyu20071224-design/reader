@@ -6,7 +6,6 @@ import android.os.Build
 import com.linguareader.app.components.LinguaSheet
 import com.linguareader.app.components.PrimaryButton
 import com.linguareader.app.components.LinguaTextButton
-import com.linguareader.app.components.PrimaryButton
 import com.linguareader.app.components.SectionHeader
 import com.linguareader.app.components.SettingRow
 import com.linguareader.app.components.SheetDivider
@@ -15,12 +14,9 @@ import com.linguareader.app.components.StatusChipTone
 import com.linguareader.app.skin.LocalDesignTokens
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -49,26 +45,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -76,22 +65,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.R
 import com.linguareader.app.res.resolve
 import com.linguareader.app.review.PacePreview
+import com.linguareader.app.review.ReviewCurvePicker
 import com.linguareader.app.review.firstDelayOptions
-import com.linguareader.app.review.ReviewPromptBanner
 import com.linguareader.app.data.ReviewMode
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
-import com.linguareader.app.data.ReviewScheduler
 import com.linguareader.app.data.SavedWord
-import kotlinx.coroutines.delay
-import kotlin.math.pow
 
 /** Shared review deck used by the vocabulary screen and reader-side entries. */
 @Composable
@@ -848,83 +833,6 @@ private fun CustomReviewEditor(
 }
 
 
-@Composable
-private fun ReviewCurvePicker(
-    retention: Double,
-    onRetentionChange: (Double) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val currentOnChange by rememberUpdatedState(onRetentionChange)
-    // Canvas 的绘制作用域不是 @Composable，配色要先在这里取出来。
-    val gridColor = Ink.copy(alpha = .10f)
-    val curveColor = Accent
-    val markerColor = Ink.copy(alpha = .45f)
-    val handleFill = Paper
-    val curveDescription = stringResource(R.string.review_curve_desc)
-    Canvas(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(CurveCanvasHeight)
-            .semantics { contentDescription = curveDescription }
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    val x = (offset.x / size.width).coerceIn(0f, 1f)
-                    currentOnChange(ReviewCurve.selectableRetentionForFraction(x.toDouble()))
-                }
-            }
-            .pointerInput(Unit) {
-                detectDragGestures { change, _ ->
-                    val x = (change.position.x / size.width).coerceIn(0f, 1f)
-                    currentOnChange(ReviewCurve.selectableRetentionForFraction(x.toDouble()))
-                }
-            }
-    ) {
-        val left = CurveAxisInsetStart.toPx()
-        val top = CurveAxisInsetTop.toPx()
-        val right = CurveAxisInsetEnd.toPx()
-        val bottom = CurveAxisInsetBottom.toPx()
-        val chartWidth = size.width - left - right
-        val chartHeight = size.height - top - bottom
-
-        fun yFor(r: Double): Float = (top + chartHeight * (1.0 - r)).toFloat()
-        fun xFor(r: Double): Float = (left + chartWidth * ReviewCurve.fractionForRetention(r)).toFloat()
-
-        listOf(1.0, 0.85, 0.60).forEach { r ->
-            drawLine(
-                color = gridColor,
-                start = Offset(left, yFor(r)),
-                end = Offset(size.width - right, yFor(r)),
-                strokeWidth = CurveGridStroke.toPx()
-            )
-        }
-
-        val path = Path()
-        var step = 0
-        while (step <= 100) {
-            val x = step / 100f
-            val r = ReviewCurve.retentionForFraction(x.toDouble())
-            val px = left + chartWidth * x
-            val py = yFor(r)
-            if (step == 0) path.moveTo(px, py) else path.lineTo(px, py)
-            step += 1
-        }
-        drawPath(path, color = curveColor, style = Stroke(width = CurveLineStroke.toPx()))
-
-        ReviewMode.entries.forEach { mode ->
-            val r = ReviewPace.retentionForMultiplier(mode.intervalMultiplier)
-            drawCircle(
-                color = markerColor,
-                radius = CurvePresetDotRadius.toPx(),
-                center = Offset(xFor(r), yFor(r))
-            )
-        }
-
-        val handleRetention = retention.coerceIn(ReviewPace.MIN_RETENTION, ReviewPace.MAX_RETENTION)
-        val handle = Offset(xFor(handleRetention), yFor(handleRetention))
-        drawCircle(color = curveColor, radius = CurveHandleOuterRadius.toPx(), center = handle)
-        drawCircle(color = handleFill, radius = CurveHandleInnerRadius.toPx(), center = handle)
-    }
-}
 
 // ── 组件专有几何常量 ──────────────────────────────────────────────
 //
@@ -941,51 +849,6 @@ private val SpeakIconSize = 18.dp
 
 /** 「知道了」按钮里的对勾图标。 */
 private val ButtonIconSize = 18.dp
-
-// ── 复习曲线（阶梯可视化）的几何 ─────────────────────────────────
-//
-// ⚠️ **这组比例是语义的一部分，不是样式**：横轴是「复习后经过的时间比例」，
-// 纵轴是「记忆留存率」，曲线形状与三档参考点共同解释「为什么这个节奏合理」。
-// 为了套 token 而改动任何一档，都会让这张图说假话 —— 所以宁可保留原值。
-// 下方数值逐字照抄迁移前的实现，迁移只做了「起名」这一件事。
-
-/** 曲线画布高度。 */
-private val CurveCanvasHeight = 180.dp
-
-/** 绘图区左内缩（给纵轴端点留白）。 */
-private val CurveAxisInsetStart = 8.dp
-
-/** 绘图区上内缩。 */
-private val CurveAxisInsetTop = 10.dp
-
-/** 绘图区右内缩。 */
-private val CurveAxisInsetEnd = 8.dp
-
-/** 绘图区下内缩（为底部刻度留白）。 */
-private val CurveAxisInsetBottom = 16.dp
-
-/** 三条参考留存率网格线的粗细。 */
-private val CurveGridStroke = 1.dp
-
-/** 曲线本体笔画宽度。 */
-private val CurveLineStroke = 2.dp
-
-/** 内置三档节奏在曲线上的参考点半径。 */
-private val CurvePresetDotRadius = 3.dp
-
-/** 可拖动圆点外圈半径。 */
-private val CurveHandleOuterRadius = 9.dp
-
-/** 可拖动圆点内圈（纸色填充）半径。 */
-private val CurveHandleInnerRadius = 4.dp
-
-/** 网格线透明度。 */
-private const val CurveGridAlpha = .10f
-
-/** 参考点透明度。 */
-private const val CurveMarkerAlpha = .45f
-
-
 
 //
 // 这些值**不进间距梯**，理由与 `ShelfAppearanceSheet` 同一口径：它们不是「间距」，
@@ -1040,23 +903,6 @@ private fun OptionChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-private object ReviewCurve {
-    const val DECAY_SPAN = 0.55
-    const val CURVE_EXPONENT = 1.02
-
-    fun retentionForFraction(x: Double): Double {
-        val clamped = x.coerceIn(0.0, 1.0)
-        return 1.0 - DECAY_SPAN * clamped.pow(CURVE_EXPONENT)
-    }
-
-    fun selectableRetentionForFraction(x: Double): Double =
-        retentionForFraction(x).coerceIn(ReviewPace.MIN_RETENTION, ReviewPace.MAX_RETENTION)
-
-    fun fractionForRetention(retention: Double): Double {
-        val r = retention.coerceIn(ReviewPace.MIN_RETENTION, ReviewPace.MAX_RETENTION)
-        return (((1.0 - r) / DECAY_SPAN).coerceIn(0.0, 1.0)).pow(1.0 / CURVE_EXPONENT)
-    }
-}
 
 private fun retentionPercentOf(mode: ReviewMode): Int =
     ReviewPace.retentionPercent(ReviewPace.retentionForMultiplier(mode.intervalMultiplier))
