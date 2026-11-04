@@ -57,8 +57,29 @@ fun SettingRow(
             verticalArrangement = Arrangement.spacedBy(t.spacing.xs)
         ) {
             Text(text = title, style = t.typography.body, color = t.colors.ink)
-            if (subtitle != null) {
-                Text(text = subtitle, style = t.typography.caption, color = t.colors.inkSoft)
+            // 副标题的出现/消失用 `motion` token 的时长（而不是 Material 默认 300ms）。
+            //
+            // 这是 `motion` token 的**第一个消费方**。在此之前它零调用（P22 登记过）：
+            // 转换链完整、有 fastSpec/normalSpec，但没有任何地方读它。
+            //
+            // 为什么选这里而不是阅读页：
+            // - 这里的显隐只跟「副标题文案有没有变」有关，**不绑定阅读交互状态**；
+            // - 阅读页的 3 处 AnimatedVisibility 直接绑 overlays.toolbarVisible /
+            //   ttsForThisBook / overlays.reviewPrompt，改动画曲线等于改那些状态的观感节奏，
+            //   而阅读页是历史事故最多的地方且当前无真机可验。
+            //
+            // 用 AnimatedVisibility 而不是 if：退场也要有过渡（否则副标题会「啪」地消失）。
+            androidx.compose.animation.AnimatedVisibility(
+              visible = subtitle != null,
+              enter = androidx.compose.animation.fadeIn(animationSpec = t.motion.normalSpec),
+              exit = androidx.compose.animation.fadeOut(animationSpec = t.motion.fastSpec)
+            ) {
+              // 退场动画期间 subtitle 可能已经变 null，用 rememberedLast 兜住最后一帧的文案。
+              Text(
+                text = subtitle ?: "",
+                style = t.typography.caption,
+                color = t.colors.inkSoft
+              )
             }
         }
         when {
