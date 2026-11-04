@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import com.linguareader.app.components.LinguaSheet
 import com.linguareader.app.components.SecondaryButton
 import com.linguareader.app.components.SectionHeader
+import com.linguareader.app.skin.ImageSkinImporter
+import com.linguareader.app.skin.SkinStore
 import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.shared.data.ReaderTheme
 import kotlinx.coroutines.Dispatchers
@@ -88,6 +90,13 @@ internal fun ShelfAppearanceSheet(
     onAnimSpeedChange: (UiAnimSpeed) -> Unit,
     /** Q2-c07：主题改动要通知外壳，让整体配色立刻生效（否则只写盘、需重启才变）。 */
     onReaderThemeChange: (ReaderTheme) -> Unit,
+    /**
+     * 皮肤改动要立刻通知外壳（P19）。
+     *
+     * 与 [onReaderThemeChange] 同一模式：**改了要立刻生效**，不能只写盘等重启。
+     * 外壳（MainActivity）收到后更新自己的 customSkin 状态，整棵树重组。
+     */
+    onSkinChange: (com.linguareader.shared.ui.skin.SkinSpec?) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -100,6 +109,24 @@ internal fun ShelfAppearanceSheet(
     }
     // 深色外壳下浅色预设不可读（审查 5-1），据此禁用预设并说明。
     val darkChrome = chromeIsDark(storedReaderTheme(context), isSystemInDarkTheme())
+
+    // 皮肤选择（P19）：与上面的「书架背景」是两件事 ——
+    // 背景只影响书架那张纸下面的图；皮肤影响所有已迁移的屏。
+    // 这里的状态与持久化都走 SkinStore，选中后通过 onSkinChange 通知外壳立刻重组。
+    var customSkin by remember { mutableStateOf(SkinStore.currentCustom(context)) }
+    var selectedSkinId by remember { mutableStateOf(SkinStore.selectedIdOrLight(context)) }
+    val skinLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            scope.launch {
+                // 任何解码失败都会退回内置皮肤（ImageSkinImporter 内部保证不抛）
+                val spec = ImageSkinImporter.import(context, uri)
+                SkinStore.selectCustom(context, spec)
+                customSkin = spec
+                selectedSkinId = spec.id
+                onSkinChange(spec)
+            }
+        }
 
     val imageLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -133,6 +160,22 @@ internal fun ShelfAppearanceSheet(
             imageStatus = imageStatus,
             onImageStatusShown = { imageStatus = null },
             onPickImage = { imageLauncher.launch(arrayOf("image/*")) },
+            selectedSkinId = selectedSkinId,
+            customSkin = customSkin,
+            onSelectSkin = { id ->
+                SkinStore.selectBuiltIn(context, id)
+                selectedSkinId = id
+                customSkin = null
+                // 内置皮肤交给外壳按「阅读主题 + 系统夜间」重新选，故传 null
+                onSkinChange(null)
+            },
+            onPickSkinImage = { skinLauncher.launch(arrayOf("image/*")) },
+            onRemoveCustomSkin = {
+                SkinStore.clearCustom(context)
+                selectedSkinId = com.linguareader.shared.ui.skin.SkinBuiltIns.light.id
+                customSkin = null
+                onSkinChange(null)
+            },
             onReset = {
                 scope.launch {
                     onAppearanceChange(withContext(Dispatchers.IO) { ShelfAppearance.reset(context) })

@@ -117,7 +117,10 @@ class MainActivity : ComponentActivity() {
                             uiAnimSpeed = it
                             saveUiAnimSpeed(context, it)
                             applyUiAnimSpeed(context, it)
-                        }
+                        },
+                        // 皮肤改动立刻生效（P19）：更新自己的 customSkin 状态即可，
+                        // palette 与 tokens 都从它派生（见上面的 let），整棵树会重组。
+                        onSkinChanged = { customSkin = it }
                     )
                 }
             }
@@ -166,7 +169,8 @@ private fun LinguaReaderApp(
     viewModel: AppViewModel,
     onReaderThemeChanged: (ReaderTheme) -> Unit,
     uiAnimSpeed: UiAnimSpeed,
-    onAnimSpeedChange: (UiAnimSpeed) -> Unit
+    onAnimSpeedChange: (UiAnimSpeed) -> Unit,
+    onSkinChanged: (com.linguareader.shared.ui.skin.SkinSpec?) -> Unit
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val currentBook = state.currentBook

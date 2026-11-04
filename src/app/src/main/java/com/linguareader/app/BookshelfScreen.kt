@@ -165,7 +165,13 @@ internal fun BookshelfScreen(
     /** 同步明细（F-160 二级界面）：重建本地快照，不发网络。 */
     onRefreshSyncDetail: () -> Unit = {},
     /** Q2-c07：书架内改阅读主题时通知外壳，整体配色即时生效。 */
-    onReaderThemeChanged: (com.linguareader.app.data.ReaderTheme) -> Unit
+    onReaderThemeChanged: (com.linguareader.app.data.ReaderTheme) -> Unit,
+    /**
+     * 皮肤改动通知外壳（P19）。传 null = 回到内置皮肤（按阅读主题 + 系统夜间）。
+     *
+     * 与 [onReaderThemeChanged] 同一模式：**改了要立刻生效**，不能只写盘等重启。
+     */
+    onSkinChanged: (com.linguareader.shared.ui.skin.SkinSpec?) -> Unit = {}
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         if (it != null) onImport(it)
@@ -498,6 +504,7 @@ internal fun BookshelfScreen(
             animSpeed = uiAnimSpeed,
             onAnimSpeedChange = onAnimSpeedChange,
             onReaderThemeChange = onReaderThemeChanged,
+            onSkinChange = onSkinChanged,
             onDismiss = { showAppearanceSheet = false }
         )
     }
