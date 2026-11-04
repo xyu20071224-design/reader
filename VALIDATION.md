@@ -3033,3 +3033,67 @@ KDoc 写明「这张表已经清空，往里加之前先问：这个组件真的
 **共同点**：这些缺陷的单元测试全是绿的 —— 测试直接 new 那些类。
 抓它们需要断言「生产代码里至少有人在调它」，现在由两个守卫承担：
 `NavigationWiringGuardTest`（导航层 + 组件层）、`MigrationCoverageGuardTest`（屏幕迁移覆盖）。
+
+### 2026-11-04 续十六 · 接入状态切片（P15）——「建好但零调用」的第四次实例
+
+#### 发现
+
+P2 建了五个纯 Kotlin 状态切片（`ShellState` / `BookshelfState` / `ReaderState` /
+`VocabState` / `SettingsState`）+ `AppUiState.split()` 投影，约 800 行，
+还有反射对账测试（`AppUiStateSplitTest` 6 例）保证「每个字段至少落进一个切片、不丢失」。
+
+**核查发现：五个切片在生产代码里零引用。**
+
+屏幕仍然各自吃整个 `AppUiState`；`split()` 只有它自己和测试在调。
+
+| 阶段 | 零调用的东西 | 状态 |
+| --- | --- | --- |
+| P9 | 图片换肤管线（`ImageSkinBuilder`） | 已接通 |
+| P13 | 导航层（`AppNavHost`，1000+ 行） | 已接通 |
+| P14 | 8 个组件原语 | 已删除 |
+| **P15** | **5 个状态切片（800 行）** | **本次接通** |
+
+#### 关键认识：单元测试的能力边界
+
+**反射对账测试证明了「投影不丢字段」——但它证明不了「有人在用这个投影」。**
+它能验证内部一致性，不能验证外部接线。这就是四类缺陷的共同成因。
+
+#### 接法：路由由切片提供
+
+```kotlin
+val slices = state.split()
+val desiredRoute: Route = slices.shell.route
+```
+
+接线前是 `if (currentBook == null) Route.Bookshelf else Route.Reader(currentBook.id)`。
+**那条二元判断本来就写在 `AppSlices.kt` 里**（注释还标着「迁移期把 MainActivity:155 的
+`currentBook == null` 二态判断收成一个路由」）—— 只是没人调用它。
+
+现在 `MainActivity` 不再重复写那条判断，改从切片读。**行为完全等价**，
+由 `ShellRouteEquivalenceTest` 钉死（无书 → `Bookshelf`；有书 → `Reader(同 id)`）。
+
+#### 两个新测试
+
+**`StateSliceWiringGuardTest`（2 例）**：
+- `split()` 必须在生产代码里被调用（剥注释后匹配，防被 KDoc 命中造成假绿）；
+- **至少一个切片字段被真的读取** —— 只调 `split()` 然后丢掉结果，和没接一样。
+  **这条防的是「假接线」**：`split()` 的返回值被丢弃也能编译通过。
+
+**`ShellRouteEquivalenceTest`（2 例）** —— 新旧两种写法在关键输入上结果一致。
+
+#### 剩余切片如实记录
+
+本次只接了 `ShellState.route`（最关键的导航路由）。
+`BookshelfState` / `ReaderState` / `VocabState` / `SettingsState` **仍是零引用**——
+把它们接进各屏意味着改屏幕参数签名，那是行为改动，需要真机验证兜底。
+
+**不接不等于不存在**：`split()` 现在真的被调用了，四个切片的字段随时可取，
+下一轮逐屏迁移时不用再新建管线。
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 126 suites / **641 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `state.*` | 3 suites / 10 tests / 0 failures |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
