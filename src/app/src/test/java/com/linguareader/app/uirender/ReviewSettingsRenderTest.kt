@@ -78,5 +78,14 @@ class ReviewSettingsRenderTest {
         assertNotEquals("复习设置必须画出提醒行与节奏卡片", 0, hasContent(bmp))
         val out = File("build/ui-render-probe/review-settings.png")
         assertTrue("出图应当落盘：" + out.absolutePath, out.isFile)
+        assertAgainstBaseline("screen-review-settings", bmp)
+    }
+
+    /** 与视觉基线比对（P8）。基线在 src/app/src/test/resources/visual-baseline/。 */
+    private fun assertAgainstBaseline(name: String, bmp: android.graphics.Bitmap) {
+        val result = VisualBaseline.compare(name, bmp)
+        val summary = VisualBaseline.describe(name, result)
+        println(summary)
+        org.junit.Assert.assertTrue(summary, result.passed)
     }
 }

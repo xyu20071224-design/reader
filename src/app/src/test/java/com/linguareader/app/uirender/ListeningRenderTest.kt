@@ -150,6 +150,7 @@ class ListeningRenderTest {
         )
         assertTrue("听书条必须画出内容", nonBackgroundPixels(bmp, theme) > 200)
         assertTrue("出图应当落盘", File("build/ui-render-probe/listening-bar-green.png").isFile)
+        assertAgainstBaseline("screen-listening-green", bmp)
     }
 
     /** 默认态（纸张主题 + 播放中）：迁移前后逐像素对照的主图。 */
@@ -157,6 +158,7 @@ class ListeningRenderTest {
     fun paperPlayingBarRenders() {
         val bmp = renderBar("listening-bar", ReaderTheme.PAPER)
         assertNotEquals("听书条必须画出内容", 0, nonBackgroundPixels(bmp, ReaderTheme.PAPER))
+        assertAgainstBaseline("screen-listening-paper", bmp)
     }
 
     /** 夜间主题：强调色换成提亮变体，图标与进度条不能糊进背景。 */
@@ -164,6 +166,7 @@ class ListeningRenderTest {
     fun darkThemeBarRenders() {
         val bmp = renderBar("listening-bar-dark", ReaderTheme.DARK)
         assertNotEquals("夜间听书条必须画出内容", 0, nonBackgroundPixels(bmp, ReaderTheme.DARK))
+        assertAgainstBaseline("screen-listening-dark", bmp)
     }
 
     /**
@@ -181,6 +184,7 @@ class ListeningRenderTest {
             speakingOffscreen = true
         )
         assertNotEquals("离屏提示必须画出内容", 0, nonBackgroundPixels(bmp, ReaderTheme.PAPER))
+        assertAgainstBaseline("screen-listening-offscreen", bmp)
     }
 
     /** 降级提示（6-6）：云端失败回退系统语音时必须有可见原因。 */
@@ -192,6 +196,7 @@ class ListeningRenderTest {
             state = playingState.copy(degradedReason = DegradedReason.FALLBACK_TO_SYSTEM)
         )
         assertNotEquals("降级提示必须画出内容", 0, nonBackgroundPixels(bmp, ReaderTheme.PAPER))
+        assertAgainstBaseline("screen-listening-degraded", bmp)
     }
 
     /** 滑动模式的唯一出口（「分页」）：底栏隐藏后它必须还在听书条上。 */
@@ -199,6 +204,7 @@ class ListeningRenderTest {
     fun scrollModeExitRenders() {
         val bmp = renderBar("listening-bar-scroll-mode", ReaderTheme.SEPIA, exitScrollMode = true)
         assertNotEquals("滑动模式出口必须画出内容", 0, nonBackgroundPixels(bmp, ReaderTheme.SEPIA))
+        assertAgainstBaseline("screen-listening-scroll-mode", bmp)
     }
 
     /** 正在选起点：上行文案换成引导语。 */
@@ -206,5 +212,14 @@ class ListeningRenderTest {
     fun choosingStartRenders() {
         val bmp = renderBar("listening-bar-choosing-start", ReaderTheme.PAPER, choosingStart = true)
         assertNotEquals("选起点提示必须画出内容", 0, nonBackgroundPixels(bmp, ReaderTheme.PAPER))
+        assertAgainstBaseline("screen-listening-choosing-start", bmp)
+    }
+
+    /** 与视觉基线比对（P8）。基线在 src/app/src/test/resources/visual-baseline/。 */
+    private fun assertAgainstBaseline(name: String, bmp: android.graphics.Bitmap) {
+        val result = VisualBaseline.compare(name, bmp)
+        val summary = VisualBaseline.describe(name, result)
+        println(summary)
+        org.junit.Assert.assertTrue(summary, result.passed)
     }
 }

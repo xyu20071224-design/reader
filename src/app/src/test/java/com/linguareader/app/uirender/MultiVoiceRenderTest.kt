@@ -146,6 +146,7 @@ class MultiVoiceRenderTest {
             "出图应当落盘",
             File("build/ui-render-probe/multivoice-system-unsupported.png").isFile
         )
+        assertAgainstBaseline("screen-multivoice-system-unsupported", bmp)
     }
 
     /**
@@ -169,6 +170,7 @@ class MultiVoiceRenderTest {
             "云引擎分支必须画出内容",
             countNonPaper(bmp, LightLinguaPalette.paper.toArgb()) > 200
         )
+        assertAgainstBaseline("screen-multivoice-server", bmp)
     }
 
     /**
@@ -194,5 +196,14 @@ class MultiVoiceRenderTest {
             bmp.getPixel(4, bmp.height - 4) == darkPaper
         )
         assertTrue("深色皮肤下必须画出内容", countNonPaper(bmp, darkPaper) > 200)
+        assertAgainstBaseline("screen-multivoice-dark", bmp)
+    }
+
+    /** 与视觉基线比对（P8）。基线在 src/app/src/test/resources/visual-baseline/。 */
+    private fun assertAgainstBaseline(name: String, bmp: android.graphics.Bitmap) {
+        val result = VisualBaseline.compare(name, bmp)
+        val summary = VisualBaseline.describe(name, result)
+        println(summary)
+        org.junit.Assert.assertTrue(summary, result.passed)
     }
 }
