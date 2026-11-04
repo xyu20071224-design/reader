@@ -3266,3 +3266,64 @@ P15 接上了 `ShellState.route`（一行），但其余四个切片仍零引用
 `AppOnlyState` 还剩 `LaunchPromptUi`（`@StringRes Int`）这一个真实障碍。
 它的解法已经存在：`SharedString`（40 个键）—— 但还需要为问候/更新说明文案补约 20 个键。
 那是机械工作，不涉及设计判断。
+
+### 2026-11-04 续二十 · 补齐皮肤运行时生效链路（P19）——P9 只接了一半
+
+#### 发现的缺陷：能选皮肤，界面不变
+
+P9 声称「接通了图片换肤管线」，复核后发现**链路只通了一半**：
+
+| 环节 | 状态 |
+| --- | --- |
+| `SkinStore` 持久化 | ✅ |
+| `ImageSkinImporter` Uri 解码 | ✅ |
+| `SkinPickerSection` 用户入口 | ✅ 能点、能出图 |
+| **选中后通知外壳** | ❌ **回调是默认空实现 `{}`** |
+| **外壳更新 `customSkin` 状态** | ❌ **只在初始化时读一次** |
+
+**后果：用户能选皮肤、能选图、能生成皮肤，界面颜色一点不变。**
+
+**这比「完全没接」更难发现**：入口在、有持久化、有测试、能出图 ——
+只有「立刻生效」这一段断了，而它只有在真机上点一下才会暴露。
+
+#### 补齐的链路
+
+```
+SkinPickerSection 点击
+  → ShelfAppearanceSheet.onSkinChange(spec)   ← 新增
+  → BookshelfScreen.onSkinChanged              ← 新增透传
+  → MainActivity.onSkinChanged = { customSkin = it }  ← 新增赋值
+  → palette/tokens 从 customSkin 派生 → 整棵树重组
+```
+
+三条路径都通知外壳：选图片皮肤（`onSkinChange(spec)`）、
+选内置皮肤与移除自定义（`onSkinChange(null)`，交给外壳按阅读主题重选）。
+
+#### 写守卫时踩了同一个坑三次
+
+`SkinRuntimeEffectGuardTest` 的 `stripComments` 一开始**没处理字符串字面量**，
+于是源码里的 `launch(arrayOf("image/*"))` 中的 `/*` 被当成块注释开头，
+**从那里一直吃到文件末尾**，把中间真实代码全删了 —— `onSkinChange(null)` 明明在源码里却检不到。
+
+**这是本会话第三次**同类缺陷：
+1. `MigrationCoverageGuardTest` 的正则在成段中文 KDoc 上灾难性回溯（StackOverflowError）；
+2. `ComponentCapabilityDocGuardTest` 被注释里提到的符号命中（假绿）；
+3. 本次：注释剥离没处理字符串，把 `/*` 当注释开头。
+
+**共同点：用文本分析去判断「代码做了什么」，而文本里既有注释也有字符串。**
+三次的修法都是「让剥离函数真正按词法走」——这已经成了本项目写守卫测试的必备前置。
+
+另一处错误是「数出现次数」：断言文案自己就含 `onSkinChange(`，数出 3 处假绿。
+已改成检查三种**具体调用形态**，每种对应一条真实路径。
+
+#### 验证
+
+| 项 | 数字 |
+| --- | --- |
+| `:app:testDebugUnitTest` | 129 suites / **648 tests** / 1 failure（既有 CloudTts）/ 2 skipped |
+| `skin.*` | 3 tests / 0 failures |
+| `:app:assembleDebug` + `:desktopApp:compileKotlin` | BUILD SUCCESSFUL |
+
+#### 待真机
+
+**选图后界面是否立刻变色、重启后是否保持** —— 这是本链路唯一无法用单测覆盖的部分。
