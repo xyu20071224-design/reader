@@ -16,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -119,6 +120,9 @@ fun SecondaryButton(
  * @param tone 动作的语义强度。默认 [TextButtonTone.DEFAULT]（accent）。
  *   这是**动作语义**（这个操作是什么性质），不是样式选择，因此不算破坏
  *   「样式只来自 token」的约定。
+ * @param layout 按钮的**布局角色**，默认 [TextButtonLayout.PAGE]。
+ *   与 [tone] 同理：它表达的是「这个按钮处在什么布局位置」，不是自由样式。
+ *   详见 [TextButtonLayout] 的说明与那条实证。
  */
 @Composable
 fun LinguaTextButton(
@@ -127,7 +131,8 @@ fun LinguaTextButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     icon: ImageVector? = null,
-    tone: TextButtonTone = TextButtonTone.DEFAULT
+    tone: TextButtonTone = TextButtonTone.DEFAULT,
+    layout: TextButtonLayout = TextButtonLayout.PAGE
 ) {
     val t = LocalDesignTokens.current
     val contentColor = when {
@@ -138,12 +143,20 @@ fun LinguaTextButton(
             TextButtonTone.SUCCESS -> t.colors.success
         }
     }
+    // 两种布局角色的几何差异是这份组件唯一按调用场景分叉的地方：
+    // PAGE 有 48dp 最小高度与 16dp 横向留白（可点性与视觉呼吸）；
+    // INLINE 两者都收紧，好让多个按钮并排时不吃掉相邻内容的宽度。
+    val minHeight = if (layout == TextButtonLayout.PAGE) t.controlHeight else 0.dp
+    val hPad = if (layout == TextButtonLayout.PAGE) t.spacing.m else t.spacing.s
     androidx.compose.material3.TextButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.defaultMinSize(minHeight = t.controlHeight),
+        modifier = modifier.then(
+            if (layout == TextButtonLayout.PAGE) Modifier.defaultMinSize(minHeight = minHeight)
+            else Modifier
+        ),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            horizontal = t.spacing.m,
+            horizontal = hPad,
             vertical = t.spacing.xs
         )
     ) {
@@ -180,6 +193,37 @@ enum class TextButtonTone {
 }
 
 /**
+ * 文字按钮的**布局角色**。
+ *
+ * ## 为什么需要它（有实证，不是预防性设计）
+ *
+ * 2026-11-04，生词本顶栏三个图标按钮从本地紧凑封装换成本组件的 PAGE 形态，
+ * **视觉基线立刻红了三条**（list 差异 19.2%）：标题「My words」被压成三行竖排。
+ * 原因是 PAGE 形态的 `defaultMinSize(minHeight = 48dp)` 与
+ * `contentPadding(horizontal = spacing.m)` 在**窄横向槽位**里吃掉了
+ * `weight(1f)` 标题列的宽度。
+ *
+ * 当时的处置是撤销改动、保留本地封装。但真正的问题是**组件缺一个布局变体** ——
+ * 于是每个屏遇到同一个槽位都会重新写一遍紧凑封装（生词本、AiProviderSettings 都写过）。
+ *
+ * ## 两个取值的含义
+ *
+ * - [PAGE]：页面上的动作（默认）。48dp 最小高度保证可点性，横向 16dp 留白保证呼吸。
+ * - [INLINE]：挤在**行内/顶栏/表格行**里的动作。去掉最小高度、横向留白减半，
+ *   代价是可点目标变小 —— 只在「多个按钮并排且有相邻内容要争宽度」时用。
+ *
+ * **这不是样式参数**：调用方表达的是「这个按钮处在什么布局位置」，
+ * 具体几何仍由 token 决定。（与 [TextButtonTone] 同一设计原则。）
+ */
+enum class TextButtonLayout {
+    /** 页面级动作：48dp 最小高度 + 横向 spacing.m。默认值。 */
+    PAGE,
+
+    /** 行内/顶栏动作：无最小高度 + 横向 spacing.s。多个并排时用。 */
+    INLINE
+}
+
+/**
  * 图标 + 文字按钮。
  *
  * **存在理由**：图标与文字的间距、图标尺寸、按下态三处，复习屏 / 生词本 / 听书屏
@@ -195,7 +239,8 @@ fun LinguaIconTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    tone: TextButtonTone = TextButtonTone.DEFAULT
+    tone: TextButtonTone = TextButtonTone.DEFAULT,
+    layout: TextButtonLayout = TextButtonLayout.PAGE
 ) {
     LinguaTextButton(
         text = text,
@@ -203,7 +248,8 @@ fun LinguaIconTextButton(
         modifier = modifier,
         enabled = enabled,
         icon = icon,
-        tone = tone
+        tone = tone,
+        layout = layout
     )
 }
 
