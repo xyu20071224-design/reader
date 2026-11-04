@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +47,8 @@ import com.linguareader.app.ai.AiTranslators
 import com.linguareader.app.ai.DiscoveredModel
 import com.linguareader.app.ai.discoverModels
 import com.linguareader.app.ai.probeKeyUsable
+import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.skin.LocalDesignTokens
 import kotlinx.coroutines.launch
 
 /** 协议常量 → 本地化标签。 */
@@ -95,7 +98,17 @@ internal fun ProviderSettingsBody(
     onAdd: () -> Unit,
     onAddPreset: (AiProviderPreset) -> Unit
 ) {
+    val t = LocalDesignTokens.current
     val noneName = stringResource(R.string.aidrawer_provider_none_name)
+    // 单选圈：Material 默认取 colorScheme.primary（本项目映射到 accent，尚可），但
+    // **未选中态的描边取 onSurfaceVariant / 禁用态取 onSurface 的 38%** —— 那两档在
+    // 深色纸底上偏灰、在浅色纸底上偏紫。这里显式给 token，与开关/按钮同一套配色。
+    val radioColors = RadioButtonDefaults.colors(
+        selectedColor = t.colors.accent,
+        unselectedColor = t.colors.inkFaint,
+        disabledSelectedColor = t.colors.inkFaint,
+        disabledUnselectedColor = t.colors.inkFaint
+    )
     Column(Modifier.fillMaxWidth()) {
         providers.forEach { provider ->
             Row(
@@ -107,36 +120,39 @@ internal fun ProviderSettingsBody(
                 RadioButton(
                     selected = provider.id == activeId,
                     onClick = { onSelectActive(provider.id) },
-                    enabled = masterEnabled
+                    enabled = masterEnabled,
+                    colors = radioColors
                 )
                 Column(Modifier.weight(1f)) {
                     Text(
-                        provider.displayLabel.ifBlank { noneName },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Ink,
+                        text = provider.displayLabel.ifBlank { noneName },
+                        style = t.typography.body,
+                        color = t.colors.ink,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        "${stringResource(protocolLabelRes(provider.protocol))} · ${provider.model}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = InkSoft,
+                        text = "${stringResource(protocolLabelRes(provider.protocol))} · ${provider.model}",
+                        style = t.typography.label,
+                        color = t.colors.inkSoft,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                TextButton(onClick = { onEdit(provider) }, enabled = masterEnabled) {
-                    Text(stringResource(R.string.aidrawer_provider_edit_action))
-                }
+                LinguaTextButton(
+                    text = stringResource(R.string.aidrawer_provider_edit_action),
+                    onClick = { onEdit(provider) },
+                    enabled = masterEnabled
+                )
             }
         }
         if (providers.isEmpty()) {
             Text(
-                stringResource(R.string.aidrawer_provider_empty),
-                style = MaterialTheme.typography.labelSmall,
-                color = InkSoft
+                text = stringResource(R.string.aidrawer_provider_empty),
+                style = t.typography.label,
+                color = t.colors.inkSoft
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(ProviderEmptyGap))
         }
         // 官方预设：端点/协议/模型已按官方目录预填，已加过同端点的预设不再重复出现。
         val openPresets = AiProviderPresets.ALL.filter { preset ->
@@ -144,21 +160,25 @@ internal fun ProviderSettingsBody(
         }
         if (openPresets.isNotEmpty()) {
             Text(
-                stringResource(R.string.aidrawer_preset_section),
-                style = MaterialTheme.typography.labelMedium,
-                color = InkSoft
+                text = stringResource(R.string.aidrawer_preset_section),
+                style = t.typography.label,
+                color = t.colors.inkSoft
             )
             Row {
                 openPresets.forEach { preset ->
-                    TextButton(onClick = { onAddPreset(preset) }, enabled = masterEnabled) {
-                        Text(stringResource(preset.nameRes))
-                    }
+                    LinguaTextButton(
+                        text = stringResource(preset.nameRes),
+                        onClick = { onAddPreset(preset) },
+                        enabled = masterEnabled
+                    )
                 }
             }
         }
-        TextButton(onClick = onAdd, enabled = masterEnabled) {
-            Text(stringResource(R.string.aidrawer_provider_add))
-        }
+        LinguaTextButton(
+            text = stringResource(R.string.aidrawer_provider_add),
+            onClick = onAdd,
+            enabled = masterEnabled
+        )
     }
 }
 
@@ -549,3 +569,9 @@ private fun ModelPickerDialog(
         }
     )
 }
+
+// ── 组件专有几何常量 ──────────────────────────────────────────────
+//
+// 间距梯只有 4/8/16/24/32/48；下面这些是这一屏自己的排布常量，梯子里没有对应档位，
+// 硬套会改变像素。集中命名，注释写明每个值从哪里来。
+private val ProviderEmptyGap = 6.dp
