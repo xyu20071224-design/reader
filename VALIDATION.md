@@ -3721,3 +3721,11 @@ composeRule.onNodeWithText("从一本英文书开始").assertIsDisplayed()
 - 下载已发布 v2.1.0 APK 并验签：旧证书 SHA-256 为 ff9db6e100b067e199382025bb9c860cffd8f481aecf992b75cf8421a155836f。本机 ~/.android/debug.keystore 与 Desktop 项目副本证书均为 577177622647772ee40c8c10ba6fa2034c6108d9efed5a54090549f7c0f50297，不能覆盖安装旧正式版。已检查本机项目与备份位置、Git 历史、GitHub Actions Secret 名称，未找到旧发布密钥；待用户选择找回密钥或接受新签名的安装限制。密钥未复制入库。
 - 仅用现有 Mac 密钥生成本地 release 验证产物，apksigner v1/v2/v3 验签通过、zipalign 检查通过。Android 15 / arm64 模拟器 emulator-5554 上安装成功，冷启动 Status: ok，MainActivity 保持前台，设备确认 versionName 2.2.0 / versionCode 23 且无 DEBUGGABLE 标志。该结果不证明与旧正式版签名兼容，未操作实体手机。
 - 构建、完整测试失败及线程证据、定向测试 XML、发布说明草稿和候选 APK 均位于 gitignored 的 artifacts/release-v2.2.0/。本条记录时尚未创建公开 Release；尚未完成物理真机、完整听书与联网 AI 回归，既有 Activity 重建后移除生词超时问题继续如实记录。
+
+### 找回旧密钥并完成正式签名与覆盖升级验证
+
+- 用户随后提供旧 debug.keystore；keytool 确认证书 SHA-256 与已发布 v2.1.0 完全一致（ff9db6e100b067e199382025bb9c860cffd8f481aecf992b75cf8421a155836f）。直接读取用户提供的文件签名，密钥未复制入仓库或提交。
+- 同一份已验证的 R8 release APK 重新使用旧证书签名，apksigner v1/v2/v3 验签通过，zipalign 检查通过。最终 LinguaReader-v2.2.0.apk 的 SHA-256 为 38542d6b7aa5a66c59b33ab6cf9ddc84886c980398784af4433108fcf323aed6；草稿中的 Mac 签名候选与校验文件已替换，撤回此前签名变更与卸载重装说明。
+- 使用单独临时数据目录启动 Android 15 / arm64 模拟器 emulator-5556，不修改既有 emulator-5554 的应用数据。先安装 GitHub 下载的 v2.1.0（22）并正常冷启动，在其私有 files 目录写入测试标记；标准 adb install -r 覆盖到最终 v2.2.0（23）成功，无卸载步骤。升级前后 UID 均为 10207，私有数据标记逐字一致；新版冷启动 Status: ok、进程 PID 4435，崩溃缓冲区为空。
+- 覆盖验证只证明正式包签名兼容、安装器保留数据目录及应用可启动，不等同于完整书库迁移或物理真机交互回归。原完整单测限制与既有生词移除问题继续保留在发布说明中。
+- 证据：artifacts/release-v2.2.0/final-signature-verification.txt、final-zipalign.txt、upgrade-verification.log、upgrade-summary.txt、SHA256SUMS。发布标题为“LinguaReader v2.2.0 — 验证版”，按非 Pre-release 正式发布。
