@@ -11,7 +11,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Surface
@@ -41,13 +40,10 @@ import com.linguareader.app.nav.overlayRegistry
 import com.linguareader.app.nav.rememberAppNavState
 import com.linguareader.app.nav.screenRegistry
 import com.linguareader.shared.ui.nav.Route
-import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.state.split
-import com.linguareader.app.skin.SkinRegistry
+import com.linguareader.app.skin.AppSkinTheme
 import com.linguareader.app.skin.SkinStore
-import com.linguareader.app.skin.paletteForSkin
 import com.linguareader.app.tts.SpeechReadiness
-import com.linguareader.shared.ui.skin.SkinBuiltIns
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -55,9 +51,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 系统开屏（Android 12+ 默认 splash）永远纸色，见 values/themes.xml；
-        // 开屏结束后的窗口底色在这里按已存阅读主题二选一，让深色阅读主题用户
+        // 开屏结束后优先按已选皮肤确定窗口明暗，未选时跟随阅读主题，让深色主题用户
         // 不闪白、浅色阅读主题用户在系统深色下不再黑屏。
-        if (chromeIsDark(storedReaderTheme(this), isSystemNightMode())) {
+        if (SkinStore.selected(this)?.isDark ?: chromeIsDark(storedReaderTheme(this), isSystemNightMode())) {
             setTheme(R.style.Theme_LinguaReader_Dark)
         }
         super.onCreate(savedInstanceState)
@@ -79,36 +75,12 @@ class MainActivity : ComponentActivity() {
             var readerTheme by remember { mutableStateOf(storedReaderTheme(context)) }
             // 交互动画速度：进 App 时读缓存，书架外观弹层里可改，改完立刻作用于全局动画。
             var uiAnimSpeed by remember { mutableStateOf(storedUiAnimSpeed(context)) }
-            // 自定义皮肤（P9）：用户从相册选图生成的皮肤。
-            // 为 null 时走原来的「阅读主题 + 系统夜间」逻辑，**默认行为一个字没变**。
-            var customSkin by remember { mutableStateOf(SkinStore.currentCustom(context)) }
-            val palette = customSkin?.let { paletteForSkin(it) }
-                ?: paletteFor(readerTheme, isSystemInDarkTheme())
-            ApplySystemBars(palette)
+            // 显式选择的内置/图片皮肤优先；未选择时继续跟随阅读主题与系统。
+            var selectedSkin by remember { mutableStateOf(SkinStore.selected(context)) }
             val snackbar = rememberAppSnackbar()
-            // 设计 token 必须与调色板**同源同明暗**。
-            //
-            // 这里曾经只下发 LocalLinguaPalette，于是 LocalDesignTokens 一路走默认值
-            // （SkinRegistry.default = 日间），已迁移的屏（6 个弹层 + 生词本 + 复习屏）
-            // 在深色外壳下拿到的是日间色：近黑字落在近黑底上、弹层纸白刺眼。
-            // 之所以长期没被发现：所有渲染台测试都是**显式** provide token 的，
-            // 测不到生产接线；渲染台默认也只跑日间。
-            // 明暗判定复用 chromeIsDark 的那条规则（经 paletteFor），不另起一套，
-            // 否则会出现「外壳夜里、组件日间」的第二类错配。
-            // 自定义皮肤生效时，token 直接从它翻译（palette 也来自它，见上），
-            // 两者仍然同源同明暗 —— 那条纪律不因为新增换肤能力而放松。
-            val tokens = SkinRegistry.toDesignTokens(
-                customSkin ?: if (palette.isDark) SkinBuiltIns.dark else SkinBuiltIns.light
-            )
-            CompositionLocalProvider(
-                LocalDesignTokens provides tokens,
-                LocalLinguaPalette provides palette,
-                LocalAppSnackbar provides snackbar
-            ) {
-                MaterialTheme(
-                    colorScheme = colorSchemeFor(palette),
-                    shapes = AppShapes
-                ) {
+            AppSkinTheme(selectedSkin, readerTheme, isSystemInDarkTheme()) { palette ->
+                ApplySystemBars(palette)
+                CompositionLocalProvider(LocalAppSnackbar provides snackbar) {
                     LinguaReaderApp(
                         viewModel = viewModel,
                         onReaderThemeChanged = { readerTheme = it },
@@ -118,9 +90,8 @@ class MainActivity : ComponentActivity() {
                             saveUiAnimSpeed(context, it)
                             applyUiAnimSpeed(context, it)
                         },
-                        // 皮肤改动立刻生效（P19）：更新自己的 customSkin 状态即可，
-                        // palette 与 tokens 都从它派生（见上面的 let），整棵树会重组。
-                        onSkinChanged = { customSkin = it }
+                        // 同时驱动设计 token、兼容调色板和 Material 配色。
+                        onSkinChanged = { selectedSkin = it }
                     )
                 }
             }
@@ -295,8 +266,9 @@ private fun LinguaReaderApp(
                 )
                 }
                 screen(RouteKey.READER) {
+                val book = currentBook ?: return@screen
                 ReaderScreen(
-                    book = currentBook!!,
+                    book = book,
                     viewModel = viewModel,
                     aiSettings = state.aiSettings,
                     savedWords = state.savedWords,
@@ -317,7 +289,10 @@ private fun LinguaReaderApp(
         AppNavHost(
             screens = screens,
             overlays = remember { overlayRegistry { } },
-            nav = nav
+            nav = nav,
+            // closeBook 会先清空 currentBook；LaunchedEffect 尚未同步导航栈时，
+            // 也必须立即显示书架，不能拿上一帧的 Reader 路由渲染本帧的空书籍。
+            route = desiredRoute
         )
     }
 

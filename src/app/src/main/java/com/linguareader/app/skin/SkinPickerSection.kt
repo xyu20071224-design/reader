@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,7 +20,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import com.linguareader.app.R
+import com.linguareader.app.components.ExpandableSettingsSection
 import com.linguareader.app.components.SectionHeader
 import com.linguareader.app.components.SecondaryButton
 import com.linguareader.shared.ui.skin.SkinBuiltIns
@@ -75,17 +79,17 @@ internal fun SkinPickerSection(
             )
         }
 
-        Text(
-            text = if (customSkin != null) {
-                stringResource(R.string.skin_custom_active, customSkin.name)
-            } else {
-                stringResource(R.string.skin_custom_hint)
-            },
-            style = t.typography.caption,
-            color = t.colors.inkSoft
-        )
+        if (customSkin != null) {
+            Text(stringResource(R.string.skin_custom_active, customSkin.name),
+                style = t.typography.caption, color = t.colors.inkSoft)
+        }
+        ExpandableSettingsSection(title = stringResource(R.string.settings_image_tips)) {
+            Text(stringResource(R.string.skin_custom_hint),
+                style = t.typography.caption, color = t.colors.inkSoft)
+        }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.m)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(t.spacing.s),
+            verticalArrangement = Arrangement.spacedBy(t.spacing.s)) {
             SecondaryButton(text = stringResource(R.string.skin_pick_image), onClick = onPickImage)
             if (customSkin != null) {
                 SecondaryButton(
@@ -120,7 +124,8 @@ private fun SkinSwatch(
             .clip(CircleShape)
             .background(paper)
             .border(width = if (selected) t.hairline * 2 else t.hairline, color = ring, shape = CircleShape)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .semantics { if (skin != null) contentDescription = skin.name },
         contentAlignment = Alignment.Center
     ) {
         Box(

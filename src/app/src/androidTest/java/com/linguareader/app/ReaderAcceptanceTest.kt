@@ -4,9 +4,12 @@ import android.os.SystemClock
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -17,8 +20,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.Chapter
+import com.linguareader.app.data.DictionaryRepository
+import com.linguareader.app.data.VocabularyRepository
+import com.linguareader.app.data.WordLookup
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,10 +39,64 @@ class ReaderAcceptanceTest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val bookRoot = File(context.filesDir, "books/acceptance")
+    private val unlistedWord = "qzxvocabfixture"
 
     @After
     fun tearDown() {
         bookRoot.deleteRecursively()
+        runBlocking { VocabularyRepository(context).remove(unlistedWord) }
+    }
+
+    @Test
+    fun controlsHideTogetherWithoutChangingTextViewport() {
+        seedBook()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            openBook()
+            waitForPageIndicator()
+            fun findWebView(view: android.view.View): android.webkit.WebView? {
+                if (view is android.webkit.WebView) return view
+                if (view is android.view.ViewGroup) for (i in 0 until view.childCount) {
+                    findWebView(view.getChildAt(i))?.let { return it }
+                }
+                return null
+            }
+            fun js(script: String): String {
+                val ready = java.util.concurrent.CountDownLatch(1)
+                var result = ""
+                scenario.onActivity { activity ->
+                    val web = requireNotNull(findWebView(activity.window.decorView))
+                    web.evaluateJavascript(script) { result = it; ready.countDown() }
+                }
+                assertTrue("WebView callback timed out", ready.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                return result
+            }
+            val metricsScript = "JSON.stringify([getComputedStyle(document.documentElement).getPropertyValue('--lr-chrome-top'), getComputedStyle(document.documentElement).getPropertyValue('--lr-chrome-bottom'), document.getElementById('lr-scroller').clientHeight])"
+            val initialViewport = js(metricsScript)
+            val initialPage = pageNumber()
+            composeRule.mainClock.advanceTimeBy(4_500)
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithContentDescription(context.getString(R.string.reader_page_indicator))
+                    .fetchSemanticsNodes().isEmpty()
+            }
+            assertTrue(composeRule.onAllNodesWithContentDescription(context.getString(R.string.reader_back))
+                .fetchSemanticsNodes().isEmpty())
+            assertEquals(initialViewport, js(metricsScript))
+            // Send a blank-area tap through the real document pointer handlers and ReaderBridge.
+            assertEquals("true", js("window.lrLookupAt(innerWidth / 2, 4, false) === null"))
+            js("['pointerdown','pointerup'].forEach(function(type) { document.dispatchEvent(new PointerEvent(type, {clientX: innerWidth / 2, clientY: 4, bubbles: true})); })")
+            waitForPageIndicator()
+            assertEquals(initialPage, pageNumber())
+            assertEquals(initialViewport, js(metricsScript))
+            composeRule.onNodeWithContentDescription(context.getString(R.string.reader_next_page)).performClick()
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithContentDescription(context.getString(R.string.reader_page_indicator))
+                    .fetchSemanticsNodes().isEmpty()
+            }
+            js("['pointerdown','pointerup'].forEach(function(type) { document.dispatchEvent(new PointerEvent(type, {clientX: innerWidth / 2, clientY: 4, bubbles: true})); })")
+            waitForPageIndicator()
+            assertTrue("page turn must advance text", pageNumber() > initialPage)
+            assertEquals(initialViewport, js(metricsScript))
+        }
     }
 
     @Test
@@ -104,6 +166,79 @@ class ReaderAcceptanceTest {
         }
     }
 
+    @Test
+    fun dictionaryHitShowsChineseMeaningAfterWordTap() {
+        val word = "lantern"
+        val result = runBlocking {
+            DictionaryRepository(context).lookup(WordLookup(word, "$word.", "", 0, 0f, 0f))
+        }
+        val meaning = requireNotNull(result.entry).senses.first().text
+        assertTrue("Bundled dictionary must contain Chinese meaning", meaning.contains("灯笼"))
+        seedBook(word)
+        ActivityScenario.launch(MainActivity::class.java).use {
+            openBook()
+            waitForPageIndicator()
+            val metrics = context.resources.displayMetrics
+            val ui = InstrumentationRegistry.getInstrumentation().uiAutomation
+            var y = (metrics.heightPixels * 0.25).toInt()
+            while (y < metrics.heightPixels * 0.55 &&
+                composeRule.onAllNodesWithTag(UiTags.READER_LOOKUP_SHEET).fetchSemanticsNodes().isEmpty()) {
+                ui.executeShellCommand("input tap ${metrics.widthPixels / 2} $y").close()
+                SystemClock.sleep(700)
+                y += 60
+            }
+            composeRule.waitUntil(10_000) {
+                composeRule.onAllNodesWithText(meaning).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(meaning).assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun dictionaryMissCanBeSavedReopenedAndRemoved() {
+        val repository = VocabularyRepository(context)
+        val request = WordLookup(unlistedWord, "$unlistedWord.", "", 0, 0f, 0f)
+        assertTrue("测试词必须未被本地词典收录", runBlocking {
+            DictionaryRepository(context).lookup(request).entry == null
+        })
+        runBlocking { repository.remove(unlistedWord) }
+        seedBook(unlistedWord)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            openBook()
+            waitForPageIndicator()
+            val metrics = context.resources.displayMetrics
+            val ui = InstrumentationRegistry.getInstrumentation().uiAutomation
+            var y = (metrics.heightPixels * 0.25).toInt()
+            while (y < metrics.heightPixels * 0.55 &&
+                composeRule.onAllNodesWithTag(UiTags.READER_LOOKUP_SHEET).fetchSemanticsNodes().isEmpty()) {
+                ui.executeShellCommand("input tap ${metrics.widthPixels / 2} $y").close()
+                SystemClock.sleep(700)
+                y += 60
+            }
+            val add = context.getString(R.string.reader_add_to_vocab)
+            val remove = context.getString(R.string.reader_remove_from_vocab)
+            composeRule.waitUntil(10_000) {
+                composeRule.onAllNodes(hasText(add) and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(add).assertIsDisplayed().performClick()
+            composeRule.waitUntil(5_000) {
+                runBlocking { repository.load().any { it.id == unlistedWord } }
+            }
+            val saved = runBlocking { repository.load().first { it.id == unlistedWord } }
+            assertTrue(saved.headword == unlistedWord && saved.sentence.contains(unlistedWord))
+
+            scenario.recreate()
+            composeRule.waitUntil(15_000) {
+                composeRule.onAllNodes(hasText(remove) and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText(remove).assertIsDisplayed().performClick()
+            composeRule.waitUntil(5_000) {
+                runBlocking { repository.load().none { it.id == unlistedWord } }
+            }
+            composeRule.onNodeWithText(add).assertIsDisplayed()
+        }
+    }
+
     private fun openBook() {
         dismissLaunchPromptIfShown()
         composeRule.waitUntil(10_000) {
@@ -114,7 +249,7 @@ class ReaderAcceptanceTest {
 
     private fun dismissLaunchPromptIfShown() {
         composeRule.waitForIdle()
-        listOf("开始阅读", "知道了").forEach { label ->
+        listOf(R.string.launch_greeting_start, R.string.common_got_it).map(context::getString).forEach { label ->
             if (composeRule.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()) {
                 composeRule.onNodeWithText(label).performClick()
                 composeRule.waitForIdle()
@@ -124,7 +259,8 @@ class ReaderAcceptanceTest {
 
     private fun waitForPageIndicator() {
         composeRule.waitUntil(15_000) {
-            composeRule.onAllNodesWithContentDescription("页码指示").fetchSemanticsNodes().isNotEmpty()
+            composeRule.onAllNodesWithContentDescription(context.getString(R.string.reader_page_indicator))
+                .fetchSemanticsNodes().isNotEmpty()
         }
         // The indicator appears as soon as the toolbar renders, before the
         // chapter has finished paginating (pageCount starts at 1). A page turn
@@ -137,7 +273,7 @@ class ReaderAcceptanceTest {
     }
 
     private fun pageIndicatorText(): String =
-        composeRule.onNodeWithContentDescription("页码指示")
+        composeRule.onNodeWithContentDescription(context.getString(R.string.reader_page_indicator))
             .fetchSemanticsNode()
             .config[SemanticsProperties.Text]
             .joinToString("") { it.text }
@@ -148,9 +284,12 @@ class ReaderAcceptanceTest {
     private fun pageCount(): Int =
         pageIndicatorText().substringAfter("·").trim().substringAfter("/").trim().toInt()
 
-    private fun seedBook() {
+    private fun seedBook(repeatedWord: String? = null) {
         bookRoot.mkdirs()
-        File(bookRoot, "chapter_001.xhtml").writeText(chapterXhtml("Chapter One", longBody(1)))
+        val firstBody = repeatedWord?.let { word ->
+            (1..40).joinToString("\n") { "<p>${List(50) { word }.joinToString(" ") }.</p>" }
+        } ?: longBody(1)
+        File(bookRoot, "chapter_001.xhtml").writeText(chapterXhtml("Chapter One", firstBody))
         File(bookRoot, "chapter_002.xhtml").writeText(chapterXhtml("Chapter Two", longBody(2)))
         val book = Book(
             id = "acceptance",

@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.defaultMinSize
@@ -25,6 +26,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -55,6 +58,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +77,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -199,11 +208,8 @@ private fun highlightCurrentTts(controller: ReaderController, ttsState: TtsPlayb
  *
  * 三条理由，第一条是硬伤（套上去会引入真机事故，不是观感问题）：
  *
- * 1. **顶栏高度是 WebView 正文预留量的输入**。全屏工具栏的 `onSizeChanged` 把实测
- *    高度写进 `chromeTopPx` → `EpubPage` → `ReaderController.applyChromeInsets` →
- *    `window.lrSetChromeInsets` → CSS 变量 `--lr-chrome-top`，直接决定正文从哪里开始。
- *    `LinguaScaffold` 把顶栏封在内部、不暴露测量点，套进去就拿不到这个值 ——
- *    等于改正文布局，而正文布局正是 `known-pitfalls` 里反复出事的地方。
+ * 1. **正文使用稳定安全边距**。上下栏作为临时浮层，不把实测高度注入正文，
+ *    避免显隐工具栏反复改变分页；WebView 仍通过 applyChromeInsets 接收安全边距。
  * 2. **主体是 Box 叠层，不是 Column 流式内容**：`EpubPage` 打底，顶栏 / 底栏 /
  *    听书条 / 复习横幅各自 `align` 到同一个 Box 的 TopCenter / BottomCenter，
  *    并且顶栏显隐用 `AnimatedVisibility` 包着。`LinguaScaffold` 的 content 槽是
@@ -225,6 +231,7 @@ private fun highlightCurrentTts(controller: ReaderController, ttsState: TtsPlayb
  * - TTS 高亮定位（`showTtsHighlight` / `scrollToLocus` / `backToSpeaking` 的调用点）；
  * - `EpubPage` / `ReaderController` / `ReaderScreenState` 的任何一行（引擎侧，不是 UI）。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderScreen(
     book: Book,
@@ -251,28 +258,18 @@ internal fun ReaderScreen(
     // **配色不在这里取**——顶栏 Paper 来自外壳调色板，底栏/听书条来自 ReaderTheme，
     // 两者都是「贴正文」的语义，换成皮肤 token 会与正文不同源（ListeningBar 同款理由）。
     val t = LocalDesignTokens.current
-    // 实测顶栏/底栏高度（px → dp，1dp = 1 CSS px），注入 WebView 作为正文
-    // 预留量。targetSdk 35 强制 edge-to-edge 后底栏含导航栏 inset，写死的
-    // 70px 预留不够，会遮住正文最后一行；改为动态注入后永远精确。
-    var chromeTopPx by remember {
-        mutableFloatStateOf(ReaderScripts.DEFAULT_CHROME_TOP_PX.toFloat())
-    }
+    // 实测栏高只用于复习提示等浮层避让，不参与正文分页。
     var chromeBottomPx by remember {
         mutableFloatStateOf(ReaderScripts.DEFAULT_CHROME_BOTTOM_PX.toFloat())
     }
-    // 听书条实测高度（px）。它与底部翻页栏**重叠**而非堆叠（听书时底栏隐藏），
-    // 所以预留量取两者较大值而非相加。此前听书条从未参与测量，正文末行被它盖住
-    // （BUG-033）。
+    // 听书条实测高度用于提示浮层避让；听书控件也随阅读工具栏一起显隐。
     var listeningBarPx by remember { mutableFloatStateOf(0f) }
     val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
     val ttsForThisBook = ttsState.bookId == book.id
-    // 交给 WebView 的底部预留量：听书时以听书条为准，但听书条首帧还没测到时
-    // （listeningBarPx 仍为 0）先沿用底栏高度，避免正文先跳一下再回落。
-    val reservedBottomPx = if (ttsForThisBook) {
-        maxOf(chromeBottomPx, listeningBarPx)
-    } else {
-        chromeBottomPx
-    }
+    // 工具栏是临时浮层；正文只保留稳定的系统安全边距。
+    // 显隐不改变分页高度，从而避免当前句跳页和正文闪动。
+    val textTopPx = WindowInsets.statusBarsIgnoringVisibility.getTop(LocalDensity.current) / density
+    val textBottomPx = WindowInsets.navigationBarsIgnoringVisibility.getBottom(LocalDensity.current) / density
     // 朗读句已跑出视口（用户接管期间不硬翻页，改在听书条上点亮「回到朗读处」）。
     var speakingOffscreen by remember { mutableStateOf(false) }
 
@@ -518,6 +515,7 @@ internal fun ReaderScreen(
 
     LaunchedEffect(lookup) {
         val request = lookup ?: return@LaunchedEffect
+        lookupSession = lookupSession.markDictionaryLoading()
         val dictionary = viewModel.lookup(request)
         // begin() 一次性归零上一次的 AI/译文/错误/行内反馈；归零矩阵在状态类里单测。
         lookupSession = lookupSession.begin(
@@ -544,6 +542,35 @@ internal fun ReaderScreen(
         }
     }
 
+    // 首次进入或唤出工具后短暂展示；操作弹层和无障碍读屏期间不计时。
+    val accessibility = androidx.compose.ui.platform.LocalAccessibilityManager.current
+    val controlsTimeout = accessibility?.calculateRecommendedTimeoutMillis(
+        originalTimeoutMillis = 4_000, containsIcons = true, containsText = true, containsControls = true
+    ) ?: 4_000L
+    LaunchedEffect(overlays.toolbarVisible, overlays.hasOpenControls, lookup, controlsTimeout) {
+        if (overlays.toolbarVisible && !overlays.hasOpenControls && lookup == null &&
+            controlsTimeout != Long.MAX_VALUE) {
+            delay(controlsTimeout)
+            val manager = context.getSystemService(android.content.Context.ACCESSIBILITY_SERVICE)
+                as android.view.accessibility.AccessibilityManager
+            if (!manager.isTouchExplorationEnabled) overlays = overlays.onReadingInteraction()
+        }
+    }
+    val window = (context as? android.app.Activity)?.window
+    val view = LocalView.current
+    val systemBars = remember(window, view) { window?.let { WindowCompat.getInsetsController(it, view) } }
+    DisposableEffect(systemBars) {
+        onDispose { systemBars?.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+    SideEffect {
+        systemBars?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (overlays.toolbarVisible || overlays.hasOpenControls || lookup != null) {
+            systemBars?.show(WindowInsetsCompat.Type.systemBars())
+        } else {
+            systemBars?.hide(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
     Box(
         Modifier.fillMaxSize().background(Color(android.graphics.Color.parseColor(preferences.theme.background)))
     ) {
@@ -560,8 +587,8 @@ internal fun ReaderScreen(
                 preferences = preferences,
                 savedWords = if (reminders.contextHighlight) wordMarks.forms else emptyList(),
                 dueWords = if (reminders.contextHighlight) wordMarks.dueForms else emptyList(),
-                chromeTopPx = chromeTopPx.roundToInt(),
-                chromeBottomPx = reservedBottomPx.roundToInt(),
+                chromeTopPx = textTopPx.roundToInt(),
+                chromeBottomPx = textBottomPx.roundToInt(),
                 controller = controller,
                 modifier = Modifier
                     .fillMaxSize()
@@ -579,6 +606,7 @@ internal fun ReaderScreen(
                 },
                 onPageChanged = { page, count, origin ->
                     position = position.onPageChanged(page, count)
+                    if (origin == LocusOrigin.User) overlays = overlays.onReadingInteraction()
                     refreshLocusDelayed()
                     // 只有**用户自己**翻页才清高亮：那一下确实把高亮的文字翻走了。
                     // 听书跟随（Tts）与「回到朗读处」（Jump）恰恰是奔着高亮去的，
@@ -589,6 +617,7 @@ internal fun ReaderScreen(
                 },
                 onSpeakingOffscreen = { offscreen -> speakingOffscreen = offscreen },
                 onChapterRequested = { direction ->
+                    overlays = overlays.onReadingInteraction()
                     if (reminders.pausePrompt && dueWords.isNotEmpty() && !overlays.reviewPrompt) {
                         overlays = overlays.copy(reviewPrompt = true)
                     }
@@ -617,6 +646,7 @@ internal fun ReaderScreen(
                 },
                 onScrollModeChanged = { active -> position = position.onScrollModeChanged(active) },
                 onScrollProgress = { ratio, page, count ->
+                    if (ratio != position.scrollRatio) overlays = overlays.onReadingInteraction()
                     position = position.onScrollProgress(ratio, page, count)
                 },
                 onToolbarRequested = { overlays = overlays.toggleToolbar() }
@@ -629,13 +659,6 @@ internal fun ReaderScreen(
         ) {
             Column(
                 Modifier.fillMaxWidth()
-                    .onSizeChanged { size ->
-                        // 工具栏隐藏时高度归零，保留最后一次实测值，
-                        // 避免每次开关工具栏都触发整章重排。
-                        // ⚠️ 这行把实测高度喂给 WebView 的 --lr-chrome-top，
-                        // 是正文预留量的唯一来源，**不能删也不能换成固定值**。
-                        if (size.height > 0) chromeTopPx = size.height / density
-                    }
                     // 顶栏底色刻意仍取外壳调色板的 Paper（不换成 token）：
                     // 迁移范围只到「布局/间距/图标尺寸」，换色源属于行为改动。
                     // 底栏相反，本来就取 preferences.theme.background —— 两者
@@ -729,7 +752,7 @@ internal fun ReaderScreen(
         val prevPageLabel = stringResource(R.string.reader_prev_page)
         val nextPageLabel = stringResource(R.string.reader_next_page)
         val pageIndicatorLabel = stringResource(R.string.reader_page_indicator)
-        if (!ttsForThisBook) {
+        if (!ttsForThisBook && overlays.toolbarVisible) {
             Row(
                 Modifier.align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -815,7 +838,7 @@ internal fun ReaderScreen(
         }
 
         AnimatedVisibility(
-            visible = ttsForThisBook,
+            visible = ttsForThisBook && (overlays.toolbarVisible || overlays.choosingStart),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             ListeningBar(
@@ -945,10 +968,10 @@ internal fun ReaderScreen(
     }
 
     lookup?.let { currentLookup ->
-        val displayedEntry = if (lookupSession.showingRelatedPhrase) lookupSession.dictionaryResult?.relatedPhrase
-        else lookupSession.dictionaryResult?.entry
-        val savedId = (displayedEntry?.matchedPhrase ?: displayedEntry?.headword)
-            ?.lowercase(Locale.ROOT)
+        val displayedEntry = lookupSession.displayedEntry
+        val vocabularyEntry = lookupSession.vocabularyEntry(currentLookup)
+        val savedId = (vocabularyEntry.matchedPhrase ?: vocabularyEntry.headword)
+            .lowercase(Locale.ROOT)
         ReaderLookupSheet(
             lookup = currentLookup,
             entry = displayedEntry,
@@ -966,7 +989,7 @@ internal fun ReaderScreen(
             sentenceTranslation = lookupSession.sentenceTranslation,
             sentenceTranslationError = lookupSession.sentenceTranslationError,
             sentenceTranslationLoading = lookupSession.sentenceTranslationLoading,
-            isSaved = savedId != null && savedWords.any { word -> word.id == savedId },
+            isSaved = savedWords.any { word -> word.id == savedId },
             isPhraseView = lookupSession.showingRelatedPhrase,
             showReviewEntry = reminders.contextHighlight,
             retranslateAvailable = aiSettings.powerEnabled && aiSettings.remoteReady && book.isAiTranslation,
@@ -1001,7 +1024,7 @@ internal fun ReaderScreen(
                 }
             },
             onReviewSaved = {
-                val word = savedId?.let { id -> savedWords.firstOrNull { w -> w.id == id } }
+                val word = savedWords.firstOrNull { it.id == savedId }
                 if (word != null) {
                     lookup = null
                     reviewDeckIds = listOf(word.id)
@@ -1013,8 +1036,8 @@ internal fun ReaderScreen(
                 onSpeak(displayedEntry?.matchedPhrase ?: displayedEntry?.headword ?: currentLookup.word)
             },
             onToggleSave = {
-                val entry = displayedEntry ?: return@ReaderLookupSheet
-                if (savedId != null && savedWords.any { word -> word.id == savedId }) {
+                val entry = vocabularyEntry
+                if (savedWords.any { word -> word.id == savedId }) {
                     val removedHeadword = savedWords
                         .firstOrNull { word -> word.id == savedId }?.headword
                     viewModel.removeSavedWord(savedId)
@@ -1034,15 +1057,20 @@ internal fun ReaderScreen(
                         currentLookup,
                         entry,
                         lookupSession.aiResult
-                    )
-                    lookupSession = lookupSession.setStatus(
-                        SettingsStatus.success(
-                            context.getString(
-                                R.string.notice_word_saved,
-                                entry.matchedPhrase ?: entry.headword
+                    ) { saved ->
+                        if (lookup == currentLookup) {
+                            lookupSession = lookupSession.setStatus(
+                                if (saved) SettingsStatus.success(
+                                    context.getString(
+                                        R.string.notice_word_saved,
+                                        entry.matchedPhrase ?: entry.headword
+                                    )
+                                ) else SettingsStatus.danger(
+                                    context.getString(R.string.notice_word_save_failed)
+                                )
                             )
-                        )
-                    )
+                        }
+                    }
                 }
             },
             onTranslateSentence = {

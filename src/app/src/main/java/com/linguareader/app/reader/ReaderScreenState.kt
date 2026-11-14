@@ -337,6 +337,12 @@ internal data class ReaderOverlays(
 
     fun toggleToolbar(): ReaderOverlays = copy(toolbarVisible = !toolbarVisible)
 
+    /** 用户继续阅读时同时收起上下栏；自动听书翻页不打断工具操作。 */
+    fun onReadingInteraction(): ReaderOverlays = copy(toolbarVisible = false)
+
+    val hasOpenControls: Boolean
+        get() = contents || settings || listeningSettings || pageJump || reviewSettings || reviewPrompt || choosingStart
+
     /**
      * 返回键优先级：查词弹层 > 设置 > 目录 > 跳页 > 退出阅读器。
      * 顺序与旧的 BackHandler when 分支一致，改这里等于改全局返回行为。
@@ -416,6 +422,21 @@ internal data class ReaderLookupSession(
     val status: com.linguareader.app.SettingsStatus? = null,
     private val sentenceCache: SentenceTranslationCache = SentenceTranslationCache()
 ) {
+
+    val displayedEntry: com.linguareader.app.data.ContextualDictionaryEntry?
+        get() = if (showingRelatedPhrase) dictionaryResult?.relatedPhrase else dictionaryResult?.entry
+
+    /** 收藏不依赖词典命中；未收录词保留原文，AI 释义由仓库单独保存。 */
+    fun vocabularyEntry(lookup: com.linguareader.app.data.WordLookup): com.linguareader.app.data.ContextualDictionaryEntry =
+        displayedEntry ?: com.linguareader.app.data.ContextualDictionaryEntry(
+            surfaceWord = lookup.word,
+            headword = lookup.word.trim(),
+            phonetic = "",
+            senses = emptyList(),
+            definitions = emptyList(),
+            matchedPhrase = null,
+            inferredPartOfSpeech = com.linguareader.app.data.PartOfSpeech.UNKNOWN
+        )
 
     /**
      * 开一次新查词。此处集中定义「什么必须归零」：

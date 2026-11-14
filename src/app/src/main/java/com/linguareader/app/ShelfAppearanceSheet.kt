@@ -2,6 +2,10 @@ package com.linguareader.app
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.linguareader.app.components.ExpandableSettingsSection
+import com.linguareader.app.res.resolve
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,7 +13,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -94,7 +98,7 @@ internal fun ShelfAppearanceSheet(
      * 皮肤改动要立刻通知外壳（P19）。
      *
      * 与 [onReaderThemeChange] 同一模式：**改了要立刻生效**，不能只写盘等重启。
-     * 外壳（MainActivity）收到后更新自己的 customSkin 状态，整棵树重组。
+     * 外壳（MainActivity）收到后更新选中的皮肤状态，整棵树重组。
      */
     onSkinChange: (com.linguareader.shared.ui.skin.SkinSpec?) -> Unit = {},
     onDismiss: () -> Unit
@@ -108,7 +112,7 @@ internal fun ShelfAppearanceSheet(
         mutableStateOf(storedReaderTheme(context) ?: if (systemDark) ReaderTheme.DARK else ReaderTheme.PAPER)
     }
     // 深色外壳下浅色预设不可读（审查 5-1），据此禁用预设并说明。
-    val darkChrome = chromeIsDark(storedReaderTheme(context), isSystemInDarkTheme())
+    val darkChrome = LocalDesignTokens.current.isDark
 
     // 皮肤选择（P19）：与上面的「书架背景」是两件事 ——
     // 背景只影响书架那张纸下面的图；皮肤影响所有已迁移的屏。
@@ -166,8 +170,8 @@ internal fun ShelfAppearanceSheet(
                 SkinStore.selectBuiltIn(context, id)
                 selectedSkinId = id
                 customSkin = null
-                // 内置皮肤交给外壳按「阅读主题 + 系统夜间」重新选，故传 null
-                onSkinChange(null)
+                // 传递实际选中的皮肤，null 只表示恢复自动跟随。
+                onSkinChange(SkinStore.selected(context))
             },
             onPickSkinImage = { skinLauncher.launch(arrayOf("image/*")) },
             onRemoveCustomSkin = {
@@ -222,95 +226,10 @@ internal fun ShelfAppearanceContent(
     // 换成 LinguaSheet 的 content 槽之后没有别人替它给间距了，必须自己带。
     // 标题不在这里画：由 LinguaSheet 的 title 槽统一渲染（见外壳注释）。
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        // 原实现是 spacedBy(16.dp)，正好等于 t.spacing.m —— 用它保持像素级一致。
+        modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+        // 每个配置分组保持独立，展开后由内容体统一滚动。
         verticalArrangement = Arrangement.spacedBy(t.spacing.m)
     ) {
-        SectionHeader(text = stringResource(R.string.shelf_appearance_background))
-        Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.m)) {
-            PresetSwatch(
-                label = stringResource(R.string.shelf_appearance_follow_theme),
-                selected = appearance.presetId == null && appearance.imageFile == null,
-                brush = Brush.linearGradient(listOf(LightLinguaPalette.paper, DarkLinguaPalette.paper)),
-                onClick = { onAppearanceChange(ShelfAppearance(dimOpacity = appearance.dimOpacity)) }
-            )
-            ShelfBackgroundPresets.all.forEach { preset ->
-                PresetSwatch(
-                    label = stringResource(preset.labelRes),
-                    selected = appearance.presetId == preset.id && appearance.imageFile == null,
-                    brush = Brush.verticalGradient(
-                        // 预设色是用户数据（见类注释），不是样式 token，故此处直接 Color(Long)。
-                        listOf(androidx.compose.ui.graphics.Color(preset.topColor), androidx.compose.ui.graphics.Color(preset.bottomColor))
-                    ),
-                    enabled = !darkChrome,
-                    onClick = {
-                        onAppearanceChange(appearance.copy(presetId = preset.id, imageFile = null))
-                    }
-                )
-            }
-        }
-
-        // 深色外壳下这些浅色预设叠加后文字对比度只有 1.02–2.56:1（审查 5-1），
-        // 直接禁用并说明原因，比装上去再让用户自己发现不可读更诚实。
-        if (darkChrome) {
-            Text(
-                text = stringResource(R.string.shelf_preset_dark_disabled),
-                style = t.typography.caption,
-                color = t.colors.inkSoft
-            )
-        }
-
-        // 审查 5-10：阅读主题入口原本只在阅读页（约 4 次点击），书架处没有入口。
-        // 这里直接给出同一个选择器（与阅读页共用 prefs 键），点击深度从 4 降到 ≤2。
-        SectionHeader(text = stringResource(R.string.reader_theme_label))
-        ReaderThemePicker(selected = selectedTheme, onSelect = onSelectTheme)
-
-        SecondaryButton(
-            text = stringResource(
-                if (appearance.imageFile != null) {
-                    R.string.shelf_background_change_image
-                } else {
-                    R.string.shelf_background_pick_image
-                }
-            ),
-            onClick = onPickImage,
-            modifier = Modifier.fillMaxWidth()
-        )
-        imageStatus?.let { status ->
-            Text(
-                text = stringResource(
-                    if (status == ShelfImageStatus.DONE) {
-                        R.string.shelf_background_image_done
-                    } else {
-                        R.string.shelf_background_image_failed
-                    }
-                ),
-                style = t.typography.caption,
-                color = if (status == ShelfImageStatus.DONE) t.colors.success else t.colors.danger
-            )
-            LaunchedEffect(status) {
-                delay(3000)
-                onImageStatusShown()
-            }
-        }
-
-        SectionHeader(text = stringResource(R.string.shelf_background_dim))
-        Slider(
-            value = appearance.dimOpacity,
-            onValueChange = { onAppearanceChange(appearance.copy(dimOpacity = it)) },
-            valueRange = 0f..0.8f,
-            colors = SliderDefaults.colors(
-                thumbColor = t.colors.accent,
-                activeTrackColor = t.colors.accent,
-                inactiveTrackColor = t.colors.paperDeep
-            )
-        )
-
-        UiAnimSpeedSelector(animSpeed = animSpeed, onAnimSpeedChange = onAnimSpeedChange)
-
-        // 皮肤选择（P9）：与上面的「书架背景」是两件事 ——
-        // 背景只影响书架那张纸下面的图，皮肤影响所有已迁移的屏（弹层、生词本、复习屏…）。
-        // 放在这里是因为它是用户找「外观」时的自然落点，不必再开一屏。
         com.linguareader.app.skin.SkinPickerSection(
             builtIns = skinBuiltIns,
             selectedId = selectedSkinId,
@@ -320,17 +239,123 @@ internal fun ShelfAppearanceContent(
             onRemoveCustom = onRemoveCustomSkin
         )
 
-        SecondaryButton(
-            text = stringResource(R.string.shelf_background_reset),
-            onClick = onReset,
-            modifier = Modifier.fillMaxWidth()
-        )
-        }
-    }
+        ExpandableSettingsSection(
+            title = stringResource(R.string.appearance_shelf_background),
+            summary = when {
+                appearance.imageFile != null -> stringResource(R.string.appearance_custom_image)
+                appearance.presetId != null -> ShelfBackgroundPresets.byId(appearance.presetId)
+                    ?.let { stringResource(it.labelRes) }
+                else -> stringResource(R.string.shelf_appearance_follow_theme)
+            }
+        ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(t.spacing.s),
+                verticalArrangement = Arrangement.spacedBy(t.spacing.s)) {
+                PresetSwatch(
+                    label = stringResource(R.string.shelf_appearance_follow_theme),
+                    selected = appearance.presetId == null && appearance.imageFile == null,
+                    brush = Brush.linearGradient(listOf(LightLinguaPalette.paper, DarkLinguaPalette.paper)),
+                    onClick = { onAppearanceChange(ShelfAppearance(dimOpacity = appearance.dimOpacity)) }
+                )
+                ShelfBackgroundPresets.all.forEach { preset ->
+                    PresetSwatch(
+                        label = stringResource(preset.labelRes),
+                        selected = appearance.presetId == preset.id && appearance.imageFile == null,
+                        brush = Brush.verticalGradient(
+                            // 预设色是用户数据（见类注释），不是样式 token，故此处直接 Color(Long)。
+                            listOf(androidx.compose.ui.graphics.Color(preset.topColor), androidx.compose.ui.graphics.Color(preset.bottomColor))
+                        ),
+                        enabled = !darkChrome,
+                        onClick = {
+                            onAppearanceChange(appearance.copy(presetId = preset.id, imageFile = null))
+                        }
+                    )
+                }
+            }
 
-    @Composable
-    private fun PresetSwatch(
-        label: String,
+            // 深色外壳下这些浅色预设叠加后文字对比度只有 1.02–2.56:1（审查 5-1），
+            // 直接禁用并说明原因，比装上去再让用户自己发现不可读更诚实。
+            if (darkChrome) {
+                Text(
+                    text = stringResource(R.string.shelf_preset_dark_disabled),
+                    style = t.typography.caption,
+                    color = t.colors.inkSoft
+                )
+            }
+
+            SecondaryButton(
+                text = stringResource(
+                    if (appearance.imageFile != null) {
+                        R.string.shelf_background_change_image
+                    } else {
+                        R.string.shelf_background_pick_image
+                    }
+                ),
+                onClick = onPickImage,
+                modifier = Modifier.fillMaxWidth()
+            )
+            imageStatus?.let { status ->
+                Text(
+                    text = stringResource(
+                        if (status == ShelfImageStatus.DONE) {
+                            R.string.shelf_background_image_done
+                        } else {
+                            R.string.shelf_background_image_failed
+                        }
+                    ),
+                    style = t.typography.caption,
+                    color = if (status == ShelfImageStatus.DONE) t.colors.success else t.colors.danger
+                )
+                LaunchedEffect(status) {
+                    delay(3000)
+                    onImageStatusShown()
+                }
+            }
+
+            SectionHeader(text = stringResource(R.string.shelf_background_dim))
+            Slider(
+                value = appearance.dimOpacity,
+                onValueChange = { onAppearanceChange(appearance.copy(dimOpacity = it)) },
+                valueRange = 0f..0.8f,
+                colors = SliderDefaults.colors(
+                    thumbColor = t.colors.accent,
+                    activeTrackColor = t.colors.accent,
+                    inactiveTrackColor = t.colors.paperDeep
+                )
+            )
+
+            SecondaryButton(
+                text = stringResource(R.string.shelf_background_reset),
+                onClick = onReset,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        ExpandableSettingsSection(
+            title = stringResource(R.string.appearance_reading_page),
+            summary = stringResource(selectedTheme.labelRes.resolve())
+        ) {
+            // 审查 5-10：阅读主题入口原本只在阅读页（约 4 次点击），书架处没有入口。
+            // 与阅读页共用 prefs 键，保留在外观分组内的快捷入口。
+            SectionHeader(text = stringResource(R.string.reader_theme_label))
+            ReaderThemePicker(selected = selectedTheme, onSelect = onSelectTheme)
+        }
+        ExpandableSettingsSection(
+            title = stringResource(R.string.shelf_anim_speed_title),
+            summary = stringResource(when (animSpeed) {
+                UiAnimSpeed.SLOW -> R.string.shelf_anim_speed_slow
+                UiAnimSpeed.NORMAL -> R.string.shelf_anim_speed_normal
+                UiAnimSpeed.FAST -> R.string.shelf_anim_speed_fast
+                UiAnimSpeed.OFF -> R.string.shelf_anim_speed_off
+            })
+        ) {
+            UiAnimSpeedSelector(animSpeed = animSpeed, onAnimSpeedChange = onAnimSpeedChange)
+        }
+
+    }
+}
+
+@Composable
+private fun PresetSwatch(
+    label: String,
     selected: Boolean,
     brush: Brush,
     onClick: () -> Unit,
@@ -377,7 +402,6 @@ internal fun UiAnimSpeedSelector(
     val t = LocalDesignTokens.current
     // 行内 gap 用 token（8 = spacing.s）；排间距 10dp 梯子里没有，走专有常量。
     Column(verticalArrangement = Arrangement.spacedBy(AnimChipColumnGap)) {
-        SectionHeader(text = stringResource(R.string.shelf_anim_speed_title))
         Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
             UiAnimSpeed.entries.forEach { speed ->
                 AnimSpeedChip(

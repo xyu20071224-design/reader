@@ -132,51 +132,10 @@ class SheetMigrationRenderTest {
             )
         }
         val nonPaper = countNonPaper(bmp, bmp.height / 2)
-        assertTrue("外观弹层必须画出预设色块与主题选择器（$nonPaper 个非纸色采样点）", nonPaper > 200)
+        assertTrue("外观弹层必须画出应用配色与配置分组（$nonPaper 个非纸色采样点）", nonPaper > 200)
     }
 
-    @Test
-    fun shelfAppearanceShowsTheDisabledPresetHintOnDarkChrome() {
-        // 深色外壳下预设不可用、并且必须**说明原因**（审查 5-1）——这条文案是产品承诺，
-        // 迁移时最容易在换组件的过程中被顺手丢掉。
-        val dark = renderSheetContent("sheet-appearance-dark-chrome") {
-            ShelfAppearanceContent(
-                appearance = appearance(presetId = "green"),
-                onAppearanceChange = {},
-                animSpeed = com.linguareader.app.UiAnimSpeed.SLOW,
-                onAnimSpeedChange = {},
-                selectedTheme = com.linguareader.shared.data.ReaderTheme.DARK,
-                onSelectTheme = {},
-                darkChrome = true,
-                imageStatus = null,
-                onImageStatusShown = {},
-                onPickImage = {},
-                onReset = {}
-            )
-        }
-        val light = renderSheetContent("sheet-appearance-light-chrome") {
-            ShelfAppearanceContent(
-                appearance = appearance(presetId = "green"),
-                onAppearanceChange = {},
-                animSpeed = com.linguareader.app.UiAnimSpeed.SLOW,
-                onAnimSpeedChange = {},
-                selectedTheme = com.linguareader.shared.data.ReaderTheme.PAPER,
-                onSelectTheme = {},
-                darkChrome = false,
-                imageStatus = null,
-                onImageStatusShown = {},
-                onPickImage = {},
-                onReset = {}
-            )
-        }
-        // 深色外壳多一行说明文案 → 内容更高。用像素差异间接守住「说明没被丢掉」。
-        val darkNonPaper = countNonPaper(dark, dark.height / 2)
-        val lightNonPaper = countNonPaper(light, light.height / 2)
-        assertTrue(
-            "深色外壳必须比浅色多画出禁用说明（dark=$darkNonPaper / light=$lightNonPaper）",
-            darkNonPaper > lightNonPaper
-        )
-    }
+    // 深色背景禁用提示改由 SettingsDisclosureTest 在真实展开后验证。
 
     @Test
     fun updateSheetContentRenders() {

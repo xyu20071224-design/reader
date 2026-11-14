@@ -38,6 +38,7 @@ import com.linguareader.app.ai.AiProviderProfile
 import com.linguareader.app.ai.AiSettings
 import com.linguareader.app.ai.BookGlossary
 import com.linguareader.app.ai.GlossaryEntry
+import com.linguareader.app.components.ExpandableSettingsSection
 import com.linguareader.app.components.LinguaSheet
 import com.linguareader.app.components.PrimaryButton
 import com.linguareader.app.components.SettingRow
@@ -55,8 +56,8 @@ import kotlinx.coroutines.delay
  *  - 三个 Tab：翻译设置 / 听书语音（复用 [ListeningSettingsBody]）/ 术语表。
  *
  * P3 迁移：外壳换成 [LinguaSheet]（拖柄/圆角/边距统一由组件给），总开关行换成
- * [SettingRow]，样式一律取 [LocalDesignTokens]。**三个 Tab 的内容、保存语义、
- * 行内「已保存」提示与隐私边界文案零改动。**
+ * [SettingRow]，样式一律取 [LocalDesignTokens]。常用开关直接展示，服务商管理和帮助按需展开；
+ * 保存反馈与数据发送边界保持可见。
  *
  * 标题与副标题不放进 LinguaSheet 的 title 槽：这一屏的标题行右侧挂着总开关，
  * 是「标题 + 控件」的组合行，拆开会让开关跑到标题上方，语义与视觉都变差。
@@ -223,7 +224,7 @@ private fun DrawerTabButton(label: String, selected: Boolean, onClick: () -> Uni
  * （总开关关闭）禁用所有联网字段。
  */
 @Composable
-private fun AiTranslationSettingsBody(
+internal fun AiTranslationSettingsBody(
     settings: AiSettings,
     onSave: (AiSettings) -> Unit,
     enabled: Boolean
@@ -293,31 +294,51 @@ private fun AiTranslationSettingsBody(
         )
         if (remoteEnabled) {
             Spacer(Modifier.height(t.spacing.s))
-            ProviderSettingsBody(
-                providers = providers,
-                activeId = activeId,
-                masterEnabled = enabled,
-                onSelectActive = { activeId = it },
-                onEdit = {
-                    editorDraft = it
-                    editorIsNew = false
-                },
-                onAdd = {
-                    editorDraft = AiProviderProfile(id = "")
-                    editorIsNew = true
-                },
-                onAddPreset = { preset ->
-                    // 官方预设：端点/协议/模型按目录预填，用户只需补 Key。
-                    editorDraft = AiProviderProfile(
-                        id = "",
-                        name = context.getString(preset.nameRes),
-                        baseUrl = preset.baseUrl,
-                        protocol = preset.protocol,
-                        model = preset.defaultModel
-                    )
-                    editorIsNew = true
-                }
+            val active = providers.firstOrNull { it.id == activeId } ?: providers.firstOrNull()
+            val summary = active?.let {
+                "${it.displayLabel.ifBlank { stringResource(R.string.aidrawer_provider_none_name) }} · ${it.model}"
+            } ?: stringResource(R.string.aidrawer_provider_empty)
+            Text(
+                text = stringResource(when {
+                    !enabled -> R.string.ai_status_power_off
+                    active != null && active.baseUrl.isNotBlank() &&
+                        active.apiKey.isNotBlank() && active.model.isNotBlank() -> R.string.ai_status_configured
+                    else -> R.string.ai_status_needs_setup
+                }),
+                style = t.typography.caption,
+                color = t.colors.inkSoft
             )
+            ExpandableSettingsSection(
+                title = stringResource(R.string.ai_manage_providers),
+                summary = summary,
+                initiallyExpanded = providers.isEmpty()
+            ) {
+                ProviderSettingsBody(
+                    providers = providers,
+                    activeId = activeId,
+                    masterEnabled = enabled,
+                    onSelectActive = { activeId = it },
+                    onEdit = {
+                        editorDraft = it
+                        editorIsNew = false
+                    },
+                    onAdd = {
+                        editorDraft = AiProviderProfile(id = "")
+                        editorIsNew = true
+                    },
+                    onAddPreset = { preset ->
+                        // 官方预设：端点/协议/模型按目录预填，用户只需补 Key。
+                        editorDraft = AiProviderProfile(
+                            id = "",
+                            name = context.getString(preset.nameRes),
+                            baseUrl = preset.baseUrl,
+                            protocol = preset.protocol,
+                            model = preset.defaultModel
+                        )
+                        editorIsNew = true
+                    }
+                )
+            }
             Spacer(Modifier.height(t.spacing.s))
             Text(
                 text = stringResource(R.string.aidrawer_remote_on_hint),
@@ -331,6 +352,10 @@ private fun AiTranslationSettingsBody(
                 style = t.typography.label,
                 color = t.colors.inkSoft
             )
+        }
+        ExpandableSettingsSection(title = stringResource(R.string.ai_translation_help)) {
+            Text(stringResource(R.string.ai_translation_help_body),
+                style = t.typography.caption, color = t.colors.inkSoft)
         }
         Spacer(Modifier.height(t.spacing.l))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

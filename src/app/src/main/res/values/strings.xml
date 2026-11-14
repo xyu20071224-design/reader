@@ -11,9 +11,10 @@
     <string name="notice_book_imported">已导入《%1$s》</string>
     <string name="notice_book_deleted">已删除《%1$s》</string>
     <string name="notice_word_saved">已收藏「%1$s」</string>
+    <string name="notice_word_save_failed">收藏失败，请重试</string>
     <string name="notice_word_removed">已移出生词「%1$s」</string>
-    <string name="reader_ai_lookup_failed">AI 语境获取失败，已显示本地词典结果</string>
-    <string name="reader_ai_lookup_degraded">AI 语境获取失败，已降级为本地轻量语境（请检查联网 AI 的 Key 与端点）</string>
+    <string name="reader_ai_lookup_failed">暂未获取语境释义</string>
+    <string name="reader_ai_lookup_degraded">已显示本地语境释义</string>
     <string name="tts_settings_saved">已保存，即将关闭…</string>
     <string name="review_context_explanation">收藏时的语境解释：%1$s</string>
 
@@ -42,7 +43,7 @@
     <string name="shelf_import">导入</string>
 
     <!-- 书架外观（背景预设 / 自定义图片 / 蒙版） -->
-    <string name="shelf_appearance_title">书架外观</string>
+    <string name="shelf_appearance_title">外观</string>
     <string name="shelf_appearance_background">背景</string>
     <string name="shelf_appearance_follow_theme">跟随主题</string>
     <string name="shelf_preset_green">青竹</string>
@@ -55,7 +56,7 @@
     <string name="shelf_background_image_done">背景图已更新</string>
     <string name="shelf_background_image_failed">图片导入失败，换一张试试</string>
     <string name="shelf_background_dim">蒙版浓度</string>
-    <string name="shelf_background_reset">恢复默认</string>
+    <string name="shelf_background_reset">重置书架背景</string>
     <string name="shelf_background_reset_done">书架外观已恢复默认</string>
     <string name="shelf_anim_speed_title">交互动画速度</string>
     <string name="shelf_anim_speed_slow">舒缓</string>
@@ -187,7 +188,7 @@
     <string name="reader_translation_collapse">收起对照</string>
     <string name="reader_translation_english">原句：%1$s</string>
     <string name="reader_translation_paragraph">译文段落：%1$s</string>
-    <string name="reader_translation_miss">本句未对上译本（所在段落或章节没有参与对齐）</string>
+    <string name="reader_translation_miss">暂无对应译文</string>
 
     <!-- 听书播放条 -->
     <string name="player_previous">上一句</string>
@@ -389,7 +390,7 @@
     <string name="tts_server_model_label">模型名</string>
     <string name="tts_server_model_hint">Fish Speech S2 等服务器发布的模型名</string>
     <string name="tts_server_token_label">API Token（可选）</string>
-    <string name="tts_server_voice_label">音色/voice（可选，通用兜底）</string>
+    <string name="tts_server_voice_label">默认音色（可选）</string>
     <string name="tts_server_voice_hint">Fish Speech 通常为 default；IndexTTS 可填参考音频名，如 voice_03.wav</string>
     <string name="tts_server_en_voice_label">英文音色（可选）</string>
     <string name="tts_server_en_voice_hint">英文句子用此音色；留空跟随上方通用音色</string>
@@ -403,7 +404,7 @@
     <string name="tts_preset">预设</string>
     <string name="tts_preset_item">%1$s（%2$s）</string>
     <string name="tts_cloud_incomplete">启用云 TTS 前请先完成对应配置</string>
-    <string name="tts_cloud_notice">启用后，朗读文本会发送到对应云端/自建服务，按实际服务计费；章节音频首次生成后缓存在本机。合成失败会自动回退系统语音。</string>
+    <string name="tts_cloud_notice">朗读文本会发送至所选服务，可能产生费用。音频缓存在本机，合成失败时改用系统语音。</string>
     <!-- 音频缓存（存储占用）-->
     <string name="tts_cache_section">音频缓存</string>
     <string name="tts_cache_usage">当前占用 %1$s</string>
@@ -644,7 +645,7 @@
     <string name="aidrawer_remote_title">联网语境翻译</string>
     <string name="aidrawer_base_url_label">接口地址</string>
     <string name="aidrawer_model_label">模型</string>
-    <string name="aidrawer_remote_on_hint">启用后，书籍章节文本与点击的词句会发送到当前生效的服务商以生成/更新本书语境档案；服务商未就绪时自动使用不联网的本地轻量语境。</string>
+    <string name="aidrawer_remote_on_hint">启用后，书籍章节文本及点击的词句会发送至所选服务商。</string>
     <string name="aidrawer_remote_off_hint">关闭时查词保持纯本地词典，不发送任何文本。</string>
     <string name="aidrawer_provider_add">添加服务商</string>
     <string name="aidrawer_preset_section">官方预设（只需填 API Key）</string>
@@ -854,11 +855,36 @@
     <string name="sync_detail_empty_books">书库还没有书。</string>
     <string name="sync_detail_empty_words">还没有生词。</string>
     <!-- 皮肤（P9）：图片换肤。7 条，与 values-en 必须同 key。 -->
-    <string name="skin_section_title">皮肤</string>
+    <string name="skin_section_title">应用配色</string>
     <string name="skin_custom_hint">选一张照片，自动生成配色。适合做皮肤的图：有大片纯色背景、色彩柔和的照片。</string>
     <string name="skin_custom_active">当前使用图片皮肤：%1$s</string>
-    <string name="skin_pick_image">选图片生成皮肤</string>
+    <string name="skin_pick_image">从图片提取配色</string>
     <string name="skin_remove_custom">移除图片皮肤</string>
     <string name="skin_import_failed">这张图读不出来，已保留原皮肤</string>
     <string name="skin_import_done">皮肤已更新</string>
+    <string name="settings_expanded">已展开</string>
+    <string name="settings_collapsed">已收起</string>
+    <string name="settings_image_tips">选图建议</string>
+    <string name="settings_setup_help">配置帮助</string>
+    <string name="appearance_shelf_background">书架背景</string>
+    <string name="appearance_custom_image">自定义图片</string>
+    <string name="appearance_reading_page">阅读页面</string>
+    <string name="settings_language_voices">分语言音色</string>
+    <string name="settings_role_voices">旁白与对白音色</string>
+    <string name="settings_default_voice">使用默认音色</string>
+    <string name="settings_configured">已自定义</string>
+    <string name="settings_not_set">未设置</string>
+    <string name="settings_multi_voice">多角色朗读</string>
+    <string name="settings_enabled">已开启</string>
+    <string name="settings_disabled">已关闭</string>
+    <string name="ai_manage_providers">服务商管理</string>
+    <string name="ai_status_configured">配置已就绪（未验证连接）</string>
+    <string name="ai_status_needs_setup">尚未配置完成，当前使用本地语境</string>
+    <string name="ai_status_power_off">联网 AI 已关闭</string>
+    <string name="ai_translation_help">语境翻译说明</string>
+    <string name="ai_translation_help_body">联网语境翻译会生成或更新本书的语境档案。服务商未就绪时使用不联网的本地轻量语境；关闭后查词只使用本地词典。</string>
+    <string name="ai_connection_options">连接参数</string>
+    <string name="ai_api_key">API Key</string>
+    <string name="reader_context_meaning_title">语境释义</string>
+    <string name="reader_sentence_translation_failed">暂未获取整句译文，请重试</string>
 </resources>

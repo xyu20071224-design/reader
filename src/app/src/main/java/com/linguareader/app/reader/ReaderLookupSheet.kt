@@ -305,48 +305,106 @@ internal fun ReaderLookupSheet(
             }
             if (entry != null && entry.inferredPartOfSpeech != PartOfSpeech.UNKNOWN) {
                 Text(
-                    stringResource(
-                        R.string.reader_pos_inferred,
-                        stringResource(entry.inferredPartOfSpeech.labelRes.resolve())
-                    ),
+                    stringResource(entry.inferredPartOfSpeech.labelRes.resolve()),
                     style = t.typography.label,
                     // 5-6：原 .56 在浅色最弱表面（cardSurface）仅 3.70:1，不足 4.5:1
                     color = t.colors.inkSoft
                 )
             }
-            if (entry != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
-                    TextButton(onClick = onSpeak) {
-                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(t.iconSize))
+            // 收藏入口独立于词典结果；窄屏或大字体时按钮换行，避免被挤出面板。
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(t.spacing.s)) {
+                TextButton(onClick = onSpeak) {
+                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, modifier = Modifier.size(t.iconSize))
+                    Spacer(Modifier.width(t.spacing.xs))
+                    Text(stringResource(R.string.common_speak))
+                }
+                if (isSaved && showReviewEntry) {
+                    TextButton(onClick = onReviewSaved) {
+                        Icon(Icons.Filled.School, contentDescription = null, modifier = Modifier.size(t.iconSize))
                         Spacer(Modifier.width(t.spacing.xs))
-                        Text(stringResource(R.string.common_speak))
+                        Text(stringResource(R.string.common_review))
                     }
-                    if (isSaved && showReviewEntry) {
-                        TextButton(onClick = onReviewSaved) {
-                            Icon(Icons.Filled.School, contentDescription = null, modifier = Modifier.size(t.iconSize))
-                            Spacer(Modifier.width(t.spacing.xs))
-                            Text(stringResource(R.string.common_review))
-                        }
-                    }
-                    TextButton(onClick = onToggleSave) {
-                        Icon(
-                            Icons.Filled.BookmarkAdd,
-                            contentDescription = null,
-                            modifier = Modifier.size(t.iconSize),
-                            tint = if (isSaved) t.colors.accent else t.colors.inkSoft
-                        )
-                        Spacer(Modifier.width(t.spacing.xs))
-                        Text(
-                            if (isSaved) stringResource(R.string.reader_remove_from_vocab)
-                            else stringResource(R.string.reader_add_to_vocab)
-                        )
-                    }
+                }
+                TextButton(onClick = onToggleSave, enabled = !loading && lookup.word.isNotBlank()) {
+                    Icon(
+                        Icons.Filled.BookmarkAdd,
+                        contentDescription = null,
+                        modifier = Modifier.size(t.iconSize),
+                        tint = if (isSaved) t.colors.accent else t.colors.inkSoft
+                    )
+                    Spacer(Modifier.width(t.spacing.xs))
+                    Text(
+                        if (isSaved) stringResource(R.string.reader_remove_from_vocab)
+                        else stringResource(R.string.reader_add_to_vocab)
+                    )
                 }
             }
             // 收藏/移出生词的行内反馈：弹层开着时全局 Snackbar 被盖住，只能画在面板里。
             if (saveStatus != null) {
                 Spacer(Modifier.height(t.spacing.xs))
                 SettingsStatusText(saveStatus)
+            }
+            // 点词先给出本地词典释义；AI 长解释和整句译文不能把基本释义挤出首屏。
+            Spacer(Modifier.height(t.spacing.m))
+            // 中文句里高亮那个词来自哪条义项（`WordAligner` 记下的 `sourceSense`，与
+            // 面板 `sense.text` 是同一个串）：标出该行、并用与高亮词完全相同的
+            // 强调色 + 粗体，用户才能把「高亮的词」与「具体义项」互相指认（Q1-t09 ④）。
+            val alignedSense = translation?.wordAlignment?.sourceSense
+            when {
+                loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = t.colors.accent)
+                entry != null -> {
+                    entry.senses.take(8).forEachIndexed { index, sense ->
+                        val preferred = sense.contextPreferred && index == 0
+                        // 是来源义项但不是「本句优先」时才占用标号位：两枚标记都不丢。
+                        val aligned = alignedSense != null && sense.text == alignedSense
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = t.spacing.xs),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                when {
+                                    preferred -> stringResource(R.string.reader_sense_preferred)
+                                    else -> "•"
+                                },
+                                style = t.typography.label,
+                                color = if (aligned || preferred) t.colors.accent
+                                // 5-6：项目符号也是文字，原 .38 在浅/深最弱表面仅 2.27/3.01:1
+                                else t.colors.inkFaint,
+                                modifier = Modifier.width(
+                                    if (preferred) t.spacing.xl * 2
+                                    else t.spacing.gutter
+                                )
+                            )
+                            Text(
+                                sense.text,
+                                style = t.typography.body,
+                                // 与中文句里被着色的词同一套样式（t.colors.accent + Bold）。
+                                color = if (aligned) t.colors.accent else Color.Unspecified,
+                                fontWeight = if (aligned) FontWeight.Bold else null,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    if (entry.senses.isEmpty()) {
+                        Text(
+                            stringResource(R.string.reader_no_senses),
+                            color = t.colors.inkSoft
+                        )
+                    }
+                    if (entry.definitions.isNotEmpty()) {
+                        Spacer(Modifier.height(t.spacing.s))
+                        Text(
+                            entry.definitions.take(2).joinToString("\n"),
+                            color = t.colors.inkSoft,
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                else -> Text(
+                    stringResource(R.string.reader_word_not_found),
+                    color = t.colors.inkSoft
+                )
             }
             if (aiLoading) {
                 Spacer(Modifier.height(t.spacing.m))
@@ -390,7 +448,7 @@ internal fun ReaderLookupSheet(
             if (!aiLoading && aiContext != null) {
                 Spacer(Modifier.height(t.spacing.m))
                 Text(
-                    stringResource(R.string.reader_ai_context_title, aiContext.source),
+                    stringResource(R.string.reader_context_meaning_title),
                     style = t.typography.label,
                     color = t.colors.accent,
                     fontWeight = FontWeight.SemiBold
@@ -448,20 +506,6 @@ internal fun ReaderLookupSheet(
                     highlightedTranslation(result),
                     style = t.typography.body,
                     fontWeight = FontWeight.Medium
-                )
-                Spacer(Modifier.height(t.spacing.xs))
-                Text(
-                    stringResource(
-                        if (result.matchLevel == TranslationMatchLevel.SENTENCE) {
-                            R.string.reader_translation_meta_sentence
-                        } else {
-                            R.string.reader_translation_meta_paragraph
-                        },
-                        result.translationTitle,
-                        (result.confidence * 100).roundToInt()
-                    ),
-                    style = t.typography.label,
-                    color = t.colors.inkSoft
                 )
                 if (pairingExpanded) {
                     // 整句对照：并排给出配对到的英文原句与译文段落，便于判断配对是否正确。
@@ -614,10 +658,10 @@ internal fun ReaderLookupSheet(
                     }
                 }
             }
-            sentenceTranslationError?.let { message ->
+            sentenceTranslationError?.let {
                 Spacer(Modifier.height(t.spacing.s))
                 Text(
-                    message,
+                    stringResource(R.string.reader_sentence_translation_failed),
                     style = t.typography.body,
                     color = t.colors.danger
                 )
@@ -625,71 +669,9 @@ internal fun ReaderLookupSheet(
             sentenceTranslation?.let { result ->
                 Spacer(Modifier.height(t.spacing.s))
                 Text(
-                    stringResource(R.string.translate_sentence_result, result.provider, result.text),
+                    result.text,
                     style = t.typography.body,
                     color = t.colors.ink
-                )
-            }
-            Spacer(Modifier.height(t.spacing.m))
-            // 中文句里高亮那个词来自哪条义项（`WordAligner` 记下的 `sourceSense`，与
-            // 面板 `sense.text` 是同一个串）：标出该行、并用与高亮词完全相同的
-            // 强调色 + 粗体，用户才能把「高亮的词」与「具体义项」互相指认（Q1-t09 ④）。
-            val alignedSense = translation?.wordAlignment?.sourceSense
-            when {
-                loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = t.colors.accent)
-                entry != null -> {
-                    entry.senses.take(8).forEachIndexed { index, sense ->
-                        val preferred = sense.contextPreferred && index == 0
-                        // 是来源义项但不是「本句优先」时才占用标号位：两枚标记都不丢。
-                        val aligned = alignedSense != null && sense.text == alignedSense
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = t.spacing.xs),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                when {
-                                    aligned && !preferred -> stringResource(R.string.reader_sense_aligned)
-                                    preferred -> stringResource(R.string.reader_sense_preferred)
-                                    else -> "•"
-                                },
-                                style = t.typography.label,
-                                color = if (aligned || preferred) t.colors.accent
-                                // 5-6：项目符号也是文字，原 .38 在浅/深最弱表面仅 2.27/3.01:1
-                                else t.colors.inkFaint,
-                                modifier = Modifier.width(
-                                    if (aligned || preferred) t.spacing.xl * 2
-                                    else t.spacing.gutter
-                                )
-                            )
-                            Text(
-                                sense.text,
-                                style = t.typography.body,
-                                // 与中文句里被着色的词同一套样式（t.colors.accent + Bold）。
-                                color = if (aligned) t.colors.accent else Color.Unspecified,
-                                fontWeight = if (aligned) FontWeight.Bold else null,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                    if (entry.senses.isEmpty()) {
-                        Text(
-                            stringResource(R.string.reader_no_senses),
-                            color = t.colors.inkSoft
-                        )
-                    }
-                    if (entry.definitions.isNotEmpty()) {
-                        Spacer(Modifier.height(t.spacing.s))
-                        Text(
-                            entry.definitions.take(2).joinToString("\n"),
-                            color = t.colors.inkSoft,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                else -> Text(
-                    stringResource(R.string.reader_word_not_found),
-                    color = t.colors.inkSoft
                 )
             }
             Spacer(Modifier.height(t.spacing.m))
@@ -704,13 +686,7 @@ internal fun ReaderLookupSheet(
                 fontFamily = FontFamily.Serif,
                 lineHeight = t.typography.body.lineHeight
             )
-            Spacer(Modifier.height(t.spacing.m))
-            Text(
-                stringResource(R.string.reader_dict_source),
-                style = t.typography.label,
-                // 5-6：原 .45 在浅/深最弱表面仅 2.71/3.69:1；实色后 5.56/4.63:1
-                color = t.colors.inkFaint
-            )
+
         }
     }
 }

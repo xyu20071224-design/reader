@@ -27,6 +27,8 @@ import java.io.File
  * 它们测的是组件读 token 读得对不对，**测不到生产代码有没有把 token 发下来**。
  * 渲染台默认也只跑日间。所以只能靠读源码守。
  *
+ * 当前下发逻辑抽到生产入口 AppSkinTheme；这里同时检查 Activity 的调用与入口实现。
+ * 点击后颜色是否改变由 SkinSelectionEffectTest 通过真实弹层与 CompositionLocal 验证。
  * 这条测试证明的是「接线存在」；**观感是否真的正确仍需真机看**（深色模式开一次）。
  */
 class ProductionThemeWiringTest {
@@ -42,7 +44,10 @@ class ProductionThemeWiringTest {
     @Test
     fun mainActivityProvidesDesignTokens() {
         assertTrue("找不到 " + mainActivity.absolutePath, mainActivity.isFile)
-        val src = code(mainActivity)
+        val activity = code(mainActivity)
+        assertTrue("主界面必须使用实际主题入口", activity.contains("AppSkinTheme(selectedSkin"))
+        assertTrue("重启必须读取所有显式皮肤", activity.contains("SkinStore.selected(context)"))
+        val src = code(File("src/main/java/com/linguareader/app/skin/AppSkinTheme.kt"))
         assertTrue(
             "MainActivity 必须下发 LocalDesignTokens —— 否则所有已迁移的屏在深色外壳下" +
                 "会取到恒日间的默认 token（近黑字落近黑底、弹层纸白刺眼）。" +
@@ -54,10 +59,10 @@ class ProductionThemeWiringTest {
             src.contains("LocalLinguaPalette provides")
         )
         assertTrue(
-            "token 的明暗必须跟随调色板同一条判定（palette.isDark / chromeIsDark），" +
+            "token 与调色板必须从同一个最终皮肤派生，" +
                 "不能另写一套日夜逻辑，否则会出现「外壳夜里、组件日间」的第二类错配。",
-            src.contains("SkinRegistry.toDesignTokens") &&
-                src.contains("palette.isDark")
+            src.contains("SkinRegistry.toDesignTokens(skin)") &&
+                src.contains("paletteOf(tokens)")
         )
     }
 

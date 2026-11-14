@@ -17,7 +17,7 @@ import java.io.File
  * | `ImageSkinImporter` Uri 解码 | ✅ |
  * | `SkinPickerSection` 用户入口 | ✅ 能点 |
  * | **选中后通知外壳** | ❌ **回调是默认空实现 `{}`** |
- * | **外壳更新 customSkin 状态** | ❌ **`customSkin` 只在初始化时读一次** |
+ * | **外壳更新 selectedSkin 状态** | ❌ **`selectedSkin` 只在初始化时读一次** |
  *
  * 后果：**用户能选皮肤、能选图、能生成皮肤，界面颜色一点不变。**
  * 这是「接了一半」比「完全没接」更难发现的形态——入口在、有反馈、有持久化，
@@ -25,7 +25,7 @@ import java.io.File
  *
  * ## 判据（三段链，缺一段就是断）
  *
- * 1. `MainActivity` 的 `customSkin` 必须**被赋值**（不是只有 `by remember { }` 初始化）；
+ * 1. `MainActivity` 的 `selectedSkin` 必须**被赋值**（不是只有 `by remember { }` 初始化）；
  * 2. `ShelfAppearanceSheet` 必须调用 `onSkinChange(...)`；
  * 3. `BookshelfScreen` 必须把 `onSkinChanged` 继续往上传。
  */
@@ -81,15 +81,15 @@ class SkinRuntimeEffectGuardTest {
     private val bookshelf get() = stripComments(read("src/main/java/com/linguareader/app/BookshelfScreen.kt"))
 
     @Test
-    fun mainActivityAssignsCustomSkinFromCallback() {
-        // 「var customSkin by remember { ... }」只是初始化；必须有赋值语句才算接线。
+    fun mainActivityAssignsSelectedSkinFromCallback() {
+        // 「var selectedSkin by remember { ... }」只是初始化；必须有赋值语句才算接线。
         val src = mainActivity
         assertTrue(
-            "MainActivity 里 `customSkin` 必须被二次赋值（皮肤选中后立刻生效）。" +
-                "如果只有 `var customSkin by remember { mutableStateOf(...) }`，" +
+            "MainActivity 里 `selectedSkin` 必须被二次赋值（皮肤选中后立刻生效）。" +
+                "如果只有 `var selectedSkin by remember { mutableStateOf(...) }`，" +
                 "那用户选了皮肤界面不会变 —— 这正是 P19 修掉的缺陷。",
-            Regex("customSkin\\s*=\\s*it").containsMatchIn(src) ||
-                Regex("customSkin\\s*=\\s*[a-zA-Z]").containsMatchIn(src)
+            Regex("selectedSkin\\s*=\\s*it").containsMatchIn(src) ||
+                Regex("selectedSkin\\s*=\\s*[a-zA-Z]").containsMatchIn(src)
         )
     }
 
@@ -109,7 +109,8 @@ class SkinRuntimeEffectGuardTest {
         // 数出现次数会被自己命中（第一版就是这样得出 3 处的假绿）。
         // 改成查三种**调用实参**的具体形态，每一种都对应一条真实路径。
         val delegatesImageSkin = src.contains("onSkinChange(spec)")
-        val delegatesBuiltIn = src.contains("onSkinChange(null)")
+        val delegatesBuiltIn = src.contains("onSkinChange(SkinStore.selected(context))") &&
+            src.contains("onSkinChange(null)")
         assertTrue(
             "缺少「选图片皮肤后通知外壳」——用户选了图，界面不会变色。",
             delegatesImageSkin

@@ -3634,3 +3634,90 @@ composeRule.onNodeWithText("从一本英文书开始").assertIsDisplayed()
 
 4 个 UI 交互仪器测试**仍未在设备上执行过**。它们覆盖的正是本轮重构最该验的部分：
 书架空态与三按钮、启动问候卡、阅读页跳转与查词、复习设置三档。
+
+
+### 2026-11-14 · 修复内置皮肤选择未作用于实际外壳配色
+
+- 根因：内置色块写入 ID 后传 `onSkinChange(null)`，Activity 又只加载 `currentCustom`，导致选择与重启均退回阅读主题/系统判定。
+- 修复：新增 `SkinStore.selected` 区分“无显式选择”和已选内置/图片皮肤；内置选择向上发送实际皮肤。Activity 初始化也读取该选择，未选或自定义数据损坏时仍走自动主题。
+- 生产配色入口抽为 `AppSkinTheme`：同一最终皮肤生成 DesignTokens、兼容 LinguaPalette 与 Material colorScheme；窗口启动明暗和外观预设的禁用状态也尊重选中皮肤。
+- 新增 `SkinSelectionEffectTest`，点击真实 `ShelfAppearanceSheet` 色块并读取生产主题入口下的颜色，覆盖三种内置皮肤即时生效、丢弃 remember 状态后读盘恢复、显式日间优先于深色阅读/系统、无选择自动跟随、图片切内置并清除旧 JSON。断言包括 paper/ink、兼容 paper 和 Material background/surface/onBackground/primary，而非只检查 ID。色块增加名称语义，供读屏与测试定位。
+- 测试使用高画布以容纳现有长表单，先 assertIsDisplayed 再点击；只验证选择与配色链，不作为手机小屏滚动布局验收，也未执行 Activity 进程级重启。
+- macOS 本机 JDK 17 + SDK 35：`:app:testDebugUnitTest` 定向执行 SkinSelectionEffectTest / SkinPipelineWiringTest / SkinRuntimeEffectGuardTest / ProductionThemeWiringTest / SkinCompatTest / DesignSystemVisualRegressionTest / SkinPickerRenderTest，XML 合计 **35 tests / 0 failures / 0 errors / 0 skipped**；`:app:assembleDebug` **BUILD SUCCESSFUL**。
+- 未做：完整应用单测、真机点选/系统栏观感与进程重启验收。`.agents/` 与 `toolchain/` 在此 checkout 中不存在，使用本机现有 JDK/SDK 运行 Gradle。
+
+### 2026-11-14 · 修复从阅读页返回时应用闪退
+
+- 复现：Android 35 / arm64 模拟器安装修复前 APK，打开本地测试书后点击阅读顶栏返回。设备侧 `AndroidRuntime` 报 `NullPointerException`，栈顶 `MainActivity.kt:270`（`currentBook!!`），随后应用进程退出。证据：`artifacts/reader-back/before-crash.log`。
+- 根因：`AppViewModel.closeBook()` 先清空 `currentBook`；`LinguaReaderApp` 通过 `LaunchedEffect(desiredRoute)` 异步同步导航镜像。在两者之间，旧的 Reader 路由会调用捕获了新状态的阅读页注册项，强制解包空书籍。
+- 修复：`AppNavHost` / `NavHostLite` 支持显式路由，生产入口把同一份 `AppUiState` 投影的 `desiredRoute` 直接用于本帧渲染；导航栈继续镜像开书压栈、换书替换、关书回根的原有约定。导航镜像未与显示路由同步时不接管返回键；阅读页仍使用自己的返回处理保存进度、处理弹层。Reader 注册项移除非空断言。
+- 回归测试：新增 `ReaderReturnRegressionTest`，使用真实 `MainActivity`、书架点选、阅读页关闭回调和系统返回分发，覆盖顶栏返回并连续重开 3 次、系统返回后书籍状态清空且 Activity 不结束。定向执行 XML：**2 tests / 0 failures / 0 errors / 0 skipped**；`:app:assembleDebug` 成功。生产 Activity 自建 Recomposer，测试等待实际页面出现再断言。
+- 模拟器复验：同一进程 PID **4539**，依次顶栏返回 / 系统返回 / 顶栏返回，均恢复书架、可重新打开，崩溃缓冲区无 `FATAL EXCEPTION`。先翻到第 2/8 页再返回，三轮 metadata 均为 `pageIndex=1`、`locusBlockIndex=9`，后两轮重新打开页面指示器仍为 2/8。证据：`artifacts/reader-back/emulator-verification.log`、`emulator-results.json`、`fixed-reader-*.xml`、`after-crash.log`。
+- 验证环境：macOS 本机 JDK 17 / SDK 35；此 checkout 未包含 `.agents/` 与 `toolchain/`，使用本机现有 Gradle 缓存执行。APK 仅用于临时模拟器验证；未在实体手机验证，未发布安装包。
+
+
+### 2026-11-14 · 修复查词面板缺少“加入生词本”按钮
+
+- 根因：`ReaderLookupSheet` 的整组操作按钮被 `entry != null` 包住；本地词典未命中时，即使有 AI 释义或译本对照也不会显示收藏入口。`ReaderScreen` 的保存回调同样在无词典条目时直接返回，收藏状态 ID 也只从词典条目生成。
+- 修复：收藏/朗读操作独立于词典命中，按钮用 FlowRow 在窄屏或大字体下换行。词典查询期间保持收藏入口可见但禁用，完成后恢复。查词会话统一选择展示词条和收藏词条；未命中时以原文生成空词典条目，保存原词、例句和已有 AI 释义；收藏、识别已收藏、复习和移除使用一致 ID。命中的原型词与显式选中的短语仍保留原有保存语义。
+- 保存反馈：成功行内提示改为落盘完成后显示；写盘失败保留原有生词列表，显示失败提示并允许重试，协程取消继续抛出。
+- 先复现后修复：新增 `ReaderLookupVocabularyTest` 的未命中收藏/移除入口两例在修改生产代码前均失败；修复后通过。新增共 8 项 JVM 用例，覆盖无词典结果、仅 AI 结果、加载中禁用、原词与例句重读、AI 释义独立存储、原型词/短语、写盘失败及重试。
+- macOS 本机 JDK 17 + SDK 35：`:app:testDebugUnitTest` 定向执行 `ReaderLookupVocabularyTest` / `ReaderVocabularyPersistenceTest` / `ReaderLookupSessionTest` / `ReaderScreenStateTest` / `VocabularyScreenStateTest` / `StringResourcesTest`，原始 XML 合计 **52 tests / 0 failures / 0 errors / 0 skipped**。未执行完整应用单测。
+- 模拟器实测：LinguaReaderApi35（Android 15），通过 `:app:connectedDebugAndroidTest -PverifyBuild -Pandroid.testInstrumentationRunnerArguments.class=com.linguareader.app.ReaderAcceptanceTest#dictionaryMissCanBeSavedReopenedAndRemoved`，XML **1 test / 0 failures / 0 errors / 0 skipped**。使用确认未被词典收录的 `qzxvocabfixture`，真实正文点击打开查词面板、点击收藏并读盘核对词条/例句、Activity 重建后识别已收藏、点击移除并读盘确认删除，全部通过。只安装并存验证包，测试收尾自动卸载；未覆盖正式包，未作物理真机验证。
+- 首次仪器测试离线构建因缺少 AndroidX 测试依赖中止，联网补齐后进入测试。首轮设备执行在页码定位处超时：旧夹具写死中文文案，模拟器使用英文。将启动提示和页码定位的共享辅助函数改为读文案资源后重跑通过，未调整产品行为或降低断言。
+- `.agents/` 与 `toolchain/` 在此 checkout 不存在，使用现有本机 JDK/SDK 与 Gradle wrapper。保留工作区中已有的皮肤/导航相关改动。
+- 完整回归：`:app:testDebugUnitTest --offline --console=plain` **BUILD SUCCESSFUL**；原始测试 XML 已拷贝留档，合计 **137 suites / 671 tests / 0 failures / 0 errors / 26 skipped**。报告位于 `artifacts/reader-back/full-tests/app/xml/`。
+
+
+## 2026-11-14 · 外观与听书设置按需展开
+
+- 外观面板改名“外观”，应用配色色块直接展示；书架背景、阅读页面与交互动画各有独立折叠入口和当前值摘要。图片选色建议按需展开，重置明确限定为书架背景。内容补上滚动，背景色块与图片操作按钮支持窄屏换行。
+- 听书保留三个引擎及其基础配置、测试连接、保存流程；自建服务的分语言音色与旁白/对白音色、MiMo 风格指令、多角色朗读、音频缓存按需展开，摘要显示默认/自定义、启用状态或缓存上限。配置方法移到帮助中；联网发送文本、费用、缓存和失败回退提示保留并精简。
+- 复用 ExpandableSettingsSection，支持保存展开状态、至少 48dp 点击高度、读屏按钮与展开/收起状态语义；配置草稿仍由原来的父层持有。
+- 新增 SettingsDisclosureTest：411×891dp Robolectric 原生渲染，实际展开/收起、滚动和点击；验证背景选择/重置/图片入口、阅读主题、动画档位、深色预设禁用和解释。听书修改分语言与旁白音色，收起重开、切换 MiMo 并填写风格、切回服务端后保存，读盘确认各引擎配置均保留；同时确认多角色与缓存清理入口仍可达。
+- 旧的“深色比浅色多画一行”像素断言不适用于默认收起的页面，已由真实展开后的语义和禁用状态断言替代。渲染图检查了默认外观和服务端配置页面。
+- 最终定向执行 SettingsDisclosureTest / SkinSelectionEffectTest / SkinRuntimeEffectGuardTest / StringResourcesTest / ListeningSettingsRenderTest / SheetMigrationRenderTest.shelfAppearanceSheetContentRenders，原始 XML 合计 **19 tests / 0 failures / 0 errors / 0 skipped**；:app:assembleDebug **BUILD SUCCESSFUL**。中英文资源 key 一致、无重复，git diff --check 通过。
+- 首轮批量执行包含不相关的 everyUpdatePhaseRenders，线程栈显示停留在更新动画的主线程 idle；停止该测试进程后收窄到相关用例。新增测试最初的截图采集在 Robolectric 超时，移除该辅助采集，保留交互断言并使用现有渲染夹具检查截图；英文部分匹配的定位歧义改为精确匹配可点击入口。
+- 未执行完整应用测试或本次真机/模拟器验证；未调用网络服务、实际试听或执行 SAF 图片选择。git fetch 因网络 DNS 失败，本次基于现有 checkout，保留工作区已有皮肤、导航与查词改动。未提交或推送。
+
+## 2026-11-14 · AI 设置按需展开
+
+- AI 翻译页保留联网开关、当前服务商/模型摘要和配置就绪状态。已有服务商的完整列表、编辑、新增和预设入口收进“服务商管理”；没有服务商时默认展开，便于首次配置。状态只表述字段已配置，明确未验证连接。
+- 服务商编辑默认展示 API Key 和模型，名称/接口地址/协议收进“连接参数”，配置说明收进帮助。新增空白自定义服务商时连接参数默认展开；预设已有端点时只需补 Key。模型发现、连接测试、保存、取消和删除确认沿用原有逻辑。联网时会发送的书籍章节及点击词句范围继续直接展示，语境档案和离线降级说明放在可展开帮助中。
+- ExpandableSettingsSection 增加 initiallyExpanded 初值参数，旧调用默认收起语义不变。ProviderEditorContent 统一持有生产编辑器草稿、表单和动作，生产仍由原 AlertDialog 承载。
+- 新增 AiSettingsDisclosureTest 五项手机尺寸交互测试：服务商选择后收起并保存/读盘；编辑模型/地址/协议，收起重开后保存完整档案；预设只补 Key 且保留隐藏端点/模型/协议；新增自定义服务商直接展示连接字段；首次配置展开但总开关关闭时在线控件禁用。Key 保留通过保存回调断言，Robolectric 无原生 Android Keystore，读盘仅核对非密钥字段。
+- 初轮直接挂 AlertDialog 的两项测试在 setContent 空闲等待阶段超时，未到达交互断言。随后抽取并复用生产 ProviderEditorContent，测试以有界页面宿主承载同一套表单/状态/保存动作。未放宽断言或延长超时；不把该测试结果视为对话框窗口布局验证。
+- 最终运行 AiSettingsDisclosureTest / AiSettingsStoreMigrationTest / AiProviderSettingsRenderTest / SettingsDisclosureTest / StringResourcesTest / SettingsSheetRenderTest 的两个 AI 抽屉用例，原始 XML 合计 **20 tests / 0 failures / 0 errors / 0 skipped**。:app:assembleDebug **BUILD SUCCESSFUL**。检查了 AI 抽屉默认态渲染图；中英文资源 key 一致且无重复，git diff --check 通过。
+- 未执行完整应用测试、本次设备/对话框验证或真实联网模型发现/连接测试。git fetch 因 DNS 无法解析失败，基于现有 checkout；保留原有工作区修改，未提交或推送。
+
+
+## 2026-11-14 · 阅读全屏与点词内容精简
+
+- 上下栏统一显隐：首次进入和点击空白处唤出后展示约 4 秒，然后自动收起；用户翻页、切章手势、实际滚动及点词会收起栏位。打开目录/设置/跳页/复习提示/听书起点选择等操作时暂停自动隐藏；自动隐藏尊重无障碍推荐时间，并在读屏触摸探索开启时保留控件。系统栏随阅读状态显隐，退出阅读恢复显示，支持边缘手势临时唤出。
+- 阅读工具栏和听书条作为临时浮层；正文改用稳定的系统安全边距，不再为已隐藏工具栏长期保留 104/70 CSS px 空间。栏位显示/隐藏不改变正文分页高度。听书控件收起不停止播放，起点选择期间保留控制条。
+- 点词保留词、音标、词形/短语、词性、释义、语境解释、译文、原句和发音/收藏/复习/重译等动作。去掉结果来源名、译本匹配层级/置信度、对齐来源标签及词典介绍页脚；整句翻译直接显示结果正文；失败和未匹配仅给简短结果提示，面板不再显示端点/Key 排障说明和原始传输错误。
+- ReaderLookupVocabularyTest 增加内容断言：语境释义/中文译文/原句仍存在，服务商、来源、译本元信息和词典介绍均不显示，翻译失败保留短反馈但不显示传输诊断。ReaderScreenStateTest 补充阅读动作收起、保留其他弹层状态、操作中暂停隐藏条件。
+- 定向 JVM/Robolectric 运行 ReaderScreenStateTest / ReaderLookupVocabularyTest / ReaderReturnRegressionTest / ReaderScriptsTest / StringResourcesTest，原始 XML 合计 **93 tests / 0 failures / 0 errors / 0 skipped**；:app:assembleDebug **BUILD SUCCESSFUL**。git diff --check 和中英文资源 key 对齐/重复检查通过。
+- Android 15 模拟器 LinguaReaderApi35（emulator-5554），独立 verify 包执行 ReaderAcceptanceTest#controlsHideTogetherWithoutChangingTextViewport 和 #dictionaryMissCanBeSavedReopenedAndRemoved，原始设备 XML **2 tests / 0 failures / 0 errors / 0 skipped**，BUILD SUCCESSFUL。前者实际等待隐藏、经真实 WebView 文档 pointer handlers/ReaderBridge 发送空白点击唤回，比较显隐前后的 CSS 边距/正文容器高度/页码，确认翻页推进并重新隐藏；后者真实屏幕点词、收藏、Activity 重建和移除并读盘核对。测试结束自动卸载 verify 包，未覆盖正式安装。
+- 未执行完整应用测试、物理真机、横屏/刘海屏或完整听书播放回归。全屏唤回在新增设备测试中使用 DOM pointer 事件链，未把它表述为物理触摸手势验证。git fetch 因 DNS 失败，基于现有 checkout，保留此前工作区改动；未提交或推送。
+
+
+## 2026-11-15 · 点词后优先显示词典中文释义
+
+- 复现：内置词典查询正常，但 ReaderLookupSheet 把词典释义排在 AI 语境解释、译本对照和整句翻译之后；长结果将释义挤出首屏。新增手机尺寸测试 dictionaryMeaningIsVisibleWithLongContextAndTranslation 在修复前失败，原始断言为“组件不可见”，证据在 artifacts/dictionary-lookup/baseline-layout.xml。
+- 修复：仅调整 ReaderLookupSheet 内容顺序，将本地词典加载状态、中文义项、英文定义及未命中提示移到操作按钮/收藏反馈之后、AI 和译本结果之前。查询、短语切换、义项高亮及后续内容保持原语义。
+- 定向 JVM/Robolectric：ReaderLookupVocabularyTest / ReaderLookupSessionTest / ReaderScreenStateTest / DictionarySqlParityTest，原始 XML 共 **49 tests / 0 failures / 0 errors / 0 skipped**，留档 artifacts/dictionary-lookup/unit-results/。新增长 AI/译文下词典义项首屏可见断言，修复后通过。
+- Android 15 模拟器 LinguaReaderApi35：独立 verify 包，真实正文点击 lantern 后断言词典中文释义可见；另在真实 Android 弹层窗口加载内置词典结果及长 AI/译文，断言首屏可见；以及 DictionaryInstrumentedTest 的 7 项查询回归。最终设备原始输出 **OK (9 tests)**，见 artifacts/dictionary-lookup/final-instrumentation.log。人工检查 dictionary-first-screen.png，首屏清楚显示“n. 灯笼, 提灯, 航标灯”和“vt. 装上提灯”，下方继续展示语境释义。截图采集等待设备绘制，不放宽可见性断言。
+- 额外发现：既有 dictionaryMissCanBeSavedReopenedAndRemoved 在 Activity 重建后点击移除、等待读盘确认删除处超时（ReaderAcceptanceTest.kt:235）。批量及单独运行均失败；临时恢复修复前的释义顺序后仍在同一断言失败，确认本次顺序调整前即存在，未扩展修改收藏流程。对照日志/设备 XML 分别保存在 first-device-results/、isolated-vocabulary-results/、baseline-vocabulary-results/，均位于 artifacts/dictionary-lookup/。
+- 最终 verify APK 与测试 APK 构建、安装成功。未执行完整应用单测、物理真机或真实联网 AI 验证；长 AI/译文使用本地测试数据。未覆盖正式安装、未发布 APK。保留原有工作区修改，git diff --check 通过；git fetch 因 DNS 不可用失败，未提交或推送。此 checkout 无 .agents/ 与 toolchain/，使用本机 JDK 17/SDK 35 与 Gradle wrapper。
+
+## 2026-11-15 · v2.2.0 验证版发布准备
+
+- 用户要求将本地最新改动发布为正式 Release，并在发布页注明“验证版”。已成功 fetch，发布前 HEAD 与 origin/main 均为 a3ffb49，无分叉；上一正式版为 v2.1.0。Android 版本升为 2.2.0 / versionCode 23，保留正式包名 com.linguareader.app。
+- 当前 checkout 缺少 .agents/ 与 toolchain/；使用本机现有 Homebrew JDK 17 / SDK 35 / Gradle 缓存，通过 bash 启动 Gradle wrapper。:app:assembleRelease / :app:assembleDebug / :app:assembleDebugAndroidTest 均 BUILD SUCCESSFUL，release 启用 R8 与资源裁剪；aapt 确认版本、包名、minSdk 23 / targetSdk 35 及非 debuggable。
+- 本次变更相关定向 JVM/Robolectric 回归：AiSettingsDisclosureTest、SettingsDisclosureTest、ReaderReturnRegressionTest、ReaderLookupVocabularyTest、ReaderVocabularyPersistenceTest、SkinSelectionEffectTest、ReaderScreenStateTest、ReaderScriptsTest、StringResourcesTest、AiSettingsStoreMigrationTest、ReaderLookupSessionTest、VocabularyScreenStateTest、SkinRuntimeEffectGuardTest、ProductionThemeWiringTest、SkinPipelineWiringTest、SkinCompatTest。原始 XML 合计 **16 suites / 147 tests / 0 failures / 0 errors / 0 skipped**。
+- 完整 :app 单测未完成：卡在此前已记录的 SheetMigrationRenderTest.everyUpdatePhaseRenders → ComposeRenderHarness.render → ShadowLooper.idleMainLooper 动画等待；两次线程采样确认同一位置后终止该次进程。未改断言或将该次执行计作通过。
+- 完整 :shared:test 原始 XML：**142 suites / 786 tests / 17 failures / 0 errors / 8 skipped**。17 个失败均来自本地真实语料探针定位 artifacts/lotr-book 等未提供目录时的“找不到仓库根”；本次未改 src/shared，未修改或跳过这些断言。失败报告留档。
+- 下载已发布 v2.1.0 APK 并验签：旧证书 SHA-256 为 ff9db6e100b067e199382025bb9c860cffd8f481aecf992b75cf8421a155836f。本机 ~/.android/debug.keystore 与 Desktop 项目副本证书均为 577177622647772ee40c8c10ba6fa2034c6108d9efed5a54090549f7c0f50297，不能覆盖安装旧正式版。已检查本机项目与备份位置、Git 历史、GitHub Actions Secret 名称，未找到旧发布密钥；待用户选择找回密钥或接受新签名的安装限制。密钥未复制入库。
+- 仅用现有 Mac 密钥生成本地 release 验证产物，apksigner v1/v2/v3 验签通过、zipalign 检查通过。Android 15 / arm64 模拟器 emulator-5554 上安装成功，冷启动 Status: ok，MainActivity 保持前台，设备确认 versionName 2.2.0 / versionCode 23 且无 DEBUGGABLE 标志。该结果不证明与旧正式版签名兼容，未操作实体手机。
+- 构建、完整测试失败及线程证据、定向测试 XML、发布说明草稿和候选 APK 均位于 gitignored 的 artifacts/release-v2.2.0/。本条记录时尚未创建公开 Release；尚未完成物理真机、完整听书与联网 AI 回归，既有 Activity 重建后移除生词超时问题继续如实记录。

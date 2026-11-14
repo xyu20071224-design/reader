@@ -69,6 +69,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -1267,19 +1268,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         chapterTitle: String,
         lookup: WordLookup,
         entry: ContextualDictionaryEntry,
-        aiResult: AiLookupResult? = null
+        aiResult: AiLookupResult? = null,
+        onDone: (Boolean) -> Unit = {}
     ) {
         viewModelScope.launch {
-            val words = vocabulary.save(
-                book, chapterTitle, lookup, entry,
-                pace = mutableState.value.reviewPace,
-                aiResult = aiResult
-            )
+            val words = try {
+                vocabulary.save(
+                    book, chapterTitle, lookup, entry,
+                    pace = mutableState.value.reviewPace,
+                    aiResult = aiResult
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                mutableState.value = mutableState.value.copy(
+                    notice = string(R.string.notice_word_save_failed),
+                    noticeTone = StatusTone.DANGER
+                )
+                onDone(false)
+                return@launch
+            }
             mutableState.value = mutableState.value.copy(
                 savedWords = words,
                 notice = string(R.string.notice_word_saved, entry.matchedPhrase ?: entry.headword),
                 noticeTone = StatusTone.SUCCESS
             )
+            onDone(true)
             rescheduleReviewReminders()
             scheduleAutoSync()
         }

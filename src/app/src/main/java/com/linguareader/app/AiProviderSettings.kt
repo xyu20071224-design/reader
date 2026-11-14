@@ -47,6 +47,7 @@ import com.linguareader.app.ai.AiTranslators
 import com.linguareader.app.ai.DiscoveredModel
 import com.linguareader.app.ai.discoverModels
 import com.linguareader.app.ai.probeKeyUsable
+import com.linguareader.app.components.ExpandableSettingsSection
 import com.linguareader.app.components.LinguaTextButton
 import com.linguareader.app.skin.LocalDesignTokens
 import kotlinx.coroutines.launch
@@ -199,6 +200,36 @@ internal fun ProviderEditorDialog(
     onDismiss: () -> Unit
 ) {
     val t = LocalDesignTokens.current
+    ProviderEditorContent(initial, isNew, masterEnabled, onSave, onDelete, onDismiss) { title, form, confirm, dismiss ->
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            containerColor = t.colors.cardSurface,
+            shape = t.cardShape,
+            title = title,
+            text = form,
+            confirmButton = confirm,
+            dismissButton = dismiss
+        )
+    }
+}
+
+/** 编辑草稿与动作由此处统一持有；宿主决定对话框或页面布局。 */
+@Composable
+internal fun ProviderEditorContent(
+    initial: AiProviderProfile,
+    isNew: Boolean,
+    masterEnabled: Boolean,
+    onSave: (AiProviderProfile) -> Unit,
+    onDelete: ((AiProviderProfile) -> Unit)?,
+    onDismiss: () -> Unit,
+    container: @Composable (
+        title: @Composable () -> Unit,
+        form: @Composable () -> Unit,
+        confirm: @Composable () -> Unit,
+        dismiss: @Composable () -> Unit
+    ) -> Unit
+) {
+    val t = LocalDesignTokens.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(initial.name) }
@@ -227,11 +258,8 @@ internal fun ProviderEditorDialog(
         model = model.trim()
     )
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = t.colors.cardSurface,
-        shape = t.cardShape,
-        title = {
+    container(
+        {
             Text(
                 text = stringResource(
                     if (isNew) R.string.aidrawer_provider_new else R.string.aidrawer_provider_edit
@@ -239,70 +267,20 @@ internal fun ProviderEditorDialog(
                 style = t.typography.title
             )
         },
-        text = {
+        {
             Column(
                 Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text(stringResource(R.string.aidrawer_provider_name_label)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(t.spacing.s))
-                OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    label = { Text(stringResource(R.string.aidrawer_base_url_label)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(t.spacing.s))
-                OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it },
-                    label = { Text("API Key") },
+                    label = { Text(stringResource(R.string.ai_api_key)) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (protocol == AiProtocol.OPENAI_COMPAT) {
-                    Text(
-                        stringResource(R.string.aidrawer_provider_local_key_hint),
-                        style = t.typography.label,
-                        color = t.colors.inkSoft
-                    )
-                }
-                Spacer(Modifier.height(EditorFieldGap))
-                Text(
-                    stringResource(R.string.aidrawer_provider_protocol_label),
-                    style = t.typography.label
-                )
-                // FlowRow：放不下的 chip 整颗换行。普通 Row 会把最后一颗挤成
-                // 零宽并纵向堆叠，撑出一个隐形高块（协议与模型之间的大间隔）。
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(EditorChipGap),
-                    verticalArrangement = Arrangement.spacedBy(t.spacing.xs)
-                ) {
-                    AiProtocol.ALL.forEach { candidate ->
-                        FilterChip(
-                            selected = protocol == candidate,
-                            onClick = { protocol = candidate },
-                            label = { Text(stringResource(protocolLabelRes(candidate))) },
-                            enabled = masterEnabled
-                        )
-                    }
-                }
-                if (protocol != AiProtocol.OPENAI_COMPAT) {
-                    Text(
-                        stringResource(R.string.aidrawer_provider_discovery_hint),
-                        style = t.typography.label,
-                        color = t.colors.inkSoft
-                    )
-                }
                 Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = model,
@@ -311,6 +289,56 @@ internal fun ProviderEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                ExpandableSettingsSection(
+                    title = stringResource(R.string.ai_connection_options),
+                    summary = stringResource(protocolLabelRes(protocol)),
+                    initiallyExpanded = isNew && initial.baseUrl.isBlank()
+                ) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text(stringResource(R.string.aidrawer_provider_name_label)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(t.spacing.s))
+                    OutlinedTextField(
+                        value = baseUrl,
+                        onValueChange = { baseUrl = it },
+                        label = { Text(stringResource(R.string.aidrawer_base_url_label)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(EditorFieldGap))
+                    Text(
+                        stringResource(R.string.aidrawer_provider_protocol_label),
+                        style = t.typography.label
+                    )
+                    // FlowRow：放不下的 chip 整颗换行。普通 Row 会把最后一颗挤成
+                    // 零宽并纵向堆叠，撑出一个隐形高块（协议与模型之间的大间隔）。
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(EditorChipGap),
+                        verticalArrangement = Arrangement.spacedBy(t.spacing.xs)
+                    ) {
+                        AiProtocol.ALL.forEach { candidate ->
+                            FilterChip(
+                                selected = protocol == candidate,
+                                onClick = { protocol = candidate },
+                                label = { Text(stringResource(protocolLabelRes(candidate))) },
+                                enabled = masterEnabled
+                            )
+                        }
+                    }
+                }
+                ExpandableSettingsSection(title = stringResource(R.string.settings_setup_help)) {
+                    if (protocol == AiProtocol.OPENAI_COMPAT) {
+                        Text(stringResource(R.string.aidrawer_provider_local_key_hint),
+                            style = t.typography.caption, color = t.colors.inkSoft)
+                    } else {
+                        Text(stringResource(R.string.aidrawer_provider_discovery_hint),
+                            style = t.typography.caption, color = t.colors.inkSoft)
+                    }
+                }
                 Spacer(Modifier.height(EditorProbeGap))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     LinguaTextButton(
@@ -427,7 +455,7 @@ internal fun ProviderEditorDialog(
         },
         // ⚠️ AlertDialog 的 confirm/dismiss 槽位**不换** LinguaTextButton
         // （手册「按槽位判」：页面级几何 48dp + contentPadding 与对话框的等分宽度排布硬冲突）。
-        confirmButton = {
+        {
             TextButton(onClick = {
                 val candidate = draft()
                 if (candidate.baseUrl.isBlank() || candidate.apiKey.isBlank() ||
@@ -439,7 +467,7 @@ internal fun ProviderEditorDialog(
                 onSave(candidate)
             }) { Text(stringResource(R.string.common_save)) }
         },
-        dismissButton = {
+        {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (onDelete != null) {
                     // 删除是破坏性动作：LinguaTextButton 只有一种主色，套上去会丢掉

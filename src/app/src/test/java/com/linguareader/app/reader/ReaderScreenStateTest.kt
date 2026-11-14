@@ -373,6 +373,22 @@ class ReaderScreenStateTest {
         assertFalse(reviewing.reviewPrompt)
     }
 
+    @Test fun readingHidesBothBarsWithoutClosingOtherControls() {
+        val shown = ReaderOverlays(settings = true)
+        val reading = shown.onReadingInteraction()
+        assertFalse(reading.toolbarVisible)
+        assertTrue(reading.settings)
+        assertTrue(reading.toggleToolbar().toolbarVisible)
+    }
+
+    @Test fun activeControlsSuspendAutomaticHiding() {
+        assertFalse(ReaderOverlays().hasOpenControls)
+        for (open in listOf(ReaderOverlays(contents = true), ReaderOverlays(settings = true),
+            ReaderOverlays(listeningSettings = true), ReaderOverlays(pageJump = true),
+            ReaderOverlays(reviewSettings = true), ReaderOverlays(reviewPrompt = true),
+            ReaderOverlays(choosingStart = true))) assertTrue(open.hasOpenControls)
+    }
+
     @Test
     fun toolbarTogglesBothWays() {
         val hidden = ReaderOverlays().toggleToolbar()

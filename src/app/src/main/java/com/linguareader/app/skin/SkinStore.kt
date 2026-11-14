@@ -36,17 +36,17 @@ object SkinStore {
     private const val KEY_SELECTED_ID = "selected_skin_id"
     private const val KEY_CUSTOM_JSON = "selected_skin_json"
 
-    /** 读取当前皮肤。永远返回一个可用皮肤（最差也是内置日间）。 */
-    fun load(context: Context): SkinSpec {
+    /** 未显式选择或自定义数据损坏时返回 null，外壳继续跟随阅读主题/系统。 */
+    fun selected(context: Context): SkinSpec? {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val id = prefs.getString(KEY_SELECTED_ID, null) ?: return SkinBuiltIns.light
-
-        // 内置皮肤优先：这样内置皮肤升级后能立刻生效，不会被旧 JSON 锁住。
+        val id = prefs.getString(KEY_SELECTED_ID, null) ?: return null
         SkinBuiltIns.byId(id)?.let { return it }
-
-        val json = prefs.getString(KEY_CUSTOM_JSON, null) ?: return SkinBuiltIns.light
-        return runCatching { SkinSpec.fromJson(json) }.getOrElse { SkinBuiltIns.light }
+        val json = prefs.getString(KEY_CUSTOM_JSON, null) ?: return null
+        return runCatching { SkinSpec.fromJson(json) }.getOrNull()
     }
+
+    /** 兼容需要非空皮肤的调用方。 */
+    fun load(context: Context): SkinSpec = selected(context) ?: SkinBuiltIns.light
 
     /** 选中一个内置皮肤。 */
     fun selectBuiltIn(context: Context, id: String) {

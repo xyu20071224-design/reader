@@ -45,11 +45,9 @@ android {
         applicationId = "com.linguareader.app"
         minSdk = 23
         targetSdk = 35
-        // 前端重构（refactor/ui-foundation）升一个小版本：2.0.0 -> 2.1.0。
-        // versionCode 必须一起加：否则与已发布的 v2.0.0 同为 21，
-        // 会出现「两个不同内容的包共用一个 versionCode」，覆盖安装/回滚都会歧义。
-        versionCode = 22
-        versionName = "2.1.0"
+        // 本地最新改动的验证版，按正式 Release 发布并递增版本以支持覆盖升级。
+        versionCode = 23
+        versionName = "2.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -281,7 +281,7 @@ class SettingsSheetRenderTest {
                 onRemoveGlossary = { bookId, _ -> com.linguareader.shared.ai.BookGlossary(bookId = bookId) }
             )
         }
-        assertTrue("AI 抽屉必须画出总开关、三个 Tab 与服务商列表", countNonPaper(bmp) > 400)
+        assertTrue("AI 抽屉必须画出总开关、三个 Tab 与服务商摘要", countNonPaper(bmp) > 400)
         assertTrue("出图应当落盘", File("build/ui-render-probe/sheet-ai-drawer.png").isFile)
     }
 

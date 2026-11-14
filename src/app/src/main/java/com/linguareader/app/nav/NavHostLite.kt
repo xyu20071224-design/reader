@@ -110,9 +110,10 @@ fun screenRegistry(block: ScreenRegistryBuilder.() -> Unit): ScreenRegistry =
 fun NavHostLite(
     registry: ScreenRegistry,
     modifier: Modifier = Modifier,
-    host: ComposeNavigator = LocalNavigator.current
+    host: ComposeNavigator = LocalNavigator.current,
+    /** 状态驱动的外壳可直接传入本次状态对应的路由，避免读取异步更新的导航镜像。 */
+    route: Route = host.current
 ) {
-    val route = host.current
     val content = registry[route.key]
     Box(modifier.fillMaxSize()) {
         if (content != null) content(route) else MissingScreen(route)

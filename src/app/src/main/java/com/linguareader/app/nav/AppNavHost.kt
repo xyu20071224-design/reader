@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import com.linguareader.shared.ui.nav.Route
 
 /**
  * 应用导航壳：屏幕 + 弹层 + 返回键，三件事在这里合成一条链。
@@ -26,14 +27,16 @@ fun AppNavHost(
     screens: ScreenRegistry,
     overlays: OverlayRegistry,
     nav: AppNavState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 屏幕与业务数据必须来自同一份状态；导航栈可以在副作用中随后同步。 */
+    route: Route = nav.navigator.current
 ) {
-    val handled = nav.canGoBack
+    val handled = route == nav.navigator.current && nav.canGoBack
     BackHandler(enabled = handled) { nav.onBack() }
 
     CompositionLocalProvider(LocalNavigator provides nav.navigator) {
         Box(modifier.fillMaxSize()) {
-            NavHostLite(registry = screens, host = nav.navigator)
+            NavHostLite(registry = screens, host = nav.navigator, route = route)
             OverlayHost(
                 stack = nav.overlays,
                 registry = overlays,

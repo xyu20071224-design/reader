@@ -41,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import com.linguareader.app.components.ExpandableSettingsSection
 import com.linguareader.app.components.LinguaSheet
 import com.linguareader.app.components.LinguaTextButton
 import com.linguareader.app.components.PrimaryButton
@@ -63,7 +64,7 @@ import java.io.File
  * 听书设置弹层（引擎 / 音色 / 语速 / 试听）。
  *
  * P3 迁移：外壳换成 [LinguaSheet]（拖柄/圆角/边距统一由组件给），样式一律取
- * [LocalDesignTokens]。**三个引擎分支的内容、保存语义、行内反馈与文案零改动。**
+ * [LocalDesignTokens]。基础配置直接显示，专项配置与帮助按需展开；保存和行内反馈沿用原有流程。
  *
  * 标题留在内容体里而不是走 [LinguaSheet] 的 title 槽：同一个内容体还被
  * AI 抽屉的「听书语音」Tab 复用（那里上方是总开关行与 Tab 行，没有本屏标题），
@@ -297,11 +298,17 @@ internal fun ListeningSettingsBody(
 
             if (settings.mode == TtsEngineMode.SYSTEM) {
                 SectionHeader(text = stringResource(R.string.tts_system_section))
-                Text(
-                    stringResource(R.string.tts_system_hint),
-                    style = t.typography.label,
-                    color = t.colors.inkFaint
-                )
+                ExpandableSettingsSection(title = stringResource(R.string.settings_setup_help)) {
+                    Text(
+                        stringResource(R.string.tts_system_hint),
+                        style = t.typography.label,
+                        color = t.colors.inkFaint
+                    )
+                    if (systemVoices.isNotEmpty()) {
+                        Text(stringResource(R.string.tts_system_hidden_hint),
+                            style = t.typography.label, color = t.colors.inkFaint)
+                    }
+                }
                 Spacer(Modifier.height(t.spacing.xs))
                 LinguaTextButton(
                     text = if (systemVoices.isEmpty()) {
@@ -335,11 +342,7 @@ internal fun ListeningSettingsBody(
                         onSelect = { settings = settings.copy(systemEnVoice = it) }
                     )
                     Spacer(Modifier.height(t.spacing.xs))
-                    Text(
-                        stringResource(R.string.tts_system_hidden_hint),
-                        style = t.typography.label,
-                        color = t.colors.inkFaint
-                    )
+
                 }
             }
 
@@ -349,7 +352,6 @@ internal fun ListeningSettingsBody(
                     value = settings.serverUrl,
                     onValueChange = { settings = settings.copy(serverUrl = it.trim()) },
                     label = { Text(stringResource(R.string.tts_server_url_label)) },
-                    supportingText = { Text(stringResource(R.string.tts_server_url_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -358,7 +360,6 @@ internal fun ListeningSettingsBody(
                     value = settings.serverModel,
                     onValueChange = { settings = settings.copy(serverModel = it.trim()) },
                     label = { Text(stringResource(R.string.tts_server_model_label)) },
-                    supportingText = { Text(stringResource(R.string.tts_server_model_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -376,46 +377,63 @@ internal fun ListeningSettingsBody(
                     value = settings.serverVoice,
                     onValueChange = { settings = settings.copy(serverVoice = it.trim()) },
                     label = { Text(stringResource(R.string.tts_server_voice_label)) },
-                    supportingText = { Text(stringResource(R.string.tts_server_voice_hint)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(t.spacing.s))
-                OutlinedTextField(
-                    value = settings.serverEnVoice,
-                    onValueChange = { settings = settings.copy(serverEnVoice = it.trim()) },
-                    label = { Text(stringResource(R.string.tts_server_en_voice_label)) },
-                    supportingText = { Text(stringResource(R.string.tts_server_en_voice_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(t.spacing.s))
-                OutlinedTextField(
-                    value = settings.serverZhVoice,
-                    onValueChange = { settings = settings.copy(serverZhVoice = it.trim()) },
-                    label = { Text(stringResource(R.string.tts_server_zh_voice_label)) },
-                    supportingText = { Text(stringResource(R.string.tts_server_zh_voice_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(t.spacing.s))
-                OutlinedTextField(
-                    value = settings.narratorVoice,
-                    onValueChange = { settings = settings.copy(narratorVoice = it.trim()) },
-                    label = { Text(stringResource(R.string.tts_server_narrator_label)) },
-                    supportingText = { Text(stringResource(R.string.tts_server_narrator_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(t.spacing.s))
-                OutlinedTextField(
-                    value = settings.dialogueVoice,
-                    onValueChange = { settings = settings.copy(dialogueVoice = it.trim()) },
-                    label = { Text(stringResource(R.string.tts_server_dialogue_label)) },
-                    supportingText = { Text(stringResource(R.string.tts_server_dialogue_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+
+                ExpandableSettingsSection(
+                    title = stringResource(R.string.settings_language_voices),
+                    summary = stringResource(if (settings.serverEnVoice.isBlank() && settings.serverZhVoice.isBlank())
+                        R.string.settings_default_voice else R.string.settings_configured)
+                ) {
+                    Spacer(Modifier.height(t.spacing.s))
+                    OutlinedTextField(
+                        value = settings.serverEnVoice,
+                        onValueChange = { settings = settings.copy(serverEnVoice = it.trim()) },
+                        label = { Text(stringResource(R.string.tts_server_en_voice_label)) },
+                        supportingText = { Text(stringResource(R.string.tts_server_en_voice_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(t.spacing.s))
+                    OutlinedTextField(
+                        value = settings.serverZhVoice,
+                        onValueChange = { settings = settings.copy(serverZhVoice = it.trim()) },
+                        label = { Text(stringResource(R.string.tts_server_zh_voice_label)) },
+                        supportingText = { Text(stringResource(R.string.tts_server_zh_voice_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                ExpandableSettingsSection(
+                    title = stringResource(R.string.settings_role_voices),
+                    summary = stringResource(if (settings.narratorVoice.isBlank() && settings.dialogueVoice.isBlank())
+                        R.string.settings_default_voice else R.string.settings_configured)
+                ) {
+                    Spacer(Modifier.height(t.spacing.s))
+                    OutlinedTextField(
+                        value = settings.narratorVoice,
+                        onValueChange = { settings = settings.copy(narratorVoice = it.trim()) },
+                        label = { Text(stringResource(R.string.tts_server_narrator_label)) },
+                        supportingText = { Text(stringResource(R.string.tts_server_narrator_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(t.spacing.s))
+                    OutlinedTextField(
+                        value = settings.dialogueVoice,
+                        onValueChange = { settings = settings.copy(dialogueVoice = it.trim()) },
+                        label = { Text(stringResource(R.string.tts_server_dialogue_label)) },
+                        supportingText = { Text(stringResource(R.string.tts_server_dialogue_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                ExpandableSettingsSection(title = stringResource(R.string.settings_setup_help)) {
+                    Text(stringResource(R.string.tts_server_url_hint), color = t.colors.inkSoft)
+                    Text(stringResource(R.string.tts_server_model_hint), color = t.colors.inkSoft)
+                    Text(stringResource(R.string.tts_server_voice_hint), color = t.colors.inkSoft)
+                }
                 Spacer(Modifier.height(t.spacing.s))
                 LinguaTextButton(
                     text = stringResource(R.string.tts_test_connection),
@@ -427,11 +445,13 @@ internal fun ListeningSettingsBody(
 
             if (settings.mode == TtsEngineMode.MIMO) {
                 SectionHeader(text = stringResource(R.string.tts_mimo_section))
-                Text(
-                    stringResource(R.string.tts_mimo_section_hint),
-                    style = t.typography.label,
-                    color = t.colors.inkFaint
-                )
+                ExpandableSettingsSection(title = stringResource(R.string.settings_setup_help)) {
+                    Text(
+                        stringResource(R.string.tts_mimo_section_hint),
+                        style = t.typography.label,
+                        color = t.colors.inkFaint
+                    )
+                }
                 Spacer(Modifier.height(t.spacing.s))
                 OutlinedTextField(
                     value = settings.mimoApiKey,
@@ -456,14 +476,20 @@ internal fun ListeningSettingsBody(
                     presets = mimoEnVoicePresets()
                 )
                 Spacer(Modifier.height(t.spacing.s))
-                OutlinedTextField(
-                    value = settings.mimoStyleInstruction,
-                    onValueChange = { settings = settings.copy(mimoStyleInstruction = it) },
-                    label = { Text(stringResource(R.string.tts_mimo_style_label)) },
-                    supportingText = { Text(stringResource(R.string.tts_mimo_style_hint)) },
-                    minLines = 2,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                ExpandableSettingsSection(
+                    title = stringResource(R.string.tts_mimo_style_label),
+                    summary = stringResource(if (settings.mimoStyleInstruction.isBlank())
+                        R.string.settings_not_set else R.string.settings_configured)
+                ) {
+                    OutlinedTextField(
+                        value = settings.mimoStyleInstruction,
+                        onValueChange = { settings = settings.copy(mimoStyleInstruction = it) },
+                        label = { Text(stringResource(R.string.tts_mimo_style_label)) },
+                        supportingText = { Text(stringResource(R.string.tts_mimo_style_hint)) },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
                 Spacer(Modifier.height(t.spacing.s))
                 LinguaTextButton(
                     text = stringResource(R.string.tts_test_connection),
@@ -474,12 +500,18 @@ internal fun ListeningSettingsBody(
             }
 
             // Multi-voice M4: switch + narrator/character voices (`8).
-            MultiVoiceSection(
-                settings = settings,
-                onSettingsChange = { settings = it },
-                books = books,
-                preselectedBook = book
-            )
+            ExpandableSettingsSection(
+                title = stringResource(R.string.settings_multi_voice),
+                summary = stringResource(if (settings.multiVoiceEnabled)
+                    R.string.settings_enabled else R.string.settings_disabled)
+            ) {
+                MultiVoiceSection(
+                    settings = settings,
+                    onSettingsChange = { settings = it },
+                    books = books,
+                    preselectedBook = book
+                )
+            }
 
             if (settings.mode != TtsEngineMode.SYSTEM) {
                 Spacer(Modifier.height(t.spacing.m))
@@ -493,11 +525,17 @@ internal fun ListeningSettingsBody(
             // D2.4：音频缓存的占用/上限/清理。
             // 「必须显示实测占用」是这块的重点——配额是个魔法数字，占用不是；
             // 用户只有看得见数字，才知道 512 MB 对自己是宽是紧。
-            AudioCacheSection(
-                limitMb = settings.cacheLimitMb,
-                onLimitChange = { settings = settings.copy(cacheLimitMb = it) },
-                onStatus = { status = it }
-            )
+            ExpandableSettingsSection(
+                title = stringResource(R.string.tts_cache_section),
+                summary = if (settings.cacheLimitMb <= 0) stringResource(R.string.tts_cache_limit_unlimited)
+                    else stringResource(R.string.tts_cache_limit_mb, settings.cacheLimitMb)
+            ) {
+                AudioCacheSection(
+                    limitMb = settings.cacheLimitMb,
+                    onLimitChange = { settings = settings.copy(cacheLimitMb = it) },
+                    onStatus = { status = it }
+                )
+            }
 
             Spacer(Modifier.height(t.spacing.l))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -696,7 +734,6 @@ private fun AudioCacheSection(
         usedBytes = withContext(Dispatchers.IO) { cache.totalBytes() }
     }
 
-    SectionHeader(text = stringResource(R.string.tts_cache_section))
     Text(
         when {
             usedBytes < 0 -> ""

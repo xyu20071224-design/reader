@@ -11,9 +11,10 @@
     <string name="notice_book_imported">Imported \"%1$s\"</string>
     <string name="notice_book_deleted">Deleted \"%1$s\"</string>
     <string name="notice_word_saved">Saved \"%1$s\"</string>
+    <string name="notice_word_save_failed">Could not save the word. Please try again.</string>
     <string name="notice_word_removed">Removed \"%1$s\"</string>
-    <string name="reader_ai_lookup_failed">AI context lookup failed, showing local dictionary result</string>
-    <string name="reader_ai_lookup_degraded">AI context lookup failed, degraded to offline lightweight context (check the AI key and endpoint)</string>
+    <string name="reader_ai_lookup_failed">Contextual meaning unavailable</string>
+    <string name="reader_ai_lookup_degraded">Showing local contextual meaning</string>
     <string name="tts_settings_saved">Saved, closing…</string>
     <string name="review_context_explanation">Context note from when you saved it: %1$s</string>
 
@@ -44,7 +45,7 @@
     <string name="shelf_import">Import</string>
 
     <!-- Shelf appearance (background presets / custom image / dim overlay) -->
-    <string name="shelf_appearance_title">Shelf appearance</string>
+    <string name="shelf_appearance_title">Appearance</string>
     <string name="shelf_appearance_background">Background</string>
     <string name="shelf_appearance_follow_theme">Follow theme</string>
     <string name="shelf_preset_green">Bamboo</string>
@@ -57,7 +58,7 @@
     <string name="shelf_background_image_done">Background image updated</string>
     <string name="shelf_background_image_failed">Could not import the image, try another one</string>
     <string name="shelf_background_dim">Dim overlay</string>
-    <string name="shelf_background_reset">Reset to default</string>
+    <string name="shelf_background_reset">Reset bookshelf background</string>
     <string name="shelf_background_reset_done">Shelf appearance reset</string>
     <string name="shelf_anim_speed_title">Tap animation speed</string>
     <string name="shelf_anim_speed_slow">Slow</string>
@@ -190,7 +191,7 @@
     <string name="reader_translation_collapse">Hide pairing</string>
     <string name="reader_translation_english">Source: %1$s</string>
     <string name="reader_translation_paragraph">Translated paragraph: %1$s</string>
-    <string name="reader_translation_miss">No pairing for this sentence (its paragraph or chapter was not aligned)</string>
+    <string name="reader_translation_miss">No matching translation</string>
 
     <!-- Listening player bar -->
     <string name="player_previous">Previous sentence</string>
@@ -394,7 +395,7 @@
     <string name="tts_server_model_label">Model name</string>
     <string name="tts_server_model_hint">A model name exposed by your server, e.g. Fish Speech S2</string>
     <string name="tts_server_token_label">API token (optional)</string>
-    <string name="tts_server_voice_label">Voice (optional, general fallback)</string>
+    <string name="tts_server_voice_label">Default voice (optional)</string>
     <string name="tts_server_voice_hint">Fish Speech usually uses default; for IndexTTS enter a reference audio name such as voice_03.wav</string>
     <string name="tts_server_en_voice_label">English voice (optional)</string>
     <string name="tts_server_en_voice_hint">Used for English sentences; leave blank to follow the general voice above</string>
@@ -408,7 +409,7 @@
     <string name="tts_preset">Presets</string>
     <string name="tts_preset_item">%1$s (%2$s)</string>
     <string name="tts_cloud_incomplete">Finish the engine configuration before enabling cloud TTS</string>
-    <string name="tts_cloud_notice">When enabled, the text to speak is sent to the matching cloud or self-hosted service and billed there; chapter audio is cached locally after the first render. Failed synthesis falls back to the system voice automatically.</string>
+    <string name="tts_cloud_notice">Text is sent to the selected service; charges may apply. Audio is cached locally, with system speech as a fallback if synthesis fails.</string>
     <!-- Audio cache (storage) -->
     <string name="tts_cache_section">Audio cache</string>
     <string name="tts_cache_usage">Using %1$s</string>
@@ -655,7 +656,7 @@
     <string name="aidrawer_remote_title">Online contextual translation</string>
     <string name="aidrawer_base_url_label">Endpoint URL</string>
     <string name="aidrawer_model_label">Model</string>
-    <string name="aidrawer_remote_on_hint">When enabled, chapter text and the words or sentences you tap are sent to the active provider to build or update this book\'s context profile; with no provider ready it automatically falls back to the lightweight on-device context.</string>
+    <string name="aidrawer_remote_on_hint">When enabled, book chapter text and tapped words or sentences are sent to the selected provider.</string>
     <string name="aidrawer_remote_off_hint">While off, lookups stay on the local dictionary and nothing is sent anywhere.</string>
     <string name="aidrawer_provider_add">Add provider</string>
     <string name="aidrawer_preset_section">Official presets (just add an API key)</string>
@@ -863,11 +864,36 @@
     <string name="sync_detail_empty_books">No books yet.</string>
     <string name="sync_detail_empty_words">No vocabulary yet.</string>
     <!-- Skin (P9): image-based theming. 7 entries, keys must match values/. -->
-    <string name="skin_section_title">Skin</string>
+    <string name="skin_section_title">App colors</string>
     <string name="skin_custom_hint">Pick a photo to generate a palette. Best results: soft-toned photos with large areas of one colour.</string>
     <string name="skin_custom_active">Using image skin: %1$s</string>
-    <string name="skin_pick_image">Generate from photo</string>
+    <string name="skin_pick_image">Extract colors from image</string>
     <string name="skin_remove_custom">Remove image skin</string>
     <string name="skin_import_failed">Couldn\'t read that image. Your current skin is unchanged.</string>
     <string name="skin_import_done">Skin updated</string>
+    <string name="settings_expanded">Expanded</string>
+    <string name="settings_collapsed">Collapsed</string>
+    <string name="settings_image_tips">Image tips</string>
+    <string name="settings_setup_help">Setup help</string>
+    <string name="appearance_shelf_background">Bookshelf background</string>
+    <string name="appearance_custom_image">Custom image</string>
+    <string name="appearance_reading_page">Reading page</string>
+    <string name="settings_language_voices">Language voices</string>
+    <string name="settings_role_voices">Narration and dialogue voices</string>
+    <string name="settings_default_voice">Using default voice</string>
+    <string name="settings_configured">Customized</string>
+    <string name="settings_not_set">Not set</string>
+    <string name="settings_multi_voice">Character voices</string>
+    <string name="settings_enabled">Enabled</string>
+    <string name="settings_disabled">Disabled</string>
+    <string name="ai_manage_providers">Manage providers</string>
+    <string name="ai_status_configured">Configured · connection not verified</string>
+    <string name="ai_status_needs_setup">Setup incomplete · using local context</string>
+    <string name="ai_status_power_off">Online AI is off</string>
+    <string name="ai_translation_help">About context translation</string>
+    <string name="ai_translation_help_body">Online context translation creates or updates the book’s context profile. If the provider is not ready, local context is used without a network request. When disabled, lookup uses the local dictionary.</string>
+    <string name="ai_connection_options">Connection options</string>
+    <string name="ai_api_key">API Key</string>
+    <string name="reader_context_meaning_title">Contextual meaning</string>
+    <string name="reader_sentence_translation_failed">Sentence translation unavailable. Please retry.</string>
 </resources>
