@@ -45,9 +45,9 @@ android {
         applicationId = "com.linguareader.app"
         minSdk = 23
         targetSdk = 35
-        // 本地最新改动的验证版，按正式 Release 发布并递增版本以支持覆盖升级。
-        versionCode = 23
-        versionName = "2.2.0"
+        // 词典副本自动恢复补丁：递增版本以供现有检查更新流程发现并覆盖安装。
+        versionCode = 24
+        versionName = "2.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

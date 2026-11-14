@@ -3729,3 +3729,24 @@ composeRule.onNodeWithText("从一本英文书开始").assertIsDisplayed()
 - 使用单独临时数据目录启动 Android 15 / arm64 模拟器 emulator-5556，不修改既有 emulator-5554 的应用数据。先安装 GitHub 下载的 v2.1.0（22）并正常冷启动，在其私有 files 目录写入测试标记；标准 adb install -r 覆盖到最终 v2.2.0（23）成功，无卸载步骤。升级前后 UID 均为 10207，私有数据标记逐字一致；新版冷启动 Status: ok、进程 PID 4435，崩溃缓冲区为空。
 - 覆盖验证只证明正式包签名兼容、安装器保留数据目录及应用可启动，不等同于完整书库迁移或物理真机交互回归。原完整单测限制与既有生词移除问题继续保留在发布说明中。
 - 证据：artifacts/release-v2.2.0/final-signature-verification.txt、final-zipalign.txt、upgrade-verification.log、upgrade-summary.txt、SHA256SUMS。发布标题为“LinguaReader v2.2.0 — 验证版”，按非 Pre-release 正式发布。
+
+
+## 2026-11-15 · 异常词典副本恢复与资源包降级（horse 未收录反馈）
+
+- 用户反馈 Android 端所有词显示未收录，举例 horse。本机模拟器当前正式 v2.2.0 可正常显示 read；只读导出的正式包词典 quick_check=ok、770611 条，horse 在仓库内置词典中具有“马”等义项。**未取得受影响手机的实际数据库，不能据此断定用户手机必然发生副本损坏。** 上轮只处理内容排序，没有覆盖本轮报告的真正未命中状态。
+- 定位到可复现的加载缺口：DictionaryRepository 只检查落盘副本存在且非零；有完整 schema 的非零空表副本会永远复用，任何单词均未命中；空活动词典包也没有回退。截断副本会抛 SQLiteDatabaseCorruptException。新增 DictionaryRecoveryTest 首次运行 4 例，其中上述 3 例失败、健康包优先例通过，保留 baseline-recovery.log/xml。
+- 修复：打开时执行真实查询所需列和有效词目检查；内置副本额外确认 horse 释义与 carried→carry 映射。失效内置副本从 assets 重新拷出，重新检查后使用；空表、缺表、损坏的活动词典包回退内置，但不修改登记表或用户包。为只读探测提供不删除文件的 corruption handler，避免 SQLite 默认错误处理删包；拷贝使用独立临时文件、完整写入后 rename 替换、finally 清理残留。正常句柄仅首次打开探测，不在每次点词重复拷库。
+- JVM/Robolectric 最终定向运行 DictionaryRecoveryTest / DictionarySqlParityTest / ReaderLookupVocabularyTest / ReaderLookupSessionTest / PackRepositoryTest：**48 tests / 0 failures / 0 errors / 0 skipped**。恢复测试覆盖非零空副本、截断副本、空包、损坏包保留原字节、健康自定义释义优先且不产生内置副本。资源包切换/安装/卸载原有 27 项全部通过。
+- Android 15 / arm64 模拟器 LinguaReaderApi35：独立 verify 包实际执行 DictionaryRecoveryInstrumentedTest 同样 5 个恢复场景、DictionaryInstrumentedTest 原有 7 项查询，以及 2 项真实 WebView 点词测试（正常 lantern、预置空副本后点 horse 并断言中文“马”义项可见）。原始设备 XML **14 tests / 0 failures / 0 errors / 0 skipped**。未通过预先直接查询修复待测副本：horse 用例先取得并关闭参考词典，再替换为空库，启动真实 Activity 后由点词触发恢复。
+- 最终源码 :app:assembleRelease（R8/资源裁剪）BUILD SUCCESSFUL；未签名、发布或更新正式手机安装包。未做受影响物理手机、整套应用测试或完整听书/联网 AI 回归；需要包含本次修改的新包在受影响手机复验，不能把本机模拟器结果表述为用户手机已恢复。
+- 证据保留在 artifacts/dictionary-all-miss/：baseline-recovery.xml、final-unit-results/、device-results/、final-device.log、final-release-regression.log。connectedDebugAndroidTest 自动清理 verify 包；正式应用及其数据未被覆盖。git diff --check 通过，git fetch 因 DNS 失败；未提交或推送。
+
+
+## 2026-11-15 · 2.2.1 词典补丁通过现有检查更新下发
+
+- 用户希望通过现有“检查更新”把修复更新到手机。核对生产代码：GitHubUpdateChecker 获取 /releases/latest，GitHubReleaseParser 选择 APK，UpdatePolicy 按版本比较，UpdateSheet 下载后通过 ApkInstaller 交给 Android 系统安装。现有版本没有 Kotlin 运行时代码热重载；采用同包名、同证书的 APK 补丁覆盖升级，需用户确认系统安装并重新打开。
+- 版本改为 2.2.1 / versionCode 24。最终 :app:assembleRelease（R8/资源裁剪）成功，定向 :app 单测 52 项、:shared 更新解析/比较单测 10 项，原始 XML 全部 0 failures / 0 errors / 0 skipped；前一轮词典设备回归 14 项通过继续有效。APK 包名 com.linguareader.app，minSdk 23 / targetSdk 35，证书与正式 2.2.0 相同，v1/v2/v3 验签及 zipalign 检查通过。只读取已提供的密钥签名，未复制或提交密钥。
+- 独立只读克隆模拟器 emulator-5556（单独临时数据目录）：先安装正式签名 2.2.0，在其私有目录放置测试书、私有标记和空词典副本；真实点 horse 复现未收录。随后标准 adb install -r 覆盖到最终签名 2.2.1，UID 10216 不变，私有标记及图书 metadata 逐字保留；新版本冷启动 Status: ok，再次点 horse 已显示“马”义项，崩溃缓冲区无 FATAL EXCEPTION。未操作物理手机；原 emulator-5554 保持 2.2.0，留作更新发现验证。
+- 首次独立模拟器安装继承了模板内另一签名测试包，安装旧正式包被 INSTALL_FAILED_UPDATE_INCOMPATIBLE 拒绝；仅卸载新建临时 emulator-5556 中的模板副本，重新从正式 2.2.0 开始完成上述覆盖验证。未卸载原 emulator-5554 或用户手机应用。
+- 发布前主线 0193c90 的 CI / Platform Build 已失败；读取 CI 日志确认既有 :shared 真实语料探针 17 例失败（所需语料未提供），Android Lint 通过。本次只声明 62 项定向单测和设备/覆盖升级验证，不声明完整 CI 或全量回归通过，不为此跳过/修改旧断言。
+- 构建、签名校验、单测 XML、升级前后界面 XML、升级摘要和发布说明均在 artifacts/release-v2.2.1/（gitignored）。发布准备完成时尚未对外创建可下载更新；计划将正式非预发布 v2.2.1 设为 latest，附唯一正式签名 APK 和 SHA256SUMS，供旧版自动发现。

@@ -167,13 +167,27 @@ class ReaderAcceptanceTest {
     }
 
     @Test
-    fun dictionaryHitShowsChineseMeaningAfterWordTap() {
-        val word = "lantern"
+    fun dictionaryHitShowsChineseMeaningAfterWordTap() = assertDictionaryMeaningAfterTap("lantern", "灯笼")
+
+    @Test
+    fun horseLookupRepairsEmptyCopyAfterWordTap() = assertDictionaryMeaningAfterTap("horse", "马", emptyCopy = true)
+
+    private fun assertDictionaryMeaningAfterTap(word: String, chinese: String, emptyCopy: Boolean = false) {
+        val repository = DictionaryRepository(context)
         val result = runBlocking {
-            DictionaryRepository(context).lookup(WordLookup(word, "$word.", "", 0, 0f, 0f))
+            repository.lookup(WordLookup(word, "$word.", "", 0, 0f, 0f))
         }
         val meaning = requireNotNull(result.entry).senses.first().text
-        assertTrue("Bundled dictionary must contain Chinese meaning", meaning.contains("灯笼"))
+        repository.invalidate()
+        assertTrue("Bundled dictionary must contain Chinese meaning", meaning.contains(chinese))
+        if (emptyCopy) {
+            val target = File(context.filesDir, "dictionary/ecdict-v2.sqlite")
+            assertTrue(target.delete())
+            android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(target, null).use { db ->
+                db.execSQL("CREATE TABLE entries(word TEXT PRIMARY KEY, phonetic TEXT, translation TEXT, definition TEXT)")
+                db.execSQL("CREATE TABLE forms(form TEXT, lemma TEXT)")
+            }
+        }
         seedBook(word)
         ActivityScenario.launch(MainActivity::class.java).use {
             openBook()

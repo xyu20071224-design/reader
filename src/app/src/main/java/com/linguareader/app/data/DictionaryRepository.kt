@@ -2,10 +2,12 @@ package com.linguareader.app.data
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
 import com.linguareader.shared.data.DictionaryDatabase
 import com.linguareader.shared.data.DictionarySql
 import com.linguareader.shared.data.RawDictionaryEntry
 import java.io.File
+import java.io.IOException
 
 /**
  * 词典仓库的 Android 壳（桌面迁移 M2 刀2 + 资源包 M1）。
@@ -50,27 +52,59 @@ class DictionaryRepository(
         shared.lookup(lookup)
 
     private fun openDatabase(): SQLiteDatabase {
-        val target = packSource() ?: ensureBuiltInCopy()
-        return SQLiteDatabase.openDatabase(
-            target.absolutePath,
-            null,
-            SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS
-        )
+        // 包文件还在不代表词库可用：空表/缺表/损坏均回退，且不改写用户安装的包。
+        packSource()?.let { source -> openUsableDatabase(source, builtIn = false)?.let { return it } }
+        val target = ensureBuiltInCopy()
+        openUsableDatabase(target, builtIn = true)?.let { return it }
+        // 旧落盘副本只是缓存。不能因它非零就永久复用一个查不到任何词的库。
+        val repaired = ensureBuiltInCopy(replace = true)
+        return openUsableDatabase(repaired, builtIn = true)
+            ?: throw IOException("Bundled dictionary is unavailable after restoring its local copy")
+    }
+
+    /** 每次打开句柄只探测一次，正常点词不重复扫描或重拷 58 MB 词库。 */
+    private fun openUsableDatabase(file: File, builtIn: Boolean): SQLiteDatabase? {
+        var db: SQLiteDatabase? = null
+        try {
+            db = SQLiteDatabase.openDatabase(
+                file.absolutePath, null,
+                SQLiteDatabase.OPEN_READONLY or SQLiteDatabase.NO_LOCALIZED_COLLATORS,
+                // 默认 corruption handler 可能删除文件；资源包由用户安装，只读探测不能删包。
+                android.database.DatabaseErrorHandler { }
+            )
+            // 真实执行应用依赖的列投影，不能只检查文件存在或 SQLite 文件头。
+            val hasEntries = db.rawQuery(
+                "SELECT word, phonetic, translation, definition FROM entries " +
+                    "WHERE COALESCE(translation, '') <> '' OR COALESCE(definition, '') <> '' LIMIT 1",
+                null
+            ).use { it.moveToFirst() }
+            val formsWork = db.rawQuery(DictionarySql.LEMMA_CANDIDATES, arrayOf("carried", "carried")).use {
+                // 自定义词典允许没有变形数据；内置词典应当具有已知的词形映射。
+                !builtIn || (it.moveToFirst() && it.getString(0) == "carry")
+            }
+            val knownWordWorks = !builtIn || db.rawQuery(DictionarySql.ENTRY, arrayOf("horse")).use {
+                it.moveToFirst() && !it.getString(2).isNullOrBlank()
+            }
+            if (hasEntries && formsWork && knownWordWorks) return db
+        } catch (_: SQLiteException) {
+            // 恢复来源在调用方决定。打开损坏副本失败不等于每个点击词都未收录。
+        }
+        db?.close()
+        return null
     }
 
     /** 内置词典的落盘副本（首次使用时从 assets 拷出）。 */
-    private fun ensureBuiltInCopy(): File {
+    private fun ensureBuiltInCopy(replace: Boolean = false): File {
         val databaseDir = File(appContext.filesDir, "dictionary").apply { mkdirs() }
         val target = File(databaseDir, "ecdict-v2.sqlite")
-        if (!target.exists() || target.length() == 0L) {
-            val temp = File(databaseDir, "ecdict-v2.sqlite.tmp")
-            appContext.assets.open("dictionary/ecdict.sqlite").use { input ->
-                temp.outputStream().use { output -> input.copyTo(output) }
-            }
-            if (!temp.renameTo(target)) {
-                target.outputStream().use { output ->
-                    temp.inputStream().use { it.copyTo(output) }
+        if (replace || !target.exists() || target.length() == 0L) {
+            val temp = File.createTempFile("ecdict-v2-", ".sqlite.tmp", databaseDir)
+            try {
+                appContext.assets.open("dictionary/ecdict.sqlite").use { input ->
+                    temp.outputStream().use { output -> input.copyTo(output) }
                 }
+                if (!temp.renameTo(target)) throw IOException("Cannot replace local dictionary copy")
+            } finally {
                 temp.delete()
             }
         }
