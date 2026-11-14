@@ -3750,3 +3750,11 @@ composeRule.onNodeWithText("从一本英文书开始").assertIsDisplayed()
 - 首次独立模拟器安装继承了模板内另一签名测试包，安装旧正式包被 INSTALL_FAILED_UPDATE_INCOMPATIBLE 拒绝；仅卸载新建临时 emulator-5556 中的模板副本，重新从正式 2.2.0 开始完成上述覆盖验证。未卸载原 emulator-5554 或用户手机应用。
 - 发布前主线 0193c90 的 CI / Platform Build 已失败；读取 CI 日志确认既有 :shared 真实语料探针 17 例失败（所需语料未提供），Android Lint 通过。本次只声明 62 项定向单测和设备/覆盖升级验证，不声明完整 CI 或全量回归通过，不为此跳过/修改旧断言。
 - 构建、签名校验、单测 XML、升级前后界面 XML、升级摘要和发布说明均在 artifacts/release-v2.2.1/（gitignored）。发布准备完成时尚未对外创建可下载更新；计划将正式非预发布 v2.2.1 设为 latest，附唯一正式签名 APK 和 SHA256SUMS，供旧版自动发现。
+
+
+### 2.2.1 补丁正式发布与公开更新源确认
+
+- 源码已提交并推送 main（b46fd32），标签 v2.2.1 指向该修复提交。已发布非预发布、非草稿 Release 并设为 latest：https://github.com/xyu20071224-design/reader/releases/tag/v2.2.1 。仅附 LinguaReader-v2.2.1.apk 和 SHA256SUMS；上传资产 SHA-256 与已验签本地产物一致：f93e73c513d15433cc16be7969aaf5617ce3b760a7660e4618db05bfe1afd033。确认最终 DEX 含词典恢复代码，旧 2.2.0 不含该代码。
+- 发布后分别用已认证 GitHub API 和**不携带登录凭据的公开 API 请求**访问旧版应用实际使用的 /releases/latest，均返回 v2.2.1、唯一正确 APK 下载链接；UpdatePolicy / GitHubReleaseParser 相关 10 项定向测试通过。公开版本名与 APK versionName 一致，APK versionCode=24，大于旧版 23。
+- 尝试对原 emulator-5554 中 2.2.0 执行实际界面“检查更新”时，adb 已无设备；独立 emulator-5556 进程也已退出（134）。因此**旧版界面联网发现验证未完成**，不以公开 API 结果替代该设备实测。此前已完成的正式 2.2.0→2.2.1 覆盖安装、数据保留和 horse 中文义项恢复证据仍保留；未直接操作用户手机安装。
+- 修复提交 CI 43626545398 首次执行在配置阶段下载阿里云 Maven 镜像 builder-model:8.9.1 时 HTTP 502，尚未运行测试，已请求仅重跑失败任务；不声明 CI 通过。该错误与发布前基线的 17 项真实语料探针失败不同，未将两者混为同一结果。Platform Build 在本条记录时仍执行中；保留发布说明中的验证版和完整回归限制。
