@@ -3813,3 +3813,10 @@ Android 15 / WebView 124 的独立模拟器端到端验收通过。用实际导�
 - 对照已发布的最终签名 2.3.0 APK 与画境验证 APK。2.3.0 的 SHA-256 与发布记录一致，包内缺少画境的 12 张 WebP、资产清单和 WebView 渲染脚本。用 aapt 检查，其资源表也缺少画境与两种阅读主题新增的 7 个字符串名称。
 - 在临时目录复制正式基础包，只加入画境验证 APK 的 14 个原样 assets 项。逐项验证原始包内条目内容一致，排除构建类型、Manifest 和原有资源差异。调用现有 `scripts/build_native_patch.py` 实测，退出码为 1，资源门禁报告 `assets/reader-art/lantern-v1/day-portrait-660.webp changed: publish an APK/resource update instead`。检查在签名与生成补丁前结束，临时样本没有用于设备安装。
 - 完整画境需要一次包含上述资源的新 APK 才能交付。新基础包上保持资源不变的 Kotlin/Java 后续调整，才适用当前 DEX 补丁流程。
+
+## 2026-11-18 · 2.3.1 灯笼图书馆画境基础包验收
+
+- 独立签名发布构建使用 `ad20253d581e486c14563122acdafe8ca6f20651`。`versionCode` 为 26，`TINKER_ID` 为 `reader-26`。最终 APK 的 SHA-256 为 `96feb8d1c273d561f45817d67b4c8288b60793ffebba763b8f734f83d2dd6c0e`。与正式 2.3.0 的签名证书一致，包内 14 项画境 assets 与验证包逐项一致。
+- Android 15 / arm64 模拟器安装正式 2.3.0，通过系统文件选择器导入《The Lantern Library》，保存章节第 2 页、薄雾书架和护眼绿正文。用最终签名 APK 执行 `adb install --no-incremental -r` 覆盖升级。应用 UID、书籍元数据与两项偏好保留，重新打开仍是第 2 页。夜间画境在书架及 EPUB 正文渲染，阅读设置可见插画开关，关闭画境恢复薄雾与护眼绿。应用崩溃缓冲区无记录。
+- 定向单测 app 89 项、shared 37 项，失败、错误、跳过均为 0。验收范围为上述模拟器与定向测试。书架夜间画境下，英文窄书卡中的 `Character` 文案出现截断。
+- 最终 APK、匹配的 R8 映射、SHA-256 文件、空热修复目录、测试 XML 与设备截图归档于 `artifacts/release-v2.3.1/`。后续 DEX 补丁从这一份签名 APK 与映射生成。
