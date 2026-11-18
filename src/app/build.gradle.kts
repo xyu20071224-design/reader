@@ -45,9 +45,9 @@ android {
         applicationId = "com.linguareader.app"
         minSdk = 23
         targetSdk = 35
-        // 首次安装原生热修复能力；后续 DEX 补丁使用独立 revision，不递增 APK 版本。
-        versionCode = 25
-        versionName = "2.3.0"
+        // 画境资源随新基础 APK 发布；同一基础包的 DEX 补丁使用独立 revision。
+        versionCode = 26
+        versionName = "2.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["tinkerId"] = "reader-$versionCode"

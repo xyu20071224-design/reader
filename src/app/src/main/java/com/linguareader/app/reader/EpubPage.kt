@@ -155,6 +155,7 @@ fun EpubPage(
     AndroidView(
         modifier = modifier,
         factory = { context ->
+            val artworkScript by lazy { ReaderArtwork.installation(context.assets) }
             WebView(context).apply {
                 setBackgroundColor(Color.parseColor(preferences.theme.background))
                 isHorizontalScrollBarEnabled = false
@@ -215,6 +216,9 @@ fun EpubPage(
                             ReaderScripts.savedWordsScript(latestSavedWords, latestDueWords),
                             null
                         )
+                        artworkScript?.let {
+                            view.evaluateJavascript(it + ReaderArtwork.preference(latestPreferences.theme), null)
+                        }
                     }
 
                     override fun shouldOverrideUrlLoading(
@@ -246,7 +250,7 @@ fun EpubPage(
         },
         update = { view ->
             view.setBackgroundColor(Color.parseColor(preferences.theme.background))
-            view.evaluateJavascript(ReaderScripts.preferenceScript(preferences), null)
+            view.applyReaderPreferences(preferences)
             controller.setSavedWords(latestSavedWords, latestDueWords)
             controller.applyChromeInsets(latestChromeTop, latestChromeBottom)
         },

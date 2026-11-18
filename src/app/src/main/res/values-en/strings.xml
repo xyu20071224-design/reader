@@ -46,6 +46,11 @@
 
     <!-- Shelf appearance (background presets / custom image / dim overlay) -->
     <string name="shelf_appearance_title">Appearance</string>
+    <string name="appearance_lantern_library">The Lantern Library theme</string>
+    <string name="appearance_lantern_off">Theme off</string>
+    <string name="appearance_lantern_day">Lantern day</string>
+    <string name="appearance_lantern_night">Lantern night</string>
+    <string name="appearance_lantern_reader_artwork">Reading illustration</string>
     <string name="shelf_appearance_background">Background</string>
     <string name="shelf_appearance_follow_theme">Follow theme</string>
     <string name="shelf_preset_green">Bamboo</string>
@@ -227,6 +232,8 @@
     <string name="reader_theme_morandi">Morandi</string>
     <string name="reader_theme_dark">Night</string>
     <string name="reader_theme_amoled">Pure black</string>
+    <string name="reader_theme_lantern_day">Lantern day</string>
+    <string name="reader_theme_lantern_night">Lantern night</string>
     <string name="reader_font_serif">Serif</string>
     <string name="reader_font_sans">Sans</string>
     <string name="reader_font_mono">Mono</string>

@@ -44,6 +44,11 @@
 
     <!-- 书架外观（背景预设 / 自定义图片 / 蒙版） -->
     <string name="shelf_appearance_title">外观</string>
+    <string name="appearance_lantern_library">灯笼图书馆画境</string>
+    <string name="appearance_lantern_off">关闭画境</string>
+    <string name="appearance_lantern_day">灯馆·日</string>
+    <string name="appearance_lantern_night">灯馆·夜</string>
+    <string name="appearance_lantern_reader_artwork">阅读插画</string>
     <string name="shelf_appearance_background">背景</string>
     <string name="shelf_appearance_follow_theme">跟随主题</string>
     <string name="shelf_preset_green">青竹</string>
@@ -224,6 +229,8 @@
     <string name="reader_theme_morandi">莫兰迪</string>
     <string name="reader_theme_dark">夜间</string>
     <string name="reader_theme_amoled">纯黑</string>
+    <string name="reader_theme_lantern_day">灯馆·日</string>
+    <string name="reader_theme_lantern_night">灯馆·夜</string>
     <string name="reader_font_serif">衬线</string>
     <string name="reader_font_sans">无衬线</string>
     <string name="reader_font_mono">等宽</string>

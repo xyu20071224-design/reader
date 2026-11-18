@@ -75,6 +75,7 @@ internal fun ShelfBookCard(
     /** 对齐档案由更旧版对齐器写出：书卡上要看得见（入口在译本菜单里）。 */
     translationOutdated: Boolean = false,
     containerAlpha: Float = 1f,
+    lanternSurface: Boolean = false,
     onOpen: () -> Unit,
     onGlossary: () -> Unit,
     onManageRoster: () -> Unit,
@@ -83,10 +84,12 @@ internal fun ShelfBookCard(
 ) {
     // 书卡是本屏最密的区域：书封 + 标题 + 作者/进度 + 至多三条状态徽章 + 两行操作按钮。
     val t = LocalDesignTokens.current
+    val surface = if (lanternSurface) Modifier.lanternBookSurface().padding(t.spacing.s) else Modifier
     Column(
         modifier = Modifier
             .testTag(UiTags.bookCard(book.id))
             .clickable(onClick = onOpen)
+            .then(surface)
     ) {
         Box {
             // 书封用 Card 而不是 LinguaCard：LinguaCard 内部固定带内边距、且把内容包进

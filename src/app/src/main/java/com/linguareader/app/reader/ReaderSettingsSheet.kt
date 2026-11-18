@@ -50,6 +50,7 @@ import com.linguareader.app.data.ReaderTheme
 import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.res.resolve
 import com.linguareader.app.skin.LocalDesignTokens
+import com.linguareader.app.skin.LocalLanternAppearance
 import kotlin.math.roundToInt
 
 /**
@@ -114,7 +115,7 @@ internal fun ReaderSettingsSheet(
  *
  * ## ⚠️ 主题色块**刻意不换成 token**（改之前先读这段）
  *
- * 七个色块画的是 `theme.background` / `theme.foreground` —— 它们是**阅读主题自身的预览色**，
+ * 色块画的是 `theme.background` / `theme.foreground` —— 它们是**阅读主题自身的预览色**，
  * 表达的是「正文长什么样」，不是「外壳皮肤长什么样」。
  *
  * **如果把它们换成 `t.colors.paper` / `t.colors.ink`，七个色块会全部变成同一个颜色**，
@@ -143,6 +144,7 @@ internal fun ReaderSettingsBody(
     modifier: Modifier = Modifier
 ) {
     val t = LocalDesignTokens.current
+    val lantern = LocalLanternAppearance.current
     var fontSize by remember(preferences.fontPercent) {
         mutableFloatStateOf(preferences.fontPercent.toFloat())
     }
@@ -199,56 +201,64 @@ internal fun ReaderSettingsBody(
         )
 
         SectionHeader(text = stringResource(R.string.reader_theme_label))
-        // FlowRow：7 个主题一行放不下（7×48 + 6×18 = 444dp，而面板左右各留
-        // spacing.l 后只有约 312dp），普通 Row 会把溢出部分压成堆叠的文字。换行后
-        // 全部选项可见——主题是「选一次就很少动」的设置，可发现性优先于省高度。
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(t.spacing.m),
-            verticalArrangement = Arrangement.spacedBy(t.spacing.s),
-            itemVerticalAlignment = Alignment.Top
-        ) {
-            ReaderTheme.entries.forEach { theme ->
-                val selected = theme == preferences.theme
-                // 命中区盖住「色块 + 文字标签」整列：真机曾实测只有色块可点、
-                // 点文字落空还容易误触相邻选项，clickable 必须放在外层容器。
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.clickable { onChange(preferences.copy(theme = theme)) }
-                ) {
-                    Box(
-                        Modifier
-                            .size(t.spacing.xxl)
-                            .clip(CircleShape)
-                            // 见本组件 KDoc「主题色块刻意不换成 token」：
-                            // 这里画的是正文预览色，不是外壳皮肤色。
-                            .background(Color(android.graphics.Color.parseColor(theme.background)))
-                            .border(
-                                // 选中描边加粗一档（原 3dp）——取 token 间距梯的最小档，
-                                // 不新造 dp 常量：换肤时间距梯跟着皮肤走。
-                                width = if (selected) t.spacing.xs else t.hairline,
-                                color = if (selected) Accent else Ink.copy(alpha = .18f),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
+        if (lantern?.appearance?.mode != null) {
+            SettingRow(
+                title = stringResource(R.string.appearance_lantern_reader_artwork),
+                subtitle = stringResource(R.string.appearance_lantern_library),
+                checked = lantern.appearance.readerArtwork,
+                onCheckedChange = lantern::showReaderArtwork
+            )
+        } else {
+            // 多个主题在窄屏面板里自动换行，保证色块和名称完整可点。
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(t.spacing.m),
+                verticalArrangement = Arrangement.spacedBy(t.spacing.s),
+                itemVerticalAlignment = Alignment.Top
+            ) {
+                ReaderTheme.entries.forEach { theme ->
+                    val selected = theme == preferences.theme
+                    // 命中区盖住「色块 + 文字标签」整列：真机曾实测只有色块可点、
+                    // 点文字落空还容易误触相邻选项，clickable 必须放在外层容器。
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable { onChange(preferences.copy(theme = theme)) }
                     ) {
-                        if (selected) {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = null,
-                                tint = Color(android.graphics.Color.parseColor(theme.foreground)),
-                                modifier = Modifier.size(t.iconSize)
-                            )
+                        Box(
+                            Modifier
+                                .size(t.spacing.xxl)
+                                .clip(CircleShape)
+                                // 见本组件 KDoc「主题色块刻意不换成 token」：
+                                // 这里画的是正文预览色，不是外壳皮肤色。
+                                .background(Color(android.graphics.Color.parseColor(theme.background)))
+                                .border(
+                                    // 选中描边加粗一档（原 3dp）——取 token 间距梯的最小档，
+                                    // 不新造 dp 常量：换肤时间距梯跟着皮肤走。
+                                    width = if (selected) t.spacing.xs else t.hairline,
+                                    color = if (selected) Accent else Ink.copy(alpha = .18f),
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = Color(android.graphics.Color.parseColor(theme.foreground)),
+                                    modifier = Modifier.size(t.iconSize)
+                                )
+                            }
                         }
+                        Spacer(Modifier.height(t.spacing.xs))
+                        Text(
+                            stringResource(theme.labelRes.resolve()),
+                            style = t.typography.label,
+                            color = if (selected) Accent else InkSoft,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                        )
                     }
-                    Spacer(Modifier.height(t.spacing.xs))
-                    Text(
-                        stringResource(theme.labelRes.resolve()),
-                        style = t.typography.label,
-                        color = if (selected) Accent else InkSoft,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-                    )
                 }
             }
+
         }
 
         SectionHeader(text = stringResource(R.string.reader_font_label))

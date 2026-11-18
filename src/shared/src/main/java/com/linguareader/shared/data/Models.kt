@@ -260,7 +260,8 @@ enum class ReaderTheme(
     /** 文本选区背景（半透明棕）。 */
     val selectionWash: String,
     /** TTS 整句高亮底（半透明棕）。 */
-    val highlightWash: String
+    val highlightWash: String,
+    val artworkMode: String? = null
 ) {
     // dueColor 初值沿用各主题既有的 linkColor：该值已被 ReaderScriptsTest 的
     // ≥3:1 对比度守卫覆盖，待复习词的区分主要靠「实线 + 2px」而非换色相；
@@ -271,7 +272,9 @@ enum class ReaderTheme(
     GREEN(SharedString.THEME_GREEN, "#CCE8CF", "#243329", "#8D5535", "#9b6b43", "#9b6b43", "rgba(184,132,83,.26)", "rgba(184,132,83,.30)"),
     MORANDI(SharedString.THEME_MORANDI, "#E2D8D2", "#3A3330", "#8D5535", "#9b6b43", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)"),
     DARK(SharedString.THEME_DARK, "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)"),
-    AMOLED(SharedString.THEME_AMOLED, "#000000", "#E8E3DA", "#C98A5E", "#D7A072", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)")
+    AMOLED(SharedString.THEME_AMOLED, "#000000", "#E8E3DA", "#C98A5E", "#D7A072", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)"),
+    LANTERN_DAY(SharedString.THEME_LANTERN_DAY, "#F7F3EA", "#27231F", "#8D5535", "#9b6b43", "#9b6b43", "rgba(184,132,83,.28)", "rgba(184,132,83,.32)", artworkMode = "day"),
+    LANTERN_NIGHT(SharedString.THEME_LANTERN_NIGHT, "#171717", "#E8E3DA", "#C98A5E", "#D7A072", "#D7A072", "rgba(201,138,94,.30)", "rgba(201,138,94,.38)", artworkMode = "night")
 }
 
 enum class ReaderFont(val labelRes: SharedString, val css: String) {

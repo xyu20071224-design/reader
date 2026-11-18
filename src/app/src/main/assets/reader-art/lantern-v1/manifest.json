@@ -1,0 +1,74 @@
+{
+  "day": {
+    "wide": [
+      {
+        "file": "day-wide-768.webp",
+        "width": 768,
+        "height": 512
+      },
+      {
+        "file": "day-wide-1152.webp",
+        "width": 1152,
+        "height": 768
+      },
+      {
+        "file": "day-wide-1536.webp",
+        "width": 1536,
+        "height": 1024
+      }
+    ],
+    "portrait": [
+      {
+        "file": "day-portrait-432.webp",
+        "width": 432,
+        "height": 576
+      },
+      {
+        "file": "day-portrait-660.webp",
+        "width": 660,
+        "height": 880
+      },
+      {
+        "file": "day-portrait-768.webp",
+        "width": 768,
+        "height": 1024
+      }
+    ]
+  },
+  "night": {
+    "wide": [
+      {
+        "file": "night-wide-768.webp",
+        "width": 768,
+        "height": 512
+      },
+      {
+        "file": "night-wide-1152.webp",
+        "width": 1152,
+        "height": 768
+      },
+      {
+        "file": "night-wide-1536.webp",
+        "width": 1536,
+        "height": 1024
+      }
+    ],
+    "portrait": [
+      {
+        "file": "night-portrait-432.webp",
+        "width": 432,
+        "height": 576
+      },
+      {
+        "file": "night-portrait-660.webp",
+        "width": 660,
+        "height": 880
+      },
+      {
+        "file": "night-portrait-768.webp",
+        "width": 768,
+        "height": 1024
+      }
+    ]
+  }
+}

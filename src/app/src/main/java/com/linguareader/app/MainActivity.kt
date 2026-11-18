@@ -42,6 +42,8 @@ import com.linguareader.app.nav.screenRegistry
 import com.linguareader.shared.ui.nav.Route
 import com.linguareader.app.state.split
 import com.linguareader.app.skin.AppSkinTheme
+import com.linguareader.app.skin.LanternAppearanceState
+import com.linguareader.app.skin.LocalLanternAppearance
 import com.linguareader.app.skin.SkinStore
 import com.linguareader.app.tts.SpeechReadiness
 import java.util.Locale
@@ -53,7 +55,11 @@ class MainActivity : ComponentActivity() {
         // 系统开屏（Android 12+ 默认 splash）永远纸色，见 values/themes.xml；
         // 开屏结束后优先按已选皮肤确定窗口明暗，未选时跟随阅读主题，让深色主题用户
         // 不闪白、浅色阅读主题用户在系统深色下不再黑屏。
-        if (SkinStore.selected(this)?.isDark ?: chromeIsDark(storedReaderTheme(this), isSystemNightMode())) {
+        val selectedMode = LanternAppearanceState.read(this).mode
+        val dark = selectedMode?.skin?.isDark
+            ?: SkinStore.selected(this)?.isDark
+            ?: chromeIsDark(storedReaderTheme(this), isSystemNightMode())
+        if (dark) {
             setTheme(R.style.Theme_LinguaReader_Dark)
         }
         super.onCreate(savedInstanceState)
@@ -76,11 +82,16 @@ class MainActivity : ComponentActivity() {
             // 交互动画速度：进 App 时读缓存，书架外观弹层里可改，改完立刻作用于全局动画。
             var uiAnimSpeed by remember { mutableStateOf(storedUiAnimSpeed(context)) }
             // 显式选择的内置/图片皮肤优先；未选择时继续跟随阅读主题与系统。
-            var selectedSkin by remember { mutableStateOf(SkinStore.selected(context)) }
+            var savedSkin by remember { mutableStateOf(SkinStore.selected(context)) }
+            val lantern = remember(context) { LanternAppearanceState(context) }
+            val selectedSkin = lantern.appearance.mode?.skin ?: savedSkin
             val snackbar = rememberAppSnackbar()
             AppSkinTheme(selectedSkin, readerTheme, isSystemInDarkTheme()) { palette ->
                 ApplySystemBars(palette)
-                CompositionLocalProvider(LocalAppSnackbar provides snackbar) {
+                CompositionLocalProvider(
+                    LocalAppSnackbar provides snackbar,
+                    LocalLanternAppearance provides lantern
+                ) {
                     LinguaReaderApp(
                         viewModel = viewModel,
                         onReaderThemeChanged = { readerTheme = it },
@@ -91,7 +102,7 @@ class MainActivity : ComponentActivity() {
                             applyUiAnimSpeed(context, it)
                         },
                         // 同时驱动设计 token、兼容调色板和 Material 配色。
-                        onSkinChanged = { selectedSkin = it }
+                        onSkinChanged = { savedSkin = it }
                     )
                 }
             }
@@ -263,7 +274,8 @@ private fun LinguaReaderApp(
                     onDownloadCloudBook = viewModel::downloadCloudBook,
                     onRefreshSyncDetail = viewModel::refreshSyncDetail,
                     uiAnimSpeed = uiAnimSpeed,
-                    onAnimSpeedChange = onAnimSpeedChange
+                    onAnimSpeedChange = onAnimSpeedChange,
+                    onSkinChanged = onSkinChanged
                 )
                 }
                 screen(RouteKey.READER) {

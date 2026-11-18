@@ -47,7 +47,7 @@ source toolchain/env.sh                        # 人手调 adb / apksigner / aap
 | --- | --- |
 | applicationId / namespace | `com.linguareader.app` |
 | compileSdk / targetSdk / minSdk | 35 / 35 / **23** |
-| versionCode / versionName | 25 / 2.3.0 |
+| versionCode / versionName | 26 / 2.3.1 |
 | JDK / jvmTarget | 17 |
 | AGP / Kotlin / Gradle | 8.9.1 / 2.1.10 / 8.11.1 |
 | Compose BOM | 2025.05.01 |

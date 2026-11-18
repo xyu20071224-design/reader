@@ -67,11 +67,9 @@ private const val DARK_CHROME_MIN_SCRIM = 0.72f
  * fillMaxWidth（与生词本空态同一处理）。
  */
 @Composable
-internal fun ShelfEmptyState(onImport: () -> Unit) {
+internal fun ShelfEmptyState(onImport: () -> Unit, modifier: Modifier = Modifier.fillMaxSize()) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .testTag(UiTags.SHELF_EMPTY),
+        modifier = modifier.testTag(UiTags.SHELF_EMPTY),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {

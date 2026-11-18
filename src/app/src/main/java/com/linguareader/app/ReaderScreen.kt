@@ -134,6 +134,7 @@ import com.linguareader.app.reader.SentenceTranslationCache
 import com.linguareader.app.res.resolve
 import com.linguareader.app.review.ReviewPromptBanner
 import com.linguareader.app.skin.LocalDesignTokens
+import com.linguareader.app.skin.LocalLanternAppearance
 import com.linguareader.app.translation.TranslationLookupResult
 import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.tts.TtsPlaybackController
@@ -316,7 +317,7 @@ internal fun ReaderScreen(
     val preferenceStore = remember {
         context.getSharedPreferences("reader_preferences", android.content.Context.MODE_PRIVATE)
     }
-    var preferences by remember {
+    var savedPreferences by remember {
         mutableStateOf(
             ReaderPreferences(
                 fontPercent = preferenceStore.getInt("fontPercent", 100),
@@ -331,17 +332,20 @@ internal fun ReaderScreen(
         )
     }
 
+    val lantern = LocalLanternAppearance.current?.appearance
+    val preferences = lantern?.readerPreferences(savedPreferences) ?: savedPreferences
+
     fun persistPreferences(value: ReaderPreferences) {
-        preferences = value
-        preferenceStore.edit()
+        savedPreferences = value
+        val edit = preferenceStore.edit()
             .putInt("fontPercent", value.fontPercent)
             .putFloat("lineHeight", value.lineHeight)
-            .putString("theme", value.theme.name)
             .putString("font", value.fontFamily.name)
-            .apply()
-        controller.applyPreferences(value)
+        if (lantern?.mode == null) edit.putString("theme", value.theme.name)
+        edit.apply()
+        controller.applyPreferences(lantern?.readerPreferences(value) ?: value)
         // 外壳（书架、弹层、听书条）跟随正文主题切换日间/夜间。
-        onAppearanceChanged(value.theme)
+        if (lantern?.mode == null) onAppearanceChanged(value.theme)
     }
 
     /** 有脏数据才写盘；取快照与清脏标记都在 [ReaderPosition] 里，这里只负责发协程。 */
@@ -915,7 +919,7 @@ internal fun ReaderScreen(
 
     if (overlays.settings) {
         ReaderSettingsSheet(
-            preferences = preferences,
+            preferences = savedPreferences,
             reviewPace = reviewPace,
             onOpenReviewSettings = {
                 overlays = overlays.copy(settings = false, reviewSettings = true)

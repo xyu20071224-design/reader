@@ -54,13 +54,13 @@
 
 ```sh
 python3 scripts/build_native_patch.py \
-  --base /absolute/base/LinguaReader-v2.3.0.apk \
+  --base /absolute/base/LinguaReader-v2.3.1.apk \
   --new /absolute/candidate-signed.apk \
   --cli /absolute/tinker-patch-cli.jar \
   --keystore /absolute/release.keystore --alias RELEASE_ALIAS \
   --apksigner /absolute/android-sdk/build-tools/35.0.0/apksigner \
   --aapt /absolute/android-sdk/build-tools/35.0.0/aapt \
-  --out /absolute/output --base-id reader-25 --base-code 25 --revision 1 \
+  --out /absolute/output --base-id reader-26 --base-code 26 --revision 1 \
   --notes '本次修复说明'
 ```
 

@@ -23,13 +23,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.linguareader.app.res.resolve
 import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.shared.data.ReaderTheme
 
 /**
- * 阅读主题选择器（7 项）。
+ * 阅读主题选择器。
  *
  * 从 `ReaderScreen` 的设置面板里抽出来，供**书架「书架外观」弹层**复用（第四轮审查 5-10：
  * 主题入口原本只在阅读页、约 4 次点击；书架处此前没有入口）。
@@ -41,23 +42,21 @@ import com.linguareader.shared.data.ReaderTheme
  *
  * 这是本项目那条判断标准的一个特例（见 `ListeningBar` / `ReaderLookupSheet` 的注释）：
  * - **色块本体的颜色必须来自 [ReaderTheme]**（`theme.background` / `theme.foreground`）——
- *   它预览的就是「正文长什么样」，换 token 会让 7 个色块全变成一个颜色，选择器就没意义了；
+ *   它预览的就是「正文长什么样」，换 token 会让色块全变成一个颜色，选择器就没意义了；
  * - **选中边框、未选中边框、标签文字跟 `LocalDesignTokens`** —— 它们表达的是「当前状态」，
  *   属于外壳观感，应当跟随皮肤。
  *
  * ## 几何值为什么仍用常量
  *
- * 48dp 色块 / 56dp 列宽 / 18dp 列距是按「7 项一行放不下、拆成 4+3」算出来的整体比例：
- * 7×48 + 6×18 = 444dp > 411dp 常见屏宽。**改任何一个都会破坏“刚好放不下”这个前提**，
- * 所以它们集中在这里命名，而不是套间距梯（间距梯没有 18/56/48 这几个档位，强套会改像素）。
+ * 48dp 色块 / 56dp 列宽 / 18dp 列距沿用原选择器的四列排布。
  */
 @Composable
 internal fun ReaderThemePicker(
     selected: ReaderTheme,
     onSelect: (ReaderTheme) -> Unit
 ) {
-    // 7 个主题一行放不下（7×48 + 6×18 = 444dp），用两行排布：4 + 3。
-    ReaderTheme.entries.chunked(4).forEach { rowThemes ->
+    val (plainThemes, artworkThemes) = ReaderTheme.entries.partition { it.artworkMode == null }
+    (plainThemes.chunked(4) + artworkThemes.chunked(4)).forEach { rowThemes ->
         Row(
             horizontalArrangement = Arrangement.spacedBy(ThemeSwatchGap),
             verticalAlignment = Alignment.Top
@@ -114,15 +113,14 @@ private fun ReaderThemeSwatch(
             style = t.typography.caption,
             color = if (selected) t.colors.accent else t.colors.inkSoft,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1
+            maxLines = if (theme.artworkMode == null) 1 else 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
 
 // ── 几何常量 ────────────────────────────────────────────────
 //
-// 这组数值是「7 项 4+3 分两行放得下」这个整体比例的一部分，间距梯没有对应档位：
-// 7×48 + 6×18 = 444dp，换任何一档都会破坏「刚好放不下」的前提（见类 KDoc）。
 
 /** 色块直径。48dp 是 Material 的最小可点目标下限。 */
 private val SwatchSize = 48.dp

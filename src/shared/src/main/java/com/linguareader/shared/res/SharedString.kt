@@ -36,6 +36,8 @@ enum class SharedString {
     THEME_MORANDI,
     THEME_DARK,
     THEME_AMOLED,
+    THEME_LANTERN_DAY,
+    THEME_LANTERN_NIGHT,
 
     // 字体显示名（ReaderFont.labelRes，原 R.string.reader_font_*）
     FONT_SERIF,

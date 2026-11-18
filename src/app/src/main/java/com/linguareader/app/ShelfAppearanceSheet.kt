@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -44,8 +45,11 @@ import com.linguareader.app.components.LinguaSheet
 import com.linguareader.app.components.SecondaryButton
 import com.linguareader.app.components.SectionHeader
 import com.linguareader.app.skin.ImageSkinImporter
+import com.linguareader.app.skin.LanternAppearanceState
+import com.linguareader.app.skin.LanternMode
 import com.linguareader.app.skin.SkinStore
 import com.linguareader.app.skin.LocalDesignTokens
+import com.linguareader.app.skin.LocalLanternAppearance
 import com.linguareader.shared.data.ReaderTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -222,6 +226,7 @@ internal fun ShelfAppearanceContent(
     onRemoveCustomSkin: () -> Unit = {}
 ) {
     val t = LocalDesignTokens.current
+    val lantern = LocalLanternAppearance.current
     // 自带宽度的 Column + 统一行距：原实现是 `Column(spacedBy(16.dp))`，
     // 换成 LinguaSheet 的 content 槽之后没有别人替它给间距了，必须自己带。
     // 标题不在这里画：由 LinguaSheet 的 title 槽统一渲染（见外壳注释）。
@@ -230,113 +235,116 @@ internal fun ShelfAppearanceContent(
         // 每个配置分组保持独立，展开后由内容体统一滚动。
         verticalArrangement = Arrangement.spacedBy(t.spacing.m)
     ) {
-        com.linguareader.app.skin.SkinPickerSection(
-            builtIns = skinBuiltIns,
-            selectedId = selectedSkinId,
-            customSkin = customSkin,
-            onSelectBuiltIn = onSelectSkin,
-            onPickImage = onPickSkinImage,
-            onRemoveCustom = onRemoveCustomSkin
-        )
+        if (lantern != null) LanternModeSelector(lantern)
+        if (lantern?.appearance?.mode == null) {
+            com.linguareader.app.skin.SkinPickerSection(
+                builtIns = skinBuiltIns,
+                selectedId = selectedSkinId,
+                customSkin = customSkin,
+                onSelectBuiltIn = onSelectSkin,
+                onPickImage = onPickSkinImage,
+                onRemoveCustom = onRemoveCustomSkin
+            )
 
-        ExpandableSettingsSection(
-            title = stringResource(R.string.appearance_shelf_background),
-            summary = when {
-                appearance.imageFile != null -> stringResource(R.string.appearance_custom_image)
-                appearance.presetId != null -> ShelfBackgroundPresets.byId(appearance.presetId)
-                    ?.let { stringResource(it.labelRes) }
-                else -> stringResource(R.string.shelf_appearance_follow_theme)
-            }
-        ) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(t.spacing.s),
-                verticalArrangement = Arrangement.spacedBy(t.spacing.s)) {
-                PresetSwatch(
-                    label = stringResource(R.string.shelf_appearance_follow_theme),
-                    selected = appearance.presetId == null && appearance.imageFile == null,
-                    brush = Brush.linearGradient(listOf(LightLinguaPalette.paper, DarkLinguaPalette.paper)),
-                    onClick = { onAppearanceChange(ShelfAppearance(dimOpacity = appearance.dimOpacity)) }
-                )
-                ShelfBackgroundPresets.all.forEach { preset ->
+            ExpandableSettingsSection(
+                title = stringResource(R.string.appearance_shelf_background),
+                summary = when {
+                    appearance.imageFile != null -> stringResource(R.string.appearance_custom_image)
+                    appearance.presetId != null -> ShelfBackgroundPresets.byId(appearance.presetId)
+                        ?.let { stringResource(it.labelRes) }
+                    else -> stringResource(R.string.shelf_appearance_follow_theme)
+                }
+            ) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(t.spacing.s),
+                    verticalArrangement = Arrangement.spacedBy(t.spacing.s)) {
                     PresetSwatch(
-                        label = stringResource(preset.labelRes),
-                        selected = appearance.presetId == preset.id && appearance.imageFile == null,
-                        brush = Brush.verticalGradient(
-                            // 预设色是用户数据（见类注释），不是样式 token，故此处直接 Color(Long)。
-                            listOf(androidx.compose.ui.graphics.Color(preset.topColor), androidx.compose.ui.graphics.Color(preset.bottomColor))
-                        ),
-                        enabled = !darkChrome,
-                        onClick = {
-                            onAppearanceChange(appearance.copy(presetId = preset.id, imageFile = null))
-                        }
+                        label = stringResource(R.string.shelf_appearance_follow_theme),
+                        selected = appearance.presetId == null && appearance.imageFile == null,
+                        brush = Brush.linearGradient(listOf(LightLinguaPalette.paper, DarkLinguaPalette.paper)),
+                        onClick = { onAppearanceChange(ShelfAppearance(dimOpacity = appearance.dimOpacity)) }
+                    )
+                    ShelfBackgroundPresets.all.forEach { preset ->
+                        PresetSwatch(
+                            label = stringResource(preset.labelRes),
+                            selected = appearance.presetId == preset.id && appearance.imageFile == null,
+                            brush = Brush.verticalGradient(
+                                // 预设色是用户数据（见类注释），不是样式 token，故此处直接 Color(Long)。
+                                listOf(androidx.compose.ui.graphics.Color(preset.topColor), androidx.compose.ui.graphics.Color(preset.bottomColor))
+                            ),
+                            enabled = !darkChrome,
+                            onClick = {
+                                onAppearanceChange(appearance.copy(presetId = preset.id, imageFile = null))
+                            }
+                        )
+                    }
+                }
+
+                // 深色外壳下这些浅色预设叠加后文字对比度只有 1.02–2.56:1（审查 5-1），
+                // 直接禁用并说明原因，比装上去再让用户自己发现不可读更诚实。
+                if (darkChrome) {
+                    Text(
+                        text = stringResource(R.string.shelf_preset_dark_disabled),
+                        style = t.typography.caption,
+                        color = t.colors.inkSoft
                     )
                 }
-            }
 
-            // 深色外壳下这些浅色预设叠加后文字对比度只有 1.02–2.56:1（审查 5-1），
-            // 直接禁用并说明原因，比装上去再让用户自己发现不可读更诚实。
-            if (darkChrome) {
-                Text(
-                    text = stringResource(R.string.shelf_preset_dark_disabled),
-                    style = t.typography.caption,
-                    color = t.colors.inkSoft
-                )
-            }
-
-            SecondaryButton(
-                text = stringResource(
-                    if (appearance.imageFile != null) {
-                        R.string.shelf_background_change_image
-                    } else {
-                        R.string.shelf_background_pick_image
-                    }
-                ),
-                onClick = onPickImage,
-                modifier = Modifier.fillMaxWidth()
-            )
-            imageStatus?.let { status ->
-                Text(
+                SecondaryButton(
                     text = stringResource(
-                        if (status == ShelfImageStatus.DONE) {
-                            R.string.shelf_background_image_done
+                        if (appearance.imageFile != null) {
+                            R.string.shelf_background_change_image
                         } else {
-                            R.string.shelf_background_image_failed
+                            R.string.shelf_background_pick_image
                         }
                     ),
-                    style = t.typography.caption,
-                    color = if (status == ShelfImageStatus.DONE) t.colors.success else t.colors.danger
+                    onClick = onPickImage,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                LaunchedEffect(status) {
-                    delay(3000)
-                    onImageStatusShown()
+                imageStatus?.let { status ->
+                    Text(
+                        text = stringResource(
+                            if (status == ShelfImageStatus.DONE) {
+                                R.string.shelf_background_image_done
+                            } else {
+                                R.string.shelf_background_image_failed
+                            }
+                        ),
+                        style = t.typography.caption,
+                        color = if (status == ShelfImageStatus.DONE) t.colors.success else t.colors.danger
+                    )
+                    LaunchedEffect(status) {
+                        delay(3000)
+                        onImageStatusShown()
+                    }
                 }
-            }
 
-            SectionHeader(text = stringResource(R.string.shelf_background_dim))
-            Slider(
-                value = appearance.dimOpacity,
-                onValueChange = { onAppearanceChange(appearance.copy(dimOpacity = it)) },
-                valueRange = 0f..0.8f,
-                colors = SliderDefaults.colors(
-                    thumbColor = t.colors.accent,
-                    activeTrackColor = t.colors.accent,
-                    inactiveTrackColor = t.colors.paperDeep
+                SectionHeader(text = stringResource(R.string.shelf_background_dim))
+                Slider(
+                    value = appearance.dimOpacity,
+                    onValueChange = { onAppearanceChange(appearance.copy(dimOpacity = it)) },
+                    valueRange = 0f..0.8f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = t.colors.accent,
+                        activeTrackColor = t.colors.accent,
+                        inactiveTrackColor = t.colors.paperDeep
+                    )
                 )
-            )
 
-            SecondaryButton(
-                text = stringResource(R.string.shelf_background_reset),
-                onClick = onReset,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        ExpandableSettingsSection(
-            title = stringResource(R.string.appearance_reading_page),
-            summary = stringResource(selectedTheme.labelRes.resolve())
-        ) {
-            // 审查 5-10：阅读主题入口原本只在阅读页（约 4 次点击），书架处没有入口。
-            // 与阅读页共用 prefs 键，保留在外观分组内的快捷入口。
-            SectionHeader(text = stringResource(R.string.reader_theme_label))
-            ReaderThemePicker(selected = selectedTheme, onSelect = onSelectTheme)
+                SecondaryButton(
+                    text = stringResource(R.string.shelf_background_reset),
+                    onClick = onReset,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            ExpandableSettingsSection(
+                title = stringResource(R.string.appearance_reading_page),
+                summary = stringResource(selectedTheme.labelRes.resolve())
+            ) {
+                // 审查 5-10：阅读主题入口原本只在阅读页（约 4 次点击），书架处没有入口。
+                // 与阅读页共用 prefs 键，保留在外观分组内的快捷入口。
+                SectionHeader(text = stringResource(R.string.reader_theme_label))
+                ReaderThemePicker(selected = selectedTheme, onSelect = onSelectTheme)
+            }
         }
         ExpandableSettingsSection(
             title = stringResource(R.string.shelf_anim_speed_title),
@@ -350,6 +358,30 @@ internal fun ShelfAppearanceContent(
             UiAnimSpeedSelector(animSpeed = animSpeed, onAnimSpeedChange = onAnimSpeedChange)
         }
 
+    }
+}
+
+@Composable
+private fun LanternModeSelector(state: LanternAppearanceState) {
+    val tokens = LocalDesignTokens.current
+    val active = state.appearance.mode
+    SectionHeader(text = stringResource(R.string.appearance_lantern_library))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(tokens.spacing.s)) {
+        FilterChip(
+            selected = active == null,
+            onClick = { state.selectMode(null) },
+            label = { Text(stringResource(R.string.appearance_lantern_off)) }
+        )
+        FilterChip(
+            selected = active == LanternMode.DAY,
+            onClick = { state.selectMode(LanternMode.DAY) },
+            label = { Text(stringResource(R.string.appearance_lantern_day)) }
+        )
+        FilterChip(
+            selected = active == LanternMode.NIGHT,
+            onClick = { state.selectMode(LanternMode.NIGHT) },
+            label = { Text(stringResource(R.string.appearance_lantern_night)) }
+        )
     }
 }
 

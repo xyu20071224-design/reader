@@ -32,6 +32,8 @@ fun SharedString.resolve(): Int = when (this) {
     SharedString.THEME_MORANDI -> R.string.reader_theme_morandi
     SharedString.THEME_DARK -> R.string.reader_theme_dark
     SharedString.THEME_AMOLED -> R.string.reader_theme_amoled
+    SharedString.THEME_LANTERN_DAY -> R.string.reader_theme_lantern_day
+    SharedString.THEME_LANTERN_NIGHT -> R.string.reader_theme_lantern_night
     SharedString.FONT_SERIF -> R.string.reader_font_serif
     SharedString.FONT_SANS -> R.string.reader_font_sans
     SharedString.FONT_MONO -> R.string.reader_font_mono

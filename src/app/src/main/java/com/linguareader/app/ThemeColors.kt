@@ -186,7 +186,7 @@ internal fun colorSchemeFor(palette: LinguaPalette): ColorScheme {
  */
 internal fun chromeIsDark(readerTheme: ReaderTheme?, systemDark: Boolean): Boolean = when (readerTheme) {
     null -> systemDark
-    ReaderTheme.DARK, ReaderTheme.AMOLED -> true
+    ReaderTheme.DARK, ReaderTheme.AMOLED, ReaderTheme.LANTERN_NIGHT -> true
     else -> false
 }
 

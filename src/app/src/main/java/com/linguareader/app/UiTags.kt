@@ -23,6 +23,7 @@ internal object UiTags {
     const val SHELF_GRID = "shelf:grid"
     /** 空书架引导页。 */
     const val SHELF_EMPTY = "shelf:empty"
+    const val SHELF_LANTERN_IMAGE = "shelf:lantern-image"
 
     /** 单张书卡：按书 id 唯一定位，同名书也不会撞。 */
     fun bookCard(bookId: String): String = "shelf:book:" + bookId

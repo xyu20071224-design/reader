@@ -54,8 +54,7 @@ class ReaderController {
     }
 
     fun applyPreferences(preferences: ReaderPreferences) {
-        val script = ReaderScripts.preferenceScript(preferences)
-        webView.get()?.evaluateJavascript(script, null)
+        webView.get()?.applyReaderPreferences(preferences)
     }
 
     private var lastChromeInsets: Pair<Int, Int>? = null

@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
@@ -35,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -47,6 +50,8 @@ import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
 import com.linguareader.shared.ai.BookGlossary
 import com.linguareader.shared.ai.GlossaryEntry
+import com.linguareader.app.shelf.LanternEmptyShelf
+import com.linguareader.app.shelf.LanternShelfArtwork
 import com.linguareader.app.shelf.ShelfAiTranslationManageDialog
 import com.linguareader.app.shelf.ShelfAiTranslationPrepareDialog
 import com.linguareader.app.shelf.ShelfBackgroundLayer
@@ -63,6 +68,7 @@ import com.linguareader.app.shelf.ShelfTranslationChoiceDialog
 import com.linguareader.app.components.LinguaScaffold
 import com.linguareader.app.components.LinguaTopBarAction
 import com.linguareader.app.skin.LocalDesignTokens
+import com.linguareader.app.skin.LocalLanternAppearance
 import com.linguareader.shared.sync.CloudBook
 import com.linguareader.shared.sync.SyncSettings
 import com.linguareader.shared.update.AppUpdateUiState
@@ -235,13 +241,15 @@ internal fun BookshelfScreen(
     val context = LocalContext.current
     var shelfAppearance by remember { mutableStateOf(ShelfAppearance.load(context)) }
     var showAppearanceSheet by rememberSaveable { mutableStateOf(false) }
+    val lanternMode = LocalLanternAppearance.current?.appearance?.mode
+    val showCustomBackground = lanternMode == null && shelfAppearance.isCustomized
 
     // 设计 token：本屏所有样式从这里取（P3 硬约束）。背景层与书卡仍用旧调色板 API
     // 的语义色名（Ink/Accent…）——它们由同一份 SkinSpec 派生，与 token 永远同源。
     val t = LocalDesignTokens.current
 
     Box(Modifier.fillMaxSize()) {
-        if (shelfAppearance.isCustomized) {
+        if (showCustomBackground) {
             ShelfBackgroundLayer(shelfAppearance)
         }
         // 外壳换成原语 LinguaScaffold：顶栏行高、图标尺寸、返回箭头语义（AutoMirrored）
@@ -273,7 +281,7 @@ internal fun BookshelfScreen(
             } else {
                 null
             },
-            containerColor = if (shelfAppearance.isCustomized) Color.Transparent else null,
+            containerColor = if (showCustomBackground) Color.Transparent else null,
             actions = {
                 // 同步明细页独占顶栏：书架动作与生词本切换图标全部隐藏（Lead 裁决 A′）。
                 if (!showSyncDetail) {
@@ -385,8 +393,14 @@ internal fun BookshelfScreen(
                         onDownloadCloudBook = onDownloadCloudBook
                     )
                 } else if (state.books.isEmpty() && !state.loading) {
-                    ShelfEmptyState(onImport = { launcher.launch(IMPORT_MIME_TYPES) })
+                    val importBook = { launcher.launch(IMPORT_MIME_TYPES) }
+                    if (lanternMode == null) {
+                        ShelfEmptyState(onImport = importBook)
+                    } else {
+                        LanternEmptyShelf(lanternMode, onImport = importBook)
+                    }
                 } else {
+                    val lanternHeight = (LocalConfiguration.current.screenHeightDp * .22f).dp.coerceIn(108.dp, 192.dp)
                     LazyVerticalGrid(
                         columns = GridCells.Adaptive(ShelfColumnMinWidth),
                         modifier = Modifier
@@ -396,6 +410,11 @@ internal fun BookshelfScreen(
                         horizontalArrangement = Arrangement.spacedBy(ShelfColumnGap),
                         verticalArrangement = Arrangement.spacedBy(ShelfRowGap)
                     ) {
+                        if (lanternMode != null && state.books.isNotEmpty()) {
+                            item(key = "lantern-shelf-artwork", span = { GridItemSpan(maxLineSpan) }) {
+                                LanternShelfArtwork(lanternMode, Modifier.fillMaxWidth().height(lanternHeight))
+                            }
+                        }
                         items(state.books, key = { it.id }) { book ->
                             ShelfBookCard(
                                 book = book,
@@ -404,7 +423,8 @@ internal fun BookshelfScreen(
                                 attachingTranslation = book.id in state.attachingTranslation,
                                 aiTranslationProgress = state.aiTranslationProgress[book.id],
                                 translationOutdated = book.id in state.outdatedTranslations,
-                                containerAlpha = if (shelfAppearance.isCustomized) 0.9f else 1f,
+                                containerAlpha = if (showCustomBackground) 0.9f else 1f,
+                                lanternSurface = lanternMode != null,
                                 onOpen = { onOpen(book) },
                                 onGlossary = { glossaryBook = book },
                                 onTranslation = {
