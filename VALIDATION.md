@@ -3770,3 +3770,9 @@ composeRule.onNodeWithText("从一本英文书开始").assertIsDisplayed()
 - 最终签名基础包在独立 Android 15 / arm64 模拟器完成 2.2.1 → 2.3.0 标准覆盖安装，UID 与私有标记保留。只安装基础包和独立探针，**从未安装诊断目标 APK**；热补丁修改真实共享 Kotlin 查词函数，阅读页对诊断词从未收录变为 horse 的“马”义项，撤销重开后恢复未收录。已安装 APK 哈希全程保持上述最终值。独立 Java Instrumentation 的 8 项检查逐项通过，包含丢失完成回调时依据已加载的签名元数据恢复 ready/最高修订，以及随后可正常撤销。诊断词分支仅在隔离候选中，未进入发布基础包或公开资产。
 - 验证期间先后遇到并存包 Activity 全名错误、系统沉浸提示、System UI ANR、安装时 ART 验证超过 45 秒，以及 debug 测试运行器依赖未混淆 Kotlin 类名的崩溃；均保留原始记录。修正脚本、改用独立 Java 仪器探针并等待系统界面后完成最终验证。主机同时有其他会话的模拟器竞争资源，未操作它们或实体手机。需要指定签名夹具和跨重启顺序的诊断源模板放 src/tools/native-hotfix/device，避免纳入常规 connectedDebugAndroidTest 自动执行。
 - 证据：artifacts/native-hotfix/final-candidate-pipeline.log、production-proof-summary.json、production-proof-*.txt/xml、app-final-production-unit-results/、shared-final-production-unit-results/；正式产物与签名/映射在 artifacts/release-v2.3.0/，均 gitignored。未声称实体 Android 16、整套应用/听书/联网 AI 回归或完整 CI 通过，既有语料探针缺外部数据的限制继续有效。发布仅包含基础 APK、映射归档、校验文件和空 native-patches.json，后续补丁再按文档生成并附到基础 Release。
+
+### 2.3.0 正式发布与公开更新源确认
+
+- 热修复源码已推送 main（69c6123），标签 v2.3.0 指向该提交。非草稿、非预发布 Release 已设为 latest：https://github.com/xyu20071224-design/reader/releases/tag/v2.3.0 。公开 API /releases/latest 在未携带认证的请求中返回此版本；正式 APK 唯一，摘要与已完成设备验收的本地产物一致。APK、R8 mapping gzip、空 native-patches.json、SHA256SUMS 共 4 项资产，逐项核对 GitHub 返回的 size / SHA-256；没有上传测试探针或诊断目标 APK/补丁。Release immutable=false，后续可按文档追加累计原生补丁及更新目录。
+- 公开热修复目录通过匿名 HTTPS 下载并逐字节一致。首次 Python urllib 下载目录时遇到 TLS EOF，curl 重试成功；不把这一网络失败改写为应用内界面已验证。未直接操作实体手机；手机 2.2.1 需先通过原有 APK 更新入口覆盖升级到 2.3.0，以后同一基础版本的兼容小修复才走补丁与重启。
+- 本提交完整 CI 44230970009 已失败：:shared:test 796 项中 17 项失败、8 项跳过；失败项与此前缺外部真实语料的探针一致，未修改这些断言或伪称完整 CI 通过。原始日志保存 artifacts/release-v2.3.0/ci-failure.log。本次单独隔离源码的 88 项相关回归、正式包 8 项设备检查及覆盖安装/真实阅读页验证均已通过。Platform Build 在记录本条时仍执行中。
