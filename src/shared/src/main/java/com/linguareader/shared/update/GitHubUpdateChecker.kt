@@ -30,6 +30,8 @@ class GitHubUpdateChecker(
             runCatching { GitHubReleaseParser.parsePackAssets(latestBody()) }
         }
 
+    suspend fun releaseBody(): Result<String> = withContext(Dispatchers.IO) { runCatching { latestBody() } }
+
     private fun latestBody(): String {
         val endpoint = "https://api.github.com/repos/$repo/releases/latest"
         val connection = URL(endpoint).openConnection() as HttpURLConnection

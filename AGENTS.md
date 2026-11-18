@@ -47,12 +47,17 @@ source toolchain/env.sh                        # 人手调 adb / apksigner / aap
 | --- | --- |
 | applicationId / namespace | `com.linguareader.app` |
 | compileSdk / targetSdk / minSdk | 35 / 35 / **23** |
-| versionCode / versionName | 21 / 2.0.0 |
+| versionCode / versionName | 25 / 2.3.0 |
 | JDK / jvmTarget | 17 |
 | AGP / Kotlin / Gradle | 8.9.1 / 2.1.10 / 8.11.1 |
 | Compose BOM | 2025.05.01 |
 
 关键依赖：`jsoup`（HTML 解析）、`pdfbox-android`（PDF 文字层）、`androidx.webkit`。
+
+原生热修复从 2.3.0 接入 Tinker 1.9.15.2。操作约定见 `src/tools/native-hotfix/README.md`：
+必须保存最终发布的基础 APK 与对应 R8 mapping；补丁绑定精确 APK 哈希与原证书，不能重新构建基础包替代。
+R8 保留裁剪与混淆，热修复兼容配置关闭代码优化；不要自行移除 `-dontoptimize` 或加载器 keep 规则。
+Manifest/XML/内置 assets/原生库变化发新 APK，热补丁修订号单独递增。
 
 - **仓库配置阿里云镜像优先**（`src/settings.gradle.kts`），因为上游仓库在部分网络下 403/reset。加依赖时别把镜像顺序改掉。
 - `src/gradle.properties` 开了 `android.overridePathCheck=true`（路径含中文时 AGP 会报错）。

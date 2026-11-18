@@ -896,4 +896,14 @@
     <string name="ai_api_key">API Key</string>
     <string name="reader_context_meaning_title">Contextual meaning</string>
     <string name="reader_sentence_translation_failed">Sentence translation unavailable. Please retry.</string>
+
+    <string name="update_hotfix_current">Active hotfix: revision %1$d</string>
+    <string name="update_hotfix_available">Hotfix revision %1$d available</string>
+    <string name="update_hotfix_download">Download and apply hotfix</string>
+    <string name="update_hotfix_applying">Preparing hotfix, please wait…</string>
+    <string name="update_hotfix_ready">Hotfix is ready. Restart the app to apply it without installing an APK. Restarting pauses playback.</string>
+    <string name="update_hotfix_failed">Hotfix could not be prepared. Check for updates again. The original version remains available.</string>
+    <string name="update_hotfix_rollback">Undo hotfix</string>
+    <string name="update_hotfix_rolled_back">Hotfix removed. Close and reopen the app to return to the base version.</string>
+    <string name="update_hotfix_restart">Restart app</string>
 </resources>

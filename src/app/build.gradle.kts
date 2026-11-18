@@ -45,11 +45,13 @@ android {
         applicationId = "com.linguareader.app"
         minSdk = 23
         targetSdk = 35
-        // 词典副本自动恢复补丁：递增版本以供现有检查更新流程发现并覆盖安装。
-        versionCode = 24
-        versionName = "2.2.1"
+        // 首次安装原生热修复能力；后续 DEX 补丁使用独立 revision，不递增 APK 版本。
+        versionCode = 25
+        versionName = "2.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["tinkerId"] = "reader-$versionCode"
+        buildConfigField("String", "HOTFIX_BASE_ID", buildConfigString("reader-$versionCode"))
 
         // 默认同步服务器（可选增强；出厂状态仍零出网：enabled 只能由用户保存/登录置 true）。
         buildConfigField("String", "SYNC_DEFAULT_SERVER_URL", buildConfigString(defaultSyncServerUrl))
@@ -115,6 +117,7 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        resources.excludes += "META-INF/services/javax.annotation.processing.Processor"
     }
 }
 
@@ -122,6 +125,8 @@ dependencies {
     // 跨端共享的纯逻辑（禁止 android.*/androidx.*，见 src/shared/README.md）。
     api(project(":shared"))
 
+    implementation("com.tencent.tinker:tinker-android-lib:1.9.15.2")
+    implementation("com.tencent.tinker:tinker-android-loader:1.9.15.2")
     implementation(platform("androidx.compose:compose-bom:2025.05.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.ui:ui")
@@ -161,4 +166,14 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+}
+
+// 补丁构建必须复用基础包的 R8 映射；无需引入依赖旧 AGP API 的 Gradle 插件。
+providers.gradleProperty("hotfixMapping").orNull?.let { mapping ->
+    val source = file(mapping)
+    require(source.isFile) { "Missing base R8 mapping: $mapping" }
+    val rules = layout.buildDirectory.file("hotfix/apply-mapping.pro").get().asFile
+    rules.parentFile.mkdirs()
+    rules.writeText("-applymapping '"+source.absolutePath.replace("\\", "/").replace("'", "\\'")+"'\n")
+    android.buildTypes.getByName("release").proguardFile(rules)
 }

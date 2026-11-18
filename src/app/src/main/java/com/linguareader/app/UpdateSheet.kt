@@ -53,7 +53,8 @@ internal fun UpdateSheet(
     onCheckNow: () -> Unit,
     onAutoCheckChange: (Boolean) -> Unit,
     onDownload: () -> Unit,
-    onCancelDownload: () -> Unit
+    onCancelDownload: () -> Unit,
+    onRollbackPatch: () -> Unit = {}
 ) {
     val context = LocalContext.current
     // 从系统「安装未知应用」授权页返回时要重查授权状态。
@@ -75,6 +76,8 @@ internal fun UpdateSheet(
             onCheckNow = onCheckNow,
             onDownload = onDownload,
             onCancelDownload = onCancelDownload,
+            onRollbackPatch = onRollbackPatch,
+            onRestartApp = { com.linguareader.app.hotfix.bootstrap.ReaderRestartActivity.restart(context) },
             onGrantInstallPermission = {
                 context.startActivity(ApkInstaller.installPermissionIntent(context))
             }
@@ -106,7 +109,9 @@ internal fun ColumnScope.UpdateSheetContent(
     onCheckNow: () -> Unit,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
-    onGrantInstallPermission: () -> Unit
+    onGrantInstallPermission: () -> Unit,
+    onRollbackPatch: () -> Unit = {},
+    onRestartApp: () -> Unit = {}
 ) {
     val t = LocalDesignTokens.current
 
@@ -127,6 +132,12 @@ internal fun ColumnScope.UpdateSheetContent(
     )
     Spacer(Modifier.height(t.spacing.m))
 
+    if (update.nativePatchRevision > 0 && update.phase != AppUpdatePhase.APPLYING_PATCH &&
+        update.phase != AppUpdatePhase.RESTART_REQUIRED) {
+        Text(stringResource(R.string.update_hotfix_current, update.nativePatchRevision), color = t.colors.inkSoft)
+        LinguaTextButton(text = stringResource(R.string.update_hotfix_rollback), onClick = onRollbackPatch)
+    }
+
     // 自动检查开关：标题 + 说明 + 开关一行，由 SettingRow 统一行高与开关配色。
     SettingRow(
         title = stringResource(R.string.update_auto_check_label),
@@ -142,7 +153,9 @@ internal fun ColumnScope.UpdateSheetContent(
         onCheckNow = onCheckNow,
         onDownload = onDownload,
         onCancelDownload = onCancelDownload,
-        onGrantInstallPermission = onGrantInstallPermission
+        onGrantInstallPermission = onGrantInstallPermission,
+        onRollbackPatch = onRollbackPatch,
+        onRestartApp = onRestartApp
     )
 }
 
@@ -154,7 +167,9 @@ private fun UpdatePhaseBody(
     onCheckNow: () -> Unit,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
-    onGrantInstallPermission: () -> Unit
+    onGrantInstallPermission: () -> Unit,
+    onRollbackPatch: () -> Unit,
+    onRestartApp: () -> Unit
 ) {
     val t = LocalDesignTokens.current
     when (update.phase) {
@@ -217,6 +232,21 @@ private fun UpdatePhaseBody(
             onGrantInstallPermission = onGrantInstallPermission
         )
 
+        AppUpdatePhase.APPLYING_PATCH -> {
+            Text(stringResource(R.string.update_hotfix_applying), color = t.colors.ink)
+            Spacer(Modifier.height(t.spacing.s))
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        AppUpdatePhase.RESTART_REQUIRED -> {
+            Text(stringResource(if (update.patchRolledBack) R.string.update_hotfix_rolled_back else R.string.update_hotfix_ready),
+                color = t.colors.success)
+            Spacer(Modifier.height(t.spacing.s))
+            PrimaryButton(text = stringResource(R.string.update_hotfix_restart), onClick = onRestartApp)
+            if (!update.patchRolledBack) {
+                Spacer(Modifier.height(t.spacing.s))
+                SecondaryButton(text = stringResource(R.string.update_hotfix_rollback), onClick = onRollbackPatch)
+            }
+        }
         AppUpdatePhase.ERROR -> {
             Text(
                 text = stringResource(R.string.update_error, update.error ?: ""),
@@ -240,8 +270,10 @@ private fun AvailableBody(
     val context = LocalContext.current
     val info = update.info
     if (info != null) {
+        val nativePatch = info.nativePatch
         Text(
-            text = stringResource(R.string.update_available_title, info.versionName),
+            text = if (nativePatch != null) stringResource(R.string.update_hotfix_available, nativePatch.revision)
+            else stringResource(R.string.update_available_title, info.versionName),
             style = t.typography.title,
             color = t.colors.accent
         )
@@ -265,9 +297,9 @@ private fun AvailableBody(
             }
         }
         Spacer(Modifier.height(t.spacing.m))
-        PrimaryButton(text = stringResource(R.string.update_download), onClick = onDownload)
+        PrimaryButton(text = stringResource(if (info.nativePatch != null) R.string.update_hotfix_download else R.string.update_download), onClick = onDownload)
         Spacer(Modifier.height(t.spacing.xs))
-        if (!canInstall) {
+        if (!canInstall && info.nativePatch == null) {
             Text(
                 text = stringResource(R.string.update_install_permission_hint),
                 style = t.typography.label,

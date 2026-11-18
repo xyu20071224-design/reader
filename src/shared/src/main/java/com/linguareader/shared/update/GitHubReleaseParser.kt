@@ -15,7 +15,8 @@ data class AppUpdateInfo(
     /** Release 说明正文（markdown 纯文本展示）。 */
     val releaseNotes: String,
     /** ISO 8601 发布时间，仅展示用。 */
-    val publishedAt: String
+    val publishedAt: String,
+    val nativePatch: NativePatchInfo? = null
 )
 
 /**

@@ -171,7 +171,8 @@ internal fun BookshelfScreen(
      *
      * 与 [onReaderThemeChanged] 同一模式：**改了要立刻生效**，不能只写盘等重启。
      */
-    onSkinChanged: (com.linguareader.shared.ui.skin.SkinSpec?) -> Unit = {}
+    onSkinChanged: (com.linguareader.shared.ui.skin.SkinSpec?) -> Unit = {},
+    onRollbackNativeUpdate: () -> Unit = {}
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         if (it != null) onImport(it)
@@ -628,7 +629,8 @@ internal fun BookshelfScreen(
             onCheckNow = onCheckForUpdate,
             onAutoCheckChange = onAutoCheckChange,
             onDownload = onDownloadUpdate,
-            onCancelDownload = onCancelUpdateDownload
+            onCancelDownload = onCancelUpdateDownload,
+            onRollbackPatch = onRollbackNativeUpdate
         )
     }
 

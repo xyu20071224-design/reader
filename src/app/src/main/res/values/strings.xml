@@ -887,4 +887,14 @@
     <string name="ai_api_key">API Key</string>
     <string name="reader_context_meaning_title">语境释义</string>
     <string name="reader_sentence_translation_failed">暂未获取整句译文，请重试</string>
+
+    <string name="update_hotfix_current">当前热修复：第 %1$d 版</string>
+    <string name="update_hotfix_available">可用热修复：第 %1$d 版</string>
+    <string name="update_hotfix_download">下载并应用热修复</string>
+    <string name="update_hotfix_applying">正在准备热修复，请稍候…</string>
+    <string name="update_hotfix_ready">热修复已就绪。重启应用后生效，无需安装 APK。重启会暂停朗读。</string>
+    <string name="update_hotfix_failed">热修复未完成。可重新检查更新；原版本仍可使用。</string>
+    <string name="update_hotfix_rollback">撤销热修复</string>
+    <string name="update_hotfix_rolled_back">已撤销热修复。完全关闭并重新打开应用后恢复基础版本。</string>
+    <string name="update_hotfix_restart">重启应用</string>
 </resources>

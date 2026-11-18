@@ -27,3 +27,18 @@
 # * 四大组件（MainActivity / TtsPlaybackService / ReviewReminderReceiver / FileProvider）：
 #   AGP 依据 AndroidManifest.xml 自动生成 keep 规则。
 # * 本项目 JSON 全用 org.json 手写解析，无 Gson / Moshi / kotlinx.serialization 的字段名反射。
+
+# Tinker 的加载器在补丁注入前运行，不可改名或被业务代码优化改写。
+# R8 的全局 outlining 即使对 keep 类也会抽取指令到可变化的业务合成类。
+# 保留 shrink/obfuscation/resource shrinking，关闭代码优化以维持基础加载器闭包。
+-dontoptimize
+# Keep runtime packages only: anno-support also carries a compile-time processor.
+-keep class com.tencent.tinker.loader.** { *; }
+-keep class com.tencent.tinker.lib.** { *; }
+-keep class com.tencent.tinker.entry.** { *; }
+-keep class com.linguareader.app.hotfix.bootstrap.** { *; }
+-keep class com.linguareader.app.hotfix.ReaderPatchResultService { *; }
+
+# Stable native-patch entry ABI and signed discovery model (also used for release-device diagnostics).
+-keep class com.linguareader.app.hotfix.NativeHotfixRuntime** { *; }
+-keep class com.linguareader.shared.update.NativePatchInfo { *; }

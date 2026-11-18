@@ -65,6 +65,7 @@ import com.linguareader.app.sync.SyncHost
 import com.linguareader.shared.sync.SyncDetail
 import com.linguareader.shared.sync.SyncSettings
 import com.linguareader.shared.packs.PackValidationResult
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -330,16 +331,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
         }
+        val nativeUpdate = updateRepository.nativeStatus()
         mutableState.value = mutableState.value.copy(
             reviewPreset = preset,
             customReview = custom,
             reminders = reminders,
             launchPrompt = prompt,
             aiSettings = aiSettingsStore.load(),
-            update = AppUpdateUiState(autoCheckEnabled = updateRepository.loadSettings().autoCheckEnabled),
+            update = AppUpdateUiState(
+                autoCheckEnabled = updateRepository.loadSettings().autoCheckEnabled,
+                nativePatchRevision = nativeUpdate.loadedRevision,
+                patchRolledBack = nativeUpdate.rolledBack,
+                error = if (nativeUpdate.failed) string(R.string.update_hotfix_failed) else null,
+                phase = when {
+                    nativeUpdate.restartRequired -> AppUpdatePhase.RESTART_REQUIRED
+                    nativeUpdate.failed -> AppUpdatePhase.ERROR
+                    else -> AppUpdatePhase.IDLE
+                }),
             syncSettings = syncCoordinator.settings()
         )
-        if (updateRepository.loadSettings().autoCheckEnabled) {
+        if (updateRepository.loadSettings().autoCheckEnabled && !nativeUpdate.failed) {
             // 出厂默认关；用户开了开关才在启动时静默查一次，失败不打扰。
             checkForUpdate(silent = true)
         }
@@ -962,7 +973,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // --- 自动更新（GitHub Release）-------------------------------------------
 
     private fun setUpdate(transform: (AppUpdateUiState) -> AppUpdateUiState) {
-        mutableState.value = mutableState.value.copy(update = transform(mutableState.value.update))
+        mutableState.update { current -> current.copy(update = transform(current.update)) }
     }
 
     fun setAutoCheck(enabled: Boolean) {
@@ -975,7 +986,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * 无更新/失败都静默归位，避免打扰；手动入口走 false，结果都在 UpdateSheet 里展示。
      */
     fun checkForUpdate(silent: Boolean = false) {
-        if (mutableState.value.update.phase == AppUpdatePhase.CHECKING) return
+        if (mutableState.value.update.phase in setOf(AppUpdatePhase.CHECKING, AppUpdatePhase.DOWNLOADING, AppUpdatePhase.APPLYING_PATCH, AppUpdatePhase.RESTART_REQUIRED)) return
         setUpdate { it.copy(phase = AppUpdatePhase.CHECKING, error = null) }
         viewModelScope.launch {
             when (val outcome = updateRepository.check()) {
@@ -1004,7 +1015,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun downloadUpdate() {
         val info = mutableState.value.update.info ?: return
-        if (mutableState.value.update.phase == AppUpdatePhase.DOWNLOADING) return
+        if (mutableState.value.update.phase in setOf(AppUpdatePhase.DOWNLOADING, AppUpdatePhase.APPLYING_PATCH, AppUpdatePhase.RESTART_REQUIRED)) return
         updateJob?.cancel()
         setUpdate { it.copy(phase = AppUpdatePhase.DOWNLOADING, progress = 0, error = null) }
         updateJob = viewModelScope.launch {
@@ -1014,14 +1025,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     setUpdate { it.copy(progress = percent) }
                 }
             }.onSuccess { apk ->
-                setUpdate { it.copy(phase = AppUpdatePhase.DOWNLOADED, downloadedApk = apk) }
+                val patch = info.nativePatch
+                if (patch == null) {
+                    setUpdate { it.copy(phase = AppUpdatePhase.DOWNLOADED, downloadedApk = apk) }
+                } else {
+                    setUpdate { it.copy(phase = AppUpdatePhase.APPLYING_PATCH, downloadedApk = null) }
+                    try {
+                        updateRepository.applyNativePatch(apk, patch)
+                        apk.delete()
+                        setUpdate { it.copy(phase = AppUpdatePhase.RESTART_REQUIRED, patchRolledBack = false) }
+                    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (e: Exception) {
+                        setUpdate { it.copy(phase = AppUpdatePhase.ERROR, error = string(R.string.update_hotfix_failed)) }
+                    }
+                }
             }.onFailure { throwable ->
                 setUpdate { it.copy(phase = AppUpdatePhase.ERROR, error = throwable.message) }
             }
         }
     }
 
+    fun rollbackNativeUpdate() {
+        if (mutableState.value.update.phase == AppUpdatePhase.APPLYING_PATCH) return
+        runCatching { updateRepository.rollbackNativePatch() }.onSuccess {
+            setUpdate { it.copy(phase = AppUpdatePhase.RESTART_REQUIRED, nativePatchRevision = 0, patchRolledBack = true) }
+        }.onFailure { setUpdate { it.copy(phase = AppUpdatePhase.ERROR, error = string(R.string.update_hotfix_failed)) } }
+    }
+
     fun cancelUpdateDownload() {
+        if (mutableState.value.update.phase != AppUpdatePhase.DOWNLOADING) return
         updateJob?.cancel()
         updateJob = null
         if (mutableState.value.update.phase == AppUpdatePhase.DOWNLOADING) {

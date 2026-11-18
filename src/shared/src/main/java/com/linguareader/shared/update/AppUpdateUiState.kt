@@ -11,6 +11,8 @@ enum class AppUpdatePhase {
     AVAILABLE,
     DOWNLOADING,
     DOWNLOADED,
+    APPLYING_PATCH,
+    RESTART_REQUIRED,
     ERROR
 }
 
@@ -23,13 +25,17 @@ data class AppUpdateUiState(
     /** 下载进度 0..100，仅 DOWNLOADING 有效。 */
     val progress: Int = 0,
     /** ERROR 阶段的失败原因（用户可读）。 */
-    val error: String? = null
+    val error: String? = null,
+    val nativePatchRevision: Int = 0,
+    val patchRolledBack: Boolean = false
 ) {
     /** 本会话发现过新版（含下载中/待安装），书架顶栏据此显示红点。 */
     val updateAvailable: Boolean
         get() = phase in setOf(
             AppUpdatePhase.AVAILABLE,
             AppUpdatePhase.DOWNLOADING,
-            AppUpdatePhase.DOWNLOADED
+            AppUpdatePhase.DOWNLOADED,
+            AppUpdatePhase.APPLYING_PATCH,
+            AppUpdatePhase.RESTART_REQUIRED
         )
 }
