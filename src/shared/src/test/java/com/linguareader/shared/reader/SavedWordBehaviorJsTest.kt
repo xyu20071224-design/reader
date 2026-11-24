@@ -109,4 +109,15 @@ class SavedWordBehaviorJsTest {
         val r = run(listOf(row("due", "study studied")), listOf(action(ordinary, listOf("study"))))
         assertEquals(listOf("study", "studied"), marks(r, 0, "due", "due"))
     }
+
+    @Test fun t11DueWordInsideAnOrdinarySavedPhraseKeepsItsOwnSolidUnderline() {
+        val r = run(listOf(row("plain", "give up"), row("inline", "give ", inline("up"))),
+            listOf(action(listOf("give up", "give"), listOf("give")), action(listOf("give up", "give"), listOf("give up"))))
+        for (id in listOf("plain", "inline")) {
+            assertEquals("give", marks(r, 0, id, "due").joinToString(""))
+            assertEquals(" up", marks(r, 0, id).joinToString(""))
+            assertEquals("give up", marks(r, 1, id, "due").joinToString(""))
+            assertEquals(emptyList(), marks(r, 1, id))
+        }
+    }
 }

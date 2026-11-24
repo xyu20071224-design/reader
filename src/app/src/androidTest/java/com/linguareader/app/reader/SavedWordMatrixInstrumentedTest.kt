@@ -119,6 +119,17 @@ class SavedWordMatrixInstrumentedTest {
     private fun texts(rows: JSONObject, id: String, kind: String = "saved"): List<String> =
         rows.getJSONObject(id).getJSONArray(kind).let { a -> (0 until a.length()).map(a::getString) }
 
+    private fun inlineWordLookup(): JSONObject = JSONObject(js("""
+        JSON.stringify((function() {
+          const element = document.querySelector('#phrase em');
+          const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+          const node = walker.nextNode();
+          const range = document.createRange(); range.selectNodeContents(node);
+          const r = range.getBoundingClientRect();
+          return window.lrLookupAt(r.left + r.width / 2, r.top + r.height / 2, false);
+        })())
+    """.trimIndent()) as String)
+
     @Test fun b01WholeWordBoundaryUsesTheCompleteInlineText() {
         start("<p id='positive'>app APP app,\napp.</p><p id='negative'>apple application app<em>le</em></p>")
         set(listOf("app"))
@@ -158,6 +169,9 @@ class SavedWordMatrixInstrumentedTest {
     @Test fun t07PhraseAcrossInlineMarkupPreservesFormattingAndTextOffsets() {
         start("<p id='phrase'>Please give <em>up</em> now.</p><p id='other'>give</p><p id='separate'>up</p><p id='br'>give<br/>up</p>")
         val before = js("document.getElementById('phrase').textContent")
+        val lookupBefore = inlineWordLookup()
+        assertEquals("up", lookupBefore.getString("word"))
+        assertEquals(12, lookupBefore.getInt("blockOffset"))
         set(listOf("give up"))
         val r = snapshot("t07-inline", listOf("phrase", "other", "separate", "br"))
         assertEquals("give up", texts(r, "phrase").joinToString(""))
@@ -166,6 +180,10 @@ class SavedWordMatrixInstrumentedTest {
         assertEquals(emptyList<String>(), texts(r, "other"))
         assertEquals(emptyList<String>(), texts(r, "separate"))
         assertEquals(emptyList<String>(), texts(r, "br"))
+        val lookupAfter = inlineWordLookup()
+        listOf("word", "sentence", "paragraph", "sentenceOffset", "blockOffset").forEach { key ->
+            assertEquals("Marking changed lookup coordinate $key", lookupBefore.get(key), lookupAfter.get(key))
+        }
     }
 
     @Test fun t07WhitespaceEquivalentPhrasesShareTheDueStyle() {
@@ -203,5 +221,22 @@ class SavedWordMatrixInstrumentedTest {
         val off = snapshot("t11-off", listOf("words"))
         assertEquals(emptyList<String>(), texts(off, "words"))
         assertEquals(emptyList<String>(), texts(off, "words", "due"))
+    }
+
+    @Test fun t11DueWordInsideAnOrdinaryPhraseKeepsAnIndependentSolidUnderline() {
+        start("<p id='plain'>give up</p><p id='inline'>give <em>up</em></p>")
+        set(listOf("give up", "give"), listOf("give"))
+        val r = snapshot("t11-overlap", listOf("plain", "inline"))
+        for (id in listOf("plain", "inline")) {
+            assertEquals("give", texts(r, id, "due").joinToString(""))
+            assertEquals(" up", texts(r, id).joinToString(""))
+            assertEquals("give up", r.getJSONObject(id).getString("text"))
+        }
+        set(listOf("give up", "give"), listOf("give up"))
+        val inverse = snapshot("t11-overlap-due-phrase", listOf("plain", "inline"))
+        for (id in listOf("plain", "inline")) {
+            assertEquals("give up", texts(inverse, id, "due").joinToString(""))
+            assertEquals(emptyList<String>(), texts(inverse, id))
+        }
     }
 }
