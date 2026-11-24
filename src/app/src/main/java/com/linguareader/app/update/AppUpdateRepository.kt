@@ -55,6 +55,8 @@ class AppUpdateRepository(
     private val transport = HttpReleaseTransport(connectionFactory)
     private data class Selection(val source: ReleaseSource, val release: ReleaseRecord, val epoch: Long)
     private val sourceEpoch = AtomicLong()
+    /** Legacy callers are supported only before this initial GitHub instance starts discovery. */
+    @Volatile private var legacyDownloadsAllowed = AppUpdateSettings.load(appContext).catalogUrl == null
     @Volatile private var updateSelection: Selection? = null
     @Volatile private var packSelection: Selection? = null
     private val hotfix = NativeHotfixRuntime(appContext)
@@ -78,6 +80,7 @@ class AppUpdateRepository(
     fun setCatalogUrl(value: String?) {
         val catalog = value?.trim()?.takeIf { it.isNotEmpty() }?.let { URI(it).toASCIIString() }
         catalog?.let { ReleaseUrls.mirror(it) }
+        legacyDownloadsAllowed = false
         sourceEpoch.incrementAndGet()
         AppUpdateSettings.save(appContext, loadSettings().copy(catalogUrl = catalog))
         updateSelection = null
@@ -86,6 +89,8 @@ class AppUpdateRepository(
 
     /** 检查远端最新 Release，与当前安装版本比较。 */
     suspend fun check(): UpdateCheckOutcome {
+        legacyDownloadsAllowed = false
+        updateSelection = null
         return try {
             val epoch = sourceEpoch.get()
             val source = currentSource()
@@ -94,10 +99,9 @@ class AppUpdateRepository(
             if (release == null) { updateSelection = null; return UpdateCheckOutcome.UpToDate }
             val selection = Selection(source, release, epoch)
             requireCurrent(selection)
-            updateSelection = selection
             val body = release.canonicalBody()
             val info = GitHubReleaseParser.parse(body)
-            if (info != null && UpdatePolicy.isNewer(info.tag, BuildConfig.VERSION_NAME)) {
+            val outcome = if (info != null && UpdatePolicy.isNewer(info.tag, BuildConfig.VERSION_NAME)) {
                 UpdateCheckOutcome.Available(info)
             } else {
                 val catalogUrl = NativePatchCatalog.catalogUrl(body)
@@ -114,6 +118,9 @@ class AppUpdateRepository(
                         releaseNotes = patch.notes, publishedAt = release.optString("published_at"), nativePatch = patch))
                 }
             }
+            requireCurrent(selection)
+            if (outcome is UpdateCheckOutcome.Available) updateSelection = selection
+            outcome
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { UpdateCheckOutcome.Failure(e.message ?: "更新检查失败") }
     }
@@ -122,6 +129,14 @@ class AppUpdateRepository(
         require(sourceEpoch.get() == epoch && currentSource().id == source.id) {
             "Release source changed; refresh before downloading"
         }
+    }
+
+    private fun legacyDownloadAllowed(epoch: Long): Boolean = legacyDownloadsAllowed && epoch == 0L &&
+        sourceEpoch.get() == epoch && loadSettings().catalogUrl == null &&
+        currentSource().id == "github:${ReleaseUrls.REPOSITORY}"
+
+    private fun requireLegacyDownload(epoch: Long) {
+        require(legacyDownloadAllowed(epoch)) { "Release source changed or discovery started; refresh before downloading" }
     }
 
     private fun requireCurrent(selection: Selection) = requireCurrent(selection.source, selection.epoch)
@@ -159,14 +174,14 @@ class AppUpdateRepository(
                     require(it.sha256 == null || it.sha256 == info.sha256)
                 }.copy(bytes = info.bytes, sha256 = info.sha256)
             } else {
-                require(loadSettings().catalogUrl == null) { "Refresh the mirror before downloading" }
+                requireLegacyDownload(epoch)
                 ReleaseAsset(source.id, info.assetName, info.downloadUrl, bytes = info.bytes, sha256 = info.sha256)
             }
             val file = transport.download(asset, File(appContext.filesDir, "hotfix-downloads"),
                 source.assetPolicy, NativePatchCatalog.MAX_PATCH_BYTES, onProgress)
             try {
                 if (selection != null) requireCurrent(selection)
-                else require(sourceEpoch.get() == epoch) { "Release source changed during download" }
+                else requireLegacyDownload(epoch)
                 check(file.setReadOnly())
                 file
             } catch (e: Throwable) { file.delete(); throw e }
@@ -192,8 +207,9 @@ class AppUpdateRepository(
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { Result.failure(e) }
         }
-        if (loadSettings().catalogUrl != null) return@withContext Result.failure(
-            IllegalStateException("Refresh the mirror before downloading"))
+        val epoch = sourceEpoch.get()
+        if (!legacyDownloadAllowed(epoch)) return@withContext Result.failure(
+            IllegalStateException("Refresh the selected source before downloading"))
         // runCatching/use 的 lambda 不是 suspend，取不到 coroutineContext，
         // 在 withContext 的 suspend 作用域先捕获再往里传。
         val activeContext = coroutineContext
@@ -236,6 +252,7 @@ class AppUpdateRepository(
                 }
                 activeContext.ensureActive()
                 check(written > 0) { "下载内容为空" }
+                requireLegacyDownload(epoch)
                 target
             } catch (t: Throwable) {
                 // 半截 APK 留着只会误导下一次安装，无论失败还是取消都清掉。
@@ -252,6 +269,8 @@ class AppUpdateRepository(
 
     /** Q2-c03：列出远端 Release 里的资源包资产。只在用户显式点击「从 GitHub 获取」时调用。 */
     suspend fun fetchPackAssets(): Result<List<GitHubReleaseParser.PackAsset>> = try {
+        legacyDownloadsAllowed = false
+        packSelection = null
         val epoch = sourceEpoch.get()
         val source = currentSource()
         val release = source.latestRelease()
@@ -260,8 +279,10 @@ class AppUpdateRepository(
         else {
             val selection = Selection(source, release, epoch)
             requireCurrent(selection)
+            val assets = GitHubReleaseParser.parsePackAssets(release.canonicalBody())
+            requireCurrent(selection)
             packSelection = selection
-            Result.success(GitHubReleaseParser.parsePackAssets(release.canonicalBody()))
+            Result.success(assets)
         }
     } catch (e: CancellationException) { throw e }
     catch (e: Exception) { Result.failure(e) }
@@ -282,8 +303,9 @@ class AppUpdateRepository(
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { Result.failure(e) }
         }
-        if (loadSettings().catalogUrl != null) return@withContext Result.failure(
-            IllegalStateException("Refresh the mirror before downloading"))
+        val epoch = sourceEpoch.get()
+        if (!legacyDownloadAllowed(epoch)) return@withContext Result.failure(
+            IllegalStateException("Refresh the selected source before downloading"))
         val activeContext = coroutineContext
         runCatching {
             val dir = appContext.getExternalFilesDir("packs-download")
@@ -326,6 +348,7 @@ class AppUpdateRepository(
                 }
                 activeContext.ensureActive()
                 check(written > 0) { "下载内容为空" }
+                requireLegacyDownload(epoch)
                 target
             } catch (t: Throwable) {
                 if (target.exists()) target.delete()
