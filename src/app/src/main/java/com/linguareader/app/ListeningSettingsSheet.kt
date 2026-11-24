@@ -56,6 +56,9 @@ import com.linguareader.app.tts.SystemTtsVoices
 import com.linguareader.app.tts.SystemVoiceInfo
 import com.linguareader.app.tts.TtsEngineMode
 import com.linguareader.app.tts.TtsPlaybackController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.linguareader.shared.tts.ProsodyPlanner
+import com.linguareader.shared.tts.ProsodyFallbackReason
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -157,6 +160,8 @@ internal fun ListeningSettingsBody(
     val scope = rememberCoroutineScope()
     val t = LocalDesignTokens.current
     var settings by remember { mutableStateOf(CloudTtsSettings.load(context)) }
+    var prosodyMode by remember { mutableStateOf(TtsPlaybackController.prosodyMode(context)) }
+    val playback by TtsPlaybackController.state.collectAsStateWithLifecycle()
     var systemVoices by remember { mutableStateOf<List<SystemVoiceInfo>>(emptyList()) }
     var systemVoicesLoaded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -247,7 +252,7 @@ internal fun ListeningSettingsBody(
             return
         }
         CloudTtsSettings.save(context, settings)
-        TtsPlaybackController.onCloudSettingsChanged(context)
+        TtsPlaybackController.onCloudSettingsChanged(context, prosodyMode)
         // 保存成功先在弹层内联展示「已保存」，稍等片刻再回调关闭：
         // 直接关闭会让行内反馈一闪而过（ModalBottomSheet 又会盖住全局
         // Snackbar），用户得到「毫无动静」的观感。失败路径不关闭，反馈常驻。
@@ -294,6 +299,23 @@ internal fun ListeningSettingsBody(
                     selected = settings.mode == TtsEngineMode.MIMO,
                     onSelect = { settings = settings.copy(mode = TtsEngineMode.MIMO) }
                 )
+            }
+
+            SectionHeader(text = stringResource(R.string.tts_prosody_section))
+            EngineChoice(stringResource(R.string.tts_prosody_original),
+                selected = prosodyMode == ProsodyPlanner.Mode.ORIGINAL,
+                onSelect = { prosodyMode = ProsodyPlanner.Mode.ORIGINAL })
+            EngineChoice(stringResource(R.string.tts_prosody_phrases),
+                selected = prosodyMode == ProsodyPlanner.Mode.PHRASES,
+                onSelect = { prosodyMode = ProsodyPlanner.Mode.PHRASES })
+            Text(stringResource(R.string.tts_prosody_hint), style = t.typography.label, color = t.colors.inkFaint)
+            if (prosodyMode == ProsodyPlanner.Mode.PHRASES && playback.prosodyMode == prosodyMode) {
+                val fallback = when (playback.prosodyFallbackReason) {
+                    ProsodyFallbackReason.AUDIO_PACK_ORIGINAL -> R.string.tts_prosody_pack_fallback
+                    ProsodyFallbackReason.UNSUPPORTED_BACKEND -> R.string.tts_prosody_backend_fallback
+                    null -> null
+                }
+                fallback?.let { Text(stringResource(it), style = t.typography.label, color = t.colors.inkSoft) }
             }
 
             if (settings.mode == TtsEngineMode.SYSTEM) {

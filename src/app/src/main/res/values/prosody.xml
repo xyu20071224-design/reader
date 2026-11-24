@@ -1,0 +1,8 @@
+<resources>
+    <string name="tts_prosody_section">朗读节奏</string>
+    <string name="tts_prosody_original">原始节奏</string>
+    <string name="tts_prosody_phrases">分句停顿</string>
+    <string name="tts_prosody_hint">长句中增加短暂停顿，句尾略放慢。云端引擎会按分句生成并缓存新音频。</string>
+    <string name="tts_prosody_pack_fallback">当前音频包保持原始节奏。</string>
+    <string name="tts_prosody_backend_fallback">当前引擎暂不支持分句停顿，使用原始节奏。</string>
+</resources>

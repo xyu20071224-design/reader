@@ -1,0 +1,8 @@
+<resources>
+    <string name="tts_prosody_section">Reading rhythm</string>
+    <string name="tts_prosody_original">Original rhythm</string>
+    <string name="tts_prosody_phrases">Phrase pauses</string>
+    <string name="tts_prosody_hint">Add short pauses inside long sentences and slow down slightly at the end. Cloud engines generate and cache new audio for these phrases.</string>
+    <string name="tts_prosody_pack_fallback">The current audio pack keeps its original rhythm.</string>
+    <string name="tts_prosody_backend_fallback">This engine uses its original rhythm because phrase pauses are unavailable.</string>
+</resources>
