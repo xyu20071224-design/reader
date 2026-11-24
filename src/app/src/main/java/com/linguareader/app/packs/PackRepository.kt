@@ -178,11 +178,16 @@ class PackRepository(
             ?: return PackValidationResult.reject("资源包不存在：$packId")
         val manifestCheck = PackValidator.validateManifest(pack.manifest, appVersionCode)
         if (!manifestCheck.ok) return manifestCheck
-        val root = pack.root(packsRoot)
-        val digests = PackValidator.digests(root, pack.manifest.files.map { it.path })
-        val filesCheck = PackValidator.validateFiles(pack.manifest, root, digests)
-        if (!filesCheck.ok) return filesCheck
-        return PackValidator.validateAudioChapters(pack.manifest, digests)
+        return try {
+            val root = pack.root(packsRoot)
+            val digests = PackValidator.digests(root, pack.manifest.files.map { it.path })
+            val filesCheck = PackValidator.validateFiles(pack.manifest, root, digests)
+            if (!filesCheck.ok) filesCheck else PackValidator.validateAudioChapters(pack.manifest, digests)
+        } catch (_: java.io.IOException) {
+            PackValidationResult.reject("资源包文件缺失或无法读取，请重新安装")
+        } catch (_: SecurityException) {
+            PackValidationResult.reject("资源包文件无法读取，请检查文件权限或重新安装")
+        }
     }
 
     /**

@@ -162,4 +162,11 @@ class PackLifecycleFailureTest {
         assertTrue(File(repo.packsRoot, ".tmp").listFiles().orEmpty().isEmpty())
     }
 
+    @Test fun `missing installed payload is a rejected verification result rather than an exception`() {
+        val repo = PackRepository(context)
+        install(repo, voice())
+        assertTrue(repo.packVoiceSample("pack:voices/hero")!!.delete())
+        assertFalse(repo.verify("voices").ok)
+    }
+
 }

@@ -70,6 +70,7 @@ def build(out: Path, audio_mp3: Path, engine_tag: str, voice_id: str, clone_samp
     out.mkdir(parents=True, exist_ok=True)
     text = b"A resource test.\n\nThis sentence checks an offline audio package.\n"
     (out / "resource-fixture.txt").write_bytes(text)
+    (out / "fixture-audio.mp3").write_bytes(audio_mp3.read_bytes())
     book_id = sha(text)[:20]  # TextImporter identity uses the exact source bytes.
     sample = clone_sample.read_bytes() if clone_sample else tone_wav()
     (out / "fixture-tone.wav").write_bytes(sample)
