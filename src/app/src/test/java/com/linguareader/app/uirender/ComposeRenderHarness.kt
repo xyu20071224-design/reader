@@ -7,8 +7,10 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.toArgb
 import org.robolectric.Robolectric
+import org.robolectric.shadows.ShadowChoreographer
 import org.robolectric.shadows.ShadowLooper
 import java.io.File
+import java.time.Duration
 
 /**
  * 纯 JVM 的 Compose 渲染台：把任意 @Composable 渲染成 PNG。
@@ -39,26 +41,47 @@ object ComposeRenderHarness {
         heightPx: Int = 2400,
         content: @Composable () -> Unit
     ): Bitmap {
-        val activity = Robolectric.buildActivity(ComponentActivity::class.java).setup().get()
-        activity.setContent(content = content)
-        val decor = activity.window.decorView
-        decor.measure(
-            android.view.View.MeasureSpec.makeMeasureSpec(widthPx, android.view.View.MeasureSpec.EXACTLY),
-            android.view.View.MeasureSpec.makeMeasureSpec(heightPx, android.view.View.MeasureSpec.EXACTLY)
-        )
-        decor.layout(0, 0, widthPx, heightPx)
-        ShadowLooper.idleMainLooper()
+        val wasPaused = ShadowChoreographer.isPaused()
+        val frameDelay = ShadowChoreographer.getFrameDelay()
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java)
+        try {
+            // 截图只取确定的两帧。默认自动推进 vsync 时，等待队列完全空闲会被
+            // 无限进度动画不断续入下一帧，连 CHECKING 这一张图都不能完成。
+            ShadowChoreographer.setPaused(true)
+            ShadowChoreographer.setFrameDelay(Duration.ofMillis(16))
+            val activity = controller.setup().get()
+            val mainLooper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+            // 先让空窗口完成附着；暂停自动 vsync 后不能再靠 measure 的隐式推进。
+            mainLooper.idleFor(Duration.ofMillis(16))
+            activity.setContent(content = content)
+            val decor = activity.window.decorView
+            decor.measure(
+                android.view.View.MeasureSpec.makeMeasureSpec(widthPx, android.view.View.MeasureSpec.EXACTLY),
+                android.view.View.MeasureSpec.makeMeasureSpec(heightPx, android.view.View.MeasureSpec.EXACTLY)
+            )
+            decor.layout(0, 0, widthPx, heightPx)
+            mainLooper.idleFor(Duration.ofMillis(32))
 
-        val bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bmp)
-        bmp.eraseColor(android.graphics.Color.WHITE)
-        decor.draw(canvas)
+            val bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            bmp.eraseColor(android.graphics.Color.WHITE)
+            decor.draw(canvas)
 
-        val out = File(OUTPUT_DIR + "/" + name + ".png")
-        out.parentFile?.mkdirs()
-        out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        println("RENDER " + name + " -> " + out.absolutePath + " (" + out.length() + " bytes)")
-        return bmp
+            val out = File(OUTPUT_DIR + "/" + name + ".png")
+            out.parentFile?.mkdirs()
+            out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            println("RENDER " + name + " -> " + out.absolutePath + " (" + out.length() + " bytes)")
+            return bmp
+        } finally {
+            try {
+                // 同一测试会连续画多个阶段；上一张图的重组器和动画不能泄漏到下一张。
+                controller.pause().stop().destroy()
+                ShadowLooper.idleMainLooper()
+            } finally {
+                ShadowChoreographer.setFrameDelay(frameDelay)
+                ShadowChoreographer.setPaused(wasPaused)
+            }
+        }
     }
 
     /**
