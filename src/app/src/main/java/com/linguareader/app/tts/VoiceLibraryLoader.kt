@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.linguareader.app.packs.PackRepository
 import com.linguareader.shared.packs.PackVoice
+import com.linguareader.shared.packs.VoicePackSource
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -195,7 +196,7 @@ object VoiceLibraryLoader {
         base: List<VoiceInfo>,
         metadata: Map<String, PackVoice>
     ): List<VoiceInfo> {
-        if (metadata.isEmpty()) return base
+        if (metadata.isEmpty()) return base.filterNot { VoicePackSource.isPackVoice(it.id) }
         val seen = mutableSetOf<String>()
         val merged = base.map { voice ->
             val pack = metadata[voice.id.lowercase()]
@@ -215,7 +216,8 @@ object VoiceLibraryLoader {
                 source = "pack"
             )
         }
-        return (merged + extra).distinctBy { it.id }
+        // This merge is the OPENAI server-library exit; clone package ids belong only to MiMo.
+        return (merged + extra).filterNot { VoicePackSource.isPackVoice(it.id) }.distinctBy { it.id }
     }
 
     private fun configuredIds(settings: CloudTtsSettings): List<String> = listOf(
