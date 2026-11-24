@@ -47,7 +47,9 @@ data class ContextualDictionaryEntry(
 )
 data class DictionaryLookupResult(
     val entry: ContextualDictionaryEntry?,
-    val relatedPhrase: ContextualDictionaryEntry?
+    val relatedPhrase: ContextualDictionaryEntry?,
+    /** Explicit single-word alternative; [entry] retains the existing phrase-priority decision. */
+    val wordEntry: ContextualDictionaryEntry? = entry?.takeIf { it.matchedPhrase == null }
 )
 
 object ContextAnalyzer {

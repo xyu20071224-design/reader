@@ -56,7 +56,7 @@ class DictionaryRepository(private val db: DictionaryDatabase) {
 
             fun toEntry(raw: RawDictionaryEntry, matchedPhrase: String?): ContextualDictionaryEntry =
                 ContextualDictionaryEntry(
-                    surfaceWord = lookup.word,
+                    surfaceWord = if (matchedPhrase != null) phraseMatch?.first?.text ?: lookup.word else lookup.word,
                     headword = raw.word,
                     phonetic = raw.phonetic,
                     senses = ContextAnalyzer.senses(raw.translation, inferred),
@@ -71,7 +71,8 @@ class DictionaryRepository(private val db: DictionaryDatabase) {
             if (rawPhrase != null && phraseCore) {
                 DictionaryLookupResult(
                     entry = toEntry(rawPhrase, rawPhrase.word),
-                    relatedPhrase = null
+                    relatedPhrase = null,
+                    wordEntry = rawWord?.let { toEntry(it, null) }
                 )
             } else {
                 DictionaryLookupResult(
