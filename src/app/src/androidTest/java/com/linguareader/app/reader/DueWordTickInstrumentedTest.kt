@@ -103,6 +103,7 @@ class DueWordTickInstrumentedTest {
                 scenario.onActivity { dueIds = ViewModelProvider(it)[AppViewModel::class.java].state.value.savedWords
                     .filter { word -> word.nextReviewAt <= observedAt }.map { word -> word.id } }
                 assertEquals(listOf(target), dueIds)
+                screenshot("t11-clock-due")
                 // Show the real toolbar through its production pointer/bridge path, then check its count.
                 val badge = context.resources.getQuantityString(R.plurals.reader_review_badge, 1, 1)
                 if (compose.onAllNodesWithText(badge).fetchSemanticsNodes().isEmpty()) js(scenario,
@@ -121,6 +122,7 @@ class DueWordTickInstrumentedTest {
                 assertEquals(1, stored.reviewCount)
                 assertTrue(stored.nextReviewAt > observedAt)
                 assertEquals("same-page", js(scenario, "window.__dueClockDocument"))
+                screenshot("t11-clock-reviewed")
                 val output = JSONObject().put("expiresAt", expiresAt).put("observedAt", observedAt)
                     .put("refreshLagMillis", observedAt - expiresAt).put("dueIds", org.json.JSONArray(dueIds))
                     .put("dueSnapshot", due).put("reviewedSnapshot", snapshot(scenario))
@@ -144,6 +146,16 @@ class DueWordTickInstrumentedTest {
             nested: root ? root.querySelectorAll('.lr-saved-word .lr-saved-word,.lr-due-word .lr-due-word').length : -1 };
         })())
     """.trimIndent()) as String).also { assertEquals(0, it.getInt("nested")) }
+
+    private fun screenshot(label: String) {
+        instrumentation.waitForIdleSync()
+        SystemClock.sleep(150)
+        val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        File(context.filesDir, "word-mark-validation").apply { mkdirs() }.resolve("$label.png").outputStream().use {
+            assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+        }
+        bitmap.recycle()
+    }
 
     private fun js(scenario: ActivityScenario<MainActivity>, script: String): Any? {
         val done = CountDownLatch(1)

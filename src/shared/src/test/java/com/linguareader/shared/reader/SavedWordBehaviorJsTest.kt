@@ -57,6 +57,17 @@ class SavedWordBehaviorJsTest {
         assertEquals(emptyList(), marks(r, 0, "negative"))
     }
 
+    @Test fun b01XmlLocalNamesKeepSemanticBoundariesAndExcludedContent() {
+        val rows = listOf(row("app", "app"), row("tail", "le"), row("give", "give "), row("up", "up"))
+            .map { it.put("rawTagName", "p").put("localName", "p") } + listOf(
+                row("script", "{\"text\":\"give up\"}").put("tag", "script").put("rawTagName", "x:script").put("localName", "script"),
+                row("style", ".not-present { --fixture: 'give up'; }").put("tag", "style").put("rawTagName", "style").put("localName", "style")
+            )
+        val r = run(rows, listOf(action(listOf("app", "give up"))))
+        assertEquals(listOf("app"), marks(r, 0, "app"))
+        for (id in listOf("tail", "give", "up", "script", "style")) assertEquals(emptyList(), marks(r, 0, id))
+    }
+
     @Test fun t02RegularInflectionsKeepTheWholeOriginalSpellingInBothStyles() {
         val words = listOf("run", "stop", "study", "make")
         val r = run(listOf(row("positive", "run RUNNING stop stopped study studies studied make making"),

@@ -5,7 +5,7 @@ const vm = require('vm');
 const input = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 class DomNode {
   constructor(type, tag = '', value = '') {
-    this.nodeType = type; this.tagName = tag.toUpperCase(); this.nodeValue = value;
+    this.nodeType = type; this.tagName = tag.toUpperCase(); this.localName = tag.toLowerCase(); this.nodeValue = value;
     this.childNodes = []; this.parentNode = null; this.id = ''; this.className = '';
     this.style = {setProperty() {}, removeProperty() {}}; this.dataset = {};
     this.classList = {add() {}, remove() {}, contains: c => this.className.split(/\s+/).includes(c)};
@@ -68,6 +68,8 @@ function makePart(part) {
 }
 for (const row of input.rows) {
   const node = new DomNode(1, row.tag || 'p'); node.id = row.id;
+  if (row.rawTagName) node.tagName = row.rawTagName;
+  if (row.localName) node.localName = row.localName;
   row.parts.forEach(p => node.appendChild(makePart(p))); body.appendChild(node);
 }
 const document = {

@@ -41,9 +41,10 @@ class SavedWordMatrixInstrumentedTest {
     private var preferences by mutableStateOf(ReaderPreferences())
     private var chapter by mutableStateOf<File?>(null)
 
-    private fun start(body: String) {
-        val file = File(context.cacheDir, "word-mark-matrix-${System.nanoTime()}.html").apply {
-            writeText("<html><head><meta charset='UTF-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/></head><body>$body</body></html>")
+    private fun start(body: String, suffix: String = ".html") {
+        val namespace = if (suffix == ".xhtml") " xmlns='http://www.w3.org/1999/xhtml'" else ""
+        val file = File(context.cacheDir, "word-mark-matrix-${System.nanoTime()}$suffix").apply {
+            writeText("<html$namespace><head><meta charset='UTF-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/></head><body>$body</body></html>")
         }
         chapter = file
         compose.setContent {
@@ -109,9 +110,21 @@ class SavedWordMatrixInstrumentedTest {
             })())
         """.trimIndent()) as String)
         val record = JSONObject().put("api", Build.VERSION.SDK_INT).put("label", label).put("rows", rows)
+        record.put("documentContentType", js("document.contentType"))
+        record.put("nodeNames", JSONObject(js("JSON.stringify(Object.fromEntries($encoded.map(id => {const e=document.getElementById(id);return [id,{tagName:e.tagName,localName:e.localName}]})))") as String))
         if (Build.VERSION.SDK_INT >= 26) record.put("webView", WebView.getCurrentWebViewPackage()?.versionName)
         File(context.filesDir, "word-mark-validation").apply { mkdirs() }
             .resolve("$label.json").writeText(record.toString(2))
+        if (label in setOf("t02-plain", "t02-due", "t07-inline", "t11-night-large", "t11-overlap", "b01-xhtml")) {
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            instrumentation.waitForIdleSync()
+            android.os.SystemClock.sleep(150)
+            val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+            File(context.filesDir, "word-mark-validation/$label.png").outputStream().use {
+                assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+            }
+            bitmap.recycle()
+        }
         ids.forEach { assertEquals("Nested mark in $it", 0, rows.getJSONObject(it).getInt("nested")) }
         return rows
     }
@@ -237,6 +250,21 @@ class SavedWordMatrixInstrumentedTest {
         for (id in listOf("plain", "inline")) {
             assertEquals("give up", texts(inverse, id, "due").joinToString(""))
             assertEquals(emptyList<String>(), texts(inverse, id))
+        }
+    }
+
+    @Test fun b01XhtmlNamespaceKeepsBlockBoundariesAndSkipsScriptAndStyle() {
+        start("<p id='app'>app</p><p id='tail'>le</p>" +
+            "<p id='give'>give </p><p id='up'>up</p>" +
+            "<script type='application/json' id='script'>{\"text\":\"give up\"}</script>" +
+            "<style id='style'>.not-present { --fixture: 'give up'; }</style>" +
+            "<x:p xmlns:x='http://www.w3.org/1999/xhtml' id='prefixed'>app</x:p>", ".xhtml")
+        set(listOf("app", "give up"))
+        val r = snapshot("b01-xhtml", listOf("app", "tail", "give", "up", "script", "style", "prefixed"))
+        assertEquals(listOf("app"), texts(r, "app"))
+        assertEquals(listOf("app"), texts(r, "prefixed"))
+        listOf("tail", "give", "up", "script", "style").forEach { id ->
+            assertEquals("Unexpected mark across an XHTML block or in excluded content: $id", emptyList<String>(), texts(r, id))
         }
     }
 }
