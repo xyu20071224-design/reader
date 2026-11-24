@@ -217,6 +217,54 @@ object AiBookTranslator {
         }
     }
 
+    /**
+     * 从逐批译块收集原段的构造性句界，正文仍遵循 [mergeBatchTranslations] 的合并语义。
+     *
+     * 正文用空串拼接译块，不能再从合并后的换行数反推句界：前一块末句与后一块首句
+     * 会粘在同一行。这里在合并前保留每块的行边界，以合并后的正文作查表键。
+     * 只有全部译块成功、每块与原段的句数都吻合时产出；句内硬切、漏行或失败整段回退
+     * 均不构成可靠句界，应继续使用对齐器的普通分句路径。
+     */
+    fun sentenceBoundariesFromBatches(
+        batches: List<TranslationBatch>,
+        translationsByBatch: List<List<String>?>,
+        englishParagraphs: List<String>
+    ): Map<String, List<String>> {
+        val merged = mergeBatchTranslations(batches, translationsByBatch, englishParagraphs)
+        val sourceOrder = batches.flatMap { it.sourceParagraphIndices }.distinct().sorted()
+        val mergedBySource = sourceOrder.zip(merged).toMap()
+        val linesBySource = LinkedHashMap<Int, MutableList<String>>()
+        val unreliable = HashSet<Int>()
+        batches.forEachIndexed { batchIndex, batch ->
+            val translations = translationsByBatch[batchIndex]
+            batch.sourceParagraphIndices.forEachIndexed { position, sourceIndex ->
+                val sourceChunk = batch.paragraphs.getOrNull(position)
+                val translatedChunk = translations?.getOrNull(position)
+                if (sourceChunk == null || translatedChunk == null) {
+                    unreliable += sourceIndex
+                    return@forEachIndexed
+                }
+                val lines = translatedChunk.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+                // 按块检查，防止某块漏行、另一块多行相互抵消后蒙混过原段总数检查。
+                if (lines.size != SentenceSplitter.count(sourceChunk)) {
+                    unreliable += sourceIndex
+                    return@forEachIndexed
+                }
+                linesBySource.getOrPut(sourceIndex) { ArrayList() }.addAll(lines)
+            }
+        }
+        val result = LinkedHashMap<String, List<String>>()
+        for ((sourceIndex, lines) in linesBySource) {
+            if (sourceIndex in unreliable || lines.size < 2) continue
+            val original = englishParagraphs.getOrNull(sourceIndex) ?: continue
+            // 单句跨块硬切会产生多个译行，但并未产生多条原句，不能冒充句级证据。
+            if (SentenceSplitter.count(original) != lines.size) continue
+            val paragraph = mergedBySource[sourceIndex] ?: continue
+            result[normalizeParagraphKey(paragraph)] = lines.toList()
+        }
+        return result
+    }
+
     fun buildUserPrompt(
         bookTitle: String,
         chapterTitle: String,

@@ -269,6 +269,7 @@ class AiTranslationRepository(
         withContext(Dispatchers.IO) {
             val checkpoints = File(checkpointDir, book.id)
             val extractor = TtsTextExtractor()
+            val sentenceLines = HashMap<String, List<String>>()
             val translatedChapters = book.chapters.indices.map { chapterIndex ->
                 val blocks = extractor.chapter(book, chapterIndex).blocks
                 val batches = AiBookTranslator.groupIntoBatches(chapterIndex, blocks)
@@ -280,6 +281,10 @@ class AiTranslationRepository(
                                 "请先在「手动 AI 翻译」里补齐并导入"
                         )
                 }
+                // 先从逐块译文保存句界；正文空串合并会丢掉块与块之间的换行。
+                sentenceLines.putAll(
+                    AiBookTranslator.sentenceBoundariesFromBatches(batches, translationsByBatch, blocks)
+                )
                 // 超长段被拆成多个译块，这里按原段合并回「一段一条」，与英文侧 1:1。
                 AiBookTranslator.mergeBatchTranslations(
                     batches = batches,
@@ -288,7 +293,7 @@ class AiTranslationRepository(
                 )
             }
             // P3：只凭检查点组装时同样产出句界侧车（检查点里已保留换行）。
-            storeSentenceLines(book.id, collectSentenceLines(book, translatedChapters))
+            storeSentenceLines(book.id, sentenceLines)
             writeTranslationBook(
                 book,
                 translatedChapters,
@@ -338,6 +343,7 @@ class AiTranslationRepository(
         // 是系统性失败（坏 Key/欠费/断网），再跑下去只会把剩余章节全烧成占位。
         var consecutiveFailures = 0
 
+        val sentenceLines = HashMap<String, List<String>>()
         val translatedChapters = chapterBatches.mapIndexed { chapterIndex, batches ->
             val chapter = book.chapters[chapterIndex]
             // 逐批译文；null = 该批失败，合并时它覆盖到的段落整段回退英文原文
@@ -369,41 +375,22 @@ class AiTranslationRepository(
                 onProgress(finishedBatches * 100 / totalBatches)
                 translations
             }
+            sentenceLines.putAll(
+                AiBookTranslator.sentenceBoundariesFromBatches(
+                    batches, translationsByBatch, chapterBlocks[chapterIndex]
+                )
+            )
             AiBookTranslator.mergeBatchTranslations(
                 batches = batches,
                 translationsByBatch = translationsByBatch,
                 englishParagraphs = chapterBlocks[chapterIndex]
             )
         }
-        // P3：从「按句换行」的译文里抽出构造性句界，写侧车供对齐器直接使用。
-        // 只在行数与英文句数相等时才收（见 AiBookTranslator.sentenceBoundaries），
+        // P3：从尚未合并的译块里抽出构造性句界，写侧车供对齐器直接使用。
+        // 只在译块与原段的句数都相等时才收，
         // 否则该段不产条目 → 对齐器回退中文分句器，与改造前完全一致。
-        storeSentenceLines(book.id, collectSentenceLines(book, translatedChapters))
+        storeSentenceLines(book.id, sentenceLines)
         writeTranslationBook(book, translatedChapters, settings.providerDisplayName)
-    }
-
-    /**
-     * 把逐章译文里的句级边界汇总成一张表（[sentenceLinesFile] 的内容）。
-     *
-     * 英文侧句数必须用**与对齐器同源**的 `TtsTextExtractor` 抽出的段落来数，
-     * 不能拿 `translatedChapters` 的段号直接猜——超长段被拆成多个译块后已合并回一条，
-     * 段数与 `chapterBlocks` 一致，但句数只能靠分句器数英文原文。
-     */
-    private fun collectSentenceLines(
-        book: Book,
-        translatedChapters: List<List<String>>
-    ): Map<String, List<String>> {
-        val extractor = TtsTextExtractor()
-        val result = HashMap<String, List<String>>()
-        for (chapterIndex in translatedChapters.indices) {
-            val enBlocks = runCatching {
-                extractor.chapter(book, chapterIndex).blocks
-            }.getOrNull() ?: continue
-            val zhBlocks = translatedChapters[chapterIndex]
-            if (enBlocks.size != zhBlocks.size) continue
-            result.putAll(AiBookTranslator.sentenceBoundaries(enBlocks, zhBlocks))
-        }
-        return result
     }
 
     /** 删除一本书的全部翻译检查点与风格说明（删书时随书清理）。 */

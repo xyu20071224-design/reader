@@ -117,7 +117,9 @@ object TranslationAligner {
      *
      * 旧档案（alignerVersion < [VERSION]）靠版本闸门判旧，由书架「重新对齐」入口重跑。
      */
-    const val VERSION = 11
+    // v12：句界侧车必须与当前中/英文段落匹配；损坏或过期的行表保守回退。
+    // v11 已按不可信行表写出的句对也需重新对齐，故持久版本同步递增。
+    const val VERSION = 12
 
     /**
      * 「英文侧恒为单句」契约的起始版本：**v7/T5 起**落盘句对的
@@ -977,13 +979,37 @@ object TranslationAligner {
         // 注意键的口径：`zhParagraph` 来自 `TtsTextExtractor`（空白已折叠成单空格并 trim），
         // 调用方必须用同样的归一化建键，否则查表静默落空。
         policy.knownSentences?.get(zhParagraph)?.let { known ->
-            if (known.size > 1) return known.filter { it.isNotBlank() }
+            validatedKnownSentences(enParagraph, zhParagraph, known)?.let { return it }
         }
         return when (policy.semicolonIsBoundary) {
             null -> chooseZhSentences(enParagraph, zhParagraph)
             true -> splitChinese(zhParagraph, policy).contentOnly()
             false -> splitChinese(zhParagraph, policy).contentOnly()
         }
+    }
+
+    /** 侧车只是分句提示，不能凭合法 JSON 引入正文中不存在的文字或句子。 */
+    private fun validatedKnownSentences(
+        enParagraph: String,
+        zhParagraph: String,
+        known: List<String>
+    ): List<String>? {
+        if (known.size < 2 || known.any { it.isBlank() }) return null
+        if (known.size != SentenceSplitter.split(enParagraph).contentOnly().size) return null
+        val lines = known.map { it.replace(WHITESPACE, " ").trim() }
+        val paragraph = zhParagraph.replace(WHITESPACE, " ").trim()
+        var offset = 0
+        for ((index, line) in lines.withIndex()) {
+            // EPUB 抽取会折叠换行；跨译块正文又可能没有空格。只允许句界处的
+            // 可选空白，行内的文字与顺序必须逐字来自当前段落，不能删除正文内容。
+            if (index > 0) {
+                while (offset < paragraph.length && paragraph[offset].isWhitespace()) offset++
+            }
+            if (!paragraph.startsWith(line, offset)) return null
+            offset += line.length
+        }
+        if (offset != paragraph.length) return null
+        return lines
     }
 
     /**
