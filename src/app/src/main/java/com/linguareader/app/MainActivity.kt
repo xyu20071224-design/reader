@@ -18,6 +18,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -286,6 +287,8 @@ private fun LinguaReaderApp(
                 }
                 screen(RouteKey.READER) {
                 val book = currentBook ?: return@screen
+                // A Reader -> Reader change must replace the WebView and book-bound effects.
+                key(book.id) {
                 ReaderScreen(
                     book = book,
                     viewModel = viewModel,
@@ -302,6 +305,7 @@ private fun LinguaReaderApp(
                     onClose = viewModel::closeBook,
                     onAppearanceChanged = onReaderThemeChanged
                 )
+                }
                 }
             }
         }

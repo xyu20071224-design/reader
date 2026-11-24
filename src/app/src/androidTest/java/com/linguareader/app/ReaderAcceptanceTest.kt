@@ -78,6 +78,7 @@ class ReaderAcceptanceTest {
                 composeRule.onAllNodesWithContentDescription(context.getString(R.string.reader_page_indicator))
                     .fetchSemanticsNodes().isEmpty()
             }
+            composeRule.waitForIdle()
             assertTrue(composeRule.onAllNodesWithContentDescription(context.getString(R.string.reader_back))
                 .fetchSemanticsNodes().isEmpty())
             assertEquals(initialViewport, js(metricsScript))

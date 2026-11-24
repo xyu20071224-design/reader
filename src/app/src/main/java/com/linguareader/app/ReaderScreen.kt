@@ -301,7 +301,9 @@ internal fun ReaderScreen(
     // 必须画在弹层内部（SettingsStatus 行内模式），否则用户得到「毫无动静」。
     // 会话整体抽成 ReaderLookupSession：开新查词的「重置矩阵」在里面定义并单测。
     val sentenceTranslationCache = remember(book.id) { SentenceTranslationCache() }
-    var lookupSession by remember(book.id) { mutableStateOf(ReaderLookupSession.empty(sentenceTranslationCache)) }
+    var lookupSession by remember(book.id) {
+        mutableStateOf(ReaderLookupSession.empty(sentenceTranslationCache).markDictionaryLoading())
+    }
     // 复习卡组旋转屏后按 id 从 ViewModel 的 savedWords 恢复（SavedWord 本身不可 Bundle 化）。
     var reviewDeckIds by rememberSaveable { mutableStateOf<List<String>?>(null) }
     val reviewDeck = remember(savedWords, reviewDeckIds) {
@@ -640,7 +642,7 @@ internal fun ReaderScreen(
                     lookup = it
                     lookupRequestSerial++
                     // Every event, including the same word, starts a distinct lookup request.
-                    lookupSession = ReaderLookupSession.empty(sentenceTranslationCache)
+                    lookupSession = ReaderLookupSession.empty(sentenceTranslationCache).markDictionaryLoading()
                     overlays = overlays.copy(toolbarVisible = false)
                 },
                 onSentenceTapped = { block, offset ->
