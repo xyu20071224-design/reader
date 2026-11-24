@@ -610,8 +610,8 @@ class ReaderScriptsTest {
         assertContains(script, "escapeForRegExp")
         assertContains(script, "savedWordVariants")
         assertContains(script, "buildSavedPattern")
-        // 高亮要保留正文原样文本，不能拿存储的拼写覆盖大小写与变形。
-        assertContains(script, "span.textContent = match[0];")
+        // Full source spelling is exercised by the generated-script/WebView matrices.
+        // A match can now span several inline nodes, so its source slices replace match[0].
         // 子串匹配的老路径必须消失。
         assertFalse(script.contains("lower.indexOf(word.toLowerCase())"))
     }
@@ -647,12 +647,10 @@ class ReaderScriptsTest {
         assertContains(script, ".lr-due-word {")
         assertContains(script, "text-decoration: underline solid")
         assertContains(script, "text-decoration-thickness: 2px")
-        // 最高风险点：两类标记都必须被解开/跳过，漏一个就会留残壳并重复包裹。
+        // 两类标记都必须被解开；生成脚本/WebView矩阵实际验证不嵌套和正文不变。
         assertContains(script, "querySelectorAll('.lr-saved-word, .lr-due-word')")
-        assertContains(script, "closest('.lr-saved-word, .lr-due-word')")
-        // 按命中原文查小写表分流；回填仍用正文原样文本（BUG-027/029 守卫）。
-        assertContains(script, "span.className = dueLookup[match[0].toLowerCase()] ? 'lr-due-word' : 'lr-saved-word';")
-        assertContains(script, "span.textContent = match[0];")
+        // The approved run-to-node mapper owns classification; exact old assignment text
+        // is no longer a contract. Real whitespace, inflection and overlap cases cover it.
         // 到期词排在形态表最前，避免被 buildSavedPattern 的 1200 条上限截掉。
         assertContains(script, "savedDueWords.concat(savedWords.slice(0, 600))")
         // 到期查表与命中判定共用同一套形态展开（study 到期后 studied 也变实线）。

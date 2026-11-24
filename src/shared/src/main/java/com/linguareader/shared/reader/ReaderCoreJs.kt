@@ -562,6 +562,7 @@ internal object ReaderCoreJs {
             const pattern = buildSavedPattern(savedDueWords.concat(savedWords.slice(0, 600)));
             if (!pattern) return;
             const dueLookup = buildDueLookup(savedDueWords);
+            const duePattern = buildSavedPattern(savedDueWords);
             // Match complete text runs, then map exact character intervals back to their nodes.
             // Per-node regexes mistake app<em>le</em> for app and cannot find give <em>up</em>.
             // These are marking boundaries only; the persistent TTS block selector is unchanged.
@@ -582,7 +583,7 @@ internal object ReaderCoreJs {
                 return;
               }
               if (node.nodeType !== 1) return;
-              const tag = node.tagName;
+              const tag = (node.localName || node.tagName).toUpperCase();
               if (tag === 'BR' || excluded.test(tag)) { flushRun(); return; }
               const boundary = blocks.test(tag);
               if (boundary) flushRun();
@@ -602,8 +603,26 @@ internal object ReaderCoreJs {
                 if (matchBudget <= 0) break;
                 if (match[0].length === 0) { pattern.lastIndex++; continue; }
                 matchBudget--;
-                ranges.push({ from: match.index, until: match.index + match[0].length,
-                  due: !!dueLookup[savedFormKey(match[0])] });
+                if (dueLookup[savedFormKey(match[0])] || !duePattern) {
+                  ranges.push({ from: match.index, until: match.index + match[0].length,
+                    due: !!dueLookup[savedFormKey(match[0])] });
+                } else {
+                  // A longest ordinary phrase must not hide an independently due word inside it.
+                  // Split only this selected match; keep the 2000 primary-match budget and never
+                  // nest spans or mark the whole ordinary phrase as due on the word's behalf.
+                  duePattern.lastIndex = 0;
+                  let cursor = 0;
+                  let dueMatch;
+                  while ((dueMatch = duePattern.exec(match[0])) !== null) {
+                    if (!dueMatch[0].length) { duePattern.lastIndex++; continue; }
+                    if (dueMatch.index > cursor) ranges.push({ from: match.index + cursor,
+                      until: match.index + dueMatch.index, due: false });
+                    cursor = dueMatch.index + dueMatch[0].length;
+                    ranges.push({ from: match.index + dueMatch.index, until: match.index + cursor, due: true });
+                  }
+                  if (cursor < match[0].length) ranges.push({ from: match.index + cursor,
+                    until: match.index + match[0].length, due: false });
+                }
               }
               let rangeIndex = 0;
               for (const part of run.nodes) {

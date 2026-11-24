@@ -51,6 +51,13 @@ class SavedWordPersistenceMatrixTest {
         assertEquals(listOf("gave up"), record.surfaceForms)
     }
 
+    @Test fun t07SentenceEndPunctuationIsNotPartOfAnInflectedPhraseForm() = store { _, repository ->
+        val request = lookup("gave", "They gave up.")
+        val phrase = dictionary(listOf("give", "up", "give up"), mapOf("gave" to listOf("give"))).lookup(request).entry!!
+        assertEquals("gave up", phrase.surfaceWord)
+        assertEquals(listOf("gave up"), repository.save(book, "Chapter", request, phrase).single().surfaceForms)
+    }
+
     @Test fun t07LegacyPhraseClickFormsDoNotMarkUnrelatedWordsOrResetReviewProgress() = store { context, repository ->
         val old = saved("in fact", listOf("in", "IN FACT", "in\n fact"))
         repository.upsert(old)
@@ -62,11 +69,21 @@ class SavedWordPersistenceMatrixTest {
         assertTrue(payload.forms.contains("IN FACT"))
         assertTrue(payload.forms.contains("in\n fact"))
         assertEquals(old, VocabularyRepository(context).load().single(), "Marking must not rewrite a stored review record")
+        val request = lookup("in", "They are in fact ready.")
+        val phrase = dictionary(listOf("in", "in fact")).lookup(request).relatedPhrase!!
+        val resaved = repository.save(book, "Chapter", request, phrase).single()
+        assertFalse(resaved.surfaceForms.contains("in"))
+        assertEquals(old.reviewLevel, resaved.reviewLevel)
+        assertEquals(old.reviewCount, resaved.reviewCount)
+        assertEquals(old.nextReviewAt, resaved.nextReviewAt)
     }
 
     @Test fun t08RepeatedSeenFormsSurviveReloadWithoutResettingAnOldReviewRecord() = store { context, repository ->
         val old = saved("go")
         repository.upsert(old)
+        // Simulate a pre-surfaceForms JSON record, then exercise the real reader and writer.
+        val oldJson = old.toJson().apply { remove("surfaceForms") }
+        File(context.filesDir, "vocabulary.json").writeText(org.json.JSONArray().put(oldJson).toString())
         val dictionary = dictionary(listOf("go"), mapOf("went" to listOf("go"), "gone" to listOf("go")))
         for (surface in listOf("went", "gone", "WENT")) {
             val request = lookup(surface, "$surface alone.")
