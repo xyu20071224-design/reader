@@ -1,0 +1,285 @@
+{
+  "date": "2026-11-24",
+  "base_sha": "b1040226f760070092f26f43f4a88316a380b19e",
+  "phase": "local_delivery_complete_with_acceptance_gaps",
+  "repo": "xyu20071224-design/reader",
+  "user_scope_decision": {
+    "issue": "Q2-c02",
+    "decision": "resources_only_no_dynamic_code_plugins",
+    "confirmed_on": "2026-11-24"
+  },
+  "counts": {
+    "total_feedback": 34,
+    "dedicated_plans": 15,
+    "partial_implementation_plans": 6,
+    "implementation_acceptance_plans": 9,
+    "regression_or_scope_items": 19
+  },
+  "plans": [
+    {
+      "id": "Q1-t01",
+      "title": "生产句级对齐覆盖",
+      "kind": "完善",
+      "file": "Q1-t01-生产句级对齐完善.md",
+      "owner": "alignment",
+      "depends_on": []
+    },
+    {
+      "id": "Q1-t13",
+      "title": "单词发音丢首音",
+      "kind": "完善",
+      "file": "Q1-t13-发音首音丢失.md",
+      "owner": "single-word",
+      "depends_on": []
+    },
+    {
+      "id": "Q2-01",
+      "title": "本版与跨版本改动",
+      "kind": "完善",
+      "file": "Q2-01-版本改动汇总.md",
+      "owner": "history",
+      "depends_on": [
+        "Q2-c03"
+      ]
+    },
+    {
+      "id": "Q2-c02",
+      "title": "资源包范围完成验收",
+      "kind": "完善",
+      "file": "Q2-c02-资源包完善与范围闭环.md",
+      "owner": "packs",
+      "depends_on": [
+        "Q2-c04b"
+      ]
+    },
+    {
+      "id": "Q2-c03",
+      "title": "国内发行与资源源",
+      "kind": "完善",
+      "file": "Q2-c03-国内发行资源源.md",
+      "owner": "distribution",
+      "depends_on": []
+    },
+    {
+      "id": "Q2-c04b",
+      "title": "句内停顿与局部节奏",
+      "kind": "完善",
+      "file": "Q2-c04b-句内停顿与韵律.md",
+      "owner": "prosody",
+      "depends_on": [
+        "Q1-t13"
+      ]
+    },
+    {
+      "id": "Q1-b02",
+      "title": "长文本翻译端到端",
+      "kind": "验收补齐",
+      "file": "Q1-b02-长文本翻译端到端验收.md",
+      "owner": "ai-translation",
+      "depends_on": [
+        "Q1-t01"
+      ]
+    },
+    {
+      "id": "Q1-b01",
+      "title": "生词整词边界",
+      "kind": "验收补齐",
+      "file": "Q1-b01-生词整词边界.md",
+      "owner": "marks",
+      "depends_on": []
+    },
+    {
+      "id": "Q1-t02",
+      "title": "变形词完整划线",
+      "kind": "验收补齐",
+      "file": "Q1-t02-变形词完整划线.md",
+      "owner": "marks",
+      "depends_on": [
+        "Q1-b01"
+      ]
+    },
+    {
+      "id": "Q1-t07",
+      "title": "短语内单词收藏标记",
+      "kind": "验收补齐",
+      "file": "Q1-t07-短语内单词收藏标记.md",
+      "owner": "marks",
+      "depends_on": [
+        "Q1-t02"
+      ]
+    },
+    {
+      "id": "Q1-t08",
+      "title": "还原词形与表面形",
+      "kind": "验收补齐",
+      "file": "Q1-t08-还原词形与表面形标记.md",
+      "owner": "marks",
+      "depends_on": [
+        "Q1-t07"
+      ]
+    },
+    {
+      "id": "Q1-t11",
+      "title": "到期词独立下划线",
+      "kind": "验收补齐",
+      "file": "Q1-t11-到期生词独立下划线.md",
+      "owner": "marks",
+      "depends_on": [
+        "Q1-t08",
+        "Q1-t09"
+      ]
+    },
+    {
+      "id": "Q1-t04",
+      "title": "相邻句点查与升级",
+      "kind": "验收补齐",
+      "file": "Q1-t04-相邻句查询与升级验收.md",
+      "owner": "alignment",
+      "depends_on": [
+        "Q1-t01"
+      ]
+    },
+    {
+      "id": "Q1-t09",
+      "title": "高亮与可见义项",
+      "kind": "验收补齐",
+      "file": "Q1-t09-高亮与可见义项一致.md",
+      "owner": "alignment",
+      "depends_on": [
+        "Q1-t04"
+      ]
+    },
+    {
+      "id": "Q2-c05",
+      "title": "词组收藏反馈",
+      "kind": "验收补齐",
+      "file": "Q2-c05-词组收藏反馈一致性.md",
+      "owner": "feedback",
+      "depends_on": [
+        "Q1-t07",
+        "Q1-t09"
+      ]
+    }
+  ],
+  "regression_or_scope": [
+    {
+      "id": "Q1-b03",
+      "title": "跨章回翻到上一章末页",
+      "acceptance": "章末进入下一章再回翻，回到上一章末尾而非章首；重启位置一致。"
+    },
+    {
+      "id": "Q1-b04",
+      "title": "听书条遮挡正文",
+      "acceptance": "各种字号/横竖屏及工具栏显隐下，正文可视区不被听书条覆盖。"
+    },
+    {
+      "id": "Q1-b05",
+      "title": "手动翻页牵引朗读",
+      "acceptance": "朗读中手翻页不把引擎拉回该页首句，用户接管窗口有效。"
+    },
+    {
+      "id": "Q1-b06",
+      "title": "听书自动翻页",
+      "acceptance": "跨页/章跟随有效，无位置回报回路或章末死循环。"
+    },
+    {
+      "id": "Q1-b07",
+      "title": "顶栏提示文字",
+      "acceptance": "已消除；保留用户判定为顶栏计数文字的依据，不另造修复。"
+    },
+    {
+      "id": "Q1-b08",
+      "title": "生词本顶栏图标",
+      "acceptance": "生词本只显示其页面应有动作，不受书架专属动作污染。"
+    },
+    {
+      "id": "Q1-b09",
+      "title": "复习间隔设置",
+      "acceptance": "已消除；保留已实现裁决，并抽查入口和间隔摘要不回归。"
+    },
+    {
+      "id": "Q1-b10",
+      "title": "导入文字诉求",
+      "acceptance": "已消除；保留原裁决，不将正常计数/文件选择界面当缺陷。"
+    },
+    {
+      "id": "Q1-t03",
+      "title": "一句英文对应多句中文",
+      "acceptance": "固定 1:N 样本完整返回中文多句，不只显示首句；随 Q1-t01 回归。"
+    },
+    {
+      "id": "Q1-t05",
+      "title": "复习分母恒为五",
+      "acceptance": "准备超过五个到期词，分母等于实际牌组，最后能完成整组。"
+    },
+    {
+      "id": "Q1-t06",
+      "title": "切滚动模式丢进度",
+      "acceptance": "在章中切换分页/滚动及重启，语义锚点保持而非跳章首。"
+    },
+    {
+      "id": "Q1-t10",
+      "title": "词性缩写",
+      "acceptance": "adj/a 及已支持词类正确映射与展示，双语资源集合一致。"
+    },
+    {
+      "id": "Q1-t12",
+      "title": "复习前五词循环",
+      "acceptance": "逐卡记忆/遗忘后持续前进，不因上游 savedWords 更新归零。"
+    },
+    {
+      "id": "Q2-c01",
+      "title": "对齐评估客观依据",
+      "acceptance": "已消除；保留评估体系裁决，确认生产回归仍能重放。"
+    },
+    {
+      "id": "Q2-c04a",
+      "title": "听书降级提示",
+      "acceptance": "构造实际降级/暂停失败，原因可见且与状态一致，不误报正常级别。"
+    },
+    {
+      "id": "Q2-c04c",
+      "title": "英文排版撇号断句",
+      "acceptance": "her’s、don’t、ASCII撇号和引号混合不裂成错误对白；旧包按现行pipeline契约处理。"
+    },
+    {
+      "id": "Q2-c06",
+      "title": "提醒与复习上限",
+      "acceptance": "用户自定义每日提醒上限实际生效；复习牌组不再按旧单次五词截断。"
+    },
+    {
+      "id": "Q2-c07",
+      "title": "书架整体主题",
+      "acceptance": "从现行外观入口切换主题，书架及外壳即时一致，日夜主题可读。"
+    },
+    {
+      "id": "Q2-c08",
+      "title": "生词本返回导航",
+      "acceptance": "系统返回/边缘返回回到书架而不退出进程，重进页面状态正常。"
+    }
+  ],
+  "integration_plan": "90-总验收与状态回填.md",
+  "execution": {
+    "agents": {
+      "alignment": "本地实施与独立审阅交付完成",
+      "speech": "本地实施与独立审阅交付完成",
+      "distribution": "本地实施与独立审阅交付完成"
+    },
+    "integration_branch": "feat/issue-integration-20261124",
+    "integration_directory": "/Users/clannad/work/reader/out/issue-execution-20261124/integration",
+    "external_acceptance_materials": "用户已确认暂时没有配对书/金标准及国内分发HTTPS地址；对应验收保留",
+    "product_sha": "d76b54775772d26540d4bf63b36f3615607f5985",
+    "status_counts": {
+      "已修复": 26,
+      "已消除": 4,
+      "部分实现": 4
+    },
+    "github_published": false,
+    "github_issues_closed": false,
+    "full_suite_green": false,
+    "final_device_batch": {
+      "tests": 12,
+      "passed": 12
+    }
+  }
+}
