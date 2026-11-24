@@ -30,15 +30,20 @@ data class WordAlignment(
     /**
      * 命中来源义项：产出 [word] 的那条词典义项原文。
      *
-     * 与单词释义面板里的 `DictionarySense.text` 是**同一个串**（同一次
-     * `DictionaryRepository.lookup` 的产物），所以 UI 拿它做等值比较就能把
-     * 中文句里高亮的词指回面板上具体那一行，反之亦然 —— 这是「词级高亮与单词
-     * 释义不匹配」唯一可验证的判据。锚点命中（[WordAlignmentSource.ANCHOR]）、
+     * 来自 `DictionarySense.text` 原文。它可能属于回退单词词条，或排在当前词条
+     * 前八义项之外，因此呈现层还需核对 [sourceHeadword]，必要时明确补充来源行；
+     * 不能只按同文比较就把它标为当前短语的义项。锚点命中（[WordAlignmentSource.ANCHOR]）、
      * 或候选只来自 `prefer` 加成而不来自任何义项行时为 null。
      */
     val sourceSense: String? = null,
     /** [sourceSense] 那条义项是否被语境判为优选（与面板「本句优先」同一判据）。 */
-    val sourceSensePreferred: Boolean = false
+    val sourceSensePreferred: Boolean = false,
+    /**
+     * [sourceSense] 的真实来源词条（如 `walk`，而不是当前可能展示的 `walk out`）。
+     * 由持有词典查询结果的仓库填入；纯对齐器不能从义项文本推断词条身份。
+     * null 表示身份未知，呈现层不得把该义项冒充为当前词条的释义。
+     */
+    val sourceHeadword: String? = null
 )
 
 /**

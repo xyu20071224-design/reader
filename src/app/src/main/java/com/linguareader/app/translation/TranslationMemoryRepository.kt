@@ -47,6 +47,9 @@ class TranslationMemoryRepository private constructor(
     private val memoryDir = File(application.filesDir, "translation-memory")
     private val dictionary = DictionaryRepository(application, dictionarySource)
 
+    /** 安装、切换或卸载活动词典包后，与查词面板的词典同时失效。 */
+    fun invalidateDictionary() = dictionary.invalidate()
+
     /**
      * AI 句级边界侧车的根目录（与 `AiTranslationRepository.checkpointDir` 同址）。
      *
@@ -265,7 +268,13 @@ class TranslationMemoryRepository private constructor(
                 .candidateTerms(senses.filter { it.contextPreferred }.map { it.text })
                 .associateWith { WordAligner.CONTEXT_PREFERRED_BONUS }
         )
-        result.copy(wordAlignment = alignment)
+        // 与上面的候选并集使用相同的首次来源顺序；重复义项不能借当前短语的身份。
+        val sourceEntry = alignment?.sourceSense?.let { sense ->
+            listOfNotNull(contextEntry, wordEntry).firstOrNull { entry ->
+                entry.senses.any { it.text == sense }
+            }
+        }
+        result.copy(wordAlignment = alignment?.copy(sourceHeadword = sourceEntry?.headword))
     }
 
     override val storeId: String = "translations"
