@@ -611,7 +611,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { withContext(Dispatchers.IO) { packs.install(uri) } }
                 .onSuccess { installed ->
                     // 词典包首次安装会自动生效 → 必须让查词侧换源，否则旧库句柄还开着。
-                    if (installed.type == PackType.DICTIONARY) dictionary.invalidate()
+                    if (installed.type == PackType.DICTIONARY) {
+                        dictionary.invalidate()
+                        translationRepository.invalidateDictionary()
+                    }
                     mutableState.value = mutableState.value.copy(
                         packs = mutableState.value.packs.copy(installing = false),
                         notice = string(
@@ -642,6 +645,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess {
                     // 关键：不清句柄与 LRU 就是「切了等于没切」（旧词典的释义还在缓存里）。
                     dictionary.invalidate()
+                    translationRepository.invalidateDictionary()
                     mutableState.value = mutableState.value.copy(
                         notice = if (packId == null) string(R.string.packs_dictionary_restored)
                         else string(R.string.packs_dictionary_activated, name),
@@ -728,7 +732,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             val wasActive = item?.active == true
             runCatching { withContext(Dispatchers.IO) { packs.uninstall(packId) } }
                 .onSuccess {
-                    if (wasActive) dictionary.invalidate()
+                    if (wasActive) {
+                        dictionary.invalidate()
+                        translationRepository.invalidateDictionary()
+                    }
                     mutableState.value = mutableState.value.copy(
                         notice = string(R.string.packs_uninstalled, item?.let { packName(it) } ?: packId),
                         noticeTone = StatusTone.DANGER

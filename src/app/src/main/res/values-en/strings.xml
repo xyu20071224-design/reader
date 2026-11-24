@@ -927,4 +927,5 @@
     <string name="update_source_hint">Changing the source cancels active downloads. Check for updates or fetch resource packs again after saving.</string>
     <string name="update_source_invalid">Enter a valid HTTPS mirror catalog file URL.</string>
     <string name="notice_word_remove_failed">Could not remove the entry. Please try again.</string>
+    <string name="reader_alignment_sense_source">Highlighted meaning from %1$s</string>
 </resources>

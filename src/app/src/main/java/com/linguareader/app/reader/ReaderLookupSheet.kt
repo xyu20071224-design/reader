@@ -129,6 +129,7 @@ import com.linguareader.app.translation.TranslationMatchLevel
 import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.app.tts.TtsPlaybackState
 import com.linguareader.shared.reader.SavedWordMarks
+import com.linguareader.shared.translation.TranslationSensePresentation
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -347,17 +348,22 @@ internal fun ReaderLookupSheet(
             }
             // 点词先给出本地词典释义；AI 长解释和整句译文不能把基本释义挤出首屏。
             Spacer(Modifier.height(t.spacing.m))
-            // 中文句里高亮那个词来自哪条义项（`WordAligner` 记下的 `sourceSense`，与
-            // 面板 `sense.text` 是同一个串）：标出该行、并用与高亮词完全相同的
-            // 强调色 + 粗体，用户才能把「高亮的词」与「具体义项」互相指认（Q1-t09 ④）。
-            val alignedSense = translation?.wordAlignment?.sourceSense
+            // 当前词条前八义项之外的来源单独呈现，并标明真实词条身份。
+            val senseRows = TranslationSensePresentation.rows(entry, translation?.wordAlignment)
             when {
                 loading -> LinearProgressIndicator(Modifier.fillMaxWidth(), color = t.colors.accent)
-                entry != null -> {
-                    entry.senses.take(8).forEachIndexed { index, sense ->
-                        val preferred = sense.contextPreferred && index == 0
-                        // 是来源义项但不是「本句优先」时才占用标号位：两枚标记都不丢。
-                        val aligned = alignedSense != null && sense.text == alignedSense
+                entry != null || senseRows.isNotEmpty() -> {
+                    senseRows.forEachIndexed { index, row ->
+                        val sense = row.sense
+                        val preferred = !row.supplemental && sense.contextPreferred && index == 0
+                        val aligned = row.aligned
+                        if (row.supplemental) {
+                            Text(
+                                stringResource(R.string.reader_alignment_sense_source, row.headword),
+                                style = t.typography.label,
+                                color = t.colors.accent
+                            )
+                        }
                         Row(
                             Modifier.fillMaxWidth().padding(vertical = t.spacing.xs),
                             verticalAlignment = Alignment.Top
@@ -386,13 +392,13 @@ internal fun ReaderLookupSheet(
                             )
                         }
                     }
-                    if (entry.senses.isEmpty()) {
+                    if (senseRows.isEmpty()) {
                         Text(
                             stringResource(R.string.reader_no_senses),
                             color = t.colors.inkSoft
                         )
                     }
-                    if (entry.definitions.isNotEmpty()) {
+                    if (entry != null && entry.definitions.isNotEmpty()) {
                         Spacer(Modifier.height(t.spacing.s))
                         Text(
                             entry.definitions.take(2).joinToString("\n"),

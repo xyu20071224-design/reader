@@ -5,6 +5,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
+import com.linguareader.app.R
 import com.linguareader.app.ai.AiLookupResult
 import com.linguareader.app.data.ContextualDictionaryEntry
 import com.linguareader.app.data.WordLookup
@@ -32,6 +34,7 @@ class ReaderDictionaryVisibilityTest {
         translation: com.linguareader.app.translation.TranslationLookupResult? = null,
         sentence: com.linguareader.app.ai.SentenceTranslationResult? = null,
         sentenceError: String? = null,
+        request: WordLookup = lookup,
         onToggleSave: () -> Unit
     ) {
         compose.setContent {
@@ -40,7 +43,7 @@ class ReaderDictionaryVisibilityTest {
             ) {
                 MaterialTheme {
                     ReaderLookupSheet(
-                        lookup = lookup,
+                        lookup = request,
                         entry = entry,
                         relatedPhrase = null,
                         loading = loading,
@@ -73,6 +76,72 @@ class ReaderDictionaryVisibilityTest {
                     )
                 }
             }
+        }
+    }
+
+    @Test fun fallbackWordSenseShowsItsRealSourceInsideThePhrasePanel() {
+        val english = "Tom paid him for the keys and walked out into the rain."
+        val request = WordLookup("walked", english, english, english.indexOf("walked"), 0f, 0f)
+        val entry = kotlinx.coroutines.runBlocking { com.linguareader.app.data.DictionaryRepository(context).lookup(request) }.entry!!
+        org.junit.Assert.assertTrue(entry.senses.none { it.text.contains("走") })
+        val book = memoryFixture("visible-fallback-sense", english, "他付了钥匙钱，走进雨中。")
+        try {
+            val result = kotlinx.coroutines.runBlocking {
+                com.linguareader.app.translation.TranslationMemoryRepository(context.applicationContext as android.app.Application).lookup(book, 0, request)
+            }!!
+            org.junit.Assert.assertEquals("walk", result.wordAlignment!!.sourceHeadword)
+            showLookup(entry = entry, translation = result, request = request) {}
+            compose.onNodeWithText(context.getString(R.string.reader_alignment_sense_source, "walk"))
+                .performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(result.wordAlignment!!.sourceSense!!).performScrollTo().assertIsDisplayed()
+            screenshot("dictionary-fallback-source.png")
+        } finally { java.io.File(context.filesDir, "translation-memory/${book.id}.json").delete() }
+    }
+
+    @Test fun aNinthSenseCanBeScrolledIntoViewWithoutLosingItsSource() {
+        val file = java.io.File(context.cacheDir, "ninth-sense-fixture.sqlite")
+        file.delete()
+        android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            db.execSQL("CREATE TABLE entries(word TEXT PRIMARY KEY, phonetic TEXT, translation TEXT, definition TEXT)")
+            db.execSQL("CREATE TABLE forms(form TEXT, lemma TEXT)")
+            db.execSQL("INSERT INTO entries VALUES ('walk', '', ?, '')", arrayOf(
+                listOf("v. 农耕", "v. 烹饪", "v. 建造", "v. 绘画", "v. 修理", "v. 演奏", "v. 编织", "v. 跳舞", "v. 走").joinToString("\n")))
+        }
+        val english = "We walk."
+        val request = WordLookup("walk", english, english, 3, 0f, 0f)
+        val book = memoryFixture("visible-ninth-sense", english, "我们走。")
+        try {
+            val entry = kotlinx.coroutines.runBlocking { com.linguareader.app.data.DictionaryRepository(context) { file }.lookup(request) }.entry!!
+            val result = kotlinx.coroutines.runBlocking {
+                com.linguareader.app.translation.TranslationMemoryRepository(context.applicationContext as android.app.Application) { file }.lookup(book, 0, request)
+            }!!
+            org.junit.Assert.assertEquals(entry.senses[8].text, result.wordAlignment!!.sourceSense)
+            showLookup(entry = entry, translation = result, request = request) {}
+            compose.onNodeWithText(context.getString(R.string.reader_alignment_sense_source, "walk"))
+                .performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(entry.senses[8].text).performScrollTo().assertIsDisplayed()
+            screenshot("dictionary-ninth-source.png")
+        } finally {
+            file.delete()
+            java.io.File(context.filesDir, "translation-memory/${book.id}.json").delete()
+        }
+    }
+
+    private fun memoryFixture(id: String, english: String, chinese: String): com.linguareader.app.data.Book {
+        val memory = com.linguareader.shared.translation.TranslationMemory(id, "Sense fixture", "zh-$id", "译本", 0L,
+            listOf(com.linguareader.shared.translation.AlignedSentencePair(0, 0, english, chinese, english, chinese, .9f)),
+            alignerVersion = com.linguareader.shared.translation.TranslationAligner.VERSION)
+        java.io.File(context.filesDir, "translation-memory/$id.json").apply { parentFile!!.mkdirs(); writeText(memory.toJson().toString()) }
+        return com.linguareader.app.data.Book(id, "Sense fixture", "", context.cacheDir.path, null, emptyList(), 0L)
+    }
+
+    private fun screenshot(name: String) {
+        compose.waitForIdle()
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { bitmap ->
+            java.io.File(context.getExternalFilesDir(null), name).outputStream().use {
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+            bitmap.recycle()
         }
     }
 
