@@ -1379,14 +1379,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun removeSavedWord(id: String) {
+    fun removeSavedWord(id: String) = removeSavedWord(id) {}
+
+    fun removeSavedWord(id: String, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
             val removedWord = mutableState.value.savedWords.firstOrNull { it.id == id }?.headword
-            val words = vocabulary.remove(id)
+            val words = try {
+                vocabulary.remove(id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                mutableState.update { it.copy(
+                    notice = string(R.string.notice_word_remove_failed), noticeTone = StatusTone.DANGER
+                ) }
+                onDone(false)
+                return@launch
+            }
             mutableState.value = mutableState.value.copy(
                 savedWords = words,
-                notice = removedWord?.let { string(R.string.notice_word_removed, it) }
+                notice = removedWord?.let { string(R.string.notice_word_removed, it) },
+                noticeTone = StatusTone.SUCCESS
             )
+            onDone(true)
             rescheduleReviewReminders()
             scheduleAutoSync()
         }

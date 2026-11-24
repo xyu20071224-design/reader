@@ -41,6 +41,7 @@ class ReaderLookupVocabularyTest {
         translation: com.linguareader.app.translation.TranslationLookupResult? = null,
         sentence: com.linguareader.app.ai.SentenceTranslationResult? = null,
         sentenceError: String? = null,
+        changingVocabulary: Boolean = false,
         onToggleSave: () -> Unit
     ) {
         compose.setContent {
@@ -78,7 +79,8 @@ class ReaderLookupVocabularyTest {
                         onSpeak = {},
                         onToggleSave = onToggleSave,
                         onTranslateSentence = {},
-                        onDismiss = {}
+                        onDismiss = {},
+                        changingVocabulary = changingVocabulary
                     )
                 }
             }
@@ -155,6 +157,12 @@ class ReaderLookupVocabularyTest {
     @Test
     fun loadingKeepsTheSaveActionVisibleButDisabled() {
         showLookup(loading = true) { error("词典查询未结束时不应收藏临时词条") }
+        compose.onNodeWithText(context.getString(R.string.reader_add_to_vocab))
+            .assertIsDisplayed().assertIsNotEnabled()
+    }
+
+    @Test fun persistenceInProgressKeepsTheSaveActionVisibleButDisabled() {
+        showLookup(changingVocabulary = true) { error("保存完成前不应重复请求") }
         compose.onNodeWithText(context.getString(R.string.reader_add_to_vocab))
             .assertIsDisplayed().assertIsNotEnabled()
     }

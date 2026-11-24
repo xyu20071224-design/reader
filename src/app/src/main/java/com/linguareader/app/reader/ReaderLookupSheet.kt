@@ -230,7 +230,8 @@ internal fun ReaderLookupSheet(
     onSpeak: () -> Unit,
     onToggleSave: () -> Unit,
     onTranslateSentence: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    changingVocabulary: Boolean = false
 ) {
     // 设计 token：本面板的颜色全部是「外壳」语义。
     // 它不像顶栏/底栏/听书条那样贴正文——查词面板是浮在正文之上的一层纸，
@@ -325,7 +326,7 @@ internal fun ReaderLookupSheet(
                         Text(stringResource(R.string.common_review))
                     }
                 }
-                TextButton(onClick = onToggleSave, enabled = !loading && lookup.word.isNotBlank()) {
+                TextButton(onClick = onToggleSave, enabled = !loading && !changingVocabulary && lookup.word.isNotBlank()) {
                     Icon(
                         Icons.Filled.BookmarkAdd,
                         contentDescription = null,

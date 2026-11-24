@@ -420,8 +420,18 @@ internal data class ReaderLookupSession(
     val retranslateLoading: Boolean = false,
     val retranslateDoneTick: Int = 0,
     val status: com.linguareader.app.SettingsStatus? = null,
+    val vocabularyFeedbackToken: VocabularyFeedbackToken? = null,
     private val sentenceCache: SentenceTranslationCache = SentenceTranslationCache()
 ) {
+    class VocabularyFeedbackToken
+
+    val changingVocabulary: Boolean get() = vocabularyFeedbackToken != null
+
+    fun beginVocabularyChange(): ReaderLookupSession =
+        copy(vocabularyFeedbackToken = VocabularyFeedbackToken(), status = null)
+
+    fun finishVocabularyChange(token: VocabularyFeedbackToken, status: com.linguareader.app.SettingsStatus): ReaderLookupSession =
+        if (vocabularyFeedbackToken === token) copy(vocabularyFeedbackToken = null, status = status) else this
 
     val displayedEntry: com.linguareader.app.data.ContextualDictionaryEntry?
         get() = if (showingRelatedPhrase) dictionaryResult?.relatedPhrase else dictionaryResult?.entry
@@ -464,7 +474,8 @@ internal data class ReaderLookupSession(
         // retranslateDoneTick 故意不归零：它是「重翻完成信号」的单调递增 tick，
         // LookupSheet 用它做 remember 键（连同 lookup.word/sentence），换词本身已经
         // 重置编辑态，多归一次零反而可能在同一句重复重翻时丢失信号。
-        status = null
+        status = null,
+        vocabularyFeedbackToken = null
     )
 
     fun markDictionaryLoading(): ReaderLookupSession = copy(dictionaryLoading = true)
@@ -520,9 +531,10 @@ internal data class ReaderLookupSession(
         copy(status = status)
 
     fun setShowingRelatedPhrase(show: Boolean): ReaderLookupSession =
-        copy(showingRelatedPhrase = show)
+        if (show == showingRelatedPhrase) this
+        else copy(showingRelatedPhrase = show, status = null, vocabularyFeedbackToken = null)
 
-    fun clearStatus(): ReaderLookupSession = copy(status = null)
+    fun clearStatus(): ReaderLookupSession = copy(status = null, vocabularyFeedbackToken = null)
 
     fun cachedSentenceOrNull(sentence: String): com.linguareader.app.ai.SentenceTranslationResult? =
         sentenceCache[sentence]

@@ -917,4 +917,5 @@
     <string name="update_source_catalog">HTTPS 镜像目录地址</string>
     <string name="update_source_hint">更改来源会取消正在下载的文件。保存后请重新检查更新或获取资源包。</string>
     <string name="update_source_invalid">请输入有效的 HTTPS 镜像目录文件地址。</string>
+    <string name="notice_word_remove_failed">移除失败，请重试。</string>
 </resources>

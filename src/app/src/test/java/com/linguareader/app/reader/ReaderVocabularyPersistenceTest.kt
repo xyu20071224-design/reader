@@ -102,6 +102,35 @@ class ReaderVocabularyPersistenceTest {
         assertTrue("异步保存未完成", condition())
     }
 
+    @Test fun removeCallbackFollowsPersistenceAndFailurePreservesTheSavedEntry() {
+        val viewModel = AppViewModel(context)
+        await { !viewModel.state.value.loading }
+        var saved: Boolean? = null
+        viewModel.saveWord(book, "Test Chapter", lookup, dictionaryMiss().vocabularyEntry(lookup)) { saved = it }
+        await { saved != null }
+        assertEquals(true, saved)
+        val blockedTemp = File(context.filesDir, "vocabulary.json.tmp").apply { mkdirs() }
+        try {
+            var removed: Boolean? = null
+            viewModel.removeSavedWord("mithril") { removed = it }
+            await { removed != null }
+            assertEquals(false, removed)
+            assertEquals("mithril", viewModel.state.value.savedWords.single().id)
+            assertEquals("mithril", runBlocking { VocabularyRepository(context).load().single().id })
+            assertEquals(StatusTone.DANGER, viewModel.state.value.noticeTone)
+            assertEquals(context.getString(R.string.notice_word_remove_failed), viewModel.state.value.notice)
+            assertTrue(blockedTemp.delete())
+            removed = null
+            viewModel.removeSavedWord("mithril") {
+                assertTrue(viewModel.state.value.savedWords.isEmpty())
+                removed = it
+            }
+            await { removed != null }
+            assertEquals(true, removed)
+            assertTrue(runBlocking { VocabularyRepository(context).load().isEmpty() })
+        } finally { blockedTemp.delete() }
+    }
+
     @Test
     fun saveCallbackFollowsPersistenceAndFailureCanBeRetried() {
         val viewModel = AppViewModel(context)

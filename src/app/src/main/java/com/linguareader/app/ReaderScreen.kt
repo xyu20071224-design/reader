@@ -982,6 +982,7 @@ internal fun ReaderScreen(
             relatedPhrase = lookupSession.dictionaryResult?.relatedPhrase,
             loading = lookupSession.dictionaryLoading,
             saveStatus = lookupSession.status,
+            changingVocabulary = lookupSession.changingVocabulary,
             aiContext = lookupSession.aiResult,
             aiLoading = lookupSession.aiLoading,
             aiFailed = lookupSession.aiFailed,
@@ -1040,20 +1041,23 @@ internal fun ReaderScreen(
                 onSpeak(displayedEntry?.matchedPhrase ?: displayedEntry?.headword ?: currentLookup.word)
             },
             onToggleSave = {
+                if (lookupSession.changingVocabulary) return@ReaderLookupSheet
                 val entry = vocabularyEntry
+                lookupSession = lookupSession.beginVocabularyChange()
+                val feedbackToken = lookupSession.vocabularyFeedbackToken ?: return@ReaderLookupSheet
                 if (savedWords.any { word -> word.id == savedId }) {
                     val removedHeadword = savedWords
                         .firstOrNull { word -> word.id == savedId }?.headword
-                    viewModel.removeSavedWord(savedId)
-                    // 弹层开着时全局 Snackbar 不可见，反馈改在弹层内联展示。
-                    lookupSession = lookupSession.setStatus(
-                        SettingsStatus.success(
-                            context.getString(
-                                R.string.notice_word_removed,
-                                removedHeadword ?: currentLookup.word
+                    viewModel.removeSavedWord(savedId) { removed ->
+                        if (lookup == currentLookup) {
+                            lookupSession = lookupSession.finishVocabularyChange(
+                                feedbackToken,
+                                if (removed) SettingsStatus.success(context.getString(
+                                    R.string.notice_word_removed, removedHeadword ?: currentLookup.word
+                                )) else SettingsStatus.danger(context.getString(R.string.notice_word_remove_failed))
                             )
-                        )
-                    )
+                        }
+                    }
                 } else {
                     viewModel.saveWord(
                         book,
@@ -1063,7 +1067,8 @@ internal fun ReaderScreen(
                         lookupSession.aiResult
                     ) { saved ->
                         if (lookup == currentLookup) {
-                            lookupSession = lookupSession.setStatus(
+                            lookupSession = lookupSession.finishVocabularyChange(
+                                feedbackToken,
                                 if (saved) SettingsStatus.success(
                                     context.getString(
                                         R.string.notice_word_saved,
