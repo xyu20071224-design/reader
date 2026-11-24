@@ -98,6 +98,9 @@ data class PackRegistry(
             val root = runCatching { JSONObject(text) }.getOrElse {
                 throw PackFormatException("资源包登记表损坏（不是合法 JSON）")
             }
+            if (root.optInt("version", -1) != FORMAT_VERSION) {
+                throw PackFormatException("资源包登记表格式版本不受支持，请保留文件并升级应用")
+            }
             val packs = root.optJSONArray("packs")?.let { array ->
                 (0 until array.length()).map { index ->
                     val item = array.optJSONObject(index)

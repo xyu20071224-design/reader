@@ -19,11 +19,15 @@ import com.linguareader.shared.packs.SafeZip
 import com.linguareader.shared.packs.VoicePackSource
 import com.linguareader.shared.tts.TtsPipelineContract
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.zip.ZipFile
+import kotlin.coroutines.coroutineContext
+import com.linguareader.shared.packs.BundleMember
 
 /**
  * 资源包的磁盘所有者：安装 / 卸载 / 启用 / 登记表读写（方案-资源包系统 §3）。
@@ -53,6 +57,8 @@ class PackRepository(
     private val tempRoot = File(packsRoot, TEMP_DIR)
 
     private val mutex = Mutex()
+    /** Deterministic boundary for filesystem/cancellation failure regression tests. */
+    internal var beforeInstallPublication: () -> Unit = {}
 
     @Volatile
     private var cached: PackRegistry? = null
@@ -155,12 +161,16 @@ class PackRepository(
 
     /** 删除 [residuals] 列出的全部残留，返回**实际**释放的字节数（删成功才计入）。 */
     fun cleanResiduals(): Long {
+        // Never treat an in-flight staging directory as a crash leftover.
+        if (!mutex.tryLock()) return 0L
+        try {
         var freed = 0L
         for (residual in residuals()) {
             val bytes = residual.bytes
             if (runCatching { File(residual.path).deleteRecursively() }.getOrDefault(false)) freed += bytes
         }
         return freed
+        } finally { mutex.unlock() }
     }
 
     fun verify(packId: String): PackValidationResult {
@@ -178,8 +188,8 @@ class PackRepository(
     /**
      * 安装一个 `.lrpack`。
      *
-     * 全流程 fail-closed：任一步失败都清掉临时文件/目录，磁盘上不会留下半装的包，
-     * registry 也不会被改。返回落位后的登记项。
+     * 单包提交前失败会清掉暂存并恢复旧内容。集合包保留已成功提交的成员；
+     * 取消只停止尚未提交的工作，提交完成后的包仍保留并可由重新读取列表展示。
      */
     /**
      * 安装一个 `.lrpack`。
@@ -208,13 +218,15 @@ class PackRepository(
         val root = bundle.root(packsRoot)
         val failed = mutableListOf<String>()
         for (member in members) {
+            coroutineContext.ensureActive()
             val file = File(root, member.path)
             if (!file.isFile) {
                 failed += "${member.packId}（成员文件缺失）"
                 continue
             }
-            runCatching { installSingle(Uri.fromFile(file)) }
-                .onFailure { failed += "${member.packId}：${it.message ?: "安装失败"}" }
+            try { installSingle(Uri.fromFile(file), expectedMember = member) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { failed += "${member.packId}：${error.message ?: "安装失败"}" }
         }
         if (failed.isNotEmpty()) {
             throw PackFormatException(
@@ -223,7 +235,9 @@ class PackRepository(
         }
     }
 
-    private suspend fun installSingle(uri: Uri): InstalledPack = withContext(Dispatchers.IO) {
+    private suspend fun installSingle(uri: Uri, expectedMember: BundleMember? = null): InstalledPack = withContext(Dispatchers.IO) {
+        val context = coroutineContext
+        val checkActive = { context.ensureActive() }
         mutex.withLock {
             packsRoot.mkdirs()
             tempRoot.mkdirs()
@@ -231,8 +245,13 @@ class PackRepository(
             val staging = File(tempRoot, "staging-" + System.nanoTime())
             try {
                 // 解析前用最宽上限（AUDIO 2GB）预检并拷贝；解析出类型后再卡严格上限。
-                copySource(uri, sourceZip, PackLimits.of(PackType.AUDIO).maxSourceBytes)
-                val manifest = readManifest(sourceZip)
+                copySource(uri, sourceZip, PackLimits.of(PackType.AUDIO).maxSourceBytes, checkActive)
+                val manifest = readManifest(sourceZip, checkActive)
+                if (expectedMember != null && (manifest.type == PackType.BUNDLE ||
+                    manifest.packId != expectedMember.packId || manifest.type != expectedMember.type ||
+                    manifest.version != expectedMember.version)) {
+                    throw PackFormatException("集合包成员身份与声明不符：${expectedMember.packId}")
+                }
                 val limits = PackLimits.of(manifest.type)
                 require(sourceZip.length() <= limits.maxSourceBytes) {
                     "资源包文件超过 ${limits.maxSourceBytes / 1024 / 1024}MB 限制"
@@ -253,7 +272,8 @@ class PackRepository(
                     destination = staging,
                     maxEntries = limits.maxEntries,
                     maxBytes = limits.maxUnzippedBytes,
-                    label = "资源包"
+                    label = "资源包",
+                    checkActive = checkActive
                 )
                 if (manifest.type == PackType.AUDIO) {
                     val audio = manifest.audioPayload
@@ -265,7 +285,7 @@ class PackRepository(
                         )
                     }
                 }
-                val digests = PackValidator.digests(staging, manifest.files.map { it.path })
+                val digests = PackValidator.digests(staging, manifest.files.map { it.path }, checkActive)
                 PackValidator.validateFiles(manifest, staging, digests).requireOk()
                 PackValidator.validateAudioChapters(manifest, digests).requireOk()
                 if (manifest.type == PackType.DICTIONARY) {
@@ -276,37 +296,46 @@ class PackRepository(
                     }
                 }
 
-                val destination = File(packsRoot, PackPaths.directoryFor(manifest.type, manifest.packId, manifest.version))
-                destination.parentFile?.mkdirs()
-                if (destination.exists() && !destination.deleteRecursively()) {
-                    throw IllegalStateException("无法替换已存在的资源包目录")
-                }
-                // 同 packId 的旧版本目录：先记下来，**落位并写表之后再删**（审查 7-3）。
-                // 旧顺序「删旧目录 → 落位 → 写表」在落位/写表失败或进程被杀时，registry
-                // 会指向已被删除的旧目录 —— 活动词典静默回内置、新包成孤儿。
-                val previousDir = registry().byId(manifest.packId)
-                    ?.takeIf { it.dir != PackPaths.directoryFor(manifest.type, manifest.packId, manifest.version) }
-                    ?.let { it.root(packsRoot) }
-                if (!staging.renameTo(destination)) {
-                    throw IllegalStateException("资源包落位失败（可能是存储空间不足）")
-                }
-                val installed = InstalledPack(
-                    dir = PackPaths.directoryFor(manifest.type, manifest.packId, manifest.version),
-                    installedAt = System.currentTimeMillis(),
-                    manifest = manifest
-                )
-                // 第一个词典包装上就直接生效：用户装词典包的目的就是用它；已有活动包时
-                // 不抢（可能正在听书/查词），由用户在资源包页面显式切换。
+                checkActive()
+                val relative = PackPaths.directoryFor(manifest.type, manifest.packId, manifest.version)
+                val destination = File(packsRoot, relative)
+                check(destination.parentFile!!.isDirectory || destination.parentFile!!.mkdirs())
+                val oldPack = registry().byId(manifest.packId)
+                val previousDir = oldPack?.takeIf { it.dir != relative }?.root(packsRoot)
+                val installed = InstalledPack(relative, System.currentTimeMillis(), manifest)
                 val next = registry().upsert(installed).let { current ->
                     if (manifest.type == PackType.DICTIONARY && current.activeDictionary == null) {
                         current.withActiveDictionary(manifest.packId)
-                    } else {
-                        current
-                    }
+                    } else current
                 }
-                writeRegistry(next)
-                // 登记表已不再引用旧目录，此时删除才是安全的；返回值即便失败也只是占空间。
-                previousDir?.deleteRecursively()
+                // Prepare registry bytes before replacing any live payload. No direct-write fallback.
+                val prepared = prepareRegistry(next)
+                val backup = File(tempRoot, "rollback-" + System.nanoTime())
+                var movedOld = false
+                var movedNew = false
+                var committed = false
+                try {
+                    checkActive()
+                    if (destination.exists()) {
+                        check(destination.renameTo(backup)) { "无法保留已安装的资源包" }
+                        movedOld = true
+                    }
+                    check(staging.renameTo(destination)) { "资源包落位失败（可能是存储空间不足）" }
+                    movedNew = true
+                    beforeInstallPublication()
+                    checkActive()
+                    publishRegistry(prepared, next)
+                    committed = true
+                } finally {
+                    if (!committed) {
+                        if (movedNew) check(destination.deleteRecursively()) { "无法清理未登记的资源包" }
+                        if (movedOld) check(backup.renameTo(destination)) { "无法恢复原资源包，请保留临时备份" }
+                    } else {
+                        backup.deleteRecursively()
+                        previousDir?.deleteRecursively()
+                    }
+                    prepared.delete()
+                }
                 installed
             } finally {
                 sourceZip.delete()
@@ -319,8 +348,12 @@ class PackRepository(
     suspend fun uninstall(packId: String) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val pack = registry().byId(packId) ?: return@withLock
-            pack.root(packsRoot).deleteRecursively()
+            coroutineContext.ensureActive()
+            // Failure to publish the new registry must leave the installed resource usable.
             writeRegistry(registry().remove(packId))
+            if (!pack.root(packsRoot).deleteRecursively()) {
+                throw IllegalStateException("资源包已停用，但文件未能完全删除，请在残留清理中重试")
+            }
         }
     }
 
@@ -346,7 +379,7 @@ class PackRepository(
      * 拿不到 SIZE 时（部分 provider 不提供）回退：拷贝流程里仍保留逐块 `maxSourceBytes`
      * 兜底，因此不会无界写入。
      */
-    private fun copySource(uri: Uri, target: File, maxSourceBytes: Long) {
+    private fun copySource(uri: Uri, target: File, maxSourceBytes: Long, checkActive: () -> Unit) {
         declaredSizeBytes(uri)?.let { declared ->
             require(declared <= maxSourceBytes) {
                 "资源包文件过大：${declared / 1024 / 1024}MB 超过 ${maxSourceBytes / 1024 / 1024}MB 上限"
@@ -359,7 +392,9 @@ class PackRepository(
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                 var written = 0L
                 while (true) {
+                    checkActive()
                     val read = source.read(buffer)
+                    checkActive()
                     if (read <= 0) break
                     written += read
                     // 类型未知时按全类型上限兜底；具体类型的上限在解析 manifest 后再卡。
@@ -382,7 +417,7 @@ class PackRepository(
             }
     }.getOrNull()
 
-    private fun readManifest(zip: File): PackManifest {
+    private fun readManifest(zip: File, checkActive: () -> Unit = {}): PackManifest {
         val text = try {
             ZipFile(zip).use { archive ->
                 val entry = archive.getEntry(PackManifest.FILE_NAME)
@@ -396,7 +431,18 @@ class PackRepository(
                 if (declared > MAX_MANIFEST_BYTES) {
                     throw PackFormatException("资源包的 manifest.json 过大（${declared / 1024}KB），已拒绝")
                 }
-                val bytes = archive.getInputStream(entry).use { it.readBytes() }
+                val bytes = archive.getInputStream(entry).use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        checkActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        require(output.size() + count <= MAX_MANIFEST_BYTES) { "资源包的 manifest.json 过大，已拒绝" }
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
                 if (bytes.size > MAX_MANIFEST_BYTES) {
                     throw PackFormatException("资源包的 manifest.json 过大（${bytes.size / 1024}KB），已拒绝")
                 }
@@ -463,34 +509,32 @@ class PackRepository(
             ?.let { pack -> pack.dictionaryFile(packsRoot)?.isFile != true }
             ?: false
 
-    /** 原子写：`*.tmp` + rename，失败回退直写（与项目其余落盘纪律一致）。 */
-    /**
-     * 原子写登记表：`*.tmp` + `renameTo`。
-     *
-     * 审查 7-4：原回退分支直接覆盖 `registryFile`（非原子）——写一半被打断就会留下半截
-     * 登记表，下次读成空表（放大 7-1 的静默失败）。现在两级都走"先写临时文件再 rename"：
-     * 先把 tmp 写好；rename 失败时**重写一次 tmp**（tmp 可能已被 rename 消费）再 rename；
-     * 两次都失败才直写最终文件作为最后手段。任一环节抛错都**不更新内存缓存**，避免
-     * 「内存以为写成了、磁盘其实没有」。
-     */
-    private fun writeRegistry(registry: PackRegistry) {
-        packsRoot.mkdirs()
-        val json = registry.toJson()
-        val temp = File(packsRoot, "$REGISTRY_NAME.tmp")
-        temp.writeText(json)
-        var wrote = temp.renameTo(registryFile)
-        if (!wrote) {
-            // rename 失败：tmp 可能仍存在也可能已被消费，重建一份再试一次。
-            runCatching { temp.writeText(json) }
-            wrote = temp.renameTo(registryFile)
+    /** Only an atomic replacement publishes state; a failed write preserves the old registry. */
+    private fun prepareRegistry(registry: PackRegistry): File {
+        check(packsRoot.isDirectory || packsRoot.mkdirs())
+        val temporary = File(packsRoot, "$REGISTRY_NAME.tmp")
+        try {
+            temporary.outputStream().use { output ->
+                output.write(registry.toJson().toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
+            return temporary
+        } catch (error: Exception) {
+            if (temporary.isFile) temporary.delete()
+            throw error
         }
-        if (!wrote) {
-            // 最后手段：直写最终文件（非原子，但总比完全不写强）。
-            registryFile.writeText(json)
-            temp.delete()
-        }
+    }
+
+    private fun publishRegistry(temporary: File, registry: PackRegistry) {
+        check(temporary.renameTo(registryFile)) { "资源包登记失败，请检查存储空间后重试" }
         cached = registry
         cachedStamp = stampOf(registryFile)
+    }
+
+    private fun writeRegistry(registry: PackRegistry) {
+        val temporary = prepareRegistry(registry)
+        try { publishRegistry(temporary, registry) }
+        finally { temporary.delete() }
     }
 
     private fun PackValidationResult.requireOk() {

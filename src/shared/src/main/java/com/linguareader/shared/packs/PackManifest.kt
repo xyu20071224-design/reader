@@ -327,8 +327,9 @@ data class PackManifest(
                 val json = root.optJSONObject("bundle")
                     ?: throw PackFormatException("集合包缺少 bundle 载荷")
                 val members = json.optJSONArray("members")?.let { array ->
-                    (0 until array.length()).mapNotNull { index ->
-                        val item = array.optJSONObject(index) ?: return@mapNotNull null
+                    (0 until array.length()).map { index ->
+                        val item = array.optJSONObject(index)
+                            ?: throw PackFormatException("集合包第 ${index + 1} 个成员不是对象")
                         val wire = item.requireString("type")
                         val memberType = PackType.fromWire(wire)
                             ?: throw PackFormatException("集合包成员类型不合法：$wire")
@@ -336,9 +337,13 @@ data class PackManifest(
                         requireDeclared(path, files, "bundle.members[].path")
                         BundleMember(
                             type = memberType,
-                            packId = item.requireString("packId").trim(),
+                            packId = item.requireString("packId").also {
+                                if (!PACK_ID.matches(it)) throw PackFormatException("集合包成员标识不合法：$it")
+                            },
                             path = path,
-                            version = item.optString("version").trim()
+                            version = item.requireString("version").also {
+                                if (!VERSION.matches(it)) throw PackFormatException("集合包成员版本不合法：$it")
+                            }
                         )
                     }
                 }.orEmpty()

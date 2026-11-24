@@ -76,7 +76,7 @@ class AudioPackGeneratorContractTest {
             listOf(0 to 0, 0 to 1, 1 to 0).forEachIndexed { i, (sentence, seg) ->
                 val bytes = "chapter-$chapter-sentence-$sentence-segment-$seg".toByteArray()
                 File(voiceDir, TtsCacheKey.fileName(sentence, seg)).writeBytes(bytes)
-                payloadFiles["$chapter/${TtsCacheKey.fileName(sentence, seg)}"] = bytes
+                payloadFiles["$chapter/$segment/${TtsCacheKey.fileName(sentence, seg)}"] = bytes
                 // 每章文件数一致，便于下面按章断言
                 if (i == 2) Unit
             }

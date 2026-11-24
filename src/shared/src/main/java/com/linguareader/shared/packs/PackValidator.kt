@@ -56,6 +56,9 @@ object PackValidator {
             if (bundle.members.any { it.type == PackType.BUNDLE }) {
                 return PackValidationResult.reject("集合包不能嵌套集合包")
             }
+            if (bundle.members.map { it.packId }.distinct().size != bundle.members.size) {
+                return PackValidationResult.reject("集合包成员标识重复")
+            }
             val paths = bundle.members.map { it.path }
             if (paths.size != paths.distinct().size) {
                 return PackValidationResult.reject("集合包成员路径重复")
@@ -106,8 +109,22 @@ object PackValidator {
     }
 
     /** 只对登记过的路径算哈希（不扫目录），供 `validateFiles` 与章节树对账共用。 */
-    fun digests(root: File, paths: Collection<String>): Map<String, String> =
-        paths.associateWith { ImportSupport.sha256(File(root, it)) }
+    fun digests(root: File, paths: Collection<String>, checkActive: () -> Unit = {}): Map<String, String> =
+        paths.associateWith { path ->
+            checkActive()
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            File(root, path).inputStream().use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    checkActive()
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            checkActive()
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }
 
     /**
      * 音频包的结构 + 章节树对账（方案 T3.1）。

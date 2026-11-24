@@ -18,6 +18,8 @@
 ⚠️ `--engine-tag` 必须逐字复制 App 侧 `VoiceLibraryLoader.engineKey` 的输出：自 2026-09-12
 起模型与 MiMo 风格指令也算引擎身份（`server:<url>@<sha8(serverModel)>` / `mimo@<sha8(style)>`），
 用旧格式（不带 `@…`）打出来的包不会命中。
+非默认 MiMo 模型还会追加 `@model-<sha8(mimoModel)>`；请始终复制完整 engineKey。
+只打包原始管线的 segment 目录，不读取会话内 `prosody-v1-*` part 缓存。
 """
 
 from __future__ import annotations
@@ -112,7 +114,7 @@ def build(cache_dir: Path, out: Path, args: argparse.Namespace) -> int:
         digests: dict[str, str] = {}
         chapter_meta = []
         for index, voice_dir in chapters:
-            destination = staging / PAYLOAD_DIR / str(index)
+            destination = staging / PAYLOAD_DIR / str(index) / target_segment
             for source in sorted(voice_dir.rglob("*")):
                 if not source.is_file():
                     continue
@@ -120,7 +122,7 @@ def build(cache_dir: Path, out: Path, args: argparse.Namespace) -> int:
                 target = destination / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, target)
-                key = f"{PAYLOAD_DIR}/{index}/{relative}"
+                key = f"{PAYLOAD_DIR}/{index}/{target_segment}/{relative}"
                 digests[key] = sha256_file(target)
             chapter_meta.append(
                 {

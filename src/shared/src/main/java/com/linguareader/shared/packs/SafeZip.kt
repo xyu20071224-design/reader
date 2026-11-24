@@ -31,14 +31,17 @@ object SafeZip {
         destination: File,
         maxEntries: Int,
         maxBytes: Long,
-        label: String = "压缩包"
+        label: String = "压缩包",
+        checkActive: () -> Unit = {}
     ): Long {
         val rootPath = destination.canonicalPath + File.separator
         var totalBytes = 0L
         var entryCount = 0
+        val outputs = mutableSetOf<String>()
         ZipFile(zip).use { archive ->
             val entries = archive.entries()
             while (entries.hasMoreElements()) {
+                checkActive()
                 val entry = entries.nextElement()
                 entryCount += 1
                 require(entryCount <= maxEntries) { "$label 文件条目过多" }
@@ -56,6 +59,7 @@ object SafeZip {
 
                 val output = File(destination, entry.name)
                 require(output.canonicalPath.startsWith(rootPath)) { "检测到不安全的文件路径" }
+                require(outputs.add(output.canonicalPath)) { "$label 含重复文件路径" }
 
                 if (entry.isDirectory) {
                     output.mkdirs()
@@ -68,7 +72,9 @@ object SafeZip {
                     output.outputStream().use { out ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         while (true) {
+                            checkActive()
                             val read = input.read(buffer)
+                            checkActive()
                             if (read <= 0) break
                             out.write(buffer, 0, read)
                             totalBytes += read
