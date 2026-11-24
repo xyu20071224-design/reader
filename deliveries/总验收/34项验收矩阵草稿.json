@@ -1,0 +1,1748 @@
+{
+  "schema_version": 1,
+  "draft": true,
+  "authoritative": false,
+  "date": "2026-11-24",
+  "scope": "34项独立验收草稿；等待根代理最终校正，不改权威状态",
+  "integration_snapshot_sha": "0bfc27dfd7280ebc0920c4a3064e7246f50756c5",
+  "integration_snapshot_note": "仅为已提交基线；最新设备/lookup/UI有根工作区接线，最终集成SHA尚未冻结，不把工作树测试冒充此SHA的完整验证",
+  "integration_final_revalidation": "根复验中；API23补修已集成0bfc27d；lookup异步token/显式单词UI/voice提示最终提交及正式配置全量尚未冻结",
+  "canonical_source": "/Users/clannad/work/reader/reader-1.2.0/议题整理/canonical_status.json",
+  "canonical_sha256": "76164b36210af91f4362a41f9e2ec2c5e96dd8300f45cfc412b2090b4f94cfcd",
+  "plan_source": "/Users/clannad/work/reader/reader-1.2.0/议题整理/子代理计划-2026-11-24/90-总验收与状态回填.md",
+  "global_validation": {
+    "shared_baseline": {
+      "tests": 796,
+      "failures": 17,
+      "errors": 0,
+      "skipped": 8,
+      "evidence": "baseline"
+    },
+    "app_baseline": {
+      "status": "aborted_no_complete_test_result",
+      "observed_failure": "ReaderShellRenderTest.settingsSheetBodyRenders",
+      "reason": "SnapshotStateObserver循环",
+      "evidence": "baseline_app"
+    },
+    "final_integrated_full_suite": {
+      "status": "根复验中",
+      "shared_first": {
+        "tests": 928,
+        "failures": 17,
+        "errors": 0,
+        "skipped": 8,
+        "evidence": "integrated_shared_first"
+      },
+      "shared_api23": {
+        "tests": 932,
+        "failures": 17,
+        "errors": 0,
+        "skipped": 8,
+        "same_failure_cases_as_baseline": true,
+        "evidence": "integrated_shared_api23"
+      },
+      "app_verify_build_first": {
+        "tests": 831,
+        "failures": 6,
+        "errors": 0,
+        "skipped": 26,
+        "evidence": "integrated_app_verify"
+      },
+      "visual_audit": "ReaderShell基线已记录；SkinPicker两项独立基线/当前图逐字节一致，既有失败未改golden或阈值",
+      "pending": "标准2.3.1配置app重跑；不得用专项绿替代全量"
+    },
+    "device_batches": "API35历史混合批次21/2fail、15/5fail、4/2fail原样保留；最新20/1fail，明确19个单项code0，完整保存流程夹具坐标失败根复跑中；不得改写任何旧整批为全绿",
+    "unavailable_acceptance": [
+      "真实配对长书/金标准",
+      "真实授权服务整书翻译",
+      "首音录音/真实人声听感",
+      "国内已部署服务及GitHub不可达环境",
+      "正式发布/真实跨APK签名升级"
+    ]
+  },
+  "scope_decisions": [
+    {
+      "ids": [
+        "Q1-b07",
+        "Q1-b09",
+        "Q1-b10",
+        "Q2-c01"
+      ],
+      "decision": "保留既有用户已消除裁决，不新造修复"
+    },
+    {
+      "id": "Q2-c02",
+      "date": "2026-11-24",
+      "original": "可以开发一个插件系统，将一些资源（比如词典，语音）以及功能放在资源里",
+      "decision": "按dictionary/audio/voice/bundle资源包范围完成并说明边界；不实施第三方动态代码/插件APK/DexClassLoader，也不借第一方热修复绕过"
+    }
+  ],
+  "counting_rule": "每项可共用证据组，组内tests包含skipped，不能跨行累加为总通过数；已实现与已验收分列",
+  "evidence_catalog": {
+    "baseline": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/baseline-shared-evidence",
+      "detail": "基线shared 796 tests / 17 failures / 0 errors / 8 skipped；17失败为缺语料/根定位实验探针，不能称全量绿"
+    },
+    "baseline_app": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/baseline-app-aborted/status.json",
+      "detail": "基线app全量终止，无完整XML；观察到ReaderShellRenderTest.settingsSheetBodyRenders失败及SnapshotStateObserver循环"
+    },
+    "reader_state": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/lookup-guard-first-xml/TEST-com.linguareader.app.reader.ReaderScreenStateTest.xml",
+      "detail": "33/0/0/0，仅该suite；同目录lookup隔离有1失败，根复验中"
+    },
+    "review_deck": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/lookup-guard-first-xml/TEST-com.linguareader.app.ReviewDeckProgressRegressionTest.xml",
+      "detail": "2/0/0/0：8到期词实际分母、上游更新不重置牌组；非整批结论"
+    },
+    "marks": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/speech-checks/evidence/word-marks-final-green",
+      "detail": "shared56/app105，均0fail/error/skip；多ID共用，不重复加总"
+    },
+    "observed_forms": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/speech-checks/evidence/word-surface-observation-green",
+      "detail": "shared64/app105均0fail/error/skip；生产接线根已实施且旧go→went设备绿，最终接线SHA仍待冻结"
+    },
+    "device_marks_packs": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/device-green-marks-and-packs/instrumentation.txt",
+      "detail": "API35标记7法与资源包4法各自code0；整批21例有2失败"
+    },
+    "device_overlap": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/device-xhtml-overlap-red/instrumentation.txt",
+      "detail": "4例2失败：XHTML/包含due词红；primaryPhrase与配置重建单项绿；新修后根复验中；最新device_final两条原失败均code0，保留本次旧红记录"
+    },
+    "device_old_surface": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/device-old-lemma-surface-red/instrumentation.txt",
+      "detail": "旧go已收藏再点went未累积surfaceForm，独立1项失败；新API生产接线待根；最新device_final原方法code0，不能抹掉修前失败"
+    },
+    "device_ui": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/device-integrated-ui/instrumentation.txt",
+      "detail": "ReaderDictionaryVisibility三法、Prosody设置、Source、Speech反馈等单项code0；整批15有5失败"
+    },
+    "t01": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/artifacts/q1-t01/regression-summary.json",
+      "detail": "首批shared172/0fail/0error/2skip；补取消后173 tests/2skip见专项报告"
+    },
+    "t01_store": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/artifacts/q1-t01/storage-final-summary.json",
+      "detail": "app29/0/0/0，档案侧车/取消/持久化"
+    },
+    "t04": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/artifacts/q1-t04/regression-summary.json",
+      "detail": "shared180/0fail/0error/2skip；app48/0fail/0error/9skip，不能写48全通过"
+    },
+    "b02": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/artifacts/q1-b02/summary.json",
+      "detail": "app23/0/0/0；含真实TXT+fake译者流程5例，不是真服务整书"
+    },
+    "t09": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/artifacts/q1-t09/green-summary.json",
+      "detail": "shared23/app5均0fail/error/skip"
+    },
+    "t09_ui": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/integrated-prosody-sense-ui-xml",
+      "detail": "相关app16/0/0/0；设备另按单项计"
+    },
+    "speech": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/speech-checks/build/test-results/test",
+      "detail": "SingleWordSpeaker20+SpeechReadiness4=24/0/0/0；不证明首音听感"
+    },
+    "prosody": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/speech-checks/evidence/prosody-runtime-final-green",
+      "detail": "shared123/app83均0fail/error/skip；fake后端/ShadowMediaPlayer不等于人声听感"
+    },
+    "history": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-01/app-final-xml",
+      "detail": "AppReleaseHistoryRepository6+原source/download/settings18=24/0/0/0；shared update50、生成工具5另见报告"
+    },
+    "device_history": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/device-history-phrase/instrumentation.txt",
+      "detail": "断网历史单法code0、同批另1词组失败；后续21批历史单项也code0"
+    },
+    "packs": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-c02/app-device-delivery-final-xml",
+      "detail": "资源包42/0/0/0；此前shared104及工具4/EPUB2专项通过"
+    },
+    "voice": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-c02/pack-voice-final-xml",
+      "detail": "最新runtime相关84/0/0/0，含缺失音色消费9；实际设备增量见device_final，非真人clone服务"
+    },
+    "source": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-c03-transition/summary.json",
+      "detail": "app.update37/0/0/0；来源边界10例，原样审计先2例1红"
+    },
+    "source_audit": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/artifacts/integration-audit/source-fixed-summary.json",
+      "detail": "独立源切换及guarded lookup对照4/0/0/0，不替代生产UI/真服务"
+    },
+    "source_device": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/device-source/instrumentation.txt",
+      "detail": "API35真实来源选择1法code0，未验证国内站点"
+    },
+    "feedback": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/phrase-feedback-green-xml",
+      "detail": "收藏反馈/真实持久化/状态53/0/0/0"
+    },
+    "review_baseline": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/artifacts/baseline-shared-evidence/TEST-com.linguareader.shared.data.ReviewModeTest.xml",
+      "detail": "基线复习模式11/0/0/0，不证明提醒实际调度"
+    },
+    "canon": {
+      "path": "/Users/clannad/work/reader/reader-1.2.0/议题整理/canonical_status.json",
+      "detail": "仅作为34ID与既有范围裁决来源；草稿不反写权威状态"
+    },
+    "validation": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/integration/VALIDATION.md",
+      "detail": "历史设备/发布记录，日期保持原文，不作为2026-11-24最终集成全量绿"
+    },
+    "device_final": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/acceptance-draft/evidence-snapshot/device-final-20-first.txt",
+      "detail": "冻结副本，原integration/artifacts/device-final-word-packs/instrumentation.txt；API35本批20 tests/1 failure，标记9、真实30秒timer1、旧go→went1、导航2、包4、音色提示2共19单项code0；完整保存工作流因No visible fixture token app夹具坐标筛选失败，根复跑中"
+    },
+    "library": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-c02-library/summary.json",
+      "detail": "OPENAI库出口本地1例先红；相关43/0/0/0；不修改持久用户选择"
+    },
+    "compat": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/api23-compat/summary.json",
+      "detail": "API23缺方法陷阱先2/2红；shared update54/app.update37均0fail/error/skip；标准VERSION_NAME=2.3.1，无API23设备实跑"
+    },
+    "integrated_app_verify": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/acceptance-draft/evidence-snapshot/app-verify-first-xml",
+      "detail": "冻结副本，原integration/artifacts/final-app-full-xml；首次集成全量831 tests/6 failures/0 errors/26 skipped，带verifyBuild；3视觉既有（SkinPicker两法另有独立核验），3来源因2.3.1-verify被严格版本策略拒绝；正式标准配置根重跑中，未放松策略"
+    },
+    "integrated_shared_first": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/acceptance-draft/evidence-snapshot/shared-first-xml",
+      "detail": "冻结副本，原integration/artifacts/final-shared-full-xml；首次集成全量928 tests/17 failures/0 errors/8 skipped，17仍为缺根/语料实验；API23补修后根将再跑，不能称全量绿"
+    },
+    "lookup_integrated": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/acceptance-draft/evidence-snapshot/app-verify-first-xml/TEST-com.linguareader.app.reader.ReaderLookupRequestIsolationTest.xml",
+      "detail": "异步lookup隔离7/0/0/0；首轮1红保留，最新全量自身仍6失败，不能据此称整批绿"
+    },
+    "snapshot_index": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/acceptance-draft/evidence-snapshot/index.json",
+      "detail": "本草稿保留首轮全量XML及20项设备批次冻结副本，逐文件SHA256与原路径可核对，避免后续根重跑覆盖旧计数"
+    },
+    "skin_audit": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/artifacts/skin-render-audit/SkinPicker既有失败核对报告.md",
+      "detail": "独立基线/新harness各2/2失败，三路PNG逐字节一致；27相关源码/golden及8资源键一致，证明两SkinPicker失败既有，未改golden/阈值"
+    },
+    "js_properties": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/artifacts/integration-audit/js/result.json",
+      "detail": "24轮原文/原em-a节点身份、句块/点词offset、39字符range及2000匹配上限检查；没有模拟真实布局"
+    },
+    "t01_cancel": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/alignment/议题整理/子代理计划-2026-11-24/deliveries/Q1-t01/第二批档案事务与回归报告.md",
+      "detail": "取消补修后shared173 tests/0fail/0error/2skip；app29/0/0/0，真实配对金标准仍待办"
+    },
+    "source_initial": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-c03/shared-summary.json",
+      "detail": "初始shared源35/0/0/0；实际传输失败/长度/完整性与策略回归，后续兼容54例另计"
+    },
+    "source_tool": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-c03/mirror-tool-tests.log",
+      "detail": "本地不可变代目录与原子入口生成工具5例通过，不等于国内已部署"
+    },
+    "history_shared": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-01/shared-summary.json",
+      "detail": "shared update50/0/0/0，历史模型/分页/区间/身份测试"
+    },
+    "history_tool": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/q2-01/release-notes-tool-tests.log",
+      "detail": "本地发布资料生成工具5例通过；真实tag/commit/构建身份约束，不创建release"
+    },
+    "integrated_shared_api23": {
+      "path": "/Users/clannad/work/reader/out/issue-execution-20261124/distribution/artifacts/acceptance-draft/evidence-snapshot/shared-api23-xml",
+      "detail": "API23修补后集成全量932 tests/17 failures/0 errors/8 skipped；按suite+case核对17个失败与基线完全一致；不称全量绿"
+    }
+  },
+  "entries": [
+    {
+      "id": "Q1-b01",
+      "title": "生词整词边界",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "5c36f2c 词边界+形态展开（真机未验）"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "整词/连续节点及XHTML归一化修补已集成",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "标记shared56/app105无失败；独立24轮JS属性检查（非布局）",
+        "evidence": [
+          "marks",
+          "js_properties"
+        ]
+      },
+      "device": {
+        "detail": "API35整词/连续inline/XHTML命名空间、块与script/style保护两法及相关标记均绿；完整保存工作流本批因夹具坐标筛选失败，根复跑中",
+        "evidence": [
+          "device_marks_packs",
+          "device_overlap",
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "完整真实保存→重建→删除工作流复跑",
+        "根校正最终截图与接线身份"
+      ],
+      "traceable_commits": [
+        "a35d02fc25001921eb75e9f9849ca73e73e0d8d5",
+        "a66042b94491c53e020debb89caa09c57ddfc4ed"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "marks",
+        "device_marks_packs",
+        "device_overlap",
+        "device_final",
+        "js_properties"
+      ]
+    },
+    {
+      "id": "Q1-b02",
+      "title": "长文本翻译",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "11-23 代码复核（main b104022）：超长段按句切译块、每批不超过上限、mergeBatchTranslations 按原段合并已进入主分支（AiBookTranslator.kt；AiTranslationRepository 接线）。移除旧『工作区未提交』标记；真实 Key + 长书端到端仍待验，本轮未做运行验证。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "超长分块/侧车/续传失败链代码已实现",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "真实TXT+fake译者专项5，相关23/0/0/0",
+        "evidence": [
+          "b02",
+          "t01_store"
+        ]
+      },
+      "device": {
+        "detail": "未取得真实长书设备端到端通过",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "真实已授权翻译服务整书未验",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "真实服务合法长书整书翻译/恢复/失败验收",
+        "不能用18899/58323字符fake流程替代"
+      ],
+      "traceable_commits": [
+        "d87020e5aaa602d2a1089c9be68c0036854200cb",
+        "0688e7d785c68419343bb2ead487de5e1ed59c1c"
+      ],
+      "draft_conclusion": "待真实条件",
+      "evidence_refs": [
+        "b02",
+        "t01_store"
+      ]
+    },
+    {
+      "id": "Q1-b03",
+      "title": "跨章回翻到前章末尾",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "691cfe4 删 LAST_PAGE 哨兵"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用基线移除LAST_PAGE哨兵与章末语义锚点",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "ReaderScreenState33/0/0/0含前章末尾逻辑",
+        "evidence": [
+          "reader_state"
+        ]
+      },
+      "device": {
+        "detail": "本轮未取得完整跨章→回翻→重启设备专项",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根复验跨章回翻及重启位置"
+      ],
+      "traceable_commits": [
+        "691cfe43f552249b8608f2032a1ba9621916a405"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "reader_state"
+      ]
+    },
+    {
+      "id": "Q1-b04",
+      "title": "听书条遮挡正文",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "7b97548 听书条实测高度；全仓无 62.dp"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用实际听书条高度/视区预留实现",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "ReaderScreenState33逻辑绿，不代替遮挡测量",
+        "evidence": [
+          "reader_state"
+        ]
+      },
+      "device": {
+        "detail": "控件显隐不改正文视区单项绿；听书条字号/横竖屏全矩阵根复验中",
+        "evidence": [
+          "device_marks_packs"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "实际播放状态的多字号/横竖屏视区复验"
+      ],
+      "traceable_commits": [
+        "7b97548594c45e710eb17310fbe58418d8bfbe7b"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "reader_state",
+        "device_marks_packs"
+      ]
+    },
+    {
+      "id": "Q1-b05",
+      "title": "手翻页牵引朗读",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "07090e2 删『翻页拽动朗读』整条路径"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用删除页面位置反推朗读路径；本轮补停顿导航代际",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "TTS shared123相关套件无失败，含7种等待后导航竞态",
+        "evidence": [
+          "prosody"
+        ]
+      },
+      "device": {
+        "detail": "未取得本轮朗读中手翻页完整设备记录",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "系统或已授权引擎实播待验",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根复验手翻接管不拉回句首"
+      ],
+      "traceable_commits": [
+        "07090e2f2179c568033297bf84c887850a0598b1",
+        "afef99eac6822223fbaef72ddf12e7f06d694959"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "prosody"
+      ]
+    },
+    {
+      "id": "Q1-b06",
+      "title": "听书自动翻页",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "d17b650 解禁分页跟随+三护栏"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用分页跟随三护栏，无位置回报回路",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "TTS播放/导航逻辑与基线ReaderScripts结构测试；非设备全程",
+        "evidence": [
+          "prosody",
+          "baseline"
+        ]
+      },
+      "device": {
+        "detail": "未取得跨页/跨章长听书设备闭环",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "实际引擎长听书未验",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根复验跨页/跨章跟随与章末无回路"
+      ],
+      "traceable_commits": [
+        "d17b65076fa2b7273000f84c6a1a1809a8cbd0f4"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "prosody",
+        "baseline"
+      ]
+    },
+    {
+      "id": "Q1-b07",
+      "title": "顶栏提示文字",
+      "canonical_before": {
+        "type": "非缺陷（消除）",
+        "status": "已消除",
+        "basis": "用户答复：顶栏计数文字，属既有实现"
+      },
+      "code": {
+        "classification": "scope",
+        "detail": "既有用户判定为顶栏计数文字，范围归档",
+        "status": "user_confirmed_scope_decision"
+      },
+      "automation": {
+        "detail": "不新增实现冒充修复",
+        "evidence": [
+          "canon"
+        ]
+      },
+      "device": {
+        "detail": "按既有范围结论；根可抽查顶栏",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "不适用",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "保留原裁决，不重新计为bug"
+      ],
+      "traceable_commits": [
+        "b1040226f760070092f26f43f4a88316a380b19e"
+      ],
+      "draft_conclusion": "保留范围裁决",
+      "evidence_refs": [
+        "canon"
+      ]
+    },
+    {
+      "id": "Q1-b08",
+      "title": "生词本顶栏动作",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "79a8cc7 顶栏图标化，删文字标签"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用生词本隔离书架动作；新增真实导航回归源码",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "真实VocabularyNavigationAcceptanceTest两法已加入并在API35执行，见设备列",
+        "evidence": [
+          "canon"
+        ]
+      },
+      "device": {
+        "detail": "API35生词本顶栏隔离与系统返回/重入两法均code0",
+        "evidence": [
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根最终确认专项提交与设备构建身份",
+        "边缘返回如另测则补证"
+      ],
+      "traceable_commits": [
+        "79a8cc75ff8a8b0b47e258660959154a1e9bbef4",
+        "96f531ba390010ab133e6e41252b82a130cdd1b2"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "canon",
+        "device_final"
+      ]
+    },
+    {
+      "id": "Q1-b09",
+      "title": "复习间隔设置",
+      "canonical_before": {
+        "type": "非缺陷（消除）",
+        "status": "已消除",
+        "basis": "用户裁决「已实现，消除这一条」"
+      },
+      "code": {
+        "classification": "scope",
+        "detail": "按用户已实现/消除裁决归档",
+        "status": "user_confirmed_scope_decision"
+      },
+      "automation": {
+        "detail": "基线ReviewMode11/0/0/0；不冒充入口实测",
+        "evidence": [
+          "canon",
+          "review_baseline"
+        ]
+      },
+      "device": {
+        "detail": "本轮间隔入口/摘要抽查待根",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "不适用",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "保留范围裁决",
+        "根抽查入口与摘要"
+      ],
+      "traceable_commits": [
+        "b1040226f760070092f26f43f4a88316a380b19e"
+      ],
+      "draft_conclusion": "保留范围裁决",
+      "evidence_refs": [
+        "canon",
+        "review_baseline"
+      ]
+    },
+    {
+      "id": "Q1-b10",
+      "title": "导入文字诉求",
+      "canonical_before": {
+        "type": "非缺陷（消除）",
+        "status": "已消除",
+        "basis": "用户答复：即顶栏计数文字"
+      },
+      "code": {
+        "classification": "scope",
+        "detail": "既有用户判定为顶栏计数文字，范围归档",
+        "status": "user_confirmed_scope_decision"
+      },
+      "automation": {
+        "detail": "不新增实现冒充修复",
+        "evidence": [
+          "canon"
+        ]
+      },
+      "device": {
+        "detail": "按既有范围结论，正常文件选择不判缺陷",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "不适用",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "保留原裁决，不重新计为bug"
+      ],
+      "traceable_commits": [
+        "b1040226f760070092f26f43f4a88316a380b19e"
+      ],
+      "draft_conclusion": "保留范围裁决",
+      "evidence_refs": [
+        "canon"
+      ]
+    },
+    {
+      "id": "Q1-t01",
+      "title": "生产句级对齐覆盖",
+      "canonical_before": {
+        "type": "bug",
+        "status": "部分实现",
+        "basis": "11-23 代码复核（main b104022）：TranslationAligner.VERSION=11，已含 v8 位置先验与单句落盘、v9 中文句界修正、v10 合并译文切分、v11 已知句界侧车；旧档案按版本判旧，书架可『重新对齐』。句级仍有低置信/长度比护栏及段级兜底，覆盖率与真机观感待验；不能按旧 v7 记录判断当前缺口。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "跨批句界侧车/档案取消及原子发布已集成",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "shared173 tests含2skip、app29无失败；语料缺失不写全通过",
+        "evidence": [
+          "t01",
+          "t01_store",
+          "t01_cancel"
+        ]
+      },
+      "device": {
+        "detail": "真实配对长书/金标准设备覆盖未验",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "缺已批准真实配对资料，不替代覆盖率判断",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "合法配对长书及金标准",
+        "真实生产覆盖/误配/观感复验"
+      ],
+      "traceable_commits": [
+        "d87020e5aaa602d2a1089c9be68c0036854200cb",
+        "abab0068da92bfe4bd02284840b602735c854b21"
+      ],
+      "draft_conclusion": "待真实条件",
+      "evidence_refs": [
+        "t01",
+        "t01_store",
+        "t01_cancel"
+      ]
+    },
+    {
+      "id": "Q1-t02",
+      "title": "变形词完整划线",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "09-25 复验：ReaderScripts.kt:921-970 整词 \\b + CVC 双写形态展开（5c36f2c，09-01）；台账只看 \\b 漏看双写"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "既有词形规则保留，新连续节点修复集成",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "标记shared56/app105无失败；10个固定完整表面形矩阵",
+        "evidence": [
+          "marks"
+        ]
+      },
+      "device": {
+        "detail": "API35完整表面形普通/到期矩阵code0；真实整套保存工作流因夹具坐标筛选失败待复跑",
+        "evidence": [
+          "device_marks_packs",
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "真实保存/重建/删除工作流复跑",
+        "根最终汇总"
+      ],
+      "traceable_commits": [
+        "5c36f2cd98a2534f708a674db3aa5d0cd4024afd",
+        "a35d02fc25001921eb75e9f9849ca73e73e0d8d5",
+        "a66042b94491c53e020debb89caa09c57ddfc4ed"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "marks",
+        "device_marks_packs",
+        "device_final"
+      ]
+    },
+    {
+      "id": "Q1-t03",
+      "title": "英文一句对应多句中文",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "09-25 复验：TranslationAligner.kt:181-187 句级 1:N、TranslationMemoryIndex.kt:130-142 返回整块；实测档案 757/10322 条句级句对真含两句中文（534f437/5dd47d7）"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用生产1:N与整块返回；随对齐侧车回归",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "生产翻译/索引fixture回归见shared180 tests含2skip",
+        "evidence": [
+          "t04"
+        ]
+      },
+      "device": {
+        "detail": "本轮真实配对长书1:N覆盖未验",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "需要真实配对书/金标准",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "真实1:N样本生产查询完整中文集合",
+        "不以fixture代替长书"
+      ],
+      "traceable_commits": [
+        "534f4376267b43c9ff47540713ef2872736616af",
+        "5dd47d74f0dc1825ca86ed1f65cdf522e70b86cb",
+        "d87020e5aaa602d2a1089c9be68c0036854200cb"
+      ],
+      "draft_conclusion": "待真实条件",
+      "evidence_refs": [
+        "t04"
+      ]
+    },
+    {
+      "id": "Q1-t04",
+      "title": "相邻句点查与升级",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "11-23 更新当前实现（main b104022）：v7 起档案英文恒为单句；v8 已恢复 DP 英方 2:1 并逐个英文句落盘，v10 再按护栏切分合并中文译文，v11 支持已知中文句界。此前『永久禁止英方合并、第二句只能段级兜底』仅适用于 v7；旧档案需重新对齐。沿用代码级已修复结论，真机待确认。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "完整源句/旧档案升级/缓存已集成；lookup异步代际与请求token根已实现、最终提交待冻结",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "独立7例先3红后绿；shared180含2skip/app48含9skip；集成lookup隔离由首轮7/1红到最新7/0/0/0",
+        "evidence": [
+          "t04",
+          "source_audit",
+          "reader_state",
+          "lookup_integrated"
+        ]
+      },
+      "device": {
+        "detail": "相邻真实查词/lookup异步完成顺序最终设备根复验中",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "真实配对长书仍未验",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根冻结lookup接线提交及设备顺序复验",
+        "真实旧档案/配对书覆盖"
+      ],
+      "traceable_commits": [
+        "b72750976f48c989736b4b5558851d583cc257d0",
+        "abab0068da92bfe4bd02284840b602735c854b21"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "t04",
+        "source_audit",
+        "reader_state",
+        "lookup_integrated"
+      ]
+    },
+    {
+      "id": "Q1-t05",
+      "title": "复习分母恒为五",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "0a04d2a 复习牌组给全部到期词（09-13 对账版清单回填，非 09-25 代码核查）"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用全到期牌组；新增8词完成回归",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "ReviewDeckProgressRegressionTest2/0/0/0含8词实际分母",
+        "evidence": [
+          "review_deck"
+        ]
+      },
+      "device": {
+        "detail": "实际复习牌组设备完成根复验中",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根最终复习牌组UI回归"
+      ],
+      "traceable_commits": [
+        "0a04d2ad455d09b4a2215c8b299e800f773fe268",
+        "96f531ba390010ab133e6e41252b82a130cdd1b2"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "review_deck"
+      ]
+    },
+    {
+      "id": "Q1-t06",
+      "title": "切滚动模式丢进度",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "5c36f2c 进滑动模式不丢进度"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用语义位置/布局切换恢复",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "ReaderScreenState33/0/0/0含位置/保存/滚动状态",
+        "evidence": [
+          "reader_state"
+        ]
+      },
+      "device": {
+        "detail": "配置重建在后续4例批次单项绿；分页↔滚动及重启完整矩阵根复验中",
+        "evidence": [
+          "device_overlap"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "分页/滚动切换和重启锚点最终复验"
+      ],
+      "traceable_commits": [
+        "5c36f2cd98a2534f708a674db3aa5d0cd4024afd"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "reader_state",
+        "device_overlap"
+      ]
+    },
+    {
+      "id": "Q1-t07",
+      "title": "短语内单词收藏标记",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "5c36f2c 形态展开（真机未验）"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "连续词组/空白/inline修复及独立单词数据入口集成；显式单词UI根收尾",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "标记shared56/app105无失败；真实保存/重建/删除工作流源码已交",
+        "evidence": [
+          "marks"
+        ]
+      },
+      "device": {
+        "detail": "API35词组空白/inline/顺序三法code0；primaryPhrase独立选择先前单项绿；最终显式单词入口根复验中",
+        "evidence": [
+          "device_marks_packs",
+          "device_overlap",
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根完成显式单词UI并复验真实收藏/标记反馈"
+      ],
+      "traceable_commits": [
+        "84dcc9d81803b4f8e33026775d74164e9c04d04b",
+        "a35d02fc25001921eb75e9f9849ca73e73e0d8d5",
+        "a66042b94491c53e020debb89caa09c57ddfc4ed",
+        "2761ca1243a0b19d00f436ab57e0b37e3383956c"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "marks",
+        "device_marks_packs",
+        "device_overlap",
+        "device_final"
+      ]
+    },
+    {
+      "id": "Q1-t08",
+      "title": "还原词与表面形",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "5c36f2c 形态展开（真机未验）"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "新词面观察API已以8b8f77f集成；生产lookup接线根已实现且旧go再点went真实设备绿",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "观察API后shared64/app105无失败，含8事务新增；根生产接线最终提交待冻结",
+        "evidence": [
+          "observed_forms"
+        ]
+      },
+      "device": {
+        "detail": "原旧go→went1红保留；最新API35原工作流code0，复习字段保持；完整保存/重建/删除另例因夹具坐标筛选失败待复跑",
+        "evidence": [
+          "device_old_surface",
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根冻结生产lookup接线SHA",
+        "完整保存/重建/删除工作流复跑",
+        "最终人工标记核对"
+      ],
+      "traceable_commits": [
+        "a35d02fc25001921eb75e9f9849ca73e73e0d8d5",
+        "2761ca1243a0b19d00f436ab57e0b37e3383956c",
+        "ee3f2c36218449ef8dce3116521c0c2c6b5f4d7a",
+        "8b8f77f756103cc6db73f85537061625caed0531"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "observed_forms",
+        "device_old_surface",
+        "device_final"
+      ]
+    },
+    {
+      "id": "Q1-t09",
+      "title": "高亮与可见义项一致",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "09-26：c4708fe 四处——①候选与释义面板同源（真实 WordLookup 句子/段落/偏移 + 词典包来源）；②语境优选义项接线 WordAligner.prefer（加成 0.30，只进排序分、不进 confidence，避免重新打开 BUG-039 位置护栏）；③阈值按候选长度分档（1/2/≥3 字 = 0.40/0.72/0.68，每档可拒绝）+ 先过闸再排序；④新增 WordAlignment.sourceSense，面板能把高亮词与来源义项互相指认（新增文案 reader_sense_aligned）。真机待确认"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "真实来源身份/第九义项有界呈现及UI已集成；lookup异步根收尾",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "shared23/app5无失败；root相关app16/0/0/0；最新lookup隔离7/0/0/0",
+        "evidence": [
+          "t09",
+          "t09_ui",
+          "lookup_integrated"
+        ]
+      },
+      "device": {
+        "detail": "API35真实ReaderDictionaryVisibility三法绿且截图已看；最终查词异步根复验中",
+        "evidence": [
+          "device_ui"
+        ]
+      },
+      "real_service": {
+        "detail": "无需联网即可验词典；真实配对译文覆盖仍有限",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根完成异步token最终复验",
+        "真实配对资料覆盖保留"
+      ],
+      "traceable_commits": [
+        "d5b7b39a01b4d8541199a1241889ab68f71fdc65",
+        "28b1ade92e4adac99c052bb42b11184e57a6f108"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "t09",
+        "t09_ui",
+        "device_ui",
+        "lookup_integrated"
+      ]
+    },
+    {
+      "id": "Q1-t10",
+      "title": "词性缩写",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "0a04d2a 词性缩写表补齐（09-13 对账版清单回填，非 09-25 代码核查）"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用已支持词类与双语展示映射",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "本轮未收集该项单独专项XML；全量基线/最终状态不能写绿",
+        "evidence": [
+          "canon",
+          "baseline"
+        ]
+      },
+      "device": {
+        "detail": "词性展示最终设备抽查待根",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根抽查adj/a与已支持词类及zh/en资源一致"
+      ],
+      "traceable_commits": [
+        "0a04d2ad455d09b4a2215c8b299e800f773fe268"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "canon",
+        "baseline"
+      ]
+    },
+    {
+      "id": "Q1-t11",
+      "title": "到期词独立下划线",
+      "canonical_before": {
+        "type": "功能需求",
+        "status": "已修复",
+        "basis": "11-23 代码复核（main b104022）：SavedWordMarks.of 按 nextReviewAt <= now 生成 forms/dueForms；ReaderScreen 经 EpubPage/ReaderController 将两份表注入，普通生词点线、到期词实线加粗，受 contextHighlight 开关控制。实现及既往单测记录见 VALIDATION.md 2026-10-03/04；真机样式、30s 到期切换、重复包裹及阅读位置仍待验，本轮未重跑。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "普通/到期/词组包含关系及XML节点边界修复已集成",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "标记shared56/app105无失败；真实timer设备测试源码已加入",
+        "evidence": [
+          "marks"
+        ]
+      },
+      "device": {
+        "detail": "API35标记矩阵9法均绿，含短语内独立due与XHTML；真实ReaderScreen30秒timer一法code0，2 due/1 plain无嵌套、review回未来；OS教程覆盖PNG，仅DOM计绿",
+        "evidence": [
+          "device_marks_packs",
+          "device_overlap",
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根补无遮挡PNG并人工核对样式/锚点",
+        "冻结最终构建身份"
+      ],
+      "traceable_commits": [
+        "d715287816f62274f03b6aded195235536a14b6b",
+        "a66042b94491c53e020debb89caa09c57ddfc4ed"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "marks",
+        "device_marks_packs",
+        "device_overlap",
+        "device_final"
+      ]
+    },
+    {
+      "id": "Q1-t12",
+      "title": "复习前五词循环",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "4f84e2a 记忆键改卡组身份，提交正文点名此现象"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用牌组身份记忆键；新增保存词更新不重置回归",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "ReviewDeckProgressRegressionTest2/0/0/0",
+        "evidence": [
+          "review_deck"
+        ]
+      },
+      "device": {
+        "detail": "逐卡记忆/遗忘完成8词真实UI根复验中",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根最终复习连续完成回归"
+      ],
+      "traceable_commits": [
+        "4f84e2a8b05304f0aebde85e3180df5e9f5e8209",
+        "96f531ba390010ab133e6e41252b82a130cdd1b2"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "review_deck"
+      ]
+    },
+    {
+      "id": "Q1-t13",
+      "title": "单词发音丢首音",
+      "canonical_before": {
+        "type": "bug",
+        "status": "部分实现",
+        "basis": "11-23 代码复核（main b104022）：MainActivity.rememberEnglishSpeaker 仍由 SpeechReadiness 等待系统 TTS 初始化后补播，覆盖初始化期请求丢失；常态偶发丢首音尚缺真机录音/听感复测，不能认定全部成因已排除。本轮未做运行验证。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "一次性TTS控制/旧回调隔离/可见错误已集成；症状根因尚未证明",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "SingleWordSpeaker20+SpeechReadiness4=24/0/0/0",
+        "evidence": [
+          "speech"
+        ]
+      },
+      "device": {
+        "detail": "API35真实发音失败反馈单项绿；不是真实首音录音验证",
+        "evidence": [
+          "device_ui"
+        ]
+      },
+      "real_service": {
+        "detail": "无首音对照录音/已批准听感结论",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "冷/热启动及三入口单词/词组录音对照",
+        "区分合成文件与实际输出首音"
+      ],
+      "traceable_commits": [
+        "fc8f19363948c7438417cc5172de7e1447518211",
+        "3e6adb6f6dfebfc2ee58603b83b26759a52a2638"
+      ],
+      "draft_conclusion": "待真实条件",
+      "evidence_refs": [
+        "speech",
+        "device_ui"
+      ]
+    },
+    {
+      "id": "Q2-01",
+      "title": "本版与跨版本改动",
+      "canonical_before": {
+        "type": "功能需求",
+        "status": "部分实现",
+        "basis": "11-23 代码复核（main b104022）：UpdateSheet 只在 AVAILABLE 路径展示本次更新的 releaseNotes，GitHubUpdateChecker 仍只取 /releases/latest；未实现『上次 release → 当前 release』跨版本改动汇总及已安装版本的常驻历史入口。旧启动弹层版本号不再作为本轮结论依据。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "历史分页/缓存/实际安装观测、真实资料身份与常驻入口已集成",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "shared update50/app相关24/工具5无失败；root入口19相关无失败",
+        "evidence": [
+          "history",
+          "history_shared",
+          "history_tool"
+        ]
+      },
+      "device": {
+        "detail": "API35断网入口/重建/已读单项绿；正式跨APK安装待真实发布",
+        "evidence": [
+          "device_history"
+        ]
+      },
+      "real_service": {
+        "detail": "没有新正式发布，未伪造说明",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "真实干净tag新发布及签名跨安装",
+        "最终UI/自动检查关闭零请求根复验"
+      ],
+      "traceable_commits": [
+        "31ca442665ba8672b1f6e4b3c70b59eaafc5b505",
+        "f7ff2c6d672384ca15498153f6d1e1d5be5f9729",
+        "1b7e36b6060333ce47a02bbdc7f1ef116499eaca"
+      ],
+      "draft_conclusion": "有专项证据，正式发布条件保留",
+      "evidence_refs": [
+        "history",
+        "device_history",
+        "history_shared",
+        "history_tool"
+      ]
+    },
+    {
+      "id": "Q2-c01",
+      "title": "对齐评估客观依据",
+      "canonical_before": {
+        "type": "非缺陷（消除）",
+        "status": "已消除",
+        "basis": "用户裁决「已实现」"
+      },
+      "code": {
+        "classification": "scope",
+        "detail": "按用户已实现裁决归档；不重开实验架构开发",
+        "status": "user_confirmed_scope_decision"
+      },
+      "automation": {
+        "detail": "基线含17缺语料实验失败与8skip，不能据此称评估全量绿",
+        "evidence": [
+          "canon",
+          "baseline"
+        ]
+      },
+      "device": {
+        "detail": "范围结论保留；生产回归按t01/t04另计",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "真实配对资料仍未提供",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "保留已确认范围结论",
+        "全量失败/缺语料如实列出"
+      ],
+      "traceable_commits": [
+        "b1040226f760070092f26f43f4a88316a380b19e"
+      ],
+      "draft_conclusion": "保留范围裁决",
+      "evidence_refs": [
+        "canon",
+        "baseline"
+      ]
+    },
+    {
+      "id": "Q2-c02",
+      "title": "资源包完善与范围闭环",
+      "canonical_before": {
+        "type": "功能需求",
+        "status": "部分实现",
+        "basis": "11-23 范围核对（main b104022）：PackType 有 dictionary/audio/voice/bundle，资源扩展已实现；功能型动态代码插件被 方案-资源包系统.md 第0节及『非目标』明确排除。保留原需求的『部分实现』口径，但动态插件不作为待修缺陷或默认后续开发任务。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "四类生命周期/生成器/失效音色消费已集成；OPENAI库出口补修d83c53b已集成，持久意图保留",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "资源包42/0，shared104/0；voice84/0；库出口相关43/0/0/0",
+        "evidence": [
+          "packs",
+          "voice",
+          "library"
+        ]
+      },
+      "device": {
+        "detail": "API35包4法及真实音色提示2法均code0；含PHRASES禁止重生成时旧包ORIGINAL/AUDIO_PACK_ORIGINAL、MediaPlayer完成与0合成、缺包回退/重装意图恢复",
+        "evidence": [
+          "device_marks_packs",
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "正弦样本不证明真人clone服务；国内源另见c03",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根最终设备/UI提交身份确认",
+        "真人clone服务试听、真实存储耗尽及硬杀恢复未验",
+        "国内部署按c03保留"
+      ],
+      "traceable_commits": [
+        "f2103a02f007a082b28b342d1712963b4bd10b32",
+        "2934ab7f652fda4d94a40e3d0e1106f32437927c",
+        "bed4ff2c3dd3d44d77afcae0348cc0e014271427",
+        "d83c53b951a2188c7444bfc7097554306c1c22ac"
+      ],
+      "draft_conclusion": "资源范围已裁决，根复验中",
+      "evidence_refs": [
+        "packs",
+        "voice",
+        "device_marks_packs",
+        "library",
+        "device_final"
+      ]
+    },
+    {
+      "id": "Q2-c03",
+      "title": "国内发行与资源源",
+      "canonical_before": {
+        "type": "功能需求",
+        "status": "部分实现",
+        "basis": "11-23 代码复核（main b104022）：资源包下载与更新检查仍由 GitHubUpdateChecker 的 api.github.com /releases/latest 引导，AppUpdateRepository 复用同源资源包资产；尚无面向用户的国内镜像或可配置发行/资源源。原生热修复目录支持不等于完成国内分发源。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "统一源/严格大小hash/来源UI及切换边界已集成；API23四处调用补修以0bfc27d集成",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "shared源35/目录工具5；来源边界app.update37/0；API23兼容shared update54/app.update37全0；独立审计4/0",
+        "evidence": [
+          "source",
+          "source_audit",
+          "compat",
+          "source_initial",
+          "source_tool",
+          "integrated_shared_api23"
+        ]
+      },
+      "device": {
+        "detail": "API35来源设置持久化单项绿；不代表国内实际下载",
+        "evidence": [
+          "source_device"
+        ]
+      },
+      "real_service": {
+        "detail": "用户暂无已部署国内源；未验GitHub不可达下真实下载",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根正式配置app全量复验",
+        "真实已部署HTTPS国内源",
+        "国内网络/GitHub不可达/完整下载验收"
+      ],
+      "traceable_commits": [
+        "7b440738cd6f9ae1f28948d245605637b4b2a951",
+        "78016071cc65a90e899494028d6d68aa28c5f7e3",
+        "a6ca6f147e6105b66d44fca839836e27ea76f1e0",
+        "5ee310f0ef390b2cc409f1b7c130f1f033e083d8",
+        "0bfc27dfd7280ebc0920c4a3064e7246f50756c5"
+      ],
+      "draft_conclusion": "待真实条件",
+      "evidence_refs": [
+        "source",
+        "source_audit",
+        "source_device",
+        "compat",
+        "source_initial",
+        "source_tool",
+        "integrated_shared_api23"
+      ]
+    },
+    {
+      "id": "Q2-c04a",
+      "title": "听书降级提示",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "09-25 复验：ad7cb05（09-13 20:18）降级原因接成听书条可见提示，字段名 degradedReason（台账按 fallbackLevel 检索漏判）；30d62ca 加映射护栏"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用degradedReason可见回退/暂停状态；本轮增加韵律/音色提示边界",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "TTS runtime shared123/app83相关无失败，非真实引擎失败听感",
+        "evidence": [
+          "prosody"
+        ]
+      },
+      "device": {
+        "detail": "API35缺包实际播放回退及设置/试听可见反馈两法code0；通用云→系统/连续失败暂停仍缺真实服务闭环",
+        "evidence": [
+          "device_ui",
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "已授权真实引擎降级未验",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "真实通用引擎降级/连续失败暂停场景",
+        "根冻结可见提示接线SHA"
+      ],
+      "traceable_commits": [
+        "ad7cb05567f9221a80b18e85995013c03ff53826",
+        "30d62ca20b94532c0fde8124a70580245e89ead4",
+        "dbdf5b9a4ae37a2d98208ec4aa5c250454d2d857",
+        "bed4ff2c3dd3d44d77afcae0348cc0e014271427"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "prosody",
+        "device_ui",
+        "device_final"
+      ]
+    },
+    {
+      "id": "Q2-c04b",
+      "title": "句内停顿与韵律",
+      "canonical_before": {
+        "type": "功能需求",
+        "status": "部分实现",
+        "basis": "11-23 代码复核（main b104022）：TtsPlaybackEngine 保留 250ms 句末停顿，片段播放共用 speechRate；应用侧尚无句内标点停顿与局部快慢节奏控制。本条描述应用编排能力，不否定语音模型自身的韵律。本轮未重新试听。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "默认ORIGINAL/可选PHRASES、配置缓存身份、会话许可及设置入口已集成",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "shared123/app83无失败；后续voice84相关回归无失败",
+        "evidence": [
+          "prosody",
+          "voice"
+        ]
+      },
+      "device": {
+        "detail": "API35设置保存且idle不启动绿；真实Cloud/MediaPlayer旧包在PHRASES且禁止重生成时ORIGINAL/AUDIO_PACK_ORIGINAL完成与0合成均绿",
+        "evidence": [
+          "device_ui",
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "真实系统/实云人声停顿与倍率听感未验",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "真实人声长听/候选100/160ms与0.96倍率试听",
+        "已授权服务及明确听感验收"
+      ],
+      "traceable_commits": [
+        "afef99eac6822223fbaef72ddf12e7f06d694959",
+        "7b45d57d7573aa4106585e6fc50c9c65fa4017e2",
+        "dbdf5b9a4ae37a2d98208ec4aa5c250454d2d857"
+      ],
+      "draft_conclusion": "代码/自动化已实现，听感待验",
+      "evidence_refs": [
+        "prosody",
+        "voice",
+        "device_ui",
+        "device_final"
+      ]
+    },
+    {
+      "id": "Q2-c04c",
+      "title": "英文撇号断句",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "09-25 定位并修复：原「不可复现」是只测分句器一层的漏测——QuoteSpans.normalizeQuotes 把词内 U+2019 折成引号→TtsChapter 在撇号处裂段、后半段误判 dialogue。已按「词内 ’ = 撇号」豁免 + QuoteSpansTest 8 例（红 6 失败→绿），TtsPipelineContract.VERSION 2→3"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用词内撇号保护及pipeline3；本轮运行时不改持久映射",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "QuoteSpans8、SentenceSplitter27、TtsChapter8包含于shared123无失败",
+        "evidence": [
+          "prosody"
+        ]
+      },
+      "device": {
+        "detail": "本轮未单独取得撇号混合引号真人音频；包codec不等于语言听感",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "无需远程逻辑验证；真实听感仍未验",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根抽查her’s/don’t/ASCII混排",
+        "不能把新part缓存冒充旧包兼容"
+      ],
+      "traceable_commits": [
+        "b2548102fd5b551f4ae63ae1692e24a61a5ae36a",
+        "7b45d57d7573aa4106585e6fc50c9c65fa4017e2"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "prosody"
+      ]
+    },
+    {
+      "id": "Q2-c05",
+      "title": "词组收藏反馈一致",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "11-23 代码复核（main b104022）：AppViewModel.saveWord 的全局 notice 与 ReaderScreen 的收藏内联反馈均使用 entry.matchedPhrase ?: entry.headword，已与词组落库语义同源；移除『提示仍用 lookup.word』的旧判断。确认的是收藏反馈路径；系统通知/听书条的旧定位不再作为缺陷依据，真机反馈仍待复测。"
+      },
+      "code": {
+        "classification": "updated",
+        "detail": "按实际入库对象反馈、请求token隔离、移除真实成功/失败已集成",
+        "status": "implemented_pending_integrated_revalidation"
+      },
+      "automation": {
+        "detail": "收藏53/0/0/0；异步lookup由首轮7/1红到最新7/0/0/0，最终生产提交待根冻结",
+        "evidence": [
+          "feedback",
+          "source_audit",
+          "lookup_integrated"
+        ]
+      },
+      "device": {
+        "detail": "API35词组落库/复习反馈单项后续绿；显式单词UI/异步最后复验中",
+        "evidence": [
+          "device_marks_packs"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根完成lookup异步/显式单词UI、最终保存/失败/移除交互复验"
+      ],
+      "traceable_commits": [
+        "455aedea6f7d2962efdcfd814e5678b76a7b4b2b",
+        "84dcc9d81803b4f8e33026775d74164e9c04d04b"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "feedback",
+        "device_marks_packs",
+        "source_audit",
+        "lookup_integrated"
+      ]
+    },
+    {
+      "id": "Q2-c06",
+      "title": "提醒与复习上限",
+      "canonical_before": {
+        "type": "功能需求",
+        "status": "已修复",
+        "basis": "09-25 复验：f206a54 每日上限改 1–10 步进器并经 ReviewReminder.kt:35 dailyPromptLimit 生效；『单次复习上限』按裁决删除（Q1-t05 后不再截断牌组）"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用每日1–10上限；按裁决不恢复单次五词截断",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "八词牌组2例绿，仅证明牌组；提醒实际调度本轮无专项结果",
+        "evidence": [
+          "review_deck",
+          "review_baseline"
+        ]
+      },
+      "device": {
+        "detail": "每日次数/权限/提醒渠道真实触发待根",
+        "evidence": []
+      },
+      "real_service": {
+        "detail": "不需远程服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根复验每日上限与提醒实际触发",
+        "不拿8词测试当提醒证明"
+      ],
+      "traceable_commits": [
+        "f206a54bd8ab7bf9225a0f45f595f1124b971e94",
+        "96f531ba390010ab133e6e41252b82a130cdd1b2"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "review_deck",
+        "review_baseline"
+      ]
+    },
+    {
+      "id": "Q2-c07",
+      "title": "书架整体主题",
+      "canonical_before": {
+        "type": "功能需求",
+        "status": "已修复",
+        "basis": "09-25 复验：0d0b489 把 ReaderThemePicker 放进书架外观弹层、34ecf1d 接通 onReaderThemeChange→paletteFor；真机切夜间书架亮度 0.916→0.355"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用外观入口/画境与现行皮肤运行时",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "SkinPicker两视觉失败独立判定为既有，三路PNG一致；不能据此写全量绿",
+        "evidence": [
+          "validation",
+          "skin_audit"
+        ]
+      },
+      "device": {
+        "detail": "历史正式版主题记录保留；本轮深色标记样本绿，书架即时切换根抽查中",
+        "evidence": [
+          "device_marks_packs"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远程服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根抽查日夜书架/外壳主题一致与可读"
+      ],
+      "traceable_commits": [
+        "0d0b489e7f726e5bfb6ead81fa0262408ca4c2c6",
+        "34ecf1d48947249ee827c7198e6594ed3179bb98",
+        "ad20253d581e486c14563122acdafe8ca6f20651"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "validation",
+        "device_marks_packs",
+        "skin_audit"
+      ]
+    },
+    {
+      "id": "Q2-c08",
+      "title": "生词本返回导航",
+      "canonical_before": {
+        "type": "bug",
+        "status": "已修复",
+        "basis": "09-25 复验：1efc523（09-13 21:57，晚于台账）BackHandler + if(!showVocabulary) 隐藏书架专属顶栏；真机 BACK 回书架、顶栏 6→1"
+      },
+      "code": {
+        "classification": "baseline",
+        "detail": "沿用BackHandler/独立顶栏；新增同Activity返回与重入设备用例",
+        "status": "existing_implementation_pending_revalidation"
+      },
+      "automation": {
+        "detail": "真实VocabularyNavigationAcceptanceTest两法已加入并在API35执行，见设备列",
+        "evidence": [
+          "canon"
+        ]
+      },
+      "device": {
+        "detail": "API35系统返回到同一书架Activity并重入、生词本独立动作两法均code0",
+        "evidence": [
+          "device_final"
+        ]
+      },
+      "real_service": {
+        "detail": "不需远端服务",
+        "evidence": []
+      },
+      "unfinished_conditions": [
+        "根冻结最终设备构建身份",
+        "边缘返回如另测则补证"
+      ],
+      "traceable_commits": [
+        "1efc523eadd09092a7b7a46264ede34c82c52323",
+        "96f531ba390010ab133e6e41252b82a130cdd1b2"
+      ],
+      "draft_conclusion": "根复验中",
+      "evidence_refs": [
+        "canon",
+        "device_final"
+      ]
+    }
+  ]
+}
