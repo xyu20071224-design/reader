@@ -34,7 +34,7 @@ class HttpReleaseTransport(
             require(maxBytes in 1..MAX_METADATA_BYTES)
             val connection = open(url, policy)
             try {
-                val declared = connection.contentLengthLong.takeIf { it >= 0 }
+                val declared = ReleaseContentLength.read(connection).takeIf { it >= 0 }
                 check(declared == null || declared <= maxBytes) { "Release response is too large" }
                 val output = ByteArrayOutputStream()
                 connection.inputStream.use { input ->
@@ -71,7 +71,7 @@ class HttpReleaseTransport(
         try {
             val connection = open(asset.transportUrl, policy)
             try {
-                val declared = connection.contentLengthLong.takeIf { it >= 0 }
+                val declared = ReleaseContentLength.read(connection).takeIf { it >= 0 }
                 check(declared == null || declared <= maxBytes) { "Asset exceeds download limit" }
                 check(asset.bytes == null || declared == null || declared == asset.bytes) { "Asset size mismatch" }
                 val digest = MessageDigest.getInstance("SHA-256")

@@ -8,6 +8,7 @@ import com.linguareader.shared.update.GitHubReleaseSource
 import com.linguareader.shared.update.HttpReleaseTransport
 import com.linguareader.shared.update.ReleaseHttpTransport
 import com.linguareader.shared.update.ReleaseAsset
+import com.linguareader.shared.update.ReleaseContentLength
 import com.linguareader.shared.update.ReleaseRecord
 import com.linguareader.shared.update.ReleaseSource
 import com.linguareader.shared.update.ReleaseUrls
@@ -228,7 +229,7 @@ class AppUpdateRepository(
                 if (connection.responseCode !in 200..299) {
                     error("下载失败（HTTP ${connection.responseCode}）")
                 }
-                val total = connection.contentLengthLong
+                val total = ReleaseContentLength.read(connection)
                 val buffer = ByteArray(BUFFER_SIZE)
                 var written = 0L
                 var lastReported = -1
@@ -324,7 +325,7 @@ class AppUpdateRepository(
                 if (connection.responseCode !in 200..299) {
                     error("下载失败（HTTP ${connection.responseCode}）")
                 }
-                val total = connection.contentLengthLong
+                val total = ReleaseContentLength.read(connection)
                 val buffer = ByteArray(BUFFER_SIZE)
                 var written = 0L
                 var lastReported = -1

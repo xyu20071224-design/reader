@@ -45,7 +45,8 @@ class ReleaseSourceTransitionTest {
             override fun disconnect() = Unit
             override fun usingProxy() = false
             override fun getResponseCode() = 200
-            override fun getContentLengthLong() = body.size.toLong()
+            override fun getHeaderField(name: String?) = if (name.equals("Content-Length", true)) body.size.toString() else null
+            override fun getContentLengthLong(): Long = throw NoSuchMethodError("API23 must use the HTTP header")
             override fun getHeaderFields(): Map<String, List<String>> = emptyMap()
             override fun getInputStream() = if (onRead == null) ByteArrayInputStream(body) else object : ByteArrayInputStream(body) {
                 override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
