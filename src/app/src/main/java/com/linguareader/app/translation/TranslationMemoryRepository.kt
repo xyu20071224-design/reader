@@ -9,6 +9,8 @@ import com.linguareader.app.data.DictionaryRepository
 import com.linguareader.app.data.WordLookup
 import com.linguareader.app.tts.TtsTextExtractor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -24,15 +26,22 @@ import java.io.RandomAccessFile
  * 用与听书相同的叶级选择器 [TtsTextExtractor] 抽取段落、读写对齐档案，并把
  * **查询索引按书缓存**（否则每次点词都要重读整份档案）。
  */
-class TranslationMemoryRepository(
+class TranslationMemoryRepository private constructor(
     private val application: Application,
     /**
      * 活动词典包的文件；null = 用内置。必须与查词面板（`AppViewModel.dictionary`）
      * **同一来源**：Q1-t09 ① 的病因就是「对齐候选」与「面板义项」是两条不同源的
      * 候选集合，剩下最后这一点差异（同一份词典）不齐，装了词典包的用户仍会错配。
      */
-    dictionarySource: () -> File? = { null }
+    dictionarySource: () -> File?,
+    private val archive: TranslationMemoryArchive
 ) : BookScopedStore {
+
+    constructor(application: Application, dictionarySource: () -> File? = { null }) :
+        this(application, dictionarySource, TranslationMemoryArchive())
+
+    internal constructor(application: Application, archive: TranslationMemoryArchive) :
+        this(application, { null }, archive)
 
     private val translationsDir = File(application.filesDir, "translations")
     private val memoryDir = File(application.filesDir, "translation-memory")
@@ -72,7 +81,7 @@ class TranslationMemoryRepository(
     private var cachedBookId: String? = null
     private var cachedIndex: TranslationMemoryIndex? = null
 
-    fun hasMemory(bookId: String): Boolean = memoryFile(bookId).isFile
+    fun hasMemory(bookId: String): Boolean = archive.exists(memoryFile(bookId))
 
     /**
      * 该书的对齐档案是否由更旧的对齐器写出（[TranslationMemory.isOutdated]）。
@@ -84,10 +93,14 @@ class TranslationMemoryRepository(
      * [TranslationMemory.isOutdated] 给最终答案 —— 慢但正确，绝不会给出错判。
      */
     suspend fun isMemoryOutdated(bookId: String): Boolean = withContext(Dispatchers.IO) {
-        val file = memoryFile(bookId)
-        if (!file.isFile) return@withContext false
-        trailingAlignerVersion(file)?.let { return@withContext it < TranslationAligner.VERSION }
-        load(bookId)?.isOutdated() ?: false
+        cacheLock.withLock {
+            val file = memoryFile(bookId)
+            if (!archive.exists(file)) return@withLock false
+            // 旧 Android 写入中断时 .bak 才是完整版本，不能先从半写的主文件快读版本号。
+            if (archive.hasBackup(file)) return@withLock load(bookId)?.isOutdated() ?: false
+            trailingAlignerVersion(file)?.let { return@withLock it < TranslationAligner.VERSION }
+            load(bookId)?.isOutdated() ?: false
+        }
     }
 
     /** 导入中文译本并与英文书对齐；耗时较长（整本小说量级为数十秒），在 IO 上跑。 */
@@ -113,14 +126,10 @@ class TranslationMemoryRepository(
         // 正文目录删掉，侧车会跟着一起没。
         importBundledSentenceLines(book, translationBook)
         val memory = buildMemory(book, translationBook)
-        save(memory)
+        publish(memory)
         // 只有档案确认落盘，才允许丢正文。
         if (memoryFile(memory.sourceBookId).isFile) {
             discardTranslationBodyIfRedundant(translationBook)
-        }
-        cacheLock.withLock {
-            cachedBookId = memory.sourceBookId
-            cachedIndex = TranslationMemoryIndex(memory)
         }
         return AttachTranslationResult(translationBook = translationBook, memory = memory)
     }
@@ -191,7 +200,7 @@ class TranslationMemoryRepository(
 
     /** 读取整份档案（句级重翻需要原文、所在段落与上下文）。 */
     suspend fun memoryFor(bookId: String): TranslationMemory? = withContext(Dispatchers.IO) {
-        load(bookId)
+        cacheLock.withLock { load(bookId) }
     }
 
     /**
@@ -205,7 +214,7 @@ class TranslationMemoryRepository(
         pairIndex: Int,
         newZh: String
     ): TranslationMemory? = withContext(Dispatchers.IO) {
-        val memory = load(bookId) ?: return@withContext null
+        val memory = cacheLock.withLock { load(bookId) } ?: return@withContext null
         val pair = memory.pairs.getOrNull(pairIndex) ?: return@withContext null
         val trimmed = newZh.trim()
         if (trimmed.isEmpty()) return@withContext null
@@ -214,11 +223,7 @@ class TranslationMemoryRepository(
                 it[pairIndex] = pair.copy(zhSentence = trimmed)
             }
         )
-        save(updated)
-        cacheLock.withLock {
-            cachedBookId = updated.sourceBookId
-            cachedIndex = TranslationMemoryIndex(updated)
-        }
+        publish(updated)
         updated
     }
 
@@ -282,14 +287,23 @@ class TranslationMemoryRepository(
         val claimed = books.mapNotNull { it.translationBookId.takeIf(String::isNotBlank) }.toSet() +
             books.map { Book.AI_TRANSLATION_ID_PREFIX + it.id }.toSet()
         val memoryOrphans = memoryDir.listFiles().orEmpty()
-            .filter { it.name.removeSuffix(".json") !in known }
+            .filter {
+                it.name.removeSuffix(".bak").removeSuffix(".new").removeSuffix(".tmp")
+                    .removeSuffix(".json") !in known
+            }
         val bodyOrphans = translationsDir.listFiles().orEmpty()
             .filter { it.name !in claimed }
         return memoryOrphans + bodyOrphans
     }
 
     suspend fun remove(book: Book) = withContext(Dispatchers.IO) {
-        memoryFile(book.id).delete()
+        cacheLock.withLock {
+            archive.delete(memoryFile(book.id))
+            if (cachedBookId == book.id) {
+                cachedBookId = null
+                cachedIndex = null
+            }
+        }
         // 译本正文目录有两种命名：
         //  - 导入的出版译本 = 源文件内容哈希，只能靠 metadata 里的 translationBookId 找回；
         //  - AI 生成译本 = 前缀 + 原书 id，**可以从书本身推出来**。
@@ -300,12 +314,6 @@ class TranslationMemoryRepository(
             File(translationsDir, book.translationBookId).deleteRecursively()
         }
         File(translationsDir, Book.AI_TRANSLATION_ID_PREFIX + book.id).deleteRecursively()
-        cacheLock.withLock {
-            if (cachedBookId == book.id) {
-                cachedBookId = null
-                cachedIndex = null
-            }
-        }
     }
 
     private suspend fun index(bookId: String): TranslationMemoryIndex? = cacheLock.withLock {
@@ -337,7 +345,7 @@ class TranslationMemoryRepository(
      *   可还原的中文段落；重跑结果为空而旧档案非空。
      */
     suspend fun realign(book: Book): TranslationMemory? = withContext(Dispatchers.IO) {
-        val existing = load(book.id) ?: return@withContext null
+        val existing = cacheLock.withLock { load(book.id) } ?: return@withContext null
         val zhChapters = archivedZhChapters(existing)
         if (zhChapters.isEmpty()) return@withContext null
         val updated = buildMemory(
@@ -347,11 +355,7 @@ class TranslationMemoryRepository(
             translationTitle = existing.translationTitle
         )
         if (updated.pairs.isEmpty() && existing.pairs.isNotEmpty()) return@withContext null
-        save(updated)
-        cacheLock.withLock {
-            cachedBookId = updated.sourceBookId
-            cachedIndex = TranslationMemoryIndex(updated)
-        }
+        publish(updated)
         updated
     }
 
@@ -448,21 +452,28 @@ class TranslationMemoryRepository(
     /** 词义锚点查询（延迟打开 ecdict 副本，单词缓存）。 */
     private val meaningIndex: MeaningIndex by lazy { EcdictMeaningIndex(application) }
 
-    private fun save(memory: TranslationMemory) {
+    private suspend fun publish(memory: TranslationMemory) {
+        val context = currentCoroutineContext()
+        context.ensureActive()
+        // 索引与 JSON 先准备好；失败或取消都不能发生在“文件已换、缓存还没换”的空隙。
+        val index = TranslationMemoryIndex(memory)
+        val text = memory.toJson().toString()
+        context.ensureActive()
         memoryDir.mkdirs()
         val file = memoryFile(memory.sourceBookId)
-        val temp = File(file.parentFile, "${file.name}.tmp")
-        temp.writeText(memory.toJson().toString())
-        if (!temp.renameTo(file)) {
-            file.writeText(temp.readText())
-            temp.delete()
+        cacheLock.withLock {
+            context.ensureActive()
+            archive.write(file, text) { context.ensureActive() }
+            // 提交成功即同步发布缓存，后面不再有可被取消的挂起点。
+            cachedBookId = memory.sourceBookId
+            cachedIndex = index
         }
     }
 
     private fun load(sourceBookId: String): TranslationMemory? {
         val file = memoryFile(sourceBookId)
-        if (!file.isFile) return null
-        return runCatching { TranslationMemory.fromJson(JSONObject(file.readText())) }.getOrNull()
+        if (!archive.exists(file)) return null
+        return runCatching { TranslationMemory.fromJson(JSONObject(archive.read(file))) }.getOrNull()
     }
 
     private fun memoryFile(sourceBookId: String) = File(memoryDir, "$sourceBookId.json")

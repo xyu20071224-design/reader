@@ -115,4 +115,38 @@ class AiBatchSentenceBoundaryIntegrityTest {
         )
         assertEquals(sourceSentences.zip(chinese), pairs.map { it.enSentence to it.zhSentence })
     }
+
+    @Test
+    fun `restoring split chunk boundaries fixes the target one to many translation fixture`() {
+        val english = listOf(
+            "The first small bird flew away and crossed the forest.",
+            "The second small bird stayed here and did not leave.",
+            "The third small bird found its home and was very happy.",
+            "The fourth small bird sang again and its song reached far away."
+        )
+        val chinese = listOf(
+            "第一只小鸟飞走了。它穿过了树林。",
+            "第二只小鸟留在这里。它没有离开。",
+            "第三只小鸟找到了家。它十分开心。",
+            "第四只小鸟再次唱歌。歌声传到了远方。"
+        )
+        val paragraph = english.joinToString(" ")
+        val batches = AiBookTranslator.groupIntoBatches(0, listOf(paragraph), 80)
+        val replies = batches.map { batch -> batch.paragraphs.map { chinese[english.indexOf(it)] } }
+        val merged = AiBookTranslator.mergeBatchTranslations(batches, replies, listOf(paragraph))
+        val zhParagraph = AiBookTranslator.normalizeParagraphKey(merged.single())
+        val legacy = AiBookTranslator.sentenceBoundaries(listOf(paragraph), merged)
+        val restored = AiBookTranslator.sentenceBoundariesFromBatches(batches, replies, listOf(paragraph))
+        val expected = english.zip(chinese).toMap()
+        fun correct(known: Map<String, List<String>>) = TranslationAligner.align(
+            listOf(listOf(paragraph)), listOf(listOf(zhParagraph)), null,
+            TranslationAligner.ZhSplitPolicy.withKnownSentences(known)
+        ).count { pair -> expected[pair.enSentence] == pair.zhSentence }
+
+        val before = correct(legacy)
+        val after = correct(restored)
+        assertEquals(4, after)
+        assertTrue("目标夹具应实际改善，旧=$before，新=$after", before < after)
+        println("[q1-t01 fixed fixture] correct sentence pairs: $before/4 -> $after/4 (synthetic, no meaning index)")
+    }
 }
