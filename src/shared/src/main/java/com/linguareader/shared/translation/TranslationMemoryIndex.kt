@@ -1,5 +1,7 @@
 package com.linguareader.shared.translation
 
+import com.linguareader.shared.tts.SentenceSplitter
+
 /**
  * 译本查询索引：按章节分桶 + 预归一化英文句/段落，**一本书构建一次**，之后
  * 每次点词只在本章桶里查。
@@ -10,7 +12,7 @@ package com.linguareader.shared.translation
  *
  * 匹配顺序（与 [TranslationMemorySearch] 文档一致）：
  *  1. 精确段落 + 精确句子（句子级，最高置信）
- *  2. 段落候选内的精确句子（句子级）
+ *  2. 精确句子（句子级；已知段落缺句时不借别段）
  *  3. 句子重叠（同一段落内、英文句互相包含，**且两侧同粒度**）→ 句子级
  *  4. 句子级模糊（同章内相似度达阈值的句子）→ 句子级
  *  5. 兜底：对应段落（段落级）
@@ -33,7 +35,7 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
     private val byChapter: Map<Int, List<Entry>> = build()
 
     /**
-     * 是否对**旧档案**启用第 3 级「并合英文句片段」护栏。
+     * 是否对**旧档案**启用第 3、4 级「并合英文句片段」护栏。
      *
      * v7 起英文侧恒为单句（[TranslationAligner.EN_SINGLE_SENTENCE_SINCE]，Q1-t04），
      * 落盘句对不可能再是并合形态。对 v7+ 档案继续套终止符游程启发式，会把含缩写点、
@@ -62,6 +64,22 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
                 it.sentence == nSentence && it.paragraph == nParagraph
         }?.let { return toResult(it, TranslationMatchLevel.SENTENCE) }
 
+        val paragraphEntries = entries.filter { it.paragraph == nParagraph }
+        // 精确命中已排除。如果查询确为已知原段中的一个完整句子，缺少它的句对不等于
+        // 它是相邻长句的片段，也不能借用别段的同文句。直接保留本段译文的真实粒度。
+        // v7+ 的整段单句条目是可信的单句档案：即使含缩写/引语终止符，也必须保留
+        // 对其中真实片段的查询，不能再次套旧档案的终止符启发式。
+        val trustedWholeParagraphSentence = !guardsLegacyMergedEnglish && paragraphEntries.any {
+            it.sentence.isNotBlank() && it.sentence == nParagraph
+        }
+        val missingCompleteSentence = nSentence.isNotBlank() &&
+            !trustedWholeParagraphSentence && paragraphEntries.firstOrNull()?.let { entry ->
+                SentenceSplitter.split(entry.pair.enParagraph).any {
+                    TranslationMemorySearch.normalize(it) == nSentence
+                }
+            } == true
+        if (missingCompleteSentence) return paragraphFallback(paragraphEntries)
+
         // 2) 精确句子（任意段落，优先同段落）
         val bySentence = entries.filter {
             it.sentence.isNotBlank() && nSentence.isNotBlank() && it.sentence == nSentence
@@ -74,7 +92,7 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
         //    （enSentence = "A. B."）时，用户点 B 也会命中 contains —— 但那条译文
         //    是并合句的译文，整条按 SENTENCE 返回就是错标（「长句只翻译了其中一句」
         //    的主诉之一）。查询句只是并合句的片段时不算第 3 级命中，放它继续走
-        //    第 4/5 级：第 5 级给整段 + PARAGRAPH，UI 有「段级（未定位到句）」文案。
+        //    第 5 级：给整段 + PARAGRAPH，UI 有「段级（未定位到句）」文案。
         //    **v7 起英文侧恒为单句**，故该判定只在 [guardsLegacyMergedEnglish] 时启用：
         //    对 v7+ 档案再用游程启发式，会把含缩写点/问号+句号的普通单句误判成并合句，
         //    把同一句的真子串查询降级成整段（金标准 8 条实测）。
@@ -93,6 +111,10 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
             var bestSimilarity = TranslationMemorySearch.FUZZY_MIN_SIMILARITY
             for (entry in entries) {
                 if (entry.sentence.isBlank()) continue
+                // 不能让 Dice 的去重 token 集绕过第 3 级的旧档案粒度护栏。
+                if (guardsLegacyMergedEnglish &&
+                    TranslationMemorySearch.isCrossSentenceFragment(entry.pair.enSentence, sentence)
+                ) continue
                 val similarity = TranslationMemorySearch.similarity(
                     queryTokens,
                     TranslationMemorySearch.tokenSet(entry.sentence)
@@ -110,10 +132,14 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
         // 条目，也展示完整 zhParagraph：兜底就是「这段的译文大致是这些」，
         // 单条句对在段落对不上的前提下面临的是错位句，残句比整段更误导
         // （「长句只翻译了其中一句」的主诉之一就是这里）。
-        entries.firstOrNull { it.paragraph == nParagraph }
+        return paragraphFallback(paragraphEntries)
+    }
+
+    private fun paragraphFallback(entries: List<Entry>): TranslationLookupResult? =
+        entries.firstOrNull()
             ?.takeIf { it.pair.confidence >= TranslationMemorySearch.MIN_ACCEPT_CONFIDENCE }
             ?.let {
-                return TranslationLookupResult(
+                TranslationLookupResult(
                     translationTitle = memory.translationTitle,
                     english = it.pair.enSentence.ifBlank { it.pair.enParagraph },
                     chinese = it.pair.zhParagraph,
@@ -124,9 +150,6 @@ class TranslationMemoryIndex(private val memory: TranslationMemory) {
                     englishParagraph = it.pair.enParagraph
                 )
             }
-
-        return null
-    }
 
     private fun build(): Map<Int, List<Entry>> {
         // 同一段落的多条句对共享同一份归一化文本。
@@ -262,7 +285,7 @@ object TranslationMemorySearch {
      * 纯函数，参数都应当是**未归一化**的原文（[normalize] 会把终止符抹成空格）。
      *
      * **只用于 v7 之前的旧档案**（判据 [TranslationAligner.EN_SINGLE_SENTENCE_SINCE]，调用点
-     * 见 [TranslationMemoryIndex.lookup] 第 3 级）：v7 起落盘英文侧恒为单句，本启发式对
+     * 见 [TranslationMemoryIndex.lookup] 第 3、4 级）：v7 起落盘英文侧恒为单句，本启发式对
      * v7+ 档案只会误伤普通单句。
      */
     fun isCrossSentenceFragment(stored: String, query: String): Boolean {
