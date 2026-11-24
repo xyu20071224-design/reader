@@ -39,6 +39,10 @@ class VocabularyRepository(context: Context) : BookScopedStore {
         aiResult: AiLookupResult? = null
     ): List<SavedWord> = shared.save(book, chapterTitle, lookup, entry, pace, aiResult)
 
+    suspend fun rememberSurfaceForms(
+        entries: List<ContextualDictionaryEntry>
+    ): com.linguareader.shared.data.VocabularySurfaceFormsUpdate = shared.rememberSurfaceForms(entries)
+
     override val storeId: String get() = shared.storeId
 
     override fun storageRoots(): List<File> = shared.storageRoots()

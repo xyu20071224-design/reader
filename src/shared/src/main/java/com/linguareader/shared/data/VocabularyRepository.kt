@@ -10,6 +10,8 @@ import org.json.JSONArray
 import java.io.File
 import java.util.Locale
 
+data class VocabularySurfaceFormsUpdate(val savedWords: List<SavedWord>, val changed: Boolean)
+
 class VocabularyRepository(private val appContext: AppContext) : BookScopedStore {
     private val vocabularyFile = File(appContext.filesDir, "vocabulary.json")
     private val mutex = Mutex()
@@ -41,15 +43,9 @@ class VocabularyRepository(private val appContext: AppContext) : BookScopedStore
             val id = headword.lowercase(Locale.ROOT)
             val now = System.currentTimeMillis()
             val existing = current.firstOrNull { it.id == id }
-            val phrase = headword.trim().any(Char::isWhitespace)
             // 同一个词可能以不同形态被查到（study / studied / studying），逐次累积，
             // 供阅读页做整词高亮；原型本身单独传，不必重复存。
-            val surfaceForms = (existing?.surfaceForms.orEmpty() + entry.surfaceWord)
-                .map { it.trim() }
-                .filter { it.isNotBlank() && !it.equals(headword, ignoreCase = true) }
-                .filter { !phrase || it.any(Char::isWhitespace) }
-                .distinctBy { it.lowercase(Locale.ROOT) }
-                .takeLast(MAX_SURFACE_FORMS)
+            val surfaceForms = mergeSurfaceForms(headword, existing?.surfaceForms.orEmpty(), listOf(entry.surfaceWord))
             val saved = SavedWord(
                 id = id,
                 headword = headword,
@@ -75,6 +71,47 @@ class VocabularyRepository(private val appContext: AppContext) : BookScopedStore
             sorted(updated)
         }
     }
+
+    /**
+     * Learns real dictionary-resolved surfaces only for existing IDs, without changing their
+     * meaning, original context or review progress. Callers may pass word/primary/related entries
+     * together. No new valid form means no write (including no updatedAt change). `changed`
+     * reports a successful write; [VocabularySurfaceFormsUpdate.savedWords] is the current snapshot
+     * even on a no-op. IO failures propagate so lookup can keep its dictionary result separately.
+     */
+    suspend fun rememberSurfaceForms(entries: List<ContextualDictionaryEntry>): VocabularySurfaceFormsUpdate =
+        withContext(Dispatchers.IO) {
+            mutex.withLock {
+                val current = read()
+                val byId = entries.filter { (it.matchedPhrase ?: it.headword).isNotBlank() }
+                    .groupBy { (it.matchedPhrase ?: it.headword).lowercase(Locale.ROOT) }
+                var changed = false
+                val now = System.currentTimeMillis()
+                val updated = current.map { old ->
+                    val candidates = byId[old.id] ?: return@map old
+                    val known = (old.surfaceForms + old.headword).map(::surfaceKey).toSet()
+                    val newForms = candidates.map { it.surfaceWord.trim() }
+                        .filter { validSurfaceForm(old.headword, it) && surfaceKey(it) !in known }
+                        .distinctBy(::surfaceKey)
+                    if (newForms.isEmpty()) old else {
+                        changed = true
+                        old.copy(surfaceForms = mergeSurfaceForms(old.headword, old.surfaceForms, newForms), updatedAt = now)
+                    }
+                }
+                if (changed) write(updated)
+                VocabularySurfaceFormsUpdate(sorted(updated), changed)
+            }
+        }
+
+    private fun surfaceKey(value: String): String = value.trim().replace(SURFACE_WHITESPACE, " ").lowercase(Locale.ROOT)
+
+    private fun validSurfaceForm(headword: String, form: String): Boolean =
+        form.isNotBlank() && surfaceKey(form) != surfaceKey(headword) &&
+            (!headword.trim().any(Char::isWhitespace) || form.any(Char::isWhitespace))
+
+    private fun mergeSurfaceForms(headword: String, existing: List<String>, observed: List<String>): List<String> =
+        (existing + observed).map { it.trim() }.filter { validSurfaceForm(headword, it) }
+            .distinctBy(::surfaceKey).takeLast(MAX_SURFACE_FORMS)
 
     override val storeId: String = "vocabulary"
 
@@ -161,6 +198,7 @@ class VocabularyRepository(private val appContext: AppContext) : BookScopedStore
         words.sortedWith(compareBy<SavedWord> { it.nextReviewAt }.thenByDescending { it.addedAt })
 
     companion object {
+        private val SURFACE_WHITESPACE = Regex("\\s+")
         /** 每个词最多累积多少个表面形，避免高亮词表无限膨胀。 */
         private const val MAX_SURFACE_FORMS = 8
 
