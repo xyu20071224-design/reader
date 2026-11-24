@@ -1,0 +1,152 @@
+{
+  "scope": "direct related tests, not full repository tests",
+  "baseline": "d5b7b39a01b4d8541199a1241889ab68f71fdc65",
+  "productionCommits": [
+    "fd5a549b339abd90f6b8cc0deb0cb3001919b98f",
+    "a4acca0b76518d20337e7a57ad4d159915cc61b9",
+    "6b959c62aeaae5412edb4dfa1116b73a1f01de18",
+    "ee3f2c36218449ef8dce3116521c0c2c6b5f4d7a"
+  ],
+  "evidenceRoot": "/Users/clannad/work/reader/out/issue-execution-20261124/speech-checks/evidence/word-surface-observation-green",
+  "results": {
+    "shared": {
+      "totals": {
+        "tests": 64,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "name": "com.linguareader.shared.data.ContextAnalyzerTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.data.DictionaryRepositoryTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.data.VocabularySurfaceObservationTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.data.VocabularyTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.reader.ReaderBootstrapGoldenTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.reader.ReaderJsExecutabilityTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.reader.ReaderScriptsStructureTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.reader.SavedWordBehaviorJsTest",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.reader.SavedWordMarksTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.reader.SavedWordPersistenceMatrixTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "app": {
+      "totals": {
+        "tests": 105,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "name": "com.linguareader.app.reader.BundledWordFormsTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.reader.CorePhraseWordEntryTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.reader.ReaderLookupVocabularyTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.reader.ReaderScreenStateTest",
+          "tests": 33,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.reader.ReaderScriptsTest",
+          "tests": 49,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.reader.ReaderVocabularyFeedbackTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.reader.ReaderVocabularyPersistenceTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    }
+  }
+}
