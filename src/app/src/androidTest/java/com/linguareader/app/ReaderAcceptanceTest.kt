@@ -254,6 +254,9 @@ class ReaderAcceptanceTest {
             composeRule.waitUntil(15_000) {
                 composeRule.onAllNodes(hasText(remove) and isEnabled()).fetchSemanticsNodes().isNotEmpty()
             }
+            // performClick injects a touch. Wait for the restored sheet to finish moving
+            // before using its button's screen coordinates.
+            composeRule.waitForIdle()
             composeRule.onNodeWithText(remove).assertIsDisplayed().performClick()
             composeRule.waitUntil(5_000) {
                 runBlocking { repository.load().none { it.id == unlistedWord } }
