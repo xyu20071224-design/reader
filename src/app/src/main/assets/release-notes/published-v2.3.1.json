@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "repository": "xyu20071224-design/reader",
+  "releaseId": "449512412",
+  "releaseTag": "v2.3.1",
+  "versionName": "2.3.1",
+  "versionCode": 26,
+  "sourceCommit": "ad20253d581e486c14563122acdafe8ca6f20651",
+  "previousReleaseTag": "v2.3.0",
+  "previousReleaseCommit": "69c6123850d91e00439dea159b3422d0d2def115",
+  "publishedAt": "2026-11-18T04:08:55Z",
+  "notes": "## 灯笼图书馆画境\n\n- 在「书架 → 外观」选择「灯馆·日」或「灯馆·夜」，书架和 EPUB 阅读页会一起切换画境。\n- 在 EPUB 阅读页的「Aa → 阅读插画」可单独开关正文插画。关闭画境后恢复原有书架背景和阅读主题。\n\n## 从 2.3.0 升级\n\n安装本页 APK 即可覆盖升级。Android 15 模拟器已验证正式 2.3.0 覆盖安装后保留书库、当前阅读进度和已有外观设置。\n\n本版是新的原生热修复基础包，版本号为 2.3.1，`versionCode` 为 `26`，基础 ID 为 `reader-26`。对应的 R8 映射和 SHA-256 校验文件随包发布。当前热修复目录为空。\n",
+  "commits": [
+    {
+      "commit": "886c061ea6556df10045a7bc39389428b39cfb32",
+      "subject": "docs: 记录原生热修复基础版发布与公开更新源验证"
+    },
+    {
+      "commit": "ad20253d581e486c14563122acdafe8ca6f20651",
+      "subject": "feat: 发布灯笼图书馆画境基础版 2.3.1"
+    }
+  ]
+}

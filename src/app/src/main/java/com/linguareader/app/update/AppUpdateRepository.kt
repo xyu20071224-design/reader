@@ -67,6 +67,9 @@ class AppUpdateRepository(
     /** Read-only source factory shared with release history; constructing a source never fetches. */
     fun currentSource(): ReleaseSource = sourceFactory(loadSettings(), transport)
 
+    /** Changes even when the user switches away and back to the same catalog URL. */
+    fun sourceGeneration(): Long = sourceEpoch.get()
+
     fun setAutoCheck(enabled: Boolean) {
         AppUpdateSettings.save(appContext, loadSettings().copy(autoCheckEnabled = enabled))
     }
