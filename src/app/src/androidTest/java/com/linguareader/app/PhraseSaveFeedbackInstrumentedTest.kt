@@ -5,6 +5,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -34,16 +37,20 @@ class PhraseSaveFeedbackInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
 
-    @Test fun phraseSaveFeedbackMatchesTheStoredAndReviewEntry() {
+    @Test fun phraseSaveFeedbackMatchesTheStoredAndReviewEntry() = phraseWorkflow("in fact", "in", false)
+
+    @Test fun primaryPhraseOffersAnIndependentWordSelection() = phraseWorkflow("look up", "up", true)
+
+    private fun phraseWorkflow(phrase: String, word: String, primaryPhrase: Boolean) {
         val vocabulary = File(context.filesDir, "vocabulary.json")
         val previous = vocabulary.takeIf { it.isFile }?.readBytes()
-        val root = File(context.filesDir, "books/phrase-feedback-fixture")
+        val root = File(context.filesDir, "books/phrase-feedback-fixture-$word")
         try {
             vocabulary.delete()
             root.mkdirs()
             File(root, "chapter.xhtml").writeText("<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><meta charset=\"UTF-8\"/></head><body>" +
-                (1..40).joinToString("") { "<p>" + "in fact ".repeat(70) + ".</p>" } + "</body></html>")
-            val book = Book("phrase-feedback-fixture", "Phrase feedback fixture", "Test fixture", root.absolutePath,
+                (1..40).joinToString("") { "<p>" + (phrase + " ").repeat(70) + ".</p>" } + "</body></html>")
+            val book = Book("phrase-feedback-fixture-$word", "Phrase feedback fixture $word", "Test fixture", root.absolutePath,
                 null, listOf(Chapter("Phrase", "chapter.xhtml")), addedAt = System.currentTimeMillis())
             File(root, "metadata.json").writeText(book.toJson().toString())
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -57,28 +64,47 @@ class PhraseSaveFeedbackInstrumentedTest {
                 compose.waitUntil(15_000) { compose.onAllNodesWithText(book.title).fetchSemanticsNodes().isNotEmpty() }
                 compose.onNodeWithText(book.title).performClick()
                 compose.waitForIdle()
-                tapVisibleIn(scenario)
-                compose.waitUntil(15_000) {
-                    compose.onAllNodesWithText(context.getString(R.string.reader_related_phrase, "in fact")).fetchSemanticsNodes().isNotEmpty()
+                tapVisibleWord(scenario, word)
+                if (primaryPhrase) {
+                    compose.waitUntil(15_000) {
+                        compose.onAllNodesWithText(context.getString(R.string.reader_back_to_word)).fetchSemanticsNodes().isNotEmpty()
+                    }
+                    compose.onNodeWithText(context.getString(R.string.reader_back_to_word)).performClick()
+                    compose.onNode(hasText(word) and hasAnyAncestor(hasTestTag(UiTags.READER_LOOKUP_SHEET))).assertIsDisplayed()
+                    compose.onNodeWithText(context.getString(R.string.reader_add_to_vocab)).performClick()
+                    try {
+                        compose.waitUntil(10_000) { runBlocking { VocabularyRepository(context).load().any { it.id == word } } }
+                    } catch (failure: Throwable) {
+                        val evidence = File(context.getExternalFilesDir(null), "phrase-feedback").apply { mkdirs() }
+                        File(evidence, "word-selection-failure.json").writeText(JSONObject().put("expected", word)
+                            .put("saved", runBlocking { VocabularyRepository(context).load().map { it.id } }).toString())
+                        screenshot("word-selection-failure.png")
+                        throw failure
+                    }
+                } else compose.waitUntil(15_000) {
+                    compose.onAllNodesWithText(context.getString(R.string.reader_related_phrase, phrase)).fetchSemanticsNodes().isNotEmpty()
                 }
                 compose.onNodeWithText(context.getString(R.string.reader_view)).performClick()
                 compose.onNodeWithText(context.getString(R.string.reader_add_to_vocab)).performClick()
                 compose.waitUntil(10_000) {
-                    compose.onAllNodesWithText(context.getString(R.string.notice_word_saved, "in fact")).fetchSemanticsNodes().isNotEmpty()
+                    compose.onAllNodes(hasText(context.getString(R.string.notice_word_saved, phrase)) and
+                        hasAnyAncestor(hasTestTag(UiTags.READER_LOOKUP_SHEET))).fetchSemanticsNodes().isNotEmpty()
                 }
-                compose.onNodeWithText(context.getString(R.string.notice_word_saved, "in fact")).assertIsDisplayed()
-                val saved = runBlocking { VocabularyRepository(context).load().single() }
-                assertEquals("in fact", saved.id)
-                assertEquals("in fact", saved.headword)
-                screenshot("phrase-saved.png")
+                inlineFeedback(phrase).assertIsDisplayed()
+                val saved = runBlocking { VocabularyRepository(context).load().single { it.id == phrase } }
+                assertEquals(phrase, saved.id)
+                assertEquals(phrase, saved.headword)
+                assertTrue("The clicked word must not become a phrase surface", saved.surfaceForms.none { it.equals(word, true) })
+                screenshot("phrase-saved-$word.png")
                 compose.onNodeWithText(context.getString(R.string.reader_back_to_word)).performClick()
-                compose.onNodeWithText(context.getString(R.string.notice_word_saved, "in fact")).assertDoesNotExist()
-                compose.onNodeWithText(context.getString(R.string.reader_add_to_vocab)).assertIsDisplayed()
-                screenshot("word-view.png")
+                inlineFeedback(phrase).assertDoesNotExist()
+                compose.onNodeWithText(context.getString(if (primaryPhrase) R.string.reader_remove_from_vocab else R.string.reader_add_to_vocab)).assertIsDisplayed()
+                if (primaryPhrase) assertTrue(runBlocking { VocabularyRepository(context).load().any { it.id == word } })
+                screenshot("word-view-$word.png")
                 compose.onNodeWithText(context.getString(R.string.reader_view)).performClick()
                 compose.onNodeWithText(context.getString(R.string.common_review)).performClick()
-                compose.onNodeWithText("in fact").assertIsDisplayed()
-                screenshot("phrase-review.png")
+                compose.onNodeWithText(phrase).assertIsDisplayed()
+                screenshot("phrase-review-$word.png")
             }
         } finally {
             root.deleteRecursively()
@@ -86,7 +112,10 @@ class PhraseSaveFeedbackInstrumentedTest {
         }
     }
 
-    private fun tapVisibleIn(scenario: ActivityScenario<MainActivity>) {
+    private fun inlineFeedback(phrase: String) = compose.onNode(hasText(context.getString(R.string.notice_word_saved, phrase)) and
+        hasAnyAncestor(hasTestTag(UiTags.READER_LOOKUP_SHEET)))
+
+    private fun tapVisibleWord(scenario: ActivityScenario<MainActivity>, word: String) {
         var point: Pair<Int, Int>? = null
         val deadline = android.os.SystemClock.uptimeMillis() + 15_000
         while (point == null && android.os.SystemClock.uptimeMillis() < deadline) {
@@ -99,16 +128,21 @@ class PhraseSaveFeedbackInstrumentedTest {
             val origin = IntArray(2).also(web::getLocationOnScreen)
             val scale = web.scale
             web.evaluateJavascript("""(() => {
+                if (typeof window.lrLookupAt !== 'function') return null;
                 const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
                 while (walker.nextNode()) {
                     const node = walker.currentNode;
                     if (node.parentElement.closest('script,style')) continue;
-                    const matches = node.textContent.matchAll(/\bin\b/g);
+                    const matches = node.textContent.matchAll(new RegExp("\\b" + ${JSONObject.quote(word)} + "\\b", "g"));
                     for (const match of matches) {
-                        const range = document.createRange(); range.setStart(node,match.index); range.setEnd(node,match.index+2);
+                        const range = document.createRange(); range.setStart(node,match.index); range.setEnd(node,match.index+${word.length});
                         const r = range.getBoundingClientRect();
-                        if (r.width > 0 && r.top > 90 && r.bottom < innerHeight-160)
-                            return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2});
+                        if (r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top > 90 && r.bottom < innerHeight-160) {
+                            const x = r.left+r.width/2, y = r.top+r.height/2;
+                            const hit = window.lrLookupAt(x,y,false);
+                            if (hit && hit.word.toLowerCase() === ${JSONObject.quote(word)})
+                                return JSON.stringify({x:x,y:y});
+                        }
                     }
                 }
                 return null;
@@ -124,7 +158,7 @@ class PhraseSaveFeedbackInstrumentedTest {
           assertTrue("WebView lookup coordinates did not arrive", latch.await(10, TimeUnit.SECONDS))
           if (point == null) android.os.SystemClock.sleep(200)
         }
-        val (x, y) = requireNotNull(point) { "No visible in token" }
+        val (x, y) = requireNotNull(point) { "No visible target token" }
         instrumentation.uiAutomation.executeShellCommand("input tap $x $y").use {
             ParcelFileDescriptor.AutoCloseInputStream(it).readBytes()
         }

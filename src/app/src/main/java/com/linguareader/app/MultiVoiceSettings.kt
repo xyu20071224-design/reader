@@ -167,6 +167,12 @@ internal fun MultiVoiceSection(
     var status by remember { mutableStateOf<MultiVoiceStatus?>(null) }
     var playingVoice by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    val unavailableVoiceLabel = stringResource(R.string.voice_pack_unavailable_preserved)
+    val loadingVoiceLabel = stringResource(R.string.voice_pack_loading_selection)
+    fun preservedVoiceLabel(id: String): String? =
+        if (com.linguareader.shared.packs.VoicePackSource.isPackVoice(id) && library.byId(id) == null)
+            if (loading) loadingVoiceLabel else unavailableVoiceLabel
+        else null
     var reloadToken by remember { mutableIntStateOf(0) }
     var picker by remember { mutableStateOf<VoicePickerTarget?>(null) }
     var annotating by remember { mutableStateOf(false) }
@@ -186,12 +192,15 @@ internal fun MultiVoiceSection(
         val roster = runCatching { MultiVoiceSupport.characters(context, bookId) }
             .getOrDefault(emptyList())
         val map = runCatching {
-            MultiVoiceSupport.voiceMapRepository(context).ensureFor(
+            val repository = MultiVoiceSupport.voiceMapRepository(context)
+            val effective = repository.ensureFor(
                 bookId = bookId,
                 library = loadedLibrary,
                 narratorLanguages = MultiVoiceSupport.NARRATOR_LANGUAGES,
                 reserved = MultiVoiceSupport.reservedVoices(settings)
             )
+            // Settings shows the user's retained choices; playback uses the effective map.
+            repository.load(bookId) ?: effective
         }.getOrNull()
         library = loadedLibrary
         characters = roster
@@ -254,7 +263,7 @@ internal fun MultiVoiceSection(
                 text = text,
                 onFinished = { if (playingVoice == voiceId) playingVoice = null }
             ).onFailure {
-                notify(SettingsStatus.danger(it.message ?: auditionFailed))
+                notify(SettingsStatus.danger(packVoiceFailureText(context, it) ?: it.message ?: auditionFailed))
                 playingVoice = null
             }
         }
@@ -278,7 +287,7 @@ internal fun MultiVoiceSection(
                 text = text,
                 onFinished = { if (playingVoice == voice.name) playingVoice = null }
             ).onFailure {
-                notify(SettingsStatus.danger(it.message ?: auditionFailed))
+                notify(SettingsStatus.danger(packVoiceFailureText(context, it) ?: it.message ?: auditionFailed))
                 playingVoice = null
             }
         }
@@ -554,7 +563,7 @@ internal fun MultiVoiceSection(
     }
 
     val map = voiceMap
-    if (map == null || library.isEmpty) return
+    if (map == null) return
 
     // MiMo 专属音色（多角色服务）：预置音色之外的「设计/复刻」音色；
     // 建好后会进音色库，可直接分给下方任意角色（M3 分配器无感知差异）。
@@ -587,6 +596,7 @@ internal fun MultiVoiceSection(
         VoiceRow(
             title = target.title,
             currentVoice = map.narratorFor(language).orEmpty(),
+            currentVoiceLabel = preservedVoiceLabel(map.narratorFor(language).orEmpty()),
             locked = map.isLocked(BookVoiceMap.narratorKey(language)),
             playing = playingVoice != null && playingVoice == map.narratorFor(language),
             onOpenPicker = { picker = target },
@@ -651,6 +661,7 @@ internal fun MultiVoiceSection(
                 title = character.name,
                 subtitle = characterSubtitle(character),
                 currentVoice = current,
+                currentVoiceLabel = preservedVoiceLabel(current),
                 locked = map.isLocked(character.key),
                 playing = playingVoice != null && playingVoice == current,
                 onOpenPicker = { picker = target },

@@ -106,7 +106,15 @@ class ReaderAcceptanceTest {
             openBook()
             waitForPageIndicator()
 
-            composeRule.onNodeWithContentDescription("下一页").performClick()
+            composeRule.onNodeWithContentDescription(context.getString(R.string.reader_next_page)).performClick()
+            // Page turns intentionally hide the controls. Reveal them through the real
+            // document handler before inspecting the new page; viewport geometry stays fixed.
+            composeRule.waitUntil(5_000) {
+                composeRule.onAllNodesWithContentDescription(context.getString(R.string.reader_page_indicator))
+                    .fetchSemanticsNodes().isEmpty()
+            }
+            revealReaderControls(scenario)
+            waitForPageIndicator()
             composeRule.waitUntil(5_000) { pageNumber() != 1 }
             val secondPage = pageNumber()
 
@@ -128,13 +136,13 @@ class ReaderAcceptanceTest {
             openBook()
             waitForPageIndicator()
 
-            composeRule.onNodeWithContentDescription("页码指示").performClick()
+            composeRule.onNodeWithContentDescription(context.getString(R.string.reader_page_indicator)).performClick()
             composeRule.waitUntil(5_000) {
-                composeRule.onAllNodesWithText("跳转到页码").fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithText(context.getString(R.string.reader_jump_title)).fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNode(hasSetTextAction()).performTextClearance()
             composeRule.onNode(hasSetTextAction()).performTextInput("3")
-            composeRule.onNodeWithText("跳转").performClick()
+            composeRule.onNodeWithText(context.getString(R.string.reader_jump_action)).performClick()
 
             composeRule.waitUntil(5_000) { pageIndicatorText().contains("· 3/") }
             assertTrue(pageIndicatorText().contains("· 3/"))
@@ -156,13 +164,13 @@ class ReaderAcceptanceTest {
             while (y < metrics.heightPixels * 0.55 && !found) {
                 ui.executeShellCommand("input tap $x $y").close()
                 SystemClock.sleep(700L)
-                found = composeRule.onAllNodesWithText("加入生词本")
+                found = composeRule.onAllNodesWithText(context.getString(R.string.reader_add_to_vocab))
                     .fetchSemanticsNodes().isNotEmpty()
                 y += 60
             }
             assertTrue("lookup sheet did not open after tapping text", found)
-            composeRule.onNodeWithText("加入生词本").assertIsDisplayed()
-            composeRule.onNodeWithText("朗读").assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.reader_add_to_vocab)).assertIsDisplayed()
+            composeRule.onNodeWithText(context.getString(R.string.common_speak)).assertIsDisplayed()
         }
     }
 
@@ -259,6 +267,26 @@ class ReaderAcceptanceTest {
             composeRule.onAllNodesWithText("Acceptance Book").fetchSemanticsNodes().isNotEmpty()
         }
         composeRule.onNodeWithText("Acceptance Book").performClick()
+    }
+
+    private fun revealReaderControls(scenario: ActivityScenario<MainActivity>) {
+        val done = java.util.concurrent.CountDownLatch(1)
+        var revealed = false
+        scenario.onActivity { activity ->
+            fun find(view: android.view.View): android.webkit.WebView? = when (view) {
+                is android.webkit.WebView -> view
+                is android.view.ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { find(view.getChildAt(it)) }
+                else -> null
+            }
+            requireNotNull(find(activity.window.decorView)).evaluateJavascript("""(() => {
+                if (window.lrLookupAt(innerWidth / 2, 4, false) !== null) return false;
+                ['pointerdown','pointerup'].forEach(type => document.dispatchEvent(new PointerEvent(type,
+                  {clientX:innerWidth/2,clientY:4,bubbles:true})));
+                return true;
+            })()""") { revealed = it == "true"; done.countDown() }
+        }
+        assertTrue("Blank-area reader event did not complete", done.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        assertTrue("The reveal action must target a blank area", revealed)
     }
 
     private fun dismissLaunchPromptIfShown() {

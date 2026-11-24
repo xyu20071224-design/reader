@@ -485,7 +485,7 @@ class ReaderLookupSessionTest {
             .beginSentenceTranslation()
         assertTrue(session.sentenceTranslationLoading)
 
-        val cached = session.cacheSentence("The dog runs.", result("狗在跑。"))
+        val cached = session.cacheSentence(session, "The dog runs.", result("狗在跑。"))
         assertFalse(cached.sentenceTranslationLoading)
         assertEquals("狗在跑。", cached.sentenceTranslation?.text)
         assertNull(cached.sentenceTranslationError)

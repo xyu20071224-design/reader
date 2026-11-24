@@ -1,0 +1,8 @@
+<resources>
+    <string name="voice_pack_missing_fallback">Some voice resources are missing. Using an available voice; reinstall the package to restore your selection.</string>
+    <string name="voice_pack_unsupported_fallback">This engine cannot use the selected voice package. Using an available voice.</string>
+    <string name="voice_pack_missing_audition">Cannot preview: the voice package or sample is missing. Reinstall it or choose another voice.</string>
+    <string name="voice_pack_unsupported_audition">This engine cannot preview this type of voice package.</string>
+    <string name="voice_pack_unavailable_preserved">Voice unavailable; original selection retained</string>
+    <string name="voice_pack_loading_selection">Loading voice selection…</string>
+</resources>

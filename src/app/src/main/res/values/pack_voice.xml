@@ -1,0 +1,8 @@
+<resources>
+    <string name="voice_pack_missing_fallback">部分音色资源已缺失，已改用可用音色。重新安装可恢复原选择。</string>
+    <string name="voice_pack_unsupported_fallback">当前引擎不支持所选音色资源，已改用可用音色。</string>
+    <string name="voice_pack_missing_audition">无法试听：音色资源或样本已缺失。请重新安装或另选音色。</string>
+    <string name="voice_pack_unsupported_audition">当前引擎不支持试听这种音色资源。</string>
+    <string name="voice_pack_unavailable_preserved">音色暂不可用，保留原选择</string>
+    <string name="voice_pack_loading_selection">正在读取音色选择…</string>
+</resources>

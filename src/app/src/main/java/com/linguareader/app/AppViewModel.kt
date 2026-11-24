@@ -218,6 +218,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val packs = PackRepository(application)
     private val dictionary = DictionaryRepository(application) { packs.dictionarySource() }
     private val vocabulary = VocabularyRepository(application)
+    private val vocabularyTransactions = com.linguareader.app.data.VocabularyStateTransactions()
     private val reviewPrefs = application.getSharedPreferences("review_settings", android.content.Context.MODE_PRIVATE)
     private val aiSettingsStore = AiSettingsStore(application)
     private val aiRepository = BookContextRepository(application, aiSettingsStore)
@@ -316,6 +317,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var updateCheckJob: Job? = null
     private var remotePackJob: Job? = null
     private var remotePackDownloadJob: Job? = null
+    private var packRefreshJob: Job? = null
     private val releaseSourceVersion = java.util.concurrent.atomic.AtomicLong()
     private val releaseHistoryRepository = AppReleaseHistoryRepository(application, updateRepository,
         BuildReleaseIdentity(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE,
@@ -383,7 +385,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             mutableState.value = mutableState.value.copy(loading = true)
             val books = library.loadBooks()
-            val savedWords = vocabulary.load()
             // 书架「AI 语境」标签此前只看内存 aiStatuses：进程被系统回收后重建，
             // 状态清零，磁盘上明明有档案的书也显示「待生成」；打开书时
             // generate() 命中磁盘档案又秒变「就绪」——造成同一天内
@@ -407,13 +408,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .filter { translationRepository.isMemoryOutdated(it.id) }
                 .map { it.id }
                 .toSet()
-            mutableState.value = mutableState.value.copy(
-                books = books,
-                savedWords = savedWords,
-                loading = false,
-                aiStatuses = mutableState.value.aiStatuses + seeded,
-                outdatedTranslations = outdated
-            )
+            vocabularyTransactions.withLock({ vocabulary.load() }) { savedWords ->
+                mutableState.update { it.copy(
+                    books = books,
+                    savedWords = savedWords,
+                    loading = false,
+                    aiStatuses = it.aiStatuses + seeded,
+                    outdatedTranslations = outdated
+                ) }
+            }
             rescheduleReviewReminders()
         }
     }
@@ -433,14 +436,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { library.importBook(uri) }
                 .onSuccess { book ->
                     val books = library.loadBooks()
-                    mutableState.value = mutableState.value.copy(
-                        books = books,
-                        currentBook = book,
-                        savedWords = vocabulary.load(),
-                        loading = false,
-                        notice = string(R.string.notice_book_imported, book.title),
-                        noticeTone = StatusTone.SUCCESS
-                    )
+                    vocabularyTransactions.withLock({ vocabulary.load() }) { savedWords ->
+                        mutableState.update { it.copy(
+                            books = books,
+                            currentBook = book,
+                            savedWords = savedWords,
+                            loading = false,
+                            notice = string(R.string.notice_book_imported, book.title),
+                            noticeTone = StatusTone.SUCCESS
+                        ) }
+                    }
                     rescheduleReviewReminders()
                     // 云同步开启时后台自动上传源文件；不阻塞导入，失败只发 Snackbar。
                     uploadBookSourceInBackground(book)
@@ -559,7 +564,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 重读登记表并刷新资源包列表（打开页面、安装/卸载/切换后调用）。 */
     fun refreshPacks() {
-        viewModelScope.launch {
+        packRefreshJob?.cancel()
+        packRefreshJob = viewModelScope.launch {
             val snapshot = withContext(Dispatchers.IO) {
                 val books = runCatching { library.loadBooks() }.getOrDefault(emptyList()).associateBy { it.id }
                 val loaded = packs.reloadWithError()
@@ -604,34 +610,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun installPack(uri: Uri) {
         if (mutableState.value.packs.installing) return
+        mutableState.update { it.copy(packs = it.packs.copy(installing = true)) }
         viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(
-                packs = mutableState.value.packs.copy(installing = true)
-            )
-            runCatching { withContext(Dispatchers.IO) { packs.install(uri) } }
-                .onSuccess { installed ->
-                    // 词典包首次安装会自动生效 → 必须让查词侧换源，否则旧库句柄还开着。
-                    if (installed.type == PackType.DICTIONARY) {
-                        dictionary.invalidate()
-                        translationRepository.invalidateDictionary()
-                    }
-                    mutableState.value = mutableState.value.copy(
-                        packs = mutableState.value.packs.copy(installing = false),
-                        notice = string(
-                            R.string.packs_installed,
-                            installed.nameZh.ifBlank { installed.nameEn }
-                        ),
-                        noticeTone = StatusTone.SUCCESS
-                    )
-                    refreshPacks()
-                }
-                .onFailure { error ->
-                    mutableState.value = mutableState.value.copy(
-                        packs = mutableState.value.packs.copy(installing = false),
-                        message = error.message ?: string(R.string.packs_install_failed),
-                        messageTitle = string(R.string.packs_install_failed_title)
-                    )
-                }
+            try {
+                val installed = withContext(Dispatchers.IO) { packs.install(uri) }
+                mutableState.update { it.copy(
+                    notice = string(R.string.packs_installed, installed.nameZh.ifBlank { installed.nameEn }),
+                    noticeTone = StatusTone.SUCCESS
+                ) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                mutableState.update { it.copy(
+                    message = error.message ?: string(R.string.packs_install_failed),
+                    messageTitle = string(R.string.packs_install_failed_title)
+                ) }
+            } finally {
+                // A bundle may install a dictionary even when another member fails.
+                dictionary.invalidate()
+                translationRepository.invalidateDictionary()
+                com.linguareader.app.tts.TtsPlaybackController.onVoiceResourcesChanged()
+                mutableState.update { it.copy(packs = it.packs.copy(installing = false)) }
+                refreshPacks()
+            }
         }
     }
 
@@ -736,6 +736,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         dictionary.invalidate()
                         translationRepository.invalidateDictionary()
                     }
+                    com.linguareader.app.tts.TtsPlaybackController.onVoiceResourcesChanged()
                     mutableState.value = mutableState.value.copy(
                         notice = string(R.string.packs_uninstalled, item?.let { packName(it) } ?: packId),
                         noticeTone = StatusTone.DANGER
@@ -747,6 +748,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         message = error.message ?: string(R.string.packs_uninstall_failed),
                         messageTitle = string(R.string.packs_uninstall_failed_title)
                     )
+                    // Registry publication may have succeeded before payload cleanup failed.
+                    if (wasActive) {
+                        dictionary.invalidate()
+                        translationRepository.invalidateDictionary()
+                    }
+                    com.linguareader.app.tts.TtsPlaybackController.onVoiceResourcesChanged()
+                    refreshPacks()
                 }
         }
     }
@@ -1165,7 +1173,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    suspend fun lookup(lookup: WordLookup): DictionaryLookupResult = dictionary.lookup(lookup)
+    suspend fun lookup(lookup: WordLookup): DictionaryLookupResult {
+        val result = dictionary.lookup(lookup)
+        try {
+            val observed = vocabularyTransactions.withLock({
+                vocabulary.rememberSurfaceForms(listOfNotNull(result.wordEntry, result.entry, result.relatedPhrase))
+            }) { observed -> mutableState.update { it.copy(savedWords = observed.savedWords) } }
+            if (observed.changed) scheduleAutoSync()
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            // Learning a new surface is optional; a failed write must not hide a valid dictionary result.
+        }
+        return result
+    }
 
     /**
      * Contextual AI enhancement on top of the local lookup result.
@@ -1408,12 +1428,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         onDone: (Boolean) -> Unit = {}
     ) {
         viewModelScope.launch {
-            val words = try {
-                vocabulary.save(
-                    book, chapterTitle, lookup, entry,
-                    pace = mutableState.value.reviewPace,
-                    aiResult = aiResult
-                )
+            try {
+                vocabularyTransactions.withLock({
+                    vocabulary.save(
+                        book, chapterTitle, lookup, entry,
+                        pace = mutableState.value.reviewPace,
+                        aiResult = aiResult
+                    )
+                }) { words -> mutableState.update { it.copy(
+                    savedWords = words,
+                    notice = string(R.string.notice_word_saved, entry.matchedPhrase ?: entry.headword),
+                    noticeTone = StatusTone.SUCCESS
+                ) } }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -1424,11 +1450,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 onDone(false)
                 return@launch
             }
-            mutableState.value = mutableState.value.copy(
-                savedWords = words,
-                notice = string(R.string.notice_word_saved, entry.matchedPhrase ?: entry.headword),
-                noticeTone = StatusTone.SUCCESS
-            )
             onDone(true)
             rescheduleReviewReminders()
             scheduleAutoSync()
@@ -1440,8 +1461,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun removeSavedWord(id: String, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
             val removedWord = mutableState.value.savedWords.firstOrNull { it.id == id }?.headword
-            val words = try {
-                vocabulary.remove(id)
+            try {
+                vocabularyTransactions.withLock({ vocabulary.remove(id) }) { words ->
+                    mutableState.update { it.copy(
+                        savedWords = words,
+                        notice = removedWord?.let { string(R.string.notice_word_removed, it) },
+                        noticeTone = StatusTone.SUCCESS
+                    ) }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -1451,11 +1478,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 onDone(false)
                 return@launch
             }
-            mutableState.value = mutableState.value.copy(
-                savedWords = words,
-                notice = removedWord?.let { string(R.string.notice_word_removed, it) },
-                noticeTone = StatusTone.SUCCESS
-            )
             onDone(true)
             rescheduleReviewReminders()
             scheduleAutoSync()
@@ -1464,25 +1486,25 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun reviewWord(id: String, remembered: Boolean, onDone: (Boolean) -> Unit) {
         viewModelScope.launch {
-            runCatching { vocabulary.review(id, remembered, mutableState.value.reviewPace) }
-                .onSuccess { words ->
-                    mutableState.value = mutableState.value.copy(savedWords = words)
-                    rescheduleReviewReminders()
-                    // 复习等级/下次复习时间已落盘 → 防抖同步。
-                    scheduleAutoSync()
-                    onDone(true)
-                }
-                .onFailure {
-                    // Roll the list back to what is actually on disk so the UI
-                    // never claims a review that was not persisted.
-                    val actual = vocabulary.load()
-                    mutableState.value = mutableState.value.copy(
+            try {
+                vocabularyTransactions.withLock({
+                    vocabulary.review(id, remembered, mutableState.value.reviewPace)
+                }) { words -> mutableState.update { it.copy(savedWords = words) } }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                vocabularyTransactions.withLock({ vocabulary.load() }) { actual ->
+                    mutableState.update { it.copy(
                         savedWords = actual,
                         message = string(R.string.message_review_save_failed),
                         messageTitle = string(R.string.message_review_save_failed_title)
-                    )
-                    onDone(false)
+                    ) }
                 }
+                onDone(false)
+                return@launch
+            }
+            rescheduleReviewReminders()
+            scheduleAutoSync()
+            onDone(true)
         }
     }
 

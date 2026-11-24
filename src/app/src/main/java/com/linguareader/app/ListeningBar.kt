@@ -101,7 +101,8 @@ internal fun ListeningBar(
     /** 「回到朗读处」：把视口挪回正在朗读的那句，并恢复自动跟随。 */
     onBackToSpeaking: () -> Unit = {},
     /** 退出滑动模式（仅滑动模式下给出；它是滑动模式的唯一出口，不能藏进菜单）。 */
-    onExitScrollMode: (() -> Unit)? = null
+    onExitScrollMode: (() -> Unit)? = null,
+    packVoiceHint: String? = null
 ) {
     val t = LocalDesignTokens.current
     var overflowMenuOpen by remember { mutableStateOf(false) }
@@ -153,6 +154,10 @@ internal fun ListeningBar(
                 tint = accent,
                 maxLines = 2
             )
+        }
+
+        packVoiceHint?.let { hint ->
+            BarHintRow(icon = Icons.Filled.Info, text = hint, tint = accent, maxLines = 2)
         }
 
         // ── 信息行：当前句，或「朗读已跑出视口」的提示 ──────────────────

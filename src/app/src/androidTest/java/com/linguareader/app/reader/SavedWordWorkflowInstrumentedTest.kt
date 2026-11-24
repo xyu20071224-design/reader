@@ -55,7 +55,9 @@ class SavedWordWorkflowInstrumentedTest {
             preferences.edit().putString(ReviewReminders.STORAGE_KEY,
                 ReviewReminders(contextHighlight = true, pausePrompt = false, toolbarBadge = false, notifications = false).toJson()).commit()
             root.mkdirs()
-            val body = "<p id='app'>app APP apple application app<em>le</em>.</p>" + cases.drop(1).joinToString("") { (surface, _) ->
+            val body = "<p>First setup paragraph with ordinary words for the lookup workflow.</p>" +
+                "<p>Second setup paragraph before the target words.</p>" +
+                "<p id='app'>app APP apple application app<em>le</em>.</p>" + cases.drop(1).joinToString("") { (surface, _) ->
                 "<p id='$surface'>$surface <em>${surface.uppercase()}</em>.</p>"
             }
             File(root, "chapter.xhtml").writeText("<html xmlns='http://www.w3.org/1999/xhtml'><head><meta charset='UTF-8'/><meta name='viewport' content='width=device-width,initial-scale=1'/></head><body>$body</body></html>")
@@ -173,8 +175,12 @@ class SavedWordWorkflowInstrumentedTest {
                         if (!match) continue;
                         const range = document.createRange(); range.setStart(node, match.index); range.setEnd(node, match.index + match[0].length);
                         const r = range.getBoundingClientRect();
-                        if (r.width > 0 && r.top > 90 && r.bottom < innerHeight - 100)
-                          return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2});
+                        if (r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top > 90 && r.bottom < innerHeight - 100) {
+                          const x = r.left+r.width/2, y = r.top+r.height/2;
+                          const hit = window.lrLookupAt(x,y,false);
+                          if (hit && hit.word.toLowerCase() === wanted.toLowerCase())
+                            return JSON.stringify({x:x,y:y});
+                        }
                       }
                       return null;
                     })()

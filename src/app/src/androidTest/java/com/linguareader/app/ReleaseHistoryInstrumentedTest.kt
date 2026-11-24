@@ -47,7 +47,7 @@ class ReleaseHistoryInstrumentedTest {
                 compose.onNodeWithText("v2.3.1").performScrollTo().assertIsDisplayed()
                 assertEquals(installation, prefs.getString("installation", null))
                 compose.onNodeWithText(context.getString(R.string.release_history_mark_read)).performScrollTo().performClick()
-                compose.onNodeWithText(context.getString(R.string.release_history_read)).assertIsDisplayed()
+                compose.onNodeWithText(context.getString(R.string.release_history_read)).performScrollTo().assertIsDisplayed()
             }
         } finally {
             AppUpdateSettings.save(context, settings)

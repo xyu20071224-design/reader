@@ -104,7 +104,8 @@ internal fun VoiceRow(
     onRelease: () -> Unit,
     subtitle: String? = null,
     onEdit: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    currentVoiceLabel: String? = null
 ) {
     val t = LocalDesignTokens.current
     // semantics{} 不是 composable 作用域，标签先取出来。
@@ -137,7 +138,7 @@ internal fun VoiceRow(
                 }
             }
             Text(
-                currentVoice.ifBlank { stringResource(R.string.multivoice_auto) },
+                currentVoiceLabel ?: currentVoice.ifBlank { stringResource(R.string.multivoice_auto) },
                 style = t.typography.label,
                 color = if (currentVoice.isBlank()) t.colors.inkFaint else t.colors.inkSoft,
                 maxLines = 1,

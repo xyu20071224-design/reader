@@ -65,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -266,6 +267,7 @@ internal fun ReaderScreen(
     // 听书条实测高度用于提示浮层避让；听书控件也随阅读工具栏一起显隐。
     var listeningBarPx by remember { mutableFloatStateOf(0f) }
     val ttsState by TtsPlaybackController.state.collectAsStateWithLifecycle()
+    val packVoiceFallback by TtsPlaybackController.packVoiceFallback.collectAsStateWithLifecycle()
     val ttsForThisBook = ttsState.bookId == book.id
     // 工具栏是临时浮层；正文只保留稳定的系统安全边距。
     // 显隐不改变分页高度，从而避免当前句跳页和正文闪动。
@@ -293,12 +295,13 @@ internal fun ReaderScreen(
     var overlays by rememberSaveable(stateSaver = ReaderOverlaysSaver) {
         mutableStateOf(ReaderOverlays())
     }
-    var lookup by rememberSaveable(stateSaver = WordLookupSaver) { mutableStateOf<WordLookup?>(null) }
+    var lookup by rememberSaveable(book.id, stateSaver = WordLookupSaver) { mutableStateOf<WordLookup?>(null) }
+    var lookupRequestSerial by rememberSaveable(book.id) { mutableIntStateOf(0) }
     // 查词弹层（ModalBottomSheet）会盖住全局 Snackbar：收藏/移出生词的反馈
     // 必须画在弹层内部（SettingsStatus 行内模式），否则用户得到「毫无动静」。
     // 会话整体抽成 ReaderLookupSession：开新查词的「重置矩阵」在里面定义并单测。
     val sentenceTranslationCache = remember(book.id) { SentenceTranslationCache() }
-    var lookupSession by remember { mutableStateOf(ReaderLookupSession.empty(sentenceTranslationCache)) }
+    var lookupSession by remember(book.id) { mutableStateOf(ReaderLookupSession.empty(sentenceTranslationCache)) }
     // 复习卡组旋转屏后按 id 从 ViewModel 的 savedWords 恢复（SavedWord 本身不可 Bundle 化）。
     var reviewDeckIds by rememberSaveable { mutableStateOf<List<String>?>(null) }
     val reviewDeck = remember(savedWords, reviewDeckIds) {
@@ -517,30 +520,36 @@ internal fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(lookup) {
+    LaunchedEffect(book.id, lookup, lookupRequestSerial) {
         val request = lookup ?: return@LaunchedEffect
-        lookupSession = lookupSession.markDictionaryLoading()
-        val dictionary = viewModel.lookup(request)
-        // begin() 一次性归零上一次的 AI/译文/错误/行内反馈；归零矩阵在状态类里单测。
+        val requestChapter = position.chapter
         lookupSession = lookupSession.begin(
-            dictionaryResult = dictionary,
+            dictionaryResult = com.linguareader.app.data.DictionaryLookupResult(null, null),
             hasTranslation = book.hasTranslation,
             sentence = request.sentence
-        )
+        ).markDictionaryLoading()
+        val requestSession = lookupSession
+        val dictionary = viewModel.lookup(request)
+        if (lookup != request || !lookupSession.isCurrentLookup(requestSession)) return@LaunchedEffect
+        lookupSession = lookupSession.finishDictionaryLookup(requestSession, dictionary)
         // 译本对照是纯本地查询，先于联网 AI 出结果。
         if (book.hasTranslation) {
-            lookupSession = lookupSession.withTranslation(
-                viewModel.translationLookup(book, position.chapter, request)
-            )
+            val translation = viewModel.translationLookup(book, requestChapter, request)
+            if (!lookupSession.isCurrentLookup(requestSession)) return@LaunchedEffect
+            lookupSession = lookupSession.withTranslation(translation)
         }
         if (aiSettings.enabled) {
             lookupSession = lookupSession.copy(aiLoading = true)
-            val outcome = runCatching {
+            val outcome = try {
                 viewModel.aiLookup(book, request, dictionary.entry)
-            }.onFailure { lookupSession = lookupSession.markAiFailed() }.getOrNull()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (lookupSession.isCurrentLookup(requestSession)) lookupSession = lookupSession.markAiFailed()
+                null
+            }
             // outcome 非 null 时 result 仍可能为 null（本地兜底也没东西可给），
             // remoteFailed 与 result 正交，两条失败路径都要能反馈。
-            if (outcome != null) {
+            if (outcome != null && lookupSession.isCurrentLookup(requestSession)) {
                 lookupSession = lookupSession.withAiResult(outcome.result, outcome.remoteFailed == true)
             }
         }
@@ -629,7 +638,8 @@ internal fun ReaderScreen(
                 },
                 onWord = {
                     lookup = it
-                    // 清空会话：新查词的正式重置在 LaunchedEffect(lookup) 的 begin() 里做。
+                    lookupRequestSerial++
+                    // Every event, including the same word, starts a distinct lookup request.
                     lookupSession = ReaderLookupSession.empty(sentenceTranslationCache)
                     overlays = overlays.copy(toolbarVisible = false)
                 },
@@ -847,6 +857,7 @@ internal fun ReaderScreen(
         ) {
             ListeningBar(
                 state = ttsState,
+                packVoiceHint = packVoiceFallbackText(packVoiceFallback),
                 theme = preferences.theme,
                 modifier = Modifier
                     // 沉到屏幕底缘：与底栏同一位置（听书时底栏已移出组合）。
@@ -979,10 +990,11 @@ internal fun ReaderScreen(
         ReaderLookupSheet(
             lookup = currentLookup,
             entry = displayedEntry,
-            relatedPhrase = lookupSession.dictionaryResult?.relatedPhrase,
+            relatedPhrase = lookupSession.relatedPhrase,
             loading = lookupSession.dictionaryLoading,
             saveStatus = lookupSession.status,
             changingVocabulary = lookupSession.changingVocabulary,
+            canShowWord = lookupSession.canShowWord,
             aiContext = lookupSession.aiResult,
             aiLoading = lookupSession.aiLoading,
             aiFailed = lookupSession.aiFailed,
@@ -1004,7 +1016,10 @@ internal fun ReaderScreen(
                 val hit = lookupSession.translation ?: return@ReaderLookupSheet
                 if (lookupSession.retranslateLoading) return@ReaderLookupSheet
                 lookupSession = lookupSession.startRetranslate()
-                viewModel.retranslateTranslation(book, hit, feedback.ifBlank { null }) { ok ->
+                val requestSession = lookupSession
+                val requestChapter = position.chapter
+                viewModel.retranslateTranslation(book, hit, feedback.ifBlank { null }) retranslated@{ ok ->
+                    if (lookup != currentLookup || !lookupSession.isCurrentLookup(requestSession)) return@retranslated
                     // 弹层开着时全局 Snackbar 不可见，结果走行内 lookupStatus。
                     val status = if (ok) {
                         SettingsStatus.success(
@@ -1018,13 +1033,15 @@ internal fun ReaderScreen(
                     if (ok) {
                         // 重查拿新译文与新词级对齐（WordAligner 查询时现算）。
                         scope.launch {
+                            val translation = viewModel.translationLookup(book, requestChapter, currentLookup)
                             lookupSession = lookupSession.finishRetranslate(
+                                request = requestSession,
                                 status = status,
-                                translation = viewModel.translationLookup(book, position.chapter, currentLookup)
+                                translation = translation
                             )
                         }
                     } else {
-                        lookupSession = lookupSession.finishRetranslate(status = status)
+                        lookupSession = lookupSession.finishRetranslate(requestSession, status = status)
                     }
                 }
             },
@@ -1036,7 +1053,7 @@ internal fun ReaderScreen(
                 }
             },
             onShowPhrase = { lookupSession = lookupSession.setShowingRelatedPhrase(true) },
-            onShowWord = { lookupSession = lookupSession.setShowingRelatedPhrase(false) },
+            onShowWord = { lookupSession = lookupSession.showWordEntry() },
             onSpeak = {
                 onSpeak(displayedEntry?.matchedPhrase ?: displayedEntry?.headword ?: currentLookup.word)
             },
@@ -1090,18 +1107,21 @@ internal fun ReaderScreen(
                     cached != null -> {
                         lookupSession = lookupSession.withSentenceTranslation(cached)
                     }
-                    else -> scope.launch {
+                    else -> {
                         lookupSession = lookupSession.beginSentenceTranslation()
-                        // 成功与失败都必须留下可见结果：静默失败是历史缺陷。
-                        runCatching { viewModel.translateSentence(book, currentLookup.sentence) }
+                        val requestSession = lookupSession
+                        scope.launch {
+                            runCatching { viewModel.translateSentence(book, currentLookup.sentence) }
                             .onSuccess { result ->
-                                lookupSession = lookupSession.cacheSentence(key, result)
+                                lookupSession = lookupSession.cacheSentence(requestSession, key, result)
                             }
-                            .onFailure {
-                                lookupSession = lookupSession.withSentenceTranslationError(
+                            .onFailure { failure ->
+                                if (failure is kotlinx.coroutines.CancellationException) throw failure
+                                lookupSession = lookupSession.failSentenceTranslation(requestSession,
                                     context.getString(R.string.translate_sentence_failed)
                                 )
                             }
+                        }
                     }
                 }
             },

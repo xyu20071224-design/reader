@@ -408,6 +408,7 @@ internal data class ReaderLookupSession(
     val dictionaryResult: com.linguareader.app.data.DictionaryLookupResult? = null,
     val dictionaryLoading: Boolean = false,
     val showingRelatedPhrase: Boolean = false,
+    val showingWordEntry: Boolean = false,
     val aiResult: com.linguareader.app.ai.AiLookupResult? = null,
     val aiLoading: Boolean = false,
     val aiFailed: Boolean = false,
@@ -421,9 +422,13 @@ internal data class ReaderLookupSession(
     val retranslateDoneTick: Int = 0,
     val status: com.linguareader.app.SettingsStatus? = null,
     val vocabularyFeedbackToken: VocabularyFeedbackToken? = null,
+    val lookupRequestToken: LookupRequestToken = LookupRequestToken(),
     private val sentenceCache: SentenceTranslationCache = SentenceTranslationCache()
 ) {
     class VocabularyFeedbackToken
+    class LookupRequestToken
+
+    fun isCurrentLookup(request: ReaderLookupSession): Boolean = lookupRequestToken === request.lookupRequestToken
 
     val changingVocabulary: Boolean get() = vocabularyFeedbackToken != null
 
@@ -434,7 +439,23 @@ internal data class ReaderLookupSession(
         if (vocabularyFeedbackToken === token) copy(vocabularyFeedbackToken = null, status = status) else this
 
     val displayedEntry: com.linguareader.app.data.ContextualDictionaryEntry?
-        get() = if (showingRelatedPhrase) dictionaryResult?.relatedPhrase else dictionaryResult?.entry
+        get() = when {
+            showingWordEntry -> dictionaryResult?.wordEntry
+            showingRelatedPhrase -> phraseEntry
+            else -> dictionaryResult?.entry
+        }
+
+    private val phraseEntry: com.linguareader.app.data.ContextualDictionaryEntry?
+        get() = dictionaryResult?.relatedPhrase ?: dictionaryResult?.entry?.takeIf { it.matchedPhrase != null }
+
+    val relatedPhrase: com.linguareader.app.data.ContextualDictionaryEntry?
+        get() = phraseEntry.takeIf { displayedEntry?.matchedPhrase == null }
+
+    val canShowWord: Boolean get() = displayedEntry?.matchedPhrase != null
+
+    fun showWordEntry(): ReaderLookupSession = copy(
+        showingRelatedPhrase = false, showingWordEntry = true, status = null, vocabularyFeedbackToken = null
+    )
 
     /** 收藏不依赖词典命中；未收录词保留原文，AI 释义由仓库单独保存。 */
     fun vocabularyEntry(lookup: com.linguareader.app.data.WordLookup): com.linguareader.app.data.ContextualDictionaryEntry =
@@ -461,6 +482,7 @@ internal data class ReaderLookupSession(
         dictionaryResult = dictionaryResult,
         dictionaryLoading = false,
         showingRelatedPhrase = false,
+        showingWordEntry = false,
         aiResult = null,
         aiLoading = false,
         aiFailed = false,
@@ -475,10 +497,17 @@ internal data class ReaderLookupSession(
         // LookupSheet 用它做 remember 键（连同 lookup.word/sentence），换词本身已经
         // 重置编辑态，多归一次零反而可能在同一句重复重翻时丢失信号。
         status = null,
-        vocabularyFeedbackToken = null
+        vocabularyFeedbackToken = null,
+        lookupRequestToken = LookupRequestToken()
     )
 
     fun markDictionaryLoading(): ReaderLookupSession = copy(dictionaryLoading = true)
+
+    fun finishDictionaryLookup(
+        request: ReaderLookupSession,
+        result: com.linguareader.app.data.DictionaryLookupResult
+    ): ReaderLookupSession = if (isCurrentLookup(request))
+        copy(dictionaryResult = result, dictionaryLoading = false) else this
 
     fun withTranslation(
         translation: com.linguareader.app.translation.TranslationLookupResult?,
@@ -527,24 +556,36 @@ internal data class ReaderLookupSession(
         translation = translation ?: this.translation
     )
 
+    fun finishRetranslate(
+        request: ReaderLookupSession,
+        status: com.linguareader.app.SettingsStatus,
+        translation: com.linguareader.app.translation.TranslationLookupResult? = null
+    ): ReaderLookupSession = if (isCurrentLookup(request)) finishRetranslate(status, translation) else this
+
+    fun failSentenceTranslation(request: ReaderLookupSession, error: String): ReaderLookupSession =
+        if (isCurrentLookup(request)) withSentenceTranslationError(error) else this
+
     fun setStatus(status: com.linguareader.app.SettingsStatus): ReaderLookupSession =
         copy(status = status)
 
     fun setShowingRelatedPhrase(show: Boolean): ReaderLookupSession =
-        if (show == showingRelatedPhrase) this
-        else copy(showingRelatedPhrase = show, status = null, vocabularyFeedbackToken = null)
+        if (show == showingRelatedPhrase && !showingWordEntry) this
+        else copy(showingRelatedPhrase = show, showingWordEntry = false, status = null, vocabularyFeedbackToken = null)
 
-    fun clearStatus(): ReaderLookupSession = copy(status = null, vocabularyFeedbackToken = null)
+    fun clearStatus(): ReaderLookupSession = copy(status = null, vocabularyFeedbackToken = null,
+        lookupRequestToken = LookupRequestToken())
 
     fun cachedSentenceOrNull(sentence: String): com.linguareader.app.ai.SentenceTranslationResult? =
         sentenceCache[sentence]
 
     fun cacheSentence(
+        request: ReaderLookupSession,
         sentence: String,
         result: com.linguareader.app.ai.SentenceTranslationResult
     ): ReaderLookupSession {
-        sentenceCache.put(sentence, result)
-        return copy(sentenceTranslation = result, sentenceTranslationError = null, sentenceTranslationLoading = false)
+        // Warm only the request's original cache; a different lookup/book must keep its own UI.
+        request.sentenceCache.put(sentence, result)
+        return if (isCurrentLookup(request)) withSentenceTranslation(result) else this
     }
 
     companion object {

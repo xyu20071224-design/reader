@@ -232,7 +232,8 @@ internal fun ReaderLookupSheet(
     onToggleSave: () -> Unit,
     onTranslateSentence: () -> Unit,
     onDismiss: () -> Unit,
-    changingVocabulary: Boolean = false
+    changingVocabulary: Boolean = false,
+    canShowWord: Boolean = false
 ) {
     // 设计 token：本面板的颜色全部是「外壳」语义。
     // 它不像顶栏/底栏/听书条那样贴正文——查词面板是浮在正文之上的一层纸，
@@ -302,7 +303,7 @@ internal fun ReaderLookupSheet(
                     TextButton(onClick = onShowPhrase) { Text(stringResource(R.string.reader_view)) }
                 }
             }
-            if (isPhraseView) {
+            if (isPhraseView || canShowWord) {
                 TextButton(onClick = onShowWord) { Text(stringResource(R.string.reader_back_to_word)) }
             }
             if (entry != null && entry.inferredPartOfSpeech != PartOfSpeech.UNKNOWN) {

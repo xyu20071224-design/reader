@@ -162,6 +162,7 @@ internal fun ListeningSettingsBody(
     var settings by remember { mutableStateOf(CloudTtsSettings.load(context)) }
     var prosodyMode by remember { mutableStateOf(TtsPlaybackController.prosodyMode(context)) }
     val playback by TtsPlaybackController.state.collectAsStateWithLifecycle()
+    val packVoiceFallback by TtsPlaybackController.packVoiceFallback.collectAsStateWithLifecycle()
     var systemVoices by remember { mutableStateOf<List<SystemVoiceInfo>>(emptyList()) }
     var systemVoicesLoaded by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -238,7 +239,8 @@ internal fun ListeningSettingsBody(
                 status = SettingsStatus.success(context.getString(R.string.tts_mimo_test_ok))
             } else {
                 status = SettingsStatus.danger(
-                    (zh.exceptionOrNull() ?: en.exceptionOrNull())?.message
+                    packVoiceFailureText(context, zh.exceptionOrNull() ?: en.exceptionOrNull())
+                        ?: (zh.exceptionOrNull() ?: en.exceptionOrNull())?.message
                         ?: context.getString(R.string.tts_test_failed)
                 )
             }
@@ -302,6 +304,9 @@ internal fun ListeningSettingsBody(
             }
 
             SectionHeader(text = stringResource(R.string.tts_prosody_section))
+            packVoiceFallbackText(packVoiceFallback)?.let {
+                Text(it, style = t.typography.label, color = t.colors.inkSoft)
+            }
             EngineChoice(stringResource(R.string.tts_prosody_original),
                 selected = prosodyMode == ProsodyPlanner.Mode.ORIGINAL,
                 onSelect = { prosodyMode = ProsodyPlanner.Mode.ORIGINAL })
