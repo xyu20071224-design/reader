@@ -13,6 +13,10 @@ import com.linguareader.shared.tts.ProsodyPlanner
 object TtsPlaybackController {
     val state: StateFlow<TtsPlaybackState> get() = TtsPlaybackService.state
 
+    val packVoiceFallback: StateFlow<PackVoiceFallbackNotice?> get() = PackVoiceFallbackMonitor.state
+
+    fun onVoiceResourcesChanged() = TtsPlaybackService.onVoiceResourcesChanged()
+
     val chapterRequests: SharedFlow<Int> get() = TtsPlaybackService.chapterRequests
 
     /** Opens the listening session without playing; the user picks the start. */

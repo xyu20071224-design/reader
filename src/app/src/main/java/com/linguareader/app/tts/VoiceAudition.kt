@@ -38,6 +38,12 @@ object VoiceAudition {
         onFinished: () -> Unit = {}
     ): Result<Unit> {
         val appContext = context.applicationContext
+        PackVoiceSelectionPolicy.unavailableReason(voiceId.trim(), settings.mode) {
+            com.linguareader.app.packs.PackRepository(appContext).packVoiceSample(it) != null
+        }?.let {
+            PackVoiceFallbackMonitor.reject(it)
+            return Result.failure(PackVoiceUnavailableException(it))
+        }
         // M5b: the annotation dialog auditions per system voice, so the system
         // engine speaks directly instead of going through a cloud backend.
         if (settings.mode == TtsEngineMode.SYSTEM) {

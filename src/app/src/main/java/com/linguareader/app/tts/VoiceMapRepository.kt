@@ -50,8 +50,10 @@ class VoiceMapRepository(
         narratorLanguages: List<String> = listOf(TtsLanguage.ENGLISH, TtsLanguage.CHINESE),
         reserved: Set<String> = emptySet()
     ): BookVoiceMap? {
-        if (bookId.isBlank() || library.isEmpty) return load(bookId)
+        if (bookId.isBlank()) return null
         val existing = load(bookId)
+        val available = library.voices.filter { it.available }.map { it.id }.toSet()
+        if (library.isEmpty) return PackVoiceSelectionPolicy.effectiveMap(existing, available)
         val characters = charactersProvider(bookId)
         val cooccurrence = if (characters.isEmpty()) emptyMap() else cooccurrenceProvider(bookId)
         val assigned = VoiceAssigner.assign(
@@ -63,7 +65,8 @@ class VoiceMapRepository(
             narratorLanguages = narratorLanguages,
             reserved = reserved
         )
-        if (assigned != existing) store(assigned)
+        val persistent = PackVoiceSelectionPolicy.preserveUnavailableIntent(assigned, existing, available)
+        if (persistent != existing) store(persistent)
         return assigned
     }
 

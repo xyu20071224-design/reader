@@ -36,13 +36,23 @@ class OpenAiCompatTtsBackend(
 
     override fun isConfigured(): Boolean = settings.serverUrl.isNotBlank()
 
-    override suspend fun synthesisConfiguration(voice: String): String = CloudSynthesisIdentity.hash(
+    override suspend fun synthesisConfiguration(voice: String): String {
+        requirePackVoiceAvailable(voice)
+        return CloudSynthesisIdentity.hash(
         "openai-audio-speech-v1",
         settings.serverUrl.trim().trimEnd('/') + "/v1/audio/speech",
         settings.serverModel.ifBlank { "tts-1" },
         voice.ifBlank { "default" },
         "mp3"
-    )
+        )
+    }
+
+    private fun requirePackVoiceAvailable(voice: String) {
+        PackVoiceSelectionPolicy.unavailableReason(voice, TtsEngineMode.OPENAI_COMPAT) { false }?.let {
+            PackVoiceFallbackMonitor.reject(it)
+            throw PackVoiceUnavailableException(it)
+        }
+    }
 
     override suspend fun refreshCapabilities() {
         probedWholeBookCache = runCatching {
@@ -82,6 +92,7 @@ class OpenAiCompatTtsBackend(
         outputFile: File
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            requirePackVoiceAvailable(voice)
             val endpoint = settings.serverUrl.trim().trimEnd('/') + "/v1/audio/speech"
             val connection = URL(endpoint).openConnection() as HttpURLConnection
             try {
@@ -122,12 +133,9 @@ class OpenAiCompatTtsBackend(
      * Both blank keeps the previous single-voice behaviour.
      */
     override fun voiceFor(text: String): String {
-        val perLanguage = if (TtsLanguage.of(text) == TtsLanguage.CHINESE) {
-            settings.serverZhVoice
-        } else {
-            settings.serverEnVoice
-        }
-        return perLanguage.ifBlank { settings.serverVoice }.ifBlank { "default" }
+        val result = PackVoiceSelectionPolicy.defaultVoice(text, settings.copy(mode = TtsEngineMode.OPENAI_COMPAT)) { false }
+        PackVoiceFallbackMonitor.report(result)
+        return result.voiceId ?: "default"
     }
 
     /**

@@ -12,8 +12,23 @@ import com.linguareader.app.tts.CloudTtsSettings
 import com.linguareader.app.tts.CloudTtsSynthesizer
 import com.linguareader.app.tts.TtsEngineMode
 import com.linguareader.app.tts.VoiceLibraryLoader
+import com.linguareader.app.tts.PackVoiceSelectionPolicy
+import com.linguareader.app.tts.PackVoiceUnavailableReason
+import com.linguareader.app.tts.PackVoiceUnavailableException
+import com.linguareader.app.tts.VoiceMapRepository
+import com.linguareader.app.tts.VoiceCharacter
+import com.linguareader.app.tts.VoiceLibrary
+import com.linguareader.app.tts.VoiceInfo
+import com.linguareader.app.tts.MiMoTtsBackend
+import com.linguareader.app.tts.VoiceAudition
+import com.linguareader.app.tts.TtsPlaybackController
 import com.linguareader.shared.tts.TtsCacheKey
 import com.linguareader.shared.tts.TtsChapter
+import com.linguareader.shared.tts.PlannedSpeechRequest
+import com.linguareader.shared.tts.ProsodyConfiguration
+import com.linguareader.shared.tts.ProsodyFallbackReason
+import com.linguareader.shared.tts.ProsodyPlanner
+import java.util.concurrent.atomic.AtomicReference
 import com.linguareader.shared.tts.TtsSynthesizerListener
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -123,6 +138,36 @@ class PackLifecycleInstrumentedTest {
         repo.uninstall("fixture-voices")
         assertNull(PackRepository(context).voiceMetadata()[voice])
         assertNull(PackRepository(context).packVoiceSample("pack:fixture-voices/tone"))
+        val selected = "pack:fixture-voices/tone"
+        val settings = CloudTtsSettings(mode = TtsEngineMode.MIMO, mimoApiKey = "fixture-only-no-request",
+            narratorVoice = selected, mimoEnVoice = selected)
+        val maps = VoiceMapRepository(context, { listOf(VoiceCharacter("Alice")) })
+        val mapId = "pack-fixture-voice-intent"
+        try {
+            maps.lock(mapId, "Alice", selected)
+            maps.lockNarrator(mapId, "en", selected)
+            val original = maps.load(mapId)!!
+            val fallback = PackVoiceSelectionPolicy.resolve("narrator", "Hello.", selected, settings) {
+                repo.packVoiceSample(it) != null
+            }
+            assertEquals(CloudTtsSettings.DEFAULT_MIMO_EN_VOICE, fallback.voiceId)
+            assertEquals(PackVoiceUnavailableReason.MISSING_SAMPLE, fallback.unavailable[selected])
+            assertNull(maps.ensureFor(mapId, VoiceLibrary(engine = "mimo"))!!.voiceFor("Alice"))
+            assertEquals(original, maps.load(mapId))
+            assertEquals(CloudTtsSettings.DEFAULT_MIMO_EN_VOICE, MiMoTtsBackend(settings, context).voiceFor("Hello."))
+            assertTrue(TtsPlaybackController.packVoiceFallback.value!!.usedFallback)
+            assertTrue(VoiceAudition.play(context, settings, selected, "Hello.").exceptionOrNull() is PackVoiceUnavailableException)
+            assertFalse(TtsPlaybackController.packVoiceFallback.value!!.usedFallback)
+            install("voice-2.0.0.lrpack")
+            TtsPlaybackController.onVoiceResourcesChanged()
+            assertNull(TtsPlaybackController.packVoiceFallback.value)
+            val restored = maps.ensureFor(mapId, VoiceLibrary(listOf(VoiceInfo(selected, "en"), VoiceInfo("Mia", "en")), "mimo"))!!
+            assertEquals(selected, restored.voiceFor("Alice"))
+            assertEquals(original.userLocked, restored.userLocked)
+            assertEquals(selected, settings.narratorVoice)
+            assertEquals(selected, MiMoTtsBackend(settings, context).voiceFor("Hello."))
+            evidence("voice intent: missing sample -> valid default+typed audition reject; locks persisted; reinstall restores original voice and clears notice; no live clone synthesis")
+        } finally { File(context.filesDir, "voice_maps/$mapId.json").delete() }
         repo.uninstall("fixture-bundle-complete")
         assertNotNull(repo.registry().byId("fixture-dictionary"))
         assertNotNull(repo.registry().byId("fixture-audio"))
@@ -154,14 +199,22 @@ class PackLifecycleInstrumentedTest {
             }
         }
         val played = CountDownLatch(1)
+        val plannedPlayed = CountDownLatch(1)
+        val reportedMode = AtomicReference<ProsodyPlanner.Mode?>()
+        val reportedReason = AtomicReference<ProsodyFallbackReason?>()
         val starts = AtomicInteger()
         val errors = AtomicInteger()
         val player = CloudTtsSynthesizer(context, backend, object : TtsSynthesizerListener {
             override fun onReady() {}
             override fun onInitFailed(status: Int) { errors.incrementAndGet(); played.countDown() }
             override fun onStart(utteranceId: String) { starts.incrementAndGet() }
-            override fun onDone(utteranceId: String) { played.countDown() }
-            override fun onError(utteranceId: String) { errors.incrementAndGet(); played.countDown() }
+            override fun onDone(utteranceId: String) {
+                if (utteranceId.endsWith(":2")) plannedPlayed.countDown() else played.countDown()
+            }
+            override fun onError(utteranceId: String) { errors.incrementAndGet(); played.countDown(); plannedPlayed.countDown() }
+            override fun onProsody(utteranceId: String, mode: ProsodyPlanner.Mode, reason: ProsodyFallbackReason?) {
+                reportedMode.set(mode); reportedReason.set(reason)
+            }
         })
         try {
             check(File(fixtures, "fixture-audio.mp3").isFile) { "Host must include the original valid MP3 for fallback verification" }
@@ -175,6 +228,16 @@ class PackLifecycleInstrumentedTest {
             assertEquals(1, starts.get())
             assertEquals("Package playback must not request synthesis", 0, requests.get())
             assertFalse(cacheDirectory.walkTopDown().any { it.isFile && it.extension == "mp3" })
+            val source = TtsChapter(0, "Fixture", listOf("A resource test.")).utterances.single()
+            val policy = ProsodyPlanner.Policy(mode = ProsodyPlanner.Mode.PHRASES)
+            player.speakPlanned(PlannedSpeechRequest(source, ProsodyPlanner.plan(source, 1f, policy),
+                ProsodyConfiguration(policy, allowAudioPackRegeneration = false)), "${book.id}:0:0:0:2", "narrator.wav")
+            assertTrue("Planned package playback did not finish", plannedPlayed.await(15, TimeUnit.SECONDS))
+            assertEquals(2, starts.get())
+            assertEquals(0, errors.get())
+            assertEquals(0, requests.get())
+            assertEquals(ProsodyPlanner.Mode.ORIGINAL, reportedMode.get())
+            assertEquals(ProsodyFallbackReason.AUDIO_PACK_ORIGINAL, reportedReason.get())
             repo.uninstall("fixture-audio")
             assertNull(PackRepository(context).audioPackFile(book.id, relative))
             allowFixtureSynthesis.set(true)
@@ -187,7 +250,7 @@ class PackLifecycleInstrumentedTest {
             assertTrue(success.get())
             assertEquals("Missing package must reach the explicit test synthesis backend once", 1, requests.get())
             assertTrue(File(cacheDirectory, relative).isFile)
-            evidence("audio: MediaPlayer start=1 completion=1 errors=0 synthesis=0 with pack; uninstall -> explicit fixture backend synthesis=1 cached")
+            evidence("audio: MediaPlayer original+planned starts=2 completions=2 errors=0 synthesis=0; PHRASES request -> ORIGINAL/AUDIO_PACK_ORIGINAL; uninstall -> explicit fixture backend synthesis=1 cached")
         } finally {
             player.shutdown()
             CloudTtsSettings.save(context, saved)

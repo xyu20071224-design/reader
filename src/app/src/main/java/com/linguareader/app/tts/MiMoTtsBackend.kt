@@ -41,6 +41,7 @@ class MiMoTtsBackend(
     override fun isConfigured(): Boolean = settings.mimoApiKey.isNotBlank()
 
     override suspend fun synthesisConfiguration(voice: String): String = withContext(Dispatchers.IO) {
+        requirePackVoiceAvailable(voice)
         val sample = if (isCloneVoice(voice)) cloneSampleFile(voice) else null
         CloudSynthesisIdentity.hash(
             "mimo-chat-audio-v1", CloudTtsSettings.MIMO_BASE_URL + "/chat/completions",
@@ -67,12 +68,13 @@ class MiMoTtsBackend(
     }
 
     /** 按句语言路由：中文 → 中文预置音色，其余 → 英文预置音色。 */
-    override fun voiceFor(text: String): String =
-        if (TtsLanguage.of(text) == TtsLanguage.CHINESE) {
-            settings.mimoZhVoice.ifBlank { CloudTtsSettings.DEFAULT_MIMO_ZH_VOICE }
-        } else {
-            settings.mimoEnVoice.ifBlank { CloudTtsSettings.DEFAULT_MIMO_EN_VOICE }
+    override fun voiceFor(text: String): String {
+        val result = PackVoiceSelectionPolicy.defaultVoice(text, settings.copy(mode = TtsEngineMode.MIMO)) {
+            PackRepository(appContext).packVoiceSample(it) != null
         }
+        PackVoiceFallbackMonitor.report(result)
+        return result.voiceId ?: CloudTtsSettings.DEFAULT_MIMO_EN_VOICE
+    }
 
     override suspend fun synthesize(
         text: String,
@@ -80,6 +82,7 @@ class MiMoTtsBackend(
         outputFile: File
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
+            requirePackVoiceAvailable(voice)
             val sampleUri = if (isCloneVoice(voice)) loadCloneSampleUri(voice) else null
             val endpoint = CloudTtsSettings.MIMO_BASE_URL + "/chat/completions"
             val connection = URL(endpoint).openConnection() as HttpURLConnection
@@ -105,6 +108,15 @@ class MiMoTtsBackend(
             } finally {
                 connection.disconnect()
             }
+        }
+    }
+
+    private fun requirePackVoiceAvailable(voice: String) {
+        PackVoiceSelectionPolicy.unavailableReason(voice, TtsEngineMode.MIMO) {
+            PackRepository(appContext).packVoiceSample(it) != null
+        }?.let {
+            PackVoiceFallbackMonitor.reject(it)
+            throw PackVoiceUnavailableException(it)
         }
     }
 

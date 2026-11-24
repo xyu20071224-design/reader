@@ -190,9 +190,11 @@ object TtsSynthesizerFactory {
         val settings = CloudTtsSettings.load(context)
         // Multi-voice M1 fallback: narrator / dialogue voices from settings.
         // Both empty keeps the engine single-voice, identical to pre-M1.
-        val voiceForSpeaker: (String, String) -> String? = voiceResolver ?: { speaker, _ ->
-            (if (speaker == "narrator") settings.narratorVoice else settings.dialogueVoice)
-                .takeIf { it.isNotBlank() }
+        val packs = com.linguareader.app.packs.PackRepository(context)
+        val voiceForSpeaker: (String, String) -> String? = voiceResolver ?: { speaker, text ->
+            val result = PackVoiceSelectionPolicy.resolve(speaker, text, null, settings) { packs.packVoiceSample(it) != null }
+            PackVoiceFallbackMonitor.report(result)
+            result.voiceId
         }
         return when {
             // Networked engines honour the master power switch; when it is off
@@ -208,8 +210,8 @@ object TtsSynthesizerFactory {
             else -> SystemTtsSynthesizer(
                 context,
                 listener,
-                zhVoice = settings.systemZhVoice,
-                enVoice = settings.systemEnVoice
+                zhVoice = settings.systemZhVoice.takeUnless { it.startsWith("pack:") }.orEmpty(),
+                enVoice = settings.systemEnVoice.takeUnless { it.startsWith("pack:") }.orEmpty()
             )
         }
     }

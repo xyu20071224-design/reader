@@ -70,8 +70,9 @@ object VoiceAssigner {
         val available = library.voices.filter { it.available }
         val locked = existing?.userLocked.orEmpty()
         if (available.isEmpty()) {
-            // Nothing to assign from: keep whatever the user/previous run had.
-            return existing?.copy(bookId = bookId) ?: BookVoiceMap(bookId, engine = library.engine)
+            // Preserve ordinary choices and locks, but never return a missing package voice for playback.
+            return PackVoiceSelectionPolicy.effectiveMap(existing, emptySet())?.copy(bookId = bookId)
+                ?: BookVoiceMap(bookId, engine = library.engine)
         }
         val ids = available.map { it.id }.toSet()
         val engineChanged = existing != null &&

@@ -61,6 +61,8 @@ class TtsPlaybackService : Service() {
     private val tagScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val extractor = TtsTextExtractor()
     private val repository by lazy { LibraryRepository(applicationContext) }
+    private val voicePacks by lazy { com.linguareader.app.packs.PackRepository(applicationContext) }
+    private val voiceResourceGeneration = java.util.concurrent.atomic.AtomicLong()
     private val speakerTags by lazy { MultiVoiceSupport.speakerTagRepository(applicationContext) }
     /** Multi-voice M3: per-book character → voice mapping. */
     private val voiceMaps by lazy { MultiVoiceSupport.voiceMapRepository(applicationContext) }
@@ -201,6 +203,8 @@ class TtsPlaybackService : Service() {
                 // Settings changed: drop the snapshot and re-assign voices for
                 // the new engine (the voice library may be a different one).
                 cachedVoiceSettings = null
+                voicePacks.reload()
+                PackVoiceFallbackMonitor.clear()
                 engine.currentBook?.let { refreshVoiceMap(it) }
                 allowAudioPackRegeneration = false
                 engine.reconfigure(ProsodyConfiguration(
@@ -222,6 +226,7 @@ class TtsPlaybackService : Service() {
             return
         }
         val requestedChapter = intent.getIntExtra(EXTRA_CHAPTER, 0)
+        PackVoiceFallbackMonitor.clear()
         refreshVoiceMap(newBook)
         applySavedProsody(newBook.id)
         engine.startStandby(newBook, requestedChapter)
@@ -238,6 +243,7 @@ class TtsPlaybackService : Service() {
         // Reset the process-wide static state too, so the reader never shows a
         // listening bar for a service that no longer exists.
         _state.value = TtsPlaybackState()
+        PackVoiceFallbackMonitor.clear()
         companionInstance = null
         mediaSession?.isActive = false
         mediaSession?.release()
@@ -312,12 +318,12 @@ class TtsPlaybackService : Service() {
         // language the mapping has no entry for).
         // 三级优先级抽在 resolveVoiceFor（有单测守着，审查 3-2）。
         val settings = voiceSettings()
-        return resolveVoiceFor(
-            speaker = speaker,
-            mappingVoice = activeVoiceMap?.voiceFor(speaker, TtsLanguage.of(text)),
-            narratorVoice = settings.narratorVoice,
-            dialogueVoice = settings.dialogueVoice
-        )
+        val result = PackVoiceSelectionPolicy.resolve(speaker, text,
+            activeVoiceMap?.voiceFor(speaker, TtsLanguage.of(text)), settings) {
+            voicePacks.packVoiceSample(it) != null
+        }
+        PackVoiceFallbackMonitor.report(result)
+        return result.voiceId
     }
 
     /**
@@ -347,12 +353,29 @@ class TtsPlaybackService : Service() {
         }
     }
 
+    /** Restore local saved intent after reinstalling resources, without fetching a voice library. */
+    private fun refreshVoiceResourcesLocally() {
+        voicePacks.reload()
+        val bookId = _state.value.bookId ?: return
+        val generation = voiceResourceGeneration.incrementAndGet()
+        val playback = playGeneration
+        tagScope.launch {
+            val stored = voiceMaps.load(bookId)
+            withContext(Dispatchers.Main.immediate) {
+                if (voiceResourceGeneration.get() == generation && playGeneration == playback && engine.currentBook?.id == bookId) {
+                    activeVoiceMap = stored.takeIf { multiVoiceRequested() }
+                }
+            }
+        }
+    }
+
     // ── Playback control (thin wrappers over the engine) ─────────────────
 
     private fun handlePlay(intent: Intent) {
         val json = intent.getStringExtra(EXTRA_BOOK_JSON) ?: return
         val newBook = runCatching { Book.fromJson(JSONObject(json)) }.getOrNull() ?: return
         val requestedChapter = intent.getIntExtra(EXTRA_CHAPTER, 0)
+        PackVoiceFallbackMonitor.clear()
         val blockText = intent.getStringExtra(EXTRA_BLOCK_TEXT).orEmpty()
         val blockOffset = intent.getIntExtra(EXTRA_BLOCK_OFFSET, 0)
         refreshVoiceMap(newBook)
@@ -692,9 +715,16 @@ class TtsPlaybackService : Service() {
         }
 
         /** Called after a manual page turn so the queue follows the reader. */
+        /** Package lifecycle notification is local-only, including while no service is running. */
+        fun onVoiceResourcesChanged() {
+            PackVoiceFallbackMonitor.clear()
+            companionInstance?.refreshVoiceResourcesLocally()
+        }
+
         /** Called by the settings sheet after cloud TTS configuration changes. */
         fun onCloudSettingsChanged(context: Context, prosodyMode: ProsodyPlanner.Mode? = null) {
             if (prosodyMode != null) ProsodySettings.saveMode(context, prosodyMode)
+            PackVoiceFallbackMonitor.clear()
             if (_state.value.bookId != null) {
                 context.startService(
                     Intent(context, TtsPlaybackService::class.java).setAction(ACTION_RECONFIGURE)
