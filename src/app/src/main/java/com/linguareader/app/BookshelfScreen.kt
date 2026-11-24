@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,6 +67,8 @@ import com.linguareader.app.shelf.ShelfMessageDialog
 import com.linguareader.app.shelf.ShelfRosterSheet
 import com.linguareader.app.shelf.ShelfTranslationChoiceDialog
 import com.linguareader.app.components.LinguaScaffold
+import com.linguareader.app.components.LinguaTextButton
+import com.linguareader.app.update.ReleaseHistorySheet
 import com.linguareader.app.components.LinguaTopBarAction
 import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.app.skin.LocalLanternAppearance
@@ -179,7 +182,10 @@ internal fun BookshelfScreen(
      */
     onSkinChanged: (com.linguareader.shared.ui.skin.SkinSpec?) -> Unit = {},
     onRollbackNativeUpdate: () -> Unit = {},
-    onReleaseSourceChange: (String?) -> Unit = {}
+    onReleaseSourceChange: (String?) -> Unit = {},
+    releaseHistory: ReleaseHistoryUiState? = null,
+    onRefreshReleaseHistory: () -> Unit = {},
+    onMarkReleaseHistoryRead: () -> Unit = {}
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
         if (it != null) onImport(it)
@@ -225,6 +231,7 @@ internal fun BookshelfScreen(
     BackHandler(enabled = showSyncDetail) { showSyncDetail = false }
     var showAiDrawer by rememberSaveable { mutableStateOf(false) }
     var showUpdateSheet by rememberSaveable { mutableStateOf(false) }
+    var showReleaseHistory by rememberSaveable { mutableStateOf(false) }
     var showStorageSheet by rememberSaveable { mutableStateOf(false) }
     var showPacksSheet by rememberSaveable { mutableStateOf(false) }
     var showSyncSheet by rememberSaveable { mutableStateOf(false) }
@@ -365,101 +372,113 @@ internal fun BookshelfScreen(
         ) {
             // 内容区不再需要给顶栏留出 padding：LinguaScaffold 的顶栏是 Column 的第一段，
             // 内容槽天然接在它下面；窗口 insets 也已由组件处理。
-            Box(Modifier.fillMaxSize()) {
-                if (showVocabulary) {
-                    VocabularyScreen(
-                        words = state.savedWords,
-                        reviewPreset = state.reviewPreset,
-                        customReview = state.customReview,
-                        reminders = state.reminders,
-                        onReviewModeChange = onReviewModeChange,
-                        onCustomReviewChange = onCustomReviewChange,
-                        onRemindersChange = onRemindersChange,
-                        onRemove = onRemoveWord,
-                        onReview = onReviewWord,
-                        onExport = onExportVocabulary,
-                        onSpeak = onSpeak
-                    )
-                } else if (showSyncDetail) {
-                    // 同步明细（F-160 二级界面）：离线渲染快照，拉取只走 onRefresh。
-                    SyncDetailScreen(
-                        detail = state.syncDetail,
-                        loading = state.syncDetailLoading,
-                        settings = state.syncSettings,
-                        status = state.syncStatus,
-                        lastSyncAt = state.lastSyncAt,
-                        busy = state.syncBusy,
-                        onRefresh = refreshDetailAndCloud,
-                        onSyncNow = onSyncNow,
-                        onDownloadCloudBook = onDownloadCloudBook
-                    )
-                } else if (state.books.isEmpty() && !state.loading) {
-                    val importBook = { launcher.launch(IMPORT_MIME_TYPES) }
-                    if (lanternMode == null) {
-                        ShelfEmptyState(onImport = importBook)
-                    } else {
-                        LanternEmptyShelf(lanternMode, onImport = importBook)
-                    }
-                } else {
-                    val lanternHeight = (LocalConfiguration.current.screenHeightDp * .22f).dp.coerceIn(108.dp, 192.dp)
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(ShelfColumnMinWidth),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = t.spacing.m)
-                            .testTag(UiTags.SHELF_GRID),
-                        horizontalArrangement = Arrangement.spacedBy(ShelfColumnGap),
-                        verticalArrangement = Arrangement.spacedBy(ShelfRowGap)
-                    ) {
-                        if (lanternMode != null && state.books.isNotEmpty()) {
-                            item(key = "lantern-shelf-artwork", span = { GridItemSpan(maxLineSpan) }) {
-                                LanternShelfArtwork(lanternMode, Modifier.fillMaxWidth().height(lanternHeight))
-                            }
-                        }
-                        items(state.books, key = { it.id }) { book ->
-                            ShelfBookCard(
-                                book = book,
-                                aiEnabled = state.aiSettings.enabled,
-                                aiStatus = state.aiStatuses[book.id],
-                                attachingTranslation = book.id in state.attachingTranslation,
-                                aiTranslationProgress = state.aiTranslationProgress[book.id],
-                                translationOutdated = book.id in state.outdatedTranslations,
-                                containerAlpha = if (showCustomBackground) 0.9f else 1f,
-                                lanternSurface = lanternMode != null,
-                                onOpen = { onOpen(book) },
-                                onGlossary = { glossaryBook = book },
-                                onTranslation = {
-                                    when {
-                                        // 生成中：按钮变「取消生成」。
-                                        book.id in state.aiTranslationProgress -> onCancelAiTranslation(book)
-                                        // AI 译本：可重新生成（检查点复用、只补失败批）也可删除。
-                                        book.hasTranslation && book.isAiTranslation ->
-                                            aiTranslationManageCandidate = book
-                                        book.hasTranslation -> detachTranslationCandidate = book
-                                        else -> translationChoiceCandidate = book
-                                    }
-                                },
-                                onLongPressDelete = { deleteCandidate = book },
-                                onManageRoster = { rosterBook = book }
-                            )
-                        }
+            Column(Modifier.fillMaxSize()) {
+                if (!showVocabulary && !showSyncDetail && releaseHistory != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        LinguaTextButton(stringResource(R.string.release_history_title), onClick = { showReleaseHistory = true })
                     }
                 }
-                if (state.loading) {
-                    // 半透明纸底压在书架内容上：只是「正在整理」的提示，不是遮断式loading 页。
-                    Box(
-                        Modifier.fillMaxSize().background(t.colors.paper.copy(alpha = LoadingScrimAlpha)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = t.colors.accent)
-                            Spacer(Modifier.height(t.spacing.m))
-                            Text(stringResource(R.string.shelf_loading), color = t.colors.inkSoft)
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    if (showVocabulary) {
+                        VocabularyScreen(
+                            words = state.savedWords,
+                            reviewPreset = state.reviewPreset,
+                            customReview = state.customReview,
+                            reminders = state.reminders,
+                            onReviewModeChange = onReviewModeChange,
+                            onCustomReviewChange = onCustomReviewChange,
+                            onRemindersChange = onRemindersChange,
+                            onRemove = onRemoveWord,
+                            onReview = onReviewWord,
+                            onExport = onExportVocabulary,
+                            onSpeak = onSpeak
+                        )
+                    } else if (showSyncDetail) {
+                        // 同步明细（F-160 二级界面）：离线渲染快照，拉取只走 onRefresh。
+                        SyncDetailScreen(
+                            detail = state.syncDetail,
+                            loading = state.syncDetailLoading,
+                            settings = state.syncSettings,
+                            status = state.syncStatus,
+                            lastSyncAt = state.lastSyncAt,
+                            busy = state.syncBusy,
+                            onRefresh = refreshDetailAndCloud,
+                            onSyncNow = onSyncNow,
+                            onDownloadCloudBook = onDownloadCloudBook
+                        )
+                    } else if (state.books.isEmpty() && !state.loading) {
+                        val importBook = { launcher.launch(IMPORT_MIME_TYPES) }
+                        if (lanternMode == null) {
+                            ShelfEmptyState(onImport = importBook)
+                        } else {
+                            LanternEmptyShelf(lanternMode, onImport = importBook)
+                        }
+                    } else {
+                        val lanternHeight = (LocalConfiguration.current.screenHeightDp * .22f).dp.coerceIn(108.dp, 192.dp)
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(ShelfColumnMinWidth),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = t.spacing.m)
+                                .testTag(UiTags.SHELF_GRID),
+                            horizontalArrangement = Arrangement.spacedBy(ShelfColumnGap),
+                            verticalArrangement = Arrangement.spacedBy(ShelfRowGap)
+                        ) {
+                            if (lanternMode != null && state.books.isNotEmpty()) {
+                                item(key = "lantern-shelf-artwork", span = { GridItemSpan(maxLineSpan) }) {
+                                    LanternShelfArtwork(lanternMode, Modifier.fillMaxWidth().height(lanternHeight))
+                                }
+                            }
+                            items(state.books, key = { it.id }) { book ->
+                                ShelfBookCard(
+                                    book = book,
+                                    aiEnabled = state.aiSettings.enabled,
+                                    aiStatus = state.aiStatuses[book.id],
+                                    attachingTranslation = book.id in state.attachingTranslation,
+                                    aiTranslationProgress = state.aiTranslationProgress[book.id],
+                                    translationOutdated = book.id in state.outdatedTranslations,
+                                    containerAlpha = if (showCustomBackground) 0.9f else 1f,
+                                    lanternSurface = lanternMode != null,
+                                    onOpen = { onOpen(book) },
+                                    onGlossary = { glossaryBook = book },
+                                    onTranslation = {
+                                        when {
+                                            // 生成中：按钮变「取消生成」。
+                                            book.id in state.aiTranslationProgress -> onCancelAiTranslation(book)
+                                            // AI 译本：可重新生成（检查点复用、只补失败批）也可删除。
+                                            book.hasTranslation && book.isAiTranslation ->
+                                                aiTranslationManageCandidate = book
+                                            book.hasTranslation -> detachTranslationCandidate = book
+                                            else -> translationChoiceCandidate = book
+                                        }
+                                    },
+                                    onLongPressDelete = { deleteCandidate = book },
+                                    onManageRoster = { rosterBook = book }
+                                )
+                            }
+                        }
+                    }
+                    if (state.loading) {
+                        // 半透明纸底压在书架内容上：只是「正在整理」的提示，不是遮断式loading 页。
+                        Box(
+                            Modifier.fillMaxSize().background(t.colors.paper.copy(alpha = LoadingScrimAlpha)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = t.colors.accent)
+                                Spacer(Modifier.height(t.spacing.m))
+                                Text(stringResource(R.string.shelf_loading), color = t.colors.inkSoft)
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    if (showReleaseHistory && releaseHistory != null) {
+        ReleaseHistorySheet(releaseHistory.view, releaseHistoryLabels(), onRefreshReleaseHistory,
+            onMarkReleaseHistoryRead, onDismiss = { showReleaseHistory = false }, loading = releaseHistory.loading)
     }
 
     if (showStorageSheet) {

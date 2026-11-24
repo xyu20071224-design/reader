@@ -1,0 +1,24 @@
+<resources>
+    <string name="release_history_title">版本改动</string>
+    <string name="release_history_current_tab">本版</string>
+    <string name="release_history_upgrade_tab">本次升级</string>
+    <string name="release_history_all_tab">发布历史</string>
+    <string name="release_history_refresh">刷新历史</string>
+    <string name="release_history_refreshing">正在刷新</string>
+    <string name="release_history_mark_read">标为已读</string>
+    <string name="release_history_read">已读</string>
+    <string name="release_history_current_missing">此构建尚无已核实的本版说明，可查看发布历史。</string>
+    <string name="release_history_previous_unknown">没有上次安装版本的记录，无法确定本次升级范围。</string>
+    <string name="release_history_no_upgrade">此次未记录跨版本升级。</string>
+    <string name="release_history_empty">尚无可显示的发布说明。</string>
+    <string name="release_history_notes_empty">此版本尚未提供说明正文。</string>
+    <string name="release_history_not_loaded">在线历史尚未加载，本地说明仍可查看。</string>
+    <string name="release_history_incomplete">版本历史未完整加载，当前列表可能缺少版本。</string>
+    <string name="release_history_cached">正在显示已保存的发布记录。</string>
+    <string name="release_history_failed">暂时无法完整读取发布记录，请重试。</string>
+    <string name="release_history_current_version">当前版本 %1$s</string>
+    <string name="release_history_release_range">本版改动：%1$s → %2$s</string>
+    <string name="release_history_upgrade_range">本次升级：%1$s → %2$s</string>
+    <string name="release_history_downgrade">从 %1$s 降级到 %2$s。</string>
+    <string name="release_history_patch_revision">已加载热修复修订 %1$d</string>
+</resources>

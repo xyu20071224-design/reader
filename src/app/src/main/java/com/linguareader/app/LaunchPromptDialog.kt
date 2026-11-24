@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -36,11 +38,24 @@ import com.linguareader.app.skin.LocalDesignTokens
 @Composable
 internal fun LaunchPromptDialog(
     prompt: LaunchPromptUi,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAcknowledgeRelease: () -> Unit = onDismiss
 ) {
     when (prompt) {
         is LaunchPromptUi.GreetingPrompt -> GreetingSceneDialog(prompt.greeting, onDismiss)
         is LaunchPromptUi.UpdatePrompt -> UpdateNoteDialog(prompt.note, onDismiss)
+        is LaunchPromptUi.ReleasePrompt -> {
+            val t = LocalDesignTokens.current
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                confirmButton = { LinguaTextButton(stringResource(R.string.common_got_it), onClick = onAcknowledgeRelease) },
+                title = { Text(stringResource(R.string.launch_update_note_title, prompt.note.versionName)) },
+                text = { Text(prompt.note.notes, color = t.colors.ink, style = t.typography.body,
+                    modifier = Modifier.verticalScroll(rememberScrollState())) },
+                containerColor = t.colors.cardSurface,
+                shape = t.cardShape
+            )
+        }
     }
 }
 
@@ -152,7 +167,7 @@ private fun UpdateNoteDialog(note: UpdateNote, onDismiss: () -> Unit) {
         },
         text = {
             Text(
-                text = note.items.joinToString("\n") { "· ${'$'}{context.getString(it)}" },
+                text = note.items.joinToString("\n") { "· ${context.getString(it)}" },
                 style = t.typography.body.copy(lineHeight = t.typography.display.lineHeight),
                 color = t.colors.ink,
                 modifier = Modifier.padding(top = t.spacing.xs)

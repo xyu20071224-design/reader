@@ -1,0 +1,24 @@
+<resources>
+    <string name="release_history_title">Version changes</string>
+    <string name="release_history_current_tab">This version</string>
+    <string name="release_history_upgrade_tab">This upgrade</string>
+    <string name="release_history_all_tab">Releases</string>
+    <string name="release_history_refresh">Refresh history</string>
+    <string name="release_history_refreshing">Refreshing</string>
+    <string name="release_history_mark_read">Mark as read</string>
+    <string name="release_history_read">Read</string>
+    <string name="release_history_current_missing">Verified notes for this build are unavailable. You can view published releases.</string>
+    <string name="release_history_previous_unknown">The previous installed version was not recorded, so this upgrade range is unknown.</string>
+    <string name="release_history_no_upgrade">No version upgrade was recorded.</string>
+    <string name="release_history_empty">No release notes are available yet.</string>
+    <string name="release_history_notes_empty">Notes were not provided for this release.</string>
+    <string name="release_history_not_loaded">Online history has not been loaded. Local notes remain available.</string>
+    <string name="release_history_incomplete">History is incomplete and may be missing releases.</string>
+    <string name="release_history_cached">Showing saved release records.</string>
+    <string name="release_history_failed">Some release records could not be read. Please try again.</string>
+    <string name="release_history_current_version">Current version %1$s</string>
+    <string name="release_history_release_range">Release changes: %1$s → %2$s</string>
+    <string name="release_history_upgrade_range">This upgrade: %1$s → %2$s</string>
+    <string name="release_history_downgrade">Downgraded from %1$s to %2$s.</string>
+    <string name="release_history_patch_revision">Loaded hotfix revision %1$d</string>
+</resources>

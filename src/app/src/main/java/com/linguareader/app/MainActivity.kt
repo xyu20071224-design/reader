@@ -155,6 +155,7 @@ private fun LinguaReaderApp(
     onSkinChanged: (com.linguareader.shared.ui.skin.SkinSpec?) -> Unit
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val releaseHistory by viewModel.releaseHistory.collectAsStateWithLifecycle()
     val currentBook = state.currentBook
     var speechFailure by remember { mutableStateOf<SingleWordSpeaker.Failure?>(null) }
     val speak = rememberEnglishSpeaker { speechFailure = it }
@@ -267,6 +268,9 @@ private fun LinguaReaderApp(
                     onCancelUpdateDownload = viewModel::cancelUpdateDownload,
                     onRollbackNativeUpdate = viewModel::rollbackNativeUpdate,
                     onReleaseSourceChange = viewModel::setReleaseCatalogUrl,
+                    releaseHistory = releaseHistory,
+                    onRefreshReleaseHistory = viewModel::refreshReleaseHistory,
+                    onMarkReleaseHistoryRead = viewModel::markReleaseHistoryRead,
                     onDismissMessage = viewModel::clearMessage,
                     onSaveSyncSettings = viewModel::saveSyncSettings,
                     onSyncLogin = viewModel::syncLogin,
@@ -317,7 +321,8 @@ private fun LinguaReaderApp(
     }
 
     state.launchPrompt?.let { prompt ->
-        LaunchPromptDialog(prompt = prompt, onDismiss = viewModel::dismissLaunchPrompt)
+        LaunchPromptDialog(prompt = prompt, onDismiss = viewModel::dismissLaunchPrompt,
+            onAcknowledgeRelease = viewModel::acknowledgeReleaseNotes)
     }
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {

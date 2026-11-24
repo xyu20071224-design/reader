@@ -39,7 +39,12 @@ import com.linguareader.app.data.ReviewPace
 import com.linguareader.app.data.ReviewReminders
 import com.linguareader.app.data.ReviewReminderScheduler
 import com.linguareader.app.data.UpdateNote
-import com.linguareader.app.data.updateNoteFor
+import com.linguareader.app.update.AppReleaseHistoryRepository
+import com.linguareader.app.update.AppReleaseHistoryView
+import com.linguareader.shared.update.BuildReleaseIdentity
+import com.linguareader.shared.update.PublishedReleaseNotes
+import com.linguareader.shared.update.HistoryIssue
+import com.linguareader.shared.update.ReleaseUrls
 import java.util.Calendar
 import com.linguareader.app.data.LibraryRepository
 import com.linguareader.app.data.SavedWord
@@ -80,7 +85,10 @@ import java.io.File
 sealed interface LaunchPromptUi {
     data class GreetingPrompt(val greeting: Greeting) : LaunchPromptUi
     data class UpdatePrompt(val note: UpdateNote) : LaunchPromptUi
+    data class ReleasePrompt(val note: PublishedReleaseNotes) : LaunchPromptUi
 }
+
+data class ReleaseHistoryUiState(val view: AppReleaseHistoryView, val loading: Boolean = false)
 
 /** 一本书的 AI 整本翻译进度（批次百分比；aligning = 翻译完成正在对齐）。 */
 data class AiTranslationProgress(
@@ -211,7 +219,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val dictionary = DictionaryRepository(application) { packs.dictionarySource() }
     private val vocabulary = VocabularyRepository(application)
     private val reviewPrefs = application.getSharedPreferences("review_settings", android.content.Context.MODE_PRIVATE)
-    private val launchPrefs = application.getSharedPreferences("launch_promo", android.content.Context.MODE_PRIVATE)
     private val aiSettingsStore = AiSettingsStore(application)
     private val aiRepository = BookContextRepository(application, aiSettingsStore)
     private val glossaryRepository = BookGlossaryRepository(application)
@@ -310,6 +317,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var remotePackJob: Job? = null
     private var remotePackDownloadJob: Job? = null
     private val releaseSourceVersion = java.util.concurrent.atomic.AtomicLong()
+    private val releaseHistoryRepository = AppReleaseHistoryRepository(application, updateRepository,
+        BuildReleaseIdentity(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE,
+            BuildConfig.SOURCE_COMMIT.takeIf { it.isNotBlank() }, BuildConfig.SOURCE_DIRTY))
+    private val mutableReleaseHistory = MutableStateFlow(ReleaseHistoryUiState(
+        releaseHistoryRepository.loadLocal(updateRepository.nativeStatus().loadedRevision)))
+    val releaseHistory: StateFlow<ReleaseHistoryUiState> = mutableReleaseHistory.asStateFlow()
+    private var releaseHistoryJob: Job? = null
 
     init {
         val storedName = reviewPrefs.getString(ReviewMode.PREFERENCE_KEY, null)
@@ -321,13 +335,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             reviewPrefs.asPreferencesStore(),
             fallback = preset?.defaultReminders() ?: ReviewReminders.DEFAULT
         )
-        val versionCode = BuildConfig.VERSION_CODE
-        val versionName = BuildConfig.VERSION_NAME
-        val lastSeenVersion = launchPrefs.getInt("last_seen_version", 0)
-        val prompt = if (LaunchPromptPolicy.shouldShowUpdateNote(versionCode, lastSeenVersion)) {
-            // Mark as seen immediately so the note appears exactly once.
-            launchPrefs.edit().putInt("last_seen_version", versionCode).apply()
-            LaunchPromptUi.UpdatePrompt(updateNoteFor(versionCode, versionName))
+        val localHistory = mutableReleaseHistory.value.view
+        val currentNotes = localHistory.currentNotes
+        val prompt = if (currentNotes != null && localHistory.unread) {
+            LaunchPromptUi.ReleasePrompt(currentNotes)
         } else {
             LaunchPromptUi.GreetingPrompt(
                 LaunchPromptPolicy.greetingForHour(
@@ -997,10 +1008,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (mutableState.value.packs.installing || mutableState.value.update.phase in setOf(
                 AppUpdatePhase.APPLYING_PATCH, AppUpdatePhase.RESTART_REQUIRED)) return
         // Validate and persist before clearing the current result. Invalid input keeps it intact.
-        runCatching { updateRepository.setCatalogUrl(catalogUrl) }.onFailure {
+        val normalized = runCatching {
+            catalogUrl?.trim()?.takeIf { it.isNotEmpty() }?.let { java.net.URI(it).toASCIIString() }
+                .also { value -> value?.let { ReleaseUrls.mirror(it) } }
+        }.getOrElse {
             mutableState.update { state -> state.copy(message = string(R.string.update_source_invalid)) }
             return
         }
+        releaseHistoryRepository.invalidate()
+        releaseHistoryJob?.cancel()
+        updateRepository.setCatalogUrl(normalized)
         releaseSourceVersion.incrementAndGet()
         updateCheckJob?.cancel()
         updateJob?.cancel()
@@ -1010,6 +1027,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         updateJob = null
         remotePackJob = null
         remotePackDownloadJob = null
+        mutableReleaseHistory.value = ReleaseHistoryUiState(releaseHistoryRepository.loadLocal(
+            updateRepository.nativeStatus().loadedRevision))
         mutableState.update { state -> state.copy(
             update = state.update.copy(
                 catalogUrl = updateRepository.loadSettings().catalogUrl,
@@ -1018,6 +1037,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             ),
             packs = state.packs.copy(remote = RemotePacksState())
         ) }
+    }
+
+    fun refreshReleaseHistory() {
+        if (mutableReleaseHistory.value.loading) return
+        val sourceVersion = releaseSourceVersion.get()
+        mutableReleaseHistory.update { it.copy(loading = true) }
+        releaseHistoryJob = viewModelScope.launch {
+            try {
+                val result = releaseHistoryRepository.refresh(updateRepository.nativeStatus().loadedRevision)
+                if (sourceVersion == releaseSourceVersion.get()) {
+                    mutableReleaseHistory.value = ReleaseHistoryUiState(result)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (sourceVersion == releaseSourceVersion.get()) mutableReleaseHistory.update { current ->
+                    current.copy(loading = false, view = current.view.copy(history = current.view.history.copy(
+                        issues = current.view.history.issues + HistoryIssue.FETCH_FAILED)))
+                }
+            }
+        }
+    }
+
+    fun markReleaseHistoryRead() {
+        mutableReleaseHistory.update { it.copy(view = releaseHistoryRepository.markRead(
+            updateRepository.nativeStatus().loadedRevision)) }
+    }
+
+    fun acknowledgeReleaseNotes() {
+        markReleaseHistoryRead()
+        dismissLaunchPrompt()
     }
 
     /**
