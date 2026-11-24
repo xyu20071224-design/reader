@@ -919,4 +919,11 @@
     <string name="tts_word_unavailable">System speech is unavailable. Check text-to-speech in system settings.</string>
     <string name="tts_word_language_missing">An English voice is missing. Install one in system text-to-speech settings.</string>
     <string name="tts_word_playback_failed">Could not play the pronunciation. Try again.</string>
+    <string name="update_source_title">Download source</string>
+    <string name="update_source_github">GitHub</string>
+    <string name="update_source_mirror">Custom mirror</string>
+    <string name="update_source_change">Change source</string>
+    <string name="update_source_catalog">HTTPS mirror catalog URL</string>
+    <string name="update_source_hint">Changing the source cancels active downloads. Check for updates or fetch resource packs again after saving.</string>
+    <string name="update_source_invalid">Enter a valid HTTPS mirror catalog file URL.</string>
 </resources>

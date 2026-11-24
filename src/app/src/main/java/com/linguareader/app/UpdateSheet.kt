@@ -54,7 +54,9 @@ internal fun UpdateSheet(
     onAutoCheckChange: (Boolean) -> Unit,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
-    onRollbackPatch: () -> Unit = {}
+    onRollbackPatch: () -> Unit = {},
+    onSourceChange: (String?) -> Unit = {},
+    sourceChangeEnabled: Boolean = true
 ) {
     val context = LocalContext.current
     // 从系统「安装未知应用」授权页返回时要重查授权状态。
@@ -77,6 +79,8 @@ internal fun UpdateSheet(
             onDownload = onDownload,
             onCancelDownload = onCancelDownload,
             onRollbackPatch = onRollbackPatch,
+            onSourceChange = onSourceChange,
+            sourceChangeEnabled = sourceChangeEnabled,
             onRestartApp = { com.linguareader.app.hotfix.bootstrap.ReaderRestartActivity.restart(context) },
             onGrantInstallPermission = {
                 context.startActivity(ApkInstaller.installPermissionIntent(context))
@@ -111,7 +115,9 @@ internal fun ColumnScope.UpdateSheetContent(
     onCancelDownload: () -> Unit,
     onGrantInstallPermission: () -> Unit,
     onRollbackPatch: () -> Unit = {},
-    onRestartApp: () -> Unit = {}
+    onRestartApp: () -> Unit = {},
+    onSourceChange: (String?) -> Unit = {},
+    sourceChangeEnabled: Boolean = true
 ) {
     val t = LocalDesignTokens.current
 
@@ -144,6 +150,14 @@ internal fun ColumnScope.UpdateSheetContent(
         subtitle = stringResource(R.string.update_auto_check_hint),
         checked = update.autoCheckEnabled,
         onCheckedChange = onAutoCheckChange
+    )
+
+    Spacer(Modifier.height(t.spacing.s))
+    UpdateSourceSection(
+        catalogUrl = update.catalogUrl,
+        enabled = sourceChangeEnabled && update.phase !in setOf(
+            AppUpdatePhase.APPLYING_PATCH, AppUpdatePhase.RESTART_REQUIRED),
+        onChange = onSourceChange
     )
 
     Spacer(Modifier.height(t.spacing.m))

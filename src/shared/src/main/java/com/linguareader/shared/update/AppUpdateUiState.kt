@@ -27,7 +27,9 @@ data class AppUpdateUiState(
     /** ERROR 阶段的失败原因（用户可读）。 */
     val error: String? = null,
     val nativePatchRevision: Int = 0,
-    val patchRolledBack: Boolean = false
+    val patchRolledBack: Boolean = false,
+    /** null selects GitHub; a mirror is selected explicitly by the user. */
+    val catalogUrl: String? = null
 ) {
     /** 本会话发现过新版（含下载中/待安装），书架顶栏据此显示红点。 */
     val updateAvailable: Boolean

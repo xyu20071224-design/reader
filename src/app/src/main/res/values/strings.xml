@@ -910,4 +910,11 @@
     <string name="tts_word_unavailable">系统语音不可用，请在系统设置中检查文字转语音服务。</string>
     <string name="tts_word_language_missing">缺少英语语音，请在系统文字转语音设置中安装英语语音。</string>
     <string name="tts_word_playback_failed">发音失败，请稍后重试。</string>
+    <string name="update_source_title">下载来源</string>
+    <string name="update_source_github">GitHub</string>
+    <string name="update_source_mirror">自定义镜像</string>
+    <string name="update_source_change">更改来源</string>
+    <string name="update_source_catalog">HTTPS 镜像目录地址</string>
+    <string name="update_source_hint">更改来源会取消正在下载的文件。保存后请重新检查更新或获取资源包。</string>
+    <string name="update_source_invalid">请输入有效的 HTTPS 镜像目录文件地址。</string>
 </resources>

@@ -266,6 +266,7 @@ private fun LinguaReaderApp(
                     onDownloadUpdate = viewModel::downloadUpdate,
                     onCancelUpdateDownload = viewModel::cancelUpdateDownload,
                     onRollbackNativeUpdate = viewModel::rollbackNativeUpdate,
+                    onReleaseSourceChange = viewModel::setReleaseCatalogUrl,
                     onDismissMessage = viewModel::clearMessage,
                     onSaveSyncSettings = viewModel::saveSyncSettings,
                     onSyncLogin = viewModel::syncLogin,

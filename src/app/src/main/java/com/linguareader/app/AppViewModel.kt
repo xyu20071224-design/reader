@@ -306,6 +306,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     /** 自动更新：检查 + 下载的编排层（网络细节在 update/ 包内）。 */
     private val updateRepository = AppUpdateRepository(application)
     private var updateJob: Job? = null
+    private var updateCheckJob: Job? = null
+    private var remotePackJob: Job? = null
+    private var remotePackDownloadJob: Job? = null
+    private val releaseSourceVersion = java.util.concurrent.atomic.AtomicLong()
 
     init {
         val storedName = reviewPrefs.getString(ReviewMode.PREFERENCE_KEY, null)
@@ -340,6 +344,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             aiSettings = aiSettingsStore.load(),
             update = AppUpdateUiState(
                 autoCheckEnabled = updateRepository.loadSettings().autoCheckEnabled,
+                catalogUrl = updateRepository.loadSettings().catalogUrl,
                 nativePatchRevision = nativeUpdate.loadedRevision,
                 patchRolledBack = nativeUpdate.rolledBack,
                 error = if (nativeUpdate.failed) string(R.string.update_hotfix_failed) else null,
@@ -644,20 +649,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 卸载资源包；若是当前词典包则自动回退内置。 */
     /**
-     * Q2-c03：从 GitHub Releases 拉取可用资源包列表。
+     * Q2-c03：从用户选择的下载来源拉取可用资源包列表。
      *
      * 只在用户点了「获取在线资源包」时联网；失败原因留在 `remote.error` 上，
      * 不弹对话框（可重试，且不打断正在看的包列表）。
      */
     fun loadRemotePacks() {
         if (mutableState.value.packs.remote.loading) return
-        viewModelScope.launch {
+        val sourceVersion = releaseSourceVersion.get()
+        remotePackJob = viewModelScope.launch {
             mutableState.value = mutableState.value.copy(
                 packs = mutableState.value.packs.copy(
                     remote = mutableState.value.packs.remote.copy(loading = true, error = null)
                 )
             )
             val result = updateRepository.fetchPackAssets()
+            if (sourceVersion != releaseSourceVersion.get()) return@launch
             mutableState.value = mutableState.value.copy(
                 packs = mutableState.value.packs.copy(
                     remote = result.fold(
@@ -677,7 +684,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun installRemotePack(asset: GitHubReleaseParser.PackAsset) {
         if (mutableState.value.packs.remote.downloading != null) return
-        viewModelScope.launch {
+        val sourceVersion = releaseSourceVersion.get()
+        remotePackDownloadJob = viewModelScope.launch {
             mutableState.value = mutableState.value.copy(
                 packs = mutableState.value.packs.copy(
                     remote = mutableState.value.packs.remote.copy(
@@ -687,6 +695,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
             val outcome = updateRepository.downloadPack(asset) { _, _ -> }
+            if (sourceVersion != releaseSourceVersion.get()) {
+                outcome.getOrNull()?.delete()
+                return@launch
+            }
             mutableState.value = mutableState.value.copy(
                 packs = mutableState.value.packs.copy(
                     remote = mutableState.value.packs.remote.copy(
@@ -981,6 +993,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         setUpdate { it.copy(autoCheckEnabled = enabled) }
     }
 
+    fun setReleaseCatalogUrl(catalogUrl: String?) {
+        if (mutableState.value.packs.installing || mutableState.value.update.phase in setOf(
+                AppUpdatePhase.APPLYING_PATCH, AppUpdatePhase.RESTART_REQUIRED)) return
+        // Validate and persist before clearing the current result. Invalid input keeps it intact.
+        runCatching { updateRepository.setCatalogUrl(catalogUrl) }.onFailure {
+            mutableState.update { state -> state.copy(message = string(R.string.update_source_invalid)) }
+            return
+        }
+        releaseSourceVersion.incrementAndGet()
+        updateCheckJob?.cancel()
+        updateJob?.cancel()
+        remotePackJob?.cancel()
+        remotePackDownloadJob?.cancel()
+        updateCheckJob = null
+        updateJob = null
+        remotePackJob = null
+        remotePackDownloadJob = null
+        mutableState.update { state -> state.copy(
+            update = state.update.copy(
+                catalogUrl = updateRepository.loadSettings().catalogUrl,
+                phase = AppUpdatePhase.IDLE, info = null, downloadedApk = null,
+                progress = 0, error = null
+            ),
+            packs = state.packs.copy(remote = RemotePacksState())
+        ) }
+    }
+
     /**
      * 检查更新。[silent] 为 true 表示启动自动检查：只在新版时 Snackbar 提示，
      * 无更新/失败都静默归位，避免打扰；手动入口走 false，结果都在 UpdateSheet 里展示。
@@ -988,8 +1027,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun checkForUpdate(silent: Boolean = false) {
         if (mutableState.value.update.phase in setOf(AppUpdatePhase.CHECKING, AppUpdatePhase.DOWNLOADING, AppUpdatePhase.APPLYING_PATCH, AppUpdatePhase.RESTART_REQUIRED)) return
         setUpdate { it.copy(phase = AppUpdatePhase.CHECKING, error = null) }
-        viewModelScope.launch {
-            when (val outcome = updateRepository.check()) {
+        val sourceVersion = releaseSourceVersion.get()
+        updateCheckJob = viewModelScope.launch {
+            val outcome = updateRepository.check()
+            if (sourceVersion != releaseSourceVersion.get()) return@launch
+            when (outcome) {
                 is UpdateCheckOutcome.Available -> {
                     setUpdate {
                         it.copy(phase = AppUpdatePhase.AVAILABLE, info = outcome.info, error = null)
@@ -1018,13 +1060,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (mutableState.value.update.phase in setOf(AppUpdatePhase.DOWNLOADING, AppUpdatePhase.APPLYING_PATCH, AppUpdatePhase.RESTART_REQUIRED)) return
         updateJob?.cancel()
         setUpdate { it.copy(phase = AppUpdatePhase.DOWNLOADING, progress = 0, error = null) }
+        val sourceVersion = releaseSourceVersion.get()
         updateJob = viewModelScope.launch {
             updateRepository.download(info) { downloaded, total ->
-                if (total > 0) {
+                if (total > 0 && sourceVersion == releaseSourceVersion.get()) {
                     val percent = ((downloaded * 100) / total).toInt().coerceIn(0, 100)
                     setUpdate { it.copy(progress = percent) }
                 }
             }.onSuccess { apk ->
+                if (sourceVersion != releaseSourceVersion.get()) {
+                    apk.delete()
+                    return@onSuccess
+                }
                 val patch = info.nativePatch
                 if (patch == null) {
                     setUpdate { it.copy(phase = AppUpdatePhase.DOWNLOADED, downloadedApk = apk) }
@@ -1040,6 +1087,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }.onFailure { throwable ->
+                if (sourceVersion != releaseSourceVersion.get() || throwable is CancellationException) return@onFailure
                 setUpdate { it.copy(phase = AppUpdatePhase.ERROR, error = throwable.message) }
             }
         }
