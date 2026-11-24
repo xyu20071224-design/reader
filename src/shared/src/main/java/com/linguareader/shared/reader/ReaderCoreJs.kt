@@ -509,6 +509,10 @@ internal object ReaderCoreJs {
             return out;
           }
 
+          function savedFormKey(value) {
+            return value.trim().replace(/\s+/g, ' ').toLowerCase();
+          }
+
           function buildSavedPattern(words) {
             const seen = Object.create(null);
             const forms = [];
@@ -518,7 +522,7 @@ internal object ReaderCoreJs {
               if (base.length < 2) continue;
               const variants = savedWordVariants(base);
               for (const variant of variants) {
-                const key = variant.toLowerCase();
+                const key = savedFormKey(variant);
                 if (seen[key]) continue;
                 seen[key] = true;
                 forms.push(variant);
@@ -541,7 +545,7 @@ internal object ReaderCoreJs {
               const base = typeof raw === 'string' ? raw.trim() : '';
               if (!base) continue;
               for (const variant of savedWordVariants(base)) {
-                lookup[variant.toLowerCase()] = true;
+                lookup[savedFormKey(variant)] = true;
               }
             }
             return lookup;
@@ -549,48 +553,84 @@ internal object ReaderCoreJs {
 
           function markSavedWords(root) {
             const version = ++savedMarkVersion;
+            // Undo text-node splits left by previous marks before planning a new word/phrase.
+            // normalize merges adjacent text nodes while keeping original inline elements.
+            root.normalize();
             // 到期词排在最前：buildSavedPattern 内部有 1200 条形态上限，
             // 拼在末尾的到期词可能被截掉。仍是同一条整词正则、最长优先
             // （BUG-027/029 的语义不变）。
             const pattern = buildSavedPattern(savedDueWords.concat(savedWords.slice(0, 600)));
             if (!pattern) return;
             const dueLookup = buildDueLookup(savedDueWords);
-            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-            const textNodes = [];
-            while (walker.nextNode()) {
-              const node = walker.currentNode;
-              if (node.parentElement && node.parentElement.closest('.lr-saved-word, .lr-due-word')) continue;
-              textNodes.push(node);
+            // Match complete text runs, then map exact character intervals back to their nodes.
+            // Per-node regexes mistake app<em>le</em> for app and cannot find give <em>up</em>.
+            // These are marking boundaries only; the persistent TTS block selector is unchanged.
+            const blocks = /^(P|LI|H[1-6]|BLOCKQUOTE|TD|TH|FIGCAPTION|PRE|DIV|SECTION|ARTICLE|HEADER|FOOTER|DT|DD|HR)$/;
+            const excluded = /^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA|SELECT|OPTION|INPUT|BUTTON|SVG|MATH)$/;
+            const runs = [];
+            let run = null;
+            function flushRun() {
+              if (run && run.nodes.length) runs.push(run);
+              run = null;
             }
+            function collect(node) {
+              if (node.nodeType === 3) {
+                if (!node.nodeValue) return;
+                if (!run) run = { text: '', nodes: [] };
+                run.nodes.push({ node: node, from: run.text.length });
+                run.text += node.nodeValue;
+                return;
+              }
+              if (node.nodeType !== 1) return;
+              const tag = node.tagName;
+              if (tag === 'BR' || excluded.test(tag)) { flushRun(); return; }
+              const boundary = blocks.test(tag);
+              if (boundary) flushRun();
+              for (const child of node.childNodes) collect(child);
+              if (boundary) flushRun();
+            }
+            collect(root);
+            flushRun();
             let matchBudget = 2000;
-            for (const node of textNodes) {
+            for (const run of runs) {
               if (version !== savedMarkVersion) return;
-              const text = node.nodeValue;
-              if (!text || matchBudget <= 0) continue;
+              if (matchBudget <= 0) break;
               pattern.lastIndex = 0;
-              let fragment = null;
-              let cursor = 0;
+              const ranges = [];
               let match;
-              while ((match = pattern.exec(text)) !== null) {
+              while ((match = pattern.exec(run.text)) !== null) {
                 if (matchBudget <= 0) break;
                 if (match[0].length === 0) { pattern.lastIndex++; continue; }
                 matchBudget--;
-                if (!fragment) fragment = document.createDocumentFragment();
-                if (match.index > cursor) {
-                  fragment.appendChild(document.createTextNode(text.slice(cursor, match.index)));
-                }
-                const span = document.createElement('span');
-                span.className = dueLookup[match[0].toLowerCase()] ? 'lr-due-word' : 'lr-saved-word';
-                // 用正文里的原样文本，别拿存储的拼写去覆盖（大小写与变形都要保留）。
-                span.textContent = match[0];
-                fragment.appendChild(span);
-                cursor = match.index + match[0].length;
+                ranges.push({ from: match.index, until: match.index + match[0].length,
+                  due: !!dueLookup[savedFormKey(match[0])] });
               }
-              if (fragment) {
-                if (cursor < text.length) {
-                  fragment.appendChild(document.createTextNode(text.slice(cursor)));
+              let rangeIndex = 0;
+              for (const part of run.nodes) {
+                const node = part.node;
+                const text = node.nodeValue;
+                const until = part.from + text.length;
+                while (rangeIndex < ranges.length && ranges[rangeIndex].until <= part.from) rangeIndex++;
+                let fragment = null;
+                let cursor = 0;
+                for (let index = rangeIndex; index < ranges.length && ranges[index].from < until; index++) {
+                  const range = ranges[index];
+                  const from = Math.max(0, range.from - part.from);
+                  const end = Math.min(text.length, range.until - part.from);
+                  if (from >= end) continue;
+                  if (!fragment) fragment = document.createDocumentFragment();
+                  if (from > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, from)));
+                  const span = document.createElement('span');
+                  span.className = range.due ? 'lr-due-word' : 'lr-saved-word';
+                  // Preserve exact source spelling and the original em/a/... parent element.
+                  span.textContent = text.slice(from, end);
+                  fragment.appendChild(span);
+                  cursor = end;
                 }
-                node.parentNode.replaceChild(fragment, node);
+                if (fragment) {
+                  if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)));
+                  node.parentNode.replaceChild(fragment, node);
+                }
               }
             }
           }

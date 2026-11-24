@@ -41,11 +41,13 @@ class VocabularyRepository(private val appContext: AppContext) : BookScopedStore
             val id = headword.lowercase(Locale.ROOT)
             val now = System.currentTimeMillis()
             val existing = current.firstOrNull { it.id == id }
+            val phrase = headword.trim().any(Char::isWhitespace)
             // 同一个词可能以不同形态被查到（study / studied / studying），逐次累积，
             // 供阅读页做整词高亮；原型本身单独传，不必重复存。
             val surfaceForms = (existing?.surfaceForms.orEmpty() + entry.surfaceWord)
                 .map { it.trim() }
                 .filter { it.isNotBlank() && !it.equals(headword, ignoreCase = true) }
+                .filter { !phrase || it.any(Char::isWhitespace) }
                 .distinctBy { it.lowercase(Locale.ROOT) }
                 .takeLast(MAX_SURFACE_FORMS)
             val saved = SavedWord(

@@ -37,10 +37,15 @@ data class SavedWordMarks(
                 val variants = ArrayList<String>(1 + word.surfaceForms.size)
                 variants.add(word.headword)
                 variants.addAll(word.surfaceForms)
+                val phrase = word.headword.trim().any(Char::isWhitespace)
                 for (raw in variants) {
                     // 顺序保持生词本原序（等价于旧的 flatMap），LinkedHashSet 只去重不重排。
                     val form = raw.trim()
                     if (form.isEmpty()) continue
+                    // Old phrase records accumulated only the clicked token (e.g. "in" for
+                    // "in fact"). Do not mark unrelated tokens; leave the stored review record
+                    // untouched and retain actual multiword surfaces such as "gave up".
+                    if (phrase && !form.any(Char::isWhitespace)) continue
                     forms.add(form)
                     if (isDue) dueForms.add(form)
                 }

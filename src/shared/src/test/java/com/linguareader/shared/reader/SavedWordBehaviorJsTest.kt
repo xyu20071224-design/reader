@@ -26,6 +26,10 @@ class SavedWordBehaviorJsTest {
             val fixture = File(dir, "fixture.json").apply {
                 writeText(JSONObject().put("rows", JSONArray(rows)).put("actions", JSONArray(actions)).toString())
             }
+            val evidence = File("build/word-marks-generated").apply { mkdirs() }
+            val name = Thread.currentThread().stackTrace.first { it.className == javaClass.name && it.methodName.matches(Regex("(b01|t02|t07|t08|t11).*")) }.methodName
+            bootstrap.copyTo(File(evidence, "bootstrap.js"), overwrite = true)
+            fixture.copyTo(File(evidence, "$name.json"), overwrite = true)
             val output = File(dir, "output.txt")
             val runner = File("src/test/resources/reader/run-saved-word-matrix.js")
             assertTrue(runner.isFile, "Missing executable DOM fixture")
@@ -34,6 +38,7 @@ class SavedWordBehaviorJsTest {
             val finished = process.waitFor(20, TimeUnit.SECONDS)
             if (!finished) process.destroyForcibly()
             assertTrue(finished, "Generated-script matrix timed out")
+            output.copyTo(File(evidence, "$name-output.txt"), overwrite = true)
             assertEquals(0, process.exitValue(), output.readText())
             return JSONArray(output.readText().trim())
         } finally { dir.deleteRecursively() }
@@ -98,7 +103,10 @@ class SavedWordBehaviorJsTest {
     }
 
     @Test fun t11DueFormsRetainPriorityWhenOrdinaryInflectionsFillTheBudget() {
-        val r = run(listOf(row("due", "study studied")), listOf(action((1..600).map { "ordinaryword$it" }, listOf("study"))))
+        val ordinary = (0 until 600).map { index ->
+            "ordinaryword" + ('a' + index / 676) + ('a' + (index / 26) % 26) + ('a' + index % 26)
+        }
+        val r = run(listOf(row("due", "study studied")), listOf(action(ordinary, listOf("study"))))
         assertEquals(listOf("study", "studied"), marks(r, 0, "due", "due"))
     }
 }
