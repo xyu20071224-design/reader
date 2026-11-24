@@ -699,6 +699,7 @@ class TtsPlaybackEngine(
 
     private suspend fun handleUtteranceDone(utteranceId: String) {
         if (utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, speakAttempt) || !playing) return
+        val version = navigationVersion
         // 句内还有片段（旁白段→引语段）就继续；片段读完推进到下一句。
         val segmentCount = chapter?.segmentsOf(sentenceIndex)?.size ?: 0
         if (segmentIndex + 1 < segmentCount) {
@@ -708,6 +709,9 @@ class TtsPlaybackEngine(
             // Q2-c04b：整句读完才停；句内片段（旁白→引语）之间不停，
             // 否则多声片段会被切得一顿一顿。
             delay(SENTENCE_END_PAUSE_MILLIS)
+            // Controls and another completion may have superseded this request during the pause.
+            if (version != navigationVersion || !playing ||
+                utteranceId != utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, speakAttempt)) return
             sentenceIndex++
             segmentIndex = 0
             loadAndSpeakCurrent()
