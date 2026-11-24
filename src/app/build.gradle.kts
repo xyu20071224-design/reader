@@ -37,6 +37,19 @@ fun buildConfigString(raw: String): String = buildString {
     append('"')
 }
 
+// Release notes must describe the source that actually produced the installed APK.
+// A missing Git checkout is deliberately treated as an unverified build.
+fun sourceGit(vararg arguments: String): String? = runCatching {
+    val process = ProcessBuilder(listOf("git") + arguments)
+        .directory(rootProject.projectDir.parentFile)
+        .redirectError(ProcessBuilder.Redirect.DISCARD)
+        .start()
+    val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
+    if (process.waitFor() == 0) output else null
+}.getOrNull()
+val buildSourceCommit = sourceGit("rev-parse", "HEAD").orEmpty()
+val buildSourceDirty = sourceGit("status", "--porcelain", "--untracked-files=normal")?.isNotEmpty() ?: true
+
 android {
     namespace = "com.linguareader.app"
     compileSdk = 35
@@ -52,6 +65,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["tinkerId"] = "reader-$versionCode"
         buildConfigField("String", "HOTFIX_BASE_ID", buildConfigString("reader-$versionCode"))
+        buildConfigField("String", "SOURCE_COMMIT", buildConfigString(buildSourceCommit))
+        buildConfigField("boolean", "SOURCE_DIRTY", buildSourceDirty.toString())
 
         // 默认同步服务器（可选增强；出厂状态仍零出网：enabled 只能由用户保存/登录置 true）。
         buildConfigField("String", "SYNC_DEFAULT_SERVER_URL", buildConfigString(defaultSyncServerUrl))
