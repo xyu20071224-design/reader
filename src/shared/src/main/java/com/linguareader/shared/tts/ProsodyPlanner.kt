@@ -2,7 +2,7 @@ package com.linguareader.shared.tts
 
 /**
  * A runtime-only candidate phrase plan. It does not change TtsChapter sentences/segments, audio
- * cache keys, or pipeline versions, and is not enabled by the playback engine in this change.
+ * legacy cache keys, or pipeline versions. Optional planned backends consume its units at runtime.
  * Durations and the tail multiplier are audition candidates, not claimed language standards.
  */
 object ProsodyPlanner {

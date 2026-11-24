@@ -36,6 +36,14 @@ class OpenAiCompatTtsBackend(
 
     override fun isConfigured(): Boolean = settings.serverUrl.isNotBlank()
 
+    override suspend fun synthesisConfiguration(voice: String): String = CloudSynthesisIdentity.hash(
+        "openai-audio-speech-v1",
+        settings.serverUrl.trim().trimEnd('/') + "/v1/audio/speech",
+        settings.serverModel.ifBlank { "tts-1" },
+        voice.ifBlank { "default" },
+        "mp3"
+    )
+
     override suspend fun refreshCapabilities() {
         probedWholeBookCache = runCatching {
             withContext(Dispatchers.IO) {

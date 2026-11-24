@@ -90,7 +90,12 @@ object VoiceLibraryLoader {
         }
         TtsEngineMode.MIMO -> {
             val style = settings.mimoStyleInstruction.trim()
-            if (style.isEmpty()) "mimo" else "mimo@" + sha8(style)
+            val legacy = if (style.isEmpty()) "mimo" else "mimo@" + sha8(style)
+            val model = settings.mimoModel.ifBlank { CloudTtsSettings.DEFAULT_MIMO_MODEL }
+            // Older requests always used the default model even when a custom one was saved.
+            // Keep default packs byte-compatible; a now-effective custom model must not read
+            // those old default-model files. The cache/pack path format and pipeline stay v3.
+            if (model == CloudTtsSettings.DEFAULT_MIMO_MODEL) legacy else "$legacy@model-" + sha8(model)
         }
         else -> settings.mode.name.lowercase()
     }

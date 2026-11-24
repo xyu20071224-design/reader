@@ -4,6 +4,7 @@ import android.content.Context
 import com.linguareader.app.data.Book
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.linguareader.shared.tts.ProsodyPlanner
 
 /**
  * Thin UI-facing facade over [TtsPlaybackService]. The reader screen talks to
@@ -49,6 +50,14 @@ object TtsPlaybackController {
 
     fun setRate(context: Context, rate: Float) = TtsPlaybackService.setRate(context, rate)
 
+    fun prosodyMode(context: Context): ProsodyPlanner.Mode = ProsodySettings.mode(context)
+
+    fun setProsodyMode(
+        context: Context,
+        mode: ProsodyPlanner.Mode,
+        allowAudioPackRegeneration: Boolean = false
+    ) = TtsPlaybackService.setProsodyMode(context, mode, allowAudioPackRegeneration)
+
     fun cacheWholeBook(context: Context) = TtsPlaybackService.cacheWholeBook(context)
 
     fun onReaderChapterLoaded(bookId: String, chapterIndex: Int) =
@@ -57,6 +66,7 @@ object TtsPlaybackController {
     fun onReaderChapterSelected(bookId: String, chapterIndex: Int) =
         TtsPlaybackService.onReaderChapterSelected(bookId, chapterIndex)
 
-    fun onCloudSettingsChanged(context: Context) =
-        TtsPlaybackService.onCloudSettingsChanged(context)
+    /** Settings-sheet save: one replacement action, without preparing the old backend first. */
+    fun onCloudSettingsChanged(context: Context, prosodyMode: ProsodyPlanner.Mode? = null) =
+        TtsPlaybackService.onCloudSettingsChanged(context, prosodyMode)
 }

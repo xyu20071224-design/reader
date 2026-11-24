@@ -1,0 +1,213 @@
+{
+  "scope": "Direct TTS regression only; no real audio audition or device validation",
+  "environment": {
+    "jdk": "17",
+    "gradle": "8.11.1",
+    "androidSdk": 35
+  },
+  "xmlRoot": "/Users/clannad/work/reader/out/issue-execution-20261124/speech-checks/evidence/prosody-runtime-final-green",
+  "modules": {
+    "shared": {
+      "totals": {
+        "tests": 123,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "name": "com.linguareader.shared.tts.AudioPackGeneratorContractTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.PlannedSpeechRunnerTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.ProsodyCacheKeyTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.ProsodyPlannerTest",
+          "tests": 15,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.QuoteSpansTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.SentenceCountDisputeProbe",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.SentenceSplitterTest",
+          "tests": 27,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.TtsCacheKeyTest",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.TtsChapterUtteranceTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.TtsPauseCancellationTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.TtsPlannedPlaybackTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.shared.tts.TtsPlaybackEngineTest",
+          "tests": 26,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "app": {
+      "totals": {
+        "tests": 83,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "name": "com.linguareader.app.tts.CloudProsodyConcurrencyTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.CloudProsodyPlaybackTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.CloudSynthesisIdentityTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.CloudTtsSynthesizerTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.EngineKeyIdentityTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.MiMoTtsBackendTest",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.OpenAiCompatTtsBackendTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.ProsodyAudioCacheTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.ProsodySettingsTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.SingleWordSpeakerTest",
+          "tests": 20,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.SpeechReadinessTest",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.SystemProsodyPlaybackTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "name": "com.linguareader.app.tts.TtsAudioCacheTrimTest",
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    }
+  },
+  "failureEvidenceDirectories": [
+    "prosody-red",
+    "prosody-concurrency-red",
+    "prosody-synthesis-identity-red",
+    "prosody-book-cache-cancellation-red",
+    "prosody-mimo-original-model-red"
+  ]
+}

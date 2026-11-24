@@ -40,6 +40,24 @@ class MiMoTtsBackend(
 
     override fun isConfigured(): Boolean = settings.mimoApiKey.isNotBlank()
 
+    override suspend fun synthesisConfiguration(voice: String): String = withContext(Dispatchers.IO) {
+        val sample = if (isCloneVoice(voice)) cloneSampleFile(voice) else null
+        CloudSynthesisIdentity.hash(
+            "mimo-chat-audio-v1", CloudTtsSettings.MIMO_BASE_URL + "/chat/completions",
+            modelFor(voice), voice, styleInstructionFor(voice), "wav",
+            sample?.let { sampleMime(it) }.orEmpty(),
+            sample?.let { com.linguareader.shared.importer.ImportSupport.sha256(it) }.orEmpty()
+        )
+    }
+
+    private fun styleInstructionFor(voice: String): String =
+        if (voice.startsWith(MiMoVoiceStore.DESIGN_PREFIX)) MiMoVoiceStore.designPrompt(appContext, voice)
+        else settings.mimoStyleInstruction.trim()
+
+    /** Shared by the actual HTTP request and its model/style regression tests. */
+    internal fun requestBody(text: String, voice: String, sampleDataUri: String? = null): String =
+        buildRequestBody(text, voice, styleInstructionFor(voice), sampleDataUri, modelFor(voice))
+
     /** 模型固定：预置音色用 settings 里的模型（默认 mimo-v2.5-tts），
      *  设计/克隆各自独立模型（文档规定）。 */
     internal fun modelFor(voiceId: String): String = when {
@@ -63,14 +81,6 @@ class MiMoTtsBackend(
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val sampleUri = if (isCloneVoice(voice)) loadCloneSampleUri(voice) else null
-            // 设计音色的 user 消息 = 该音色自己的描述（mimo-design:<key> 在
-            // MiMoVoiceStore 里登记的 prompt），而非全局风格指令；其余音色才
-            // 用全局风格指令（文档：voicedesign 的 user 消息必填 = 音色描述）。
-            val styleInstruction = if (voice.startsWith(MiMoVoiceStore.DESIGN_PREFIX)) {
-                MiMoVoiceStore.designPrompt(appContext, voice)
-            } else {
-                settings.mimoStyleInstruction.trim()
-            }
             val endpoint = CloudTtsSettings.MIMO_BASE_URL + "/chat/completions"
             val connection = URL(endpoint).openConnection() as HttpURLConnection
             try {
@@ -81,12 +91,7 @@ class MiMoTtsBackend(
                 connection.setRequestProperty("Content-Type", "application/json")
                 // MiMo 鉴权：api-key 头（非 Authorization: Bearer）。
                 connection.setRequestProperty("api-key", settings.mimoApiKey)
-                val body = buildRequestBody(
-                    text = text,
-                    voice = voice,
-                    styleInstruction = styleInstruction,
-                    sampleDataUri = sampleUri
-                )
+                val body = requestBody(text, voice, sampleUri)
                 connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
                 if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                     val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -109,17 +114,20 @@ class MiMoTtsBackend(
      * 样本来源两处：用户在本机导入的（`MiMoVoiceStore`）与音色包自带的（M4，只读）。
      */
     private fun loadCloneSampleUri(voice: String): String {
-        val sample = MiMoVoiceStore.sampleFile(appContext, voice)
-            ?: PackRepository(appContext).packVoiceSample(voice)
-            ?: error("克隆音色样本缺失：$voice")
-        val mime = when (sample.extension.lowercase()) {
+        val sample = cloneSampleFile(voice) ?: error("克隆音色样本缺失：$voice")
+        val mime = sampleMime(sample)
+        val base64 = Base64.encodeToString(sample.readBytes(), Base64.NO_WRAP)
+        return "data:$mime;base64,$base64"
+    }
+
+    private fun cloneSampleFile(voice: String): File? = MiMoVoiceStore.sampleFile(appContext, voice)
+        ?: PackRepository(appContext).packVoiceSample(voice)
+
+    private fun sampleMime(sample: File): String = when (sample.extension.lowercase()) {
             "wav" -> "audio/wav"
             "mp3" -> "audio/mpeg"
             else -> "application/octet-stream"
         }
-        val base64 = Base64.encodeToString(sample.readBytes(), Base64.NO_WRAP)
-        return "data:$mime;base64,$base64"
-    }
 
     companion object {
         const val MODEL_VOICE_DESIGN = "mimo-v2.5-tts-voicedesign"
@@ -134,7 +142,8 @@ class MiMoTtsBackend(
             text: String,
             voice: String,
             styleInstruction: String = "",
-            sampleDataUri: String? = null
+            sampleDataUri: String? = null,
+            model: String = modelForVoice(voice)
         ): String {
             val messages = JSONArray()
             if (voice.startsWith(MiMoVoiceStore.DESIGN_PREFIX)) {
@@ -158,7 +167,7 @@ class MiMoTtsBackend(
                 else -> audio.put("voice", voice.ifBlank { "mimo_default" })
             }
             return JSONObject()
-                .put("model", modelForVoice(voice))
+                .put("model", model)
                 .put("messages", messages)
                 .put("audio", audio)
                 .toString()

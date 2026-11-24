@@ -19,6 +19,8 @@ import androidx.core.content.ContextCompat
 import com.linguareader.app.MainActivity
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.LibraryRepository
+import com.linguareader.shared.tts.ProsodyConfiguration
+import com.linguareader.shared.tts.ProsodyPlanner
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +88,7 @@ class TtsPlaybackService : Service() {
 
     private var mediaSession: MediaSession? = null
     private var isForeground = false
+    private var allowAudioPackRegeneration = false
 
     @Volatile
     private var progressWriteVersion = 0
@@ -193,12 +196,16 @@ class TtsPlaybackService : Service() {
             ACTION_PREVIOUS -> previousSentence()
             ACTION_STOP -> stopPlayback()
             ACTION_RATE -> intent.getFloatExtra(EXTRA_RATE, engine.currentSpeechRate).let(::setRate)
+            ACTION_PROSODY -> applySavedProsody(allowRegeneration = intent.getBooleanExtra(EXTRA_ALLOW_PACK_REGENERATION, false))
             ACTION_RECONFIGURE -> {
                 // Settings changed: drop the snapshot and re-assign voices for
                 // the new engine (the voice library may be a different one).
                 cachedVoiceSettings = null
                 engine.currentBook?.let { refreshVoiceMap(it) }
-                engine.reconfigure()
+                allowAudioPackRegeneration = false
+                engine.reconfigure(ProsodyConfiguration(
+                    policy = ProsodyPlanner.Policy(mode = ProsodySettings.mode(this))
+                ))
             }
             ACTION_CACHE_BOOK -> engine.cacheWholeBook()
         }
@@ -216,6 +223,7 @@ class TtsPlaybackService : Service() {
         }
         val requestedChapter = intent.getIntExtra(EXTRA_CHAPTER, 0)
         refreshVoiceMap(newBook)
+        applySavedProsody(newBook.id)
         engine.startStandby(newBook, requestedChapter)
     }
 
@@ -359,11 +367,15 @@ class TtsPlaybackService : Service() {
                 if (generation != playGeneration) return@launch
                 // 点到句内的引语/旁白片段就从那一声部起读；落在句间空白退回句首。
                 val (index, segment) = chapter.utteranceAt(blockText, blockOffset) ?: (0 to 0)
+                applySavedProsody(newBook.id)
                 engine.startPlayback(newBook, requestedChapter, index, segment)
             }
 
             // 没带起点（如点到空块）时从章首起播，纯防御兜底。
-            else -> engine.startPlayback(newBook, requestedChapter, 0)
+            else -> {
+                applySavedProsody(newBook.id)
+                engine.startPlayback(newBook, requestedChapter, 0)
+            }
         }
     }
 
@@ -380,8 +392,20 @@ class TtsPlaybackService : Service() {
 
     private fun setRate(rate: Float) = engine.setRate(rate)
 
+    private fun applySavedProsody(newBookId: String? = null, allowRegeneration: Boolean? = null) {
+        if (newBookId != null && engine.currentBook?.id != newBookId) allowAudioPackRegeneration = false
+        if (allowRegeneration != null) allowAudioPackRegeneration = allowRegeneration && engine.currentBook != null
+        val mode = ProsodySettings.mode(this)
+        if (mode == ProsodyPlanner.Mode.ORIGINAL) allowAudioPackRegeneration = false
+        engine.setProsody(ProsodyConfiguration(
+            policy = ProsodyPlanner.Policy(mode = mode),
+            allowAudioPackRegeneration = allowAudioPackRegeneration
+        ))
+    }
+
     private fun stopPlayback() {
         playGeneration++
+        allowAudioPackRegeneration = false
         engine.stop()
         mediaSession?.isActive = false
         updateMediaSession()
@@ -547,6 +571,7 @@ class TtsPlaybackService : Service() {
         private const val ACTION_PREVIOUS = "com.linguareader.app.tts.PREVIOUS"
         private const val ACTION_STOP = "com.linguareader.app.tts.STOP"
         private const val ACTION_RATE = "com.linguareader.app.tts.RATE"
+        private const val ACTION_PROSODY = "com.linguareader.app.tts.PROSODY"
         private const val ACTION_RECONFIGURE = "com.linguareader.app.tts.RECONFIGURE"
         private const val ACTION_CACHE_BOOK = "com.linguareader.app.tts.CACHE_BOOK"
 
@@ -555,6 +580,7 @@ class TtsPlaybackService : Service() {
         private const val EXTRA_BLOCK_TEXT = "block_text"
         private const val EXTRA_BLOCK_OFFSET = "block_offset"
         private const val EXTRA_RATE = "rate"
+        private const val EXTRA_ALLOW_PACK_REGENERATION = "allow_pack_regeneration"
 
         private val _state = MutableStateFlow(TtsPlaybackState())
         val state: StateFlow<TtsPlaybackState> = _state.asStateFlow()
@@ -630,6 +656,22 @@ class TtsPlaybackService : Service() {
             )
         }
 
+        fun setProsodyMode(
+            context: Context,
+            mode: ProsodyPlanner.Mode,
+            allowAudioPackRegeneration: Boolean = false
+        ) {
+            ProsodySettings.saveMode(context, mode)
+            if (_state.value.bookId == null) {
+                // Saving a preference must not create a service or start foreground playback.
+                _state.value = _state.value.copy(prosodyMode = mode, prosodyFallbackReason = null)
+                return
+            }
+            context.startService(Intent(context, TtsPlaybackService::class.java)
+                .setAction(ACTION_PROSODY)
+                .putExtra(EXTRA_ALLOW_PACK_REGENERATION, allowAudioPackRegeneration))
+        }
+
         /** Starts whole-book cache (全书缓存). No-op unless a listening session is active. */
         fun cacheWholeBook(context: Context) {
             if (_state.value.bookId == null) return
@@ -651,11 +693,14 @@ class TtsPlaybackService : Service() {
 
         /** Called after a manual page turn so the queue follows the reader. */
         /** Called by the settings sheet after cloud TTS configuration changes. */
-        fun onCloudSettingsChanged(context: Context) {
+        fun onCloudSettingsChanged(context: Context, prosodyMode: ProsodyPlanner.Mode? = null) {
+            if (prosodyMode != null) ProsodySettings.saveMode(context, prosodyMode)
             if (_state.value.bookId != null) {
                 context.startService(
                     Intent(context, TtsPlaybackService::class.java).setAction(ACTION_RECONFIGURE)
                 )
+            } else if (prosodyMode != null) {
+                _state.value = _state.value.copy(prosodyMode = prosodyMode, prosodyFallbackReason = null)
             }
         }
     }

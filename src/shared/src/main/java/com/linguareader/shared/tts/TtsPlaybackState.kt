@@ -39,7 +39,10 @@ data class TtsPlaybackState(
      *
      * 由引擎在降级/暂停时置位，恢复播放（重新 `startPlayback`、切引擎、或重新朗读成功）时清空。
      */
-    val degradedReason: DegradedReason? = null
+    val degradedReason: DegradedReason? = null,
+    val prosodyMode: ProsodyPlanner.Mode = ProsodyPlanner.Mode.ORIGINAL,
+    val prosodyEffectiveMode: ProsodyPlanner.Mode = ProsodyPlanner.Mode.ORIGINAL,
+    val prosodyFallbackReason: ProsodyFallbackReason? = null
 ) {
     val isActive: Boolean get() = bookId != null
 }

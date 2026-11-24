@@ -35,6 +35,12 @@ interface TtsSynthesizerListener {
      *  detection for 全书缓存) finished; the engine re-evaluates what the UI
      *  may offer. Default no-op. */
     fun onCapabilitiesChanged() {}
+
+    /** Effective mode for this parent request, including explicit audio-pack/backend fallback. */
+    fun onProsody(utteranceId: String, mode: ProsodyPlanner.Mode, reason: ProsodyFallbackReason?) {}
+
+    /** Optional runtime phrase highlight; persistent sentence/segment coordinates do not change. */
+    fun onPlannedRange(utteranceId: String, blockIndex: Int, offset: Int, length: Int) {}
 }
 
 /**

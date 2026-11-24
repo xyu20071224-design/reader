@@ -10,6 +10,13 @@ import android.os.Looper
 import com.linguareader.app.data.Book
 import com.linguareader.app.packs.PackRepository
 import com.linguareader.shared.tts.TtsCacheKey
+import com.linguareader.shared.tts.PlannedSpeechRequest
+import com.linguareader.shared.tts.PlannedSpeechRunner
+import com.linguareader.shared.tts.PlannedTtsSynthesizer
+import com.linguareader.shared.tts.ProsodyConfiguration
+import com.linguareader.shared.tts.ProsodyFallbackReason
+import com.linguareader.shared.tts.ProsodyPlanner
+import com.linguareader.shared.tts.ProsodyPlanningContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,6 +30,7 @@ import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Optional hook for synthesizers that can pre-generate a whole chapter.
@@ -52,7 +60,7 @@ class CloudTtsSynthesizer(
      *  same resolver the playback engine uses, or pre-generated audio would be
      *  cached under a voice that playback never asks for. */
     private val voiceForSpeaker: (String, String) -> String? = { _, _ -> null }
-) : TtsSynthesizer, ChapterTtsPreparer, BookTtsPreparer {
+) : TtsSynthesizer, ChapterTtsPreparer, BookTtsPreparer, PlannedTtsSynthesizer {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -91,6 +99,25 @@ class CloudTtsSynthesizer(
     private var bookPrepareJob: Job? = null
     private var preparedChapterKey: String? = null
     private var currentPlayer: MediaPlayer? = null
+    private val playbackGeneration = AtomicLong()
+    private val configurationGeneration = AtomicLong()
+    @Volatile private var prosodyConfiguration = ProsodyConfiguration()
+    private data class PhrasePlayback(
+        val parent: UtteranceRef, val request: PlannedSpeechRequest, val voice: String, val generation: Long
+    )
+    private var phrasePlayback: PhrasePlayback? = null
+    private val phraseRunner: PlannedSpeechRunner by lazy {
+        PlannedSpeechRunner(
+            listener = listener,
+            play = { unit, childId -> playPhrase(unit, childId) },
+            stopAudio = { releaseCurrentPlayer() },
+            schedule = { millis, action ->
+                val runnable = Runnable(action)
+                mainHandler.postDelayed(runnable, millis)
+                PlannedSpeechRunner.Cancellation { mainHandler.removeCallbacks(runnable) }
+            }
+        )
+    }
 
     /** Cache files currently being synthesized, so two preparers never double-bill one sentence. */
     private val inflightFiles = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
@@ -116,6 +143,9 @@ class CloudTtsSynthesizer(
         onProgress: (Int, Int) -> Unit,
         onComplete: (Boolean) -> Unit
     ) {
+        val configuration = prosodyConfiguration
+        val epoch = configurationGeneration.get()
+        val planning = ProsodyPlanningContext(chapter.blocks)
         val key = "${book.id}:${chapter.chapterIndex}"
         if (key == preparedChapterKey && prepareJob?.isActive == true) return
         preparedChapterKey = key
@@ -136,10 +166,10 @@ class CloudTtsSynthesizer(
                         if (failed.get() || shutdown) {
                             false
                         } else {
-                            val ok = generateOne(book, chapter, utterance)
+                            val ok = generateOne(book, chapter, utterance, configuration, planning)
                             if (!ok) failed.set(true)
                             val done = completed.incrementAndGet()
-                            mainHandler.post { onProgress(done, total) }
+                            mainHandler.post { if (epoch == configurationGeneration.get() && !shutdown) onProgress(done, total) }
                             ok
                         }
                     }
@@ -148,15 +178,18 @@ class CloudTtsSynthesizer(
             val allOk = jobs.all { it.await() }
             trimCache(book.id, chapter.chapterIndex)
             if (allOk && !shutdown) {
-                mainHandler.post { onComplete(true) }
+                mainHandler.post { if (epoch == configurationGeneration.get() && !shutdown) onComplete(true) }
             } else if (!shutdown) {
                 chapterFailed = true
-                mainHandler.post { onComplete(false) }
+                mainHandler.post { if (epoch == configurationGeneration.get() && !shutdown) onComplete(false) }
             }
         }
     }
 
     override fun speak(text: String, rate: Float, utteranceId: String, voice: String?) {
+        phraseRunner.stop()
+        phrasePlayback = null
+        val epoch = playbackGeneration.incrementAndGet()
         val parsed = parseUtteranceId(utteranceId)
         if (parsed == null) {
             mainHandler.post { listener.onError(utteranceId) }
@@ -172,27 +205,100 @@ class CloudTtsSynthesizer(
         )
         stopped = false
         scope.launch {
-            val ready = waitForFileOrSynthesize(file, text, effectiveVoice)
-            if (!ready || shutdown || stopped) {
-                if (!ready && !stopped) mainHandler.post { listener.onError(utteranceId) }
+            val current = { !shutdown && !stopped && epoch == playbackGeneration.get() }
+            val ready = waitForFileOrSynthesize(file, text, effectiveVoice, current)
+            if (!ready || !current()) {
+                if (!ready && current()) mainHandler.post { if (current()) listener.onError(utteranceId) }
                 return@launch
             }
             if (!stopped) {
                 // 第四轮审查 6-13：命中缓存并真的拿去播放时，记下「最近访问」，
                 // 让 TtsAudioCache 的淘汰按真 LRU 走（音频包命中的文件不在缓存根下，会被忽略）。
                 cache.markAccessed(file)
-                mainHandler.post { play(file, rate, utteranceId) }
+                mainHandler.post { if (current()) play(file, rate, utteranceId, stillCurrent = current) }
             }
         }
     }
 
     override fun stop() {
+        playbackGeneration.incrementAndGet()
         stopped = true
+        phraseRunner.stop()
+        phrasePlayback = null
         mainHandler.post { releaseCurrentPlayer() }
     }
 
+    override fun configureProsody(configuration: ProsodyConfiguration) {
+        if (prosodyConfiguration == configuration) return
+        stop()
+        prosodyConfiguration = configuration
+        configurationGeneration.incrementAndGet()
+        prepareJob?.cancel()
+        bookPrepareJob?.cancel()
+        preparedChapterKey = null
+        chapterFailed = false
+    }
+
+    override fun speakPlanned(request: PlannedSpeechRequest, utteranceId: String, voice: String?) {
+        stop()
+        val parsed = parseUtteranceId(utteranceId)
+        if (parsed == null || request.units.isEmpty()) {
+            mainHandler.post { listener.onError(utteranceId) }
+            return
+        }
+        val effectiveVoice = voice?.takeIf { it.isNotBlank() } ?: backend.voiceFor(request.source.text)
+        val packed = packFile(parsed.bookId, parsed.chapterIndex, parsed.sentenceIndex, parsed.segmentIndex, effectiveVoice)
+        if (packed != null && !request.configuration.allowAudioPackRegeneration) {
+            listener.onProsody(utteranceId, ProsodyPlanner.Mode.ORIGINAL, ProsodyFallbackReason.AUDIO_PACK_ORIGINAL)
+            speak(request.source.text, request.units.first().rate, utteranceId, effectiveVoice)
+            return
+        }
+        stopped = false
+        phrasePlayback = PhrasePlayback(parsed, request, effectiveVoice, playbackGeneration.get())
+        listener.onProsody(utteranceId, ProsodyPlanner.Mode.PHRASES, null)
+        phraseRunner.start(utteranceId, request.units)
+    }
+
+    private fun playPhrase(unit: ProsodyPlanner.Unit, childId: String) {
+        val active = phrasePlayback ?: return
+        val ref = active.parent
+        val current = { !shutdown && !stopped && active.generation == playbackGeneration.get() && phraseRunner.isActive(childId) }
+        scope.launch {
+            try {
+                val file = cache.phraseFileFor(
+                    ref.bookId, ref.chapterIndex, active.request.source, active.request.units, unit.partIndex,
+                    active.voice, engineTag, backend.synthesisConfiguration(active.voice)
+                )
+                val ready = waitForFileOrSynthesize(file, unit.utterance.text, active.voice, current)
+                mainHandler.post {
+                    if (current()) {
+                        if (!ready) phraseRunner.onError(childId)
+                        else {
+                            cache.markAccessed(file)
+                            play(file, unit.rate, childId, phraseEvents, current)
+                        }
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                mainHandler.post { if (current()) phraseRunner.onError(childId) }
+            }
+        }
+    }
+
+    private val phraseEvents = object : TtsSynthesizerListener {
+        override fun onReady() = Unit
+        override fun onInitFailed(status: Int) = Unit
+        override fun onStart(utteranceId: String) = phraseRunner.onStart(utteranceId)
+        override fun onDone(utteranceId: String) = phraseRunner.onDone(utteranceId)
+        override fun onError(utteranceId: String) = phraseRunner.onError(utteranceId)
+    }
+
     override fun shutdown() {
+        stop()
         shutdown = true
+        configurationGeneration.incrementAndGet()
         prepareJob?.cancel()
         bookPrepareJob?.cancel()
         scope.cancel()
@@ -200,14 +306,34 @@ class CloudTtsSynthesizer(
     }
 
     // internal 而非 private：M3 的「包命中不合成」由单测直接驱动这条分支（避免 25s 等待）。
-    internal suspend fun generateOne(book: Book, chapter: TtsChapter, utterance: TtsUtterance): Boolean {
+    internal suspend fun generateOne(
+        book: Book,
+        chapter: TtsChapter,
+        utterance: TtsUtterance,
+        configuration: ProsodyConfiguration = prosodyConfiguration,
+        planning: ProsodyPlanningContext = ProsodyPlanningContext(chapter.blocks)
+    ): Boolean {
         val voice = voiceForSpeaker(utterance.speaker, utterance.text)?.takeIf { it.isNotBlank() }
             ?: backend.voiceFor(utterance.text)
-        val file = cacheFile(book.id, chapter.chapterIndex, utterance.sentenceIndex, utterance.segmentIndex, voice)
         // 包已覆盖这句：不预生成、不写缓存（预生成会把整包再抄一遍，纯浪费）。
-        if (packFile(book.id, chapter.chapterIndex, utterance.sentenceIndex, utterance.segmentIndex, voice) != null) {
+        val packed = packFile(book.id, chapter.chapterIndex, utterance.sentenceIndex, utterance.segmentIndex, voice)
+        if (packed != null && (configuration.policy.mode == ProsodyPlanner.Mode.ORIGINAL || !configuration.allowAudioPackRegeneration)) {
             return true
         }
+        if (configuration.policy.mode == ProsodyPlanner.Mode.PHRASES) {
+            val units = ProsodyPlanner.plan(utterance, 1f, configuration.policy, planning.protectedRanges(utterance))
+            val synthesisConfiguration = try {
+                backend.synthesisConfiguration(voice)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) { return false }
+            for (unit in units) {
+                val part = cache.phraseFileFor(book.id, chapter.chapterIndex, utterance, units, unit.partIndex, voice, engineTag, synthesisConfiguration)
+                if ((!part.exists() || part.length() == 0L) && !synthesizeOnce(part, unit.utterance.text, voice)) return false
+            }
+            return true
+        }
+        val file = cacheFile(book.id, chapter.chapterIndex, utterance.sentenceIndex, utterance.segmentIndex, voice)
         if (file.exists() && file.length() > 0) return true
         return synthesizeOnce(file, utterance.text, voice, SYNTHESIS_RETRY_DELAY_MS)
     }
@@ -232,6 +358,7 @@ class CloudTtsSynthesizer(
         voice: String,
         retryDelayMs: Long = SYNTHESIS_RETRY_DELAY_MS
     ): Boolean {
+        if (file.exists() && file.length() > 0) return true
         val key = file.absolutePath
         if (inflightFiles.putIfAbsent(key, true) != null) return awaitInflight(file, key)
         try {
@@ -248,7 +375,9 @@ class CloudTtsSynthesizer(
     private suspend fun awaitInflight(file: File, key: String): Boolean {
         val deadline = System.currentTimeMillis() + 60_000
         while (
-            !shutdown && !chapterFailed && !stopped &&
+            // Preparation may legitimately run while playback is paused. A same-file waiter
+            // must await its owner rather than report a false failure because stop() was used.
+            !shutdown && !chapterFailed &&
             inflightFiles.containsKey(key) &&
             System.currentTimeMillis() < deadline
         ) {
@@ -264,6 +393,8 @@ class CloudTtsSynthesizer(
         onProgress: (done: Int, total: Int) -> Unit,
         onComplete: (success: Boolean) -> Unit
     ) {
+        val configuration = prosodyConfiguration
+        val epoch = configurationGeneration.get()
         bookPrepareJob?.cancel()
         val job = scope.launch {
             val chapters = mutableListOf<TtsChapter>()
@@ -285,6 +416,7 @@ class CloudTtsSynthesizer(
                 return@launch
             }
             val semaphore = Semaphore(3)
+            val planning = chapters.associate { it.chapterIndex to ProsodyPlanningContext(it.blocks) }
             val failed = AtomicBoolean(false)
             val completed = AtomicInteger(0)
             val jobs = chapters
@@ -295,10 +427,10 @@ class CloudTtsSynthesizer(
                             if (failed.get() || shutdown) {
                                 false
                             } else {
-                                val ok = generateOne(book, chapter, utterance)
+                                val ok = generateOne(book, chapter, utterance, configuration, planning.getValue(chapter.chapterIndex))
                                 if (!ok) failed.set(true)
                                 val done = completed.incrementAndGet()
-                                mainHandler.post { onProgress(done, total) }
+                                mainHandler.post { if (epoch == configurationGeneration.get() && !shutdown) onProgress(done, total) }
                                 ok
                             }
                         }
@@ -309,7 +441,7 @@ class CloudTtsSynthesizer(
             // M6：这里只保该书的「最近写入的那一章」，不再保护整本 —— 否则单本超上限就永不淘汰。
             trimCache(book.id, protectChapterIndex = null, protectNewestChapterOnly = true)
             if (!shutdown) {
-                mainHandler.post { onComplete(allOk) }
+                mainHandler.post { if (epoch == configurationGeneration.get() && !shutdown) onComplete(allOk) }
             }
         }
         bookPrepareJob = job
@@ -364,15 +496,16 @@ class CloudTtsSynthesizer(
     private suspend fun waitForFileOrSynthesize(
         file: File,
         text: String,
-        voice: String
+        voice: String,
+        stillCurrent: () -> Boolean = { true }
     ): Boolean {
         val deadline = System.currentTimeMillis() + 25_000
         while (!file.exists() && System.currentTimeMillis() < deadline) {
-            if (shutdown || chapterFailed || stopped) break
+            if (shutdown || chapterFailed || stopped || !stillCurrent()) break
             delay(100)
         }
         if (file.exists() && file.length() > 0) return true
-        if (chapterFailed || shutdown || stopped) return false
+        if (chapterFailed || shutdown || stopped || !stillCurrent()) return false
         // Chapter preparation may simply be slower than the first-sentence
         // deadline (long sentences, slow self-hosted servers). Waiting for the
         // in-flight preparation avoids synthesizing the same sentence twice —
@@ -384,17 +517,23 @@ class CloudTtsSynthesizer(
             !file.exists() &&
             System.currentTimeMillis() < waitDeadline &&
             (prepareJob?.isActive == true || bookPrepareJob?.isActive == true) &&
-            !shutdown && !chapterFailed && !stopped
+            !shutdown && !chapterFailed && !stopped && stillCurrent()
         ) {
             delay(100)
         }
         if (file.exists() && file.length() > 0) return true
-        if (chapterFailed || shutdown || stopped) return false
+        if (chapterFailed || shutdown || stopped || !stillCurrent()) return false
         return synthesizeOnce(file, text, voice)
     }
 
-    private fun play(file: File, rate: Float, utteranceId: String) {
-        if (stopped || shutdown) return
+    private fun play(
+        file: File,
+        rate: Float,
+        utteranceId: String,
+        events: TtsSynthesizerListener = listener,
+        stillCurrent: () -> Boolean = { true }
+    ) {
+        if (stopped || shutdown || !stillCurrent()) return
         releaseCurrentPlayer()
         val player = MediaPlayer()
         currentPlayer = player
@@ -406,12 +545,12 @@ class CloudTtsSynthesizer(
         )
         runCatching { player.setDataSource(file.absolutePath) }
             .onFailure {
-                listener.onError(utteranceId)
+                events.onError(utteranceId)
                 releasePlayer(player)
                 return
             }
         player.setOnPreparedListener { prepared ->
-            if (shutdown || currentPlayer !== prepared) {
+            if (shutdown || currentPlayer !== prepared || !stillCurrent()) {
                 releasePlayer(prepared)
                 return@setOnPreparedListener
             }
@@ -421,15 +560,15 @@ class CloudTtsSynthesizer(
                         PlaybackParams().setSpeed(rate.coerceIn(0.5f, 2f))
                 }
             }
-            listener.onStart(utteranceId)
+            events.onStart(utteranceId)
             prepared.start()
         }
         player.setOnCompletionListener {
-            listener.onDone(utteranceId)
+            if (stillCurrent()) events.onDone(utteranceId)
             releasePlayer(player)
         }
         player.setOnErrorListener { _, _, _ ->
-            listener.onError(utteranceId)
+            if (stillCurrent()) events.onError(utteranceId)
             releasePlayer(player)
             true
         }

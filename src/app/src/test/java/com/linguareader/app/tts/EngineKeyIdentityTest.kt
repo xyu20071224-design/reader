@@ -14,6 +14,26 @@ import org.junit.Test
  * 用户以为设置没生效（报告把此列为"严重"）。
  */
 class EngineKeyIdentityTest {
+    @Test fun `default MiMo model keeps the exact legacy identity including style`() {
+        val settings = CloudTtsSettings(mode = TtsEngineMode.MIMO)
+        assertEquals("mimo", VoiceLibraryLoader.engineKey(settings))
+        assertEquals("mimo", VoiceLibraryLoader.engineKey(settings.copy(mimoModel = "  ")))
+        val style = "calm"
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(style.toByteArray())
+            .take(4).joinToString("") { "%02x".format(it) }
+        assertEquals("mimo@$hash", VoiceLibraryLoader.engineKey(settings.copy(mimoStyleInstruction = style)))
+    }
+
+    @Test fun `non-default MiMo models isolate original audio without changing pipeline or filename contract`() {
+        val settings = CloudTtsSettings(mode = TtsEngineMode.MIMO)
+        fun path(model: String) = com.linguareader.shared.tts.TtsCacheKey.relativePath(
+            0, 2, 1, VoiceLibraryLoader.engineKey(settings.copy(mimoModel = model)), "Mia"
+        )
+        assertNotEquals(path(CloudTtsSettings.DEFAULT_MIMO_MODEL), path("custom-model-a"))
+        assertNotEquals(path("custom-model-a"), path("custom-model-b"))
+        assertEquals("s2-1.mp3", path("custom-model-a").substringAfterLast('/'))
+        assertEquals(3, com.linguareader.shared.tts.TtsPipelineContract.VERSION)
+    }
 
     private fun server(model: String = "tts-1", style: String = "") = CloudTtsSettings(
         mode = TtsEngineMode.OPENAI_COMPAT,

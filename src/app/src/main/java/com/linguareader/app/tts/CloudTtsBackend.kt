@@ -18,6 +18,15 @@ interface CloudTtsBackend {
     fun voiceFor(text: String): String
 
     /**
+     * Waveform-producing inputs, excluding credentials and local playback speed.
+     * The caller uses this only in the new phrase cache, never in legacy pack keys.
+     * Backends with configurable models/voices must override it. May read voice
+     * samples, so callers must invoke this off the main thread.
+     */
+    suspend fun synthesisConfiguration(voice: String): String =
+        CloudSynthesisIdentity.hash(javaClass.name, voice)
+
+    /**
      * Whether whole-book pre-generation (全书缓存) is worth offering for this
      * backend. Slow engines (e.g. IndexTTS, ~1-14s per sentence) are exempt:
      * a whole book would take tens of hours. Fast backends (Kokoro, MiMo)

@@ -4,6 +4,9 @@ import android.content.Context
 import com.linguareader.app.data.Book
 import com.linguareader.app.data.BookScopedStore
 import com.linguareader.shared.tts.TtsCacheKey
+import com.linguareader.shared.tts.ProsodyCacheKey
+import com.linguareader.shared.tts.ProsodyPlanner
+import com.linguareader.shared.tts.TtsUtterance
 import java.io.File
 
 /**
@@ -213,6 +216,20 @@ class TtsAudioCache(context: Context) : BookScopedStore {
             voice = voice
         )
     )
+
+    /** Separate sibling entry keeps existing book cleanup, chapter protection, quota and LRU. */
+    fun phraseFileFor(
+        bookId: String,
+        chapterIndex: Int,
+        source: TtsUtterance,
+        units: List<ProsodyPlanner.Unit>,
+        partIndex: Int,
+        voice: String,
+        engineTag: String,
+        synthesisConfiguration: String = ""
+    ): File = File(root, "$bookId/" + ProsodyCacheKey.relativePath(
+        chapterIndex, source, units, partIndex, engineTag, voice, synthesisConfiguration
+    ))
 
     companion object {
         const val DIR_NAME = "tts_cache"

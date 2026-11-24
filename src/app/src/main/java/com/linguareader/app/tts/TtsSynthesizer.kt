@@ -6,6 +6,11 @@ import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import com.linguareader.shared.tts.PlannedSpeechRequest
+import com.linguareader.shared.tts.PlannedSpeechRunner
+import com.linguareader.shared.tts.PlannedTtsSynthesizer
+import com.linguareader.shared.tts.ProsodyConfiguration
+import com.linguareader.shared.tts.ProsodyPlanner
 import java.util.Locale
 
 /**
@@ -17,10 +22,26 @@ class SystemTtsSynthesizer(
     private val listener: TtsSynthesizerListener,
     private val zhVoice: String = "",
     private val enVoice: String = ""
-) : TtsSynthesizer {
+) : TtsSynthesizer, PlannedTtsSynthesizer {
     private var ready = false
     private lateinit var tts: TextToSpeech
     private val voicesByName = mutableMapOf<String, Voice>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var plannedVoice: String? = null
+    private val phraseRunner: PlannedSpeechRunner by lazy {
+        PlannedSpeechRunner(
+            listener = listener,
+            play = { unit, childId ->
+                if (!speakSystem(unit.utterance.text, unit.rate, childId, plannedVoice)) phraseRunner.onError(childId)
+            },
+            stopAudio = { tts.stop() },
+            schedule = { millis, action ->
+                val runnable = Runnable(action)
+                mainHandler.postDelayed(runnable, millis)
+                PlannedSpeechRunner.Cancellation { mainHandler.removeCallbacks(runnable) }
+            }
+        )
+    }
     // Guards populateVoices() so a slow/empty engine (getVoices() returns
     // nothing) does not re-query `tts.voices` on every single utterance — that
     // per-sentence call is what turns "no voice found" into "extremely slow".
@@ -40,26 +61,31 @@ class SystemTtsSynthesizer(
                 }
                 tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
-                        utteranceId?.let(listener::onStart)
+                        utteranceId?.let { id -> mainHandler.post {
+                            if (PlannedSpeechRunner.isChildId(id)) phraseRunner.onStart(id) else listener.onStart(id)
+                        } }
                     }
 
                     override fun onDone(utteranceId: String?) {
-                        utteranceId?.let(listener::onDone)
+                        utteranceId?.let { id -> mainHandler.post {
+                            if (PlannedSpeechRunner.isChildId(id)) phraseRunner.onDone(id) else listener.onDone(id)
+                        } }
                     }
 
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
-                        utteranceId?.let(listener::onError)
+                        utteranceId?.let(::reportError)
                     }
 
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?, errorCode: Int) {
-                        utteranceId?.let(listener::onError)
+                        utteranceId?.let(::reportError)
                     }
 
                     override fun onStop(utteranceId: String?, interrupted: Boolean) {
                         // A manual stop (pause/speed change) must not advance the
                         // sentence queue; the player re-speaks the current one.
+                        utteranceId?.takeIf(PlannedSpeechRunner::isChildId)?.let(::reportError)
                     }
                 })
                 listener.onReady()
@@ -73,6 +99,27 @@ class SystemTtsSynthesizer(
 
     override fun speak(text: String, rate: Float, utteranceId: String, voice: String?) {
         if (text.isBlank()) return
+        phraseRunner.stop()
+        if (!speakSystem(text, rate, utteranceId, voice)) listener.onError(utteranceId)
+    }
+
+    override fun configureProsody(configuration: ProsodyConfiguration) {
+        phraseRunner.stop()
+    }
+
+    override fun speakPlanned(request: PlannedSpeechRequest, utteranceId: String, voice: String?) {
+        plannedVoice = voice
+        listener.onProsody(utteranceId, ProsodyPlanner.Mode.PHRASES, null)
+        phraseRunner.start(utteranceId, request.units)
+    }
+
+    private fun reportError(id: String) {
+        mainHandler.post {
+            if (PlannedSpeechRunner.isChildId(id)) phraseRunner.onError(id) else listener.onError(id)
+        }
+    }
+
+    private fun speakSystem(text: String, rate: Float, utteranceId: String, voice: String?): Boolean {
         val locale = localeFor(text)
         val selected = voice?.takeIf { it.isNotBlank() }
             ?: if (locale == Locale.CHINA) zhVoice else enVoice
@@ -86,7 +133,7 @@ class SystemTtsSynthesizer(
             }
         }
         tts.setSpeechRate(rate.coerceIn(0.5f, 2f))
-        tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
+        return tts.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId) == TextToSpeech.SUCCESS
     }
 
     private fun populateVoices(force: Boolean = false) {
@@ -106,10 +153,12 @@ class SystemTtsSynthesizer(
     }
 
     override fun stop() {
+        phraseRunner.stop()
         runCatching { tts.stop() }
     }
 
     override fun shutdown() {
+        phraseRunner.stop()
         runCatching { tts.shutdown() }
     }
 

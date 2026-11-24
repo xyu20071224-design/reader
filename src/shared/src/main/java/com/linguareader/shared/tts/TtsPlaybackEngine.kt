@@ -98,6 +98,10 @@ class TtsPlaybackEngine(
      *  and aborts when it went stale (BUG-006/009: rapid skips / stop races
      *  must not resurrect an outdated load). */
     private var navigationVersion = 0
+    private var prosodyConfiguration = ProsodyConfiguration()
+    private var prosodyContextBlocks: List<String>? = null
+    private var prosodyContext: ProsodyPlanningContext? = null
+    private var bookPreparationVersion = 0L
     /** Refined (M2 LLM) speaker tags per chapter index of the current book. */
     private val refinedSpeakers = mutableMapOf<Int, List<String>>()
     private var refinedSpeakersBookId: String? = null
@@ -110,6 +114,20 @@ class TtsPlaybackEngine(
         override fun onDone(utteranceId: String) { scope.launch { handleUtteranceDone(utteranceId) } }
         override fun onError(utteranceId: String) { scope.launch { handleUtteranceError(utteranceId) } }
         override fun onCapabilitiesChanged() { scope.launch { refreshCacheCapability() } }
+        override fun onProsody(utteranceId: String, mode: ProsodyPlanner.Mode, reason: ProsodyFallbackReason?) {
+            scope.launch {
+                if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, speakAttempt) && playing) {
+                    updateState { it.copy(prosodyEffectiveMode = mode, prosodyFallbackReason = reason) }
+                }
+            }
+        }
+        override fun onPlannedRange(utteranceId: String, blockIndex: Int, offset: Int, length: Int) {
+            scope.launch {
+                if (utteranceId == utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, speakAttempt) && playing) {
+                    updateState { it.copy(highlightBlockIndex = blockIndex, highlightOffset = offset, highlightLength = length) }
+                }
+            }
+        }
     }
 
     // Read-only views for the shell (media session / notification metadata).
@@ -122,6 +140,7 @@ class TtsPlaybackEngine(
 
     fun startPlayback(newBook: Book, requestedChapter: Int, requestedSentence: Int, requestedSegment: Int = 0) {
         val switchedBook = book?.id != newBook.id
+        if (switchedBook) clearPackRegenerationPermission()
         navigationVersion++
         clearFallbackState()
         synthesizer?.stop()
@@ -154,6 +173,7 @@ class TtsPlaybackEngine(
 
     fun startStandby(newBook: Book, requestedChapter: Int) {
         val switchedBook = book?.id != newBook.id
+        if (switchedBook) clearPackRegenerationPermission()
         navigationVersion++
         clearFallbackState()
         synthesizer?.stop()
@@ -278,6 +298,21 @@ class TtsPlaybackEngine(
         }
     }
 
+    fun setProsody(configuration: ProsodyConfiguration) {
+        if (prosodyConfiguration == configuration) return
+        navigationVersion++
+        bookPreparationVersion++
+        prosodyConfiguration = configuration
+        synthesizer?.stop()
+        (synthesizer as? PlannedTtsSynthesizer)?.configureProsody(configuration)
+        preparedChapterKey = null
+        updateState { it.copy(
+            prosodyEffectiveMode = configuration.policy.mode, prosodyFallbackReason = null,
+            isCachingBook = false, cachedSentences = 0, cachedTotal = 0
+        ) }
+        if (playing && book != null) loadAndSpeakCurrent()
+    }
+
     /** Starts whole-book pre-generation (全书缓存); no-op for non-cloud engines. */
     fun cacheWholeBook() {
         if (book == null || state.isCachingBook) return
@@ -287,6 +322,8 @@ class TtsPlaybackEngine(
     private fun cacheWholeBookNow() {
         val currentBook = book ?: return
         val preparer = synthesizer as? BookTtsPreparer ?: return
+        val requestVersion = ++bookPreparationVersion
+        fun currentRequest() = requestVersion == bookPreparationVersion && book?.id == currentBook.id && state.isCachingBook
         updateState { it.copy(isCachingBook = true, cachedSentences = 0, cachedTotal = 0) }
         preparer.prepareBook(
             currentBook,
@@ -294,6 +331,7 @@ class TtsPlaybackEngine(
             chapterProvider = { index -> chapterLoader(currentBook, index) },
             onProgress = { done, total ->
                 scope.launch {
+                    if (!currentRequest()) return@launch
                     updateState {
                         it.copy(isCachingBook = true, cachedSentences = done, cachedTotal = total)
                     }
@@ -301,6 +339,7 @@ class TtsPlaybackEngine(
             },
             onComplete = { success ->
                 scope.launch {
+                    if (!currentRequest()) return@launch
                     updateState {
                         it.copy(
                             isCachingBook = false,
@@ -315,6 +354,7 @@ class TtsPlaybackEngine(
 
     fun stop() {
         navigationVersion++
+        clearPackRegenerationPermission()
         clearFallbackState()
         saveProgressNow()
         playing = false
@@ -333,13 +373,16 @@ class TtsPlaybackEngine(
         pendingReady.clear()
     }
 
-    fun reconfigure() {
+    fun reconfigure(configuration: ProsodyConfiguration? = null) {
         navigationVersion++
+        bookPreparationVersion++
         clearFallbackState()
         val wasPlaying = playing
         synthesizer?.stop()
         synthesizer?.shutdown()
         synthesizer = null
+        // Apply together with the replacement backend: never prepare the old backend first.
+        if (configuration != null) prosodyConfiguration = configuration
         pendingReady.clear()
         preparedChapterKey = null
         updateState {
@@ -347,7 +390,9 @@ class TtsPlaybackEngine(
                 isCachingBook = false,
                 cachedSentences = 0,
                 cachedTotal = 0,
-                canCacheBook = false
+                canCacheBook = false,
+                prosodyEffectiveMode = prosodyConfiguration.policy.mode,
+                prosodyFallbackReason = null
             )
         }
         if (wasPlaying && book != null) {
@@ -488,6 +533,7 @@ class TtsPlaybackEngine(
         }
         val created = synthesizerFactory(synthesizerListener)
         synthesizer = created
+        (created as? PlannedTtsSynthesizer)?.configureProsody(prosodyConfiguration)
         updateState { it.copy(canCacheBook = canCacheWholeBook(created)) }
         if (created.isReady) onReady() else pendingReady += onReady
     }
@@ -533,6 +579,7 @@ class TtsPlaybackEngine(
                     onProgress = { _, _ -> },
                     onComplete = { success ->
                         scope.launch {
+                            if (version != navigationVersion || book?.id != currentBook.id || chapterIndex != loadedChapter.chapterIndex) return@launch
                             if (!success) fallbackToSystemTts()
                         }
                     }
@@ -616,6 +663,9 @@ class TtsPlaybackEngine(
         }
         val attempt = ++speakAttempt
         val utteranceId = utteranceIdFor(chapterIndex, sentenceIndex, segmentIndex, attempt)
+        val planned = synthesizer as? PlannedTtsSynthesizer
+        val mode = prosodyConfiguration.policy.mode
+        val unsupported = mode == ProsodyPlanner.Mode.PHRASES && planned == null
         updateState {
             it.copy(
                 bookId = currentBook.id,
@@ -626,12 +676,24 @@ class TtsPlaybackEngine(
                 highlightBlockIndex = utterance.blockIndex,
                 highlightOffset = utterance.offset,
                 highlightLength = utterance.length,
-                isPlaying = true
+                isPlaying = true,
+                prosodyEffectiveMode = if (unsupported) ProsodyPlanner.Mode.ORIGINAL else mode,
+                prosodyFallbackReason = if (unsupported) ProsodyFallbackReason.UNSUPPORTED_BACKEND else null
             )
         }
         scheduleProgressSave()
         val voice = voiceForSpeaker(utterance.speaker, utterance.text)
-        synthesizer?.speak(utterance.text, speechRate, utteranceId, voice)
+        if (mode == ProsodyPlanner.Mode.PHRASES && planned != null) {
+            if (prosodyContextBlocks !== currentChapter.blocks) {
+                prosodyContextBlocks = currentChapter.blocks
+                prosodyContext = ProsodyPlanningContext(currentChapter.blocks)
+            }
+            val units = ProsodyPlanner.plan(
+                utterance, speechRate, prosodyConfiguration.policy,
+                prosodyContext?.protectedRanges(utterance).orEmpty()
+            )
+            planned.speakPlanned(PlannedSpeechRequest(utterance, units, prosodyConfiguration), utteranceId, voice)
+        } else synthesizer?.speak(utterance.text, speechRate, utteranceId, voice)
     }
 
     private fun fallbackToSystemTts() {
@@ -649,6 +711,7 @@ class TtsPlaybackEngine(
         fallbackActive = true
         val created = factory(synthesizerListener)
         synthesizer = created
+        (created as? PlannedTtsSynthesizer)?.configureProsody(prosodyConfiguration)
         updateState {
             it.copy(
                 canCacheBook = canCacheWholeBook(created),
@@ -762,8 +825,14 @@ class TtsPlaybackEngine(
     // ── State / helpers ───────────────────────────────────────────────────
 
     private fun setState(newState: TtsPlaybackState) {
-        state = newState
+        state = newState.copy(prosodyMode = prosodyConfiguration.policy.mode)
         onState(state)
+    }
+
+    private fun clearPackRegenerationPermission() {
+        if (!prosodyConfiguration.allowAudioPackRegeneration) return
+        prosodyConfiguration = prosodyConfiguration.copy(allowAudioPackRegeneration = false)
+        (synthesizer as? PlannedTtsSynthesizer)?.configureProsody(prosodyConfiguration)
     }
 
     /**
@@ -778,7 +847,7 @@ class TtsPlaybackEngine(
     }
 
     private fun updateState(transform: (TtsPlaybackState) -> TtsPlaybackState) {
-        state = transform(state)
+        state = transform(state).copy(prosodyMode = prosodyConfiguration.policy.mode)
         onState(state)
     }
 
