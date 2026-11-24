@@ -78,6 +78,9 @@ android {
         buildConfig = true
     }
 
+    // Generated notes can bind to a clean release tag without modifying its tracked source.
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/releaseNotesAssets"))
+
     buildTypes {
         debug {
             // 加 -PverifyBuild 时安装成并存的验证包（com.linguareader.app.verify），
