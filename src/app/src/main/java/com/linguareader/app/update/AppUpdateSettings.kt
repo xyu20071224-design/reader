@@ -7,16 +7,20 @@ import android.content.Context
  */
 data class AppUpdateSettings(
     /** 启动时自动检查更新；默认 false（离线优先承诺）。 */
-    val autoCheckEnabled: Boolean = false
+    val autoCheckEnabled: Boolean = false,
+    /** null = GitHub; a mirror is used only after the user explicitly chooses its HTTPS catalog. */
+    val catalogUrl: String? = null
 ) {
     companion object {
         private const val PREFS = "update_settings"
         private const val KEY_AUTO_CHECK = "auto_check_enabled"
+        private const val KEY_CATALOG = "catalog_url"
 
         fun load(context: Context): AppUpdateSettings {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             return AppUpdateSettings(
-                autoCheckEnabled = prefs.getBoolean(KEY_AUTO_CHECK, false)
+                autoCheckEnabled = prefs.getBoolean(KEY_AUTO_CHECK, false),
+                catalogUrl = prefs.getString(KEY_CATALOG, null)?.trim()?.takeIf { it.isNotEmpty() }
             )
         }
 
@@ -24,6 +28,7 @@ data class AppUpdateSettings(
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean(KEY_AUTO_CHECK, settings.autoCheckEnabled)
+                .putString(KEY_CATALOG, settings.catalogUrl)
                 .apply()
         }
     }

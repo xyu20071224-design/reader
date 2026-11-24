@@ -4,7 +4,14 @@ import android.content.Context
 import com.linguareader.app.BuildConfig
 import com.linguareader.shared.update.AppUpdateInfo
 import com.linguareader.shared.update.GitHubReleaseParser
-import com.linguareader.shared.update.GitHubUpdateChecker
+import com.linguareader.shared.update.GitHubReleaseSource
+import com.linguareader.shared.update.HttpReleaseTransport
+import com.linguareader.shared.update.ReleaseHttpTransport
+import com.linguareader.shared.update.ReleaseAsset
+import com.linguareader.shared.update.ReleaseRecord
+import com.linguareader.shared.update.ReleaseSource
+import com.linguareader.shared.update.ReleaseUrls
+import com.linguareader.shared.update.StaticReleaseSource
 import com.linguareader.shared.update.UpdatePolicy
 import com.linguareader.shared.update.NativePatchCatalog
 import com.linguareader.shared.update.NativePatchInfo
@@ -16,6 +23,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URI
+import java.util.concurrent.atomic.AtomicLong
 
 /** 更新检查结论：无更新 / 有新版 / 失败。 */
 sealed class UpdateCheckOutcome {
@@ -27,16 +36,27 @@ sealed class UpdateCheckOutcome {
 /**
  * 自动更新的编排层：设置读写、检查、下载。
  *
- * 网络细节在 [GitHubUpdateChecker]，纯判断在 [UpdatePolicy]（有单测），
+ * 网络细节在 [ReleaseSource]，纯判断在 [UpdatePolicy]（有单测），
  * 本类只负责把三者串起来并管好本地 APK 文件。
  */
 class AppUpdateRepository(
     context: Context,
-    private val connectionFactory: (String) -> HttpURLConnection = { URL(it).openConnection() as HttpURLConnection }
+    private val connectionFactory: (String) -> HttpURLConnection,
+    private val sourceFactory: (AppUpdateSettings, ReleaseHttpTransport) -> ReleaseSource
 ) {
+    // Preserve AppUpdateRepository(context) { url -> connection } source compatibility.
+    constructor(context: Context,
+        connectionFactory: (String) -> HttpURLConnection = { URL(it).openConnection() as HttpURLConnection }
+    ) : this(context, connectionFactory, { settings, transport ->
+        settings.catalogUrl?.let { StaticReleaseSource(it, transport) } ?: GitHubReleaseSource(transport)
+    })
 
     private val appContext = context.applicationContext
-    private val checker = GitHubUpdateChecker()
+    private val transport = HttpReleaseTransport(connectionFactory)
+    private data class Selection(val source: ReleaseSource, val release: ReleaseRecord, val epoch: Long)
+    private val sourceEpoch = AtomicLong()
+    @Volatile private var updateSelection: Selection? = null
+    @Volatile private var packSelection: Selection? = null
     private val hotfix = NativeHotfixRuntime(appContext)
     fun nativeStatus() = hotfix.snapshot()
     fun rollbackNativePatch() = hotfix.rollback()
@@ -44,21 +64,42 @@ class AppUpdateRepository(
 
     fun loadSettings(): AppUpdateSettings = AppUpdateSettings.load(appContext)
 
+    /** Read-only source factory shared with release history; constructing a source never fetches. */
+    fun currentSource(): ReleaseSource = sourceFactory(loadSettings(), transport)
+
     fun setAutoCheck(enabled: Boolean) {
-        AppUpdateSettings.save(appContext, AppUpdateSettings(autoCheckEnabled = enabled))
+        AppUpdateSettings.save(appContext, loadSettings().copy(autoCheckEnabled = enabled))
+    }
+
+    /** Caller cancels active download/UI state before switching. Installed resources are untouched. */
+    fun setCatalogUrl(value: String?) {
+        val catalog = value?.trim()?.takeIf { it.isNotEmpty() }?.let { URI(it).toASCIIString() }
+        catalog?.let { ReleaseUrls.mirror(it) }
+        sourceEpoch.incrementAndGet()
+        AppUpdateSettings.save(appContext, loadSettings().copy(catalogUrl = catalog))
+        updateSelection = null
+        packSelection = null
     }
 
     /** 检查远端最新 Release，与当前安装版本比较。 */
     suspend fun check(): UpdateCheckOutcome {
         return try {
-            val body = checker.releaseBody().getOrThrow()
+            val epoch = sourceEpoch.get()
+            val source = currentSource()
+            val release = source.latestRelease()
+            requireCurrent(source, epoch)
+            if (release == null) { updateSelection = null; return UpdateCheckOutcome.UpToDate }
+            val selection = Selection(source, release, epoch)
+            requireCurrent(selection)
+            updateSelection = selection
+            val body = release.canonicalBody()
             val info = GitHubReleaseParser.parse(body)
             if (info != null && UpdatePolicy.isNewer(info.tag, BuildConfig.VERSION_NAME)) {
                 UpdateCheckOutcome.Available(info)
             } else {
                 val catalogUrl = NativePatchCatalog.catalogUrl(body)
                 val patch = catalogUrl?.let {
-                    val catalog = readCatalog(it)
+                    val catalog = readCatalog(it, selection)
                     NativePatchCatalog.select(catalog, body, BuildConfig.HOTFIX_BASE_ID,
                         BuildConfig.VERSION_CODE, hotfix.snapshot().highestRevision)
                 }
@@ -74,28 +115,29 @@ class AppUpdateRepository(
         catch (e: Exception) { UpdateCheckOutcome.Failure(e.message ?: "更新检查失败") }
     }
 
-    private suspend fun readCatalog(url: String): String = withContext(Dispatchers.IO) {
+    private fun requireCurrent(source: ReleaseSource, epoch: Long) {
+        require(sourceEpoch.get() == epoch && currentSource().id == source.id) {
+            "Release source changed; refresh before downloading"
+        }
+    }
+
+    private fun requireCurrent(selection: Selection) = requireCurrent(selection.source, selection.epoch)
+
+    private suspend fun downloadDiscovered(selection: Selection, url: String, directory: File,
+        limit: Long, onProgress: (Long, Long) -> Unit = { _, _ -> }): File {
+        requireCurrent(selection)
+        val asset = selection.release.asset(url)
+        require(asset.sourceId == selection.source.id) { "Asset belongs to another release source" }
+        val file = transport.download(asset, directory, selection.source.assetPolicy, limit, onProgress)
+        try { requireCurrent(selection); return file }
+        catch (t: Throwable) { file.delete(); throw t }
+    }
+
+    private suspend fun readCatalog(url: String, selection: Selection): String = withContext(Dispatchers.IO) {
         require(NativePatchCatalog.trustedAsset(url))
-        val connection = connectionFactory(url)
-        try {
-            connection.connectTimeout = 10_000
-            connection.readTimeout = 15_000
-            connection.setRequestProperty("User-Agent", "LinguaReader")
-            connection.setRequestProperty("Cache-Control", "no-cache")
-            check(connection.responseCode == 200 && connection.url.protocol == "https")
-            connection.inputStream.use { input ->
-                val output = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                while (true) {
-                    coroutineContext.ensureActive()
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    check(output.size() + count <= NativePatchCatalog.MAX_CATALOG_BYTES)
-                    output.write(buffer, 0, count)
-                }
-                output.toString("UTF-8")
-            }
-        } finally { connection.disconnect() }
+        val file = downloadDiscovered(selection, url, File(appContext.filesDir, "hotfix-downloads"),
+            NativePatchCatalog.MAX_CATALOG_BYTES.toLong())
+        try { file.readText(Charsets.UTF_8) } finally { file.delete() }
     }
 
     private suspend fun downloadNativePatch(info: NativePatchInfo, onProgress: (Long, Long) -> Unit): File =
@@ -103,33 +145,28 @@ class AppUpdateRepository(
             require(NativePatchCatalog.trustedAsset(info.downloadUrl))
             require(info.assetName.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,120}\\.lrpatch")))
             require(info.bytes in 1..NativePatchCatalog.MAX_PATCH_BYTES)
-            val dir = File(appContext.filesDir, "hotfix-downloads").apply { mkdirs() }
-            // A process restart must not overwrite the file a background merge is still reading.
-            val file = File.createTempFile("native-", ".lrpatch", dir)
-            val connection = connectionFactory(info.downloadUrl)
+            val selection = updateSelection
+            val epoch = sourceEpoch.get()
+            val source = currentSource()
+            val asset = if (selection != null) {
+                requireCurrent(selection)
+                selection.release.asset(info.downloadUrl).also {
+                    require(it.sourceId == source.id)
+                    require(it.bytes == null || it.bytes == info.bytes)
+                    require(it.sha256 == null || it.sha256 == info.sha256)
+                }.copy(bytes = info.bytes, sha256 = info.sha256)
+            } else {
+                require(loadSettings().catalogUrl == null) { "Refresh the mirror before downloading" }
+                ReleaseAsset(source.id, info.assetName, info.downloadUrl, bytes = info.bytes, sha256 = info.sha256)
+            }
+            val file = transport.download(asset, File(appContext.filesDir, "hotfix-downloads"),
+                source.assetPolicy, NativePatchCatalog.MAX_PATCH_BYTES, onProgress)
             try {
-                connection.connectTimeout = 10_000
-                connection.readTimeout = 30_000
-                connection.setRequestProperty("User-Agent", "LinguaReader")
-                check(connection.responseCode == 200 && connection.url.protocol == "https")
-                var written = 0L
-                connection.inputStream.use { input -> file.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        coroutineContext.ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        written += count
-                        check(written <= info.bytes)
-                        output.write(buffer, 0, count)
-                        onProgress(written, info.bytes)
-                    }
-                } }
-                check(written == info.bytes && com.linguareader.shared.importer.ImportSupport.sha256(file) == info.sha256)
+                if (selection != null) requireCurrent(selection)
+                else require(sourceEpoch.get() == epoch) { "Release source changed during download" }
                 check(file.setReadOnly())
                 file
             } catch (e: Throwable) { file.delete(); throw e }
-            finally { connection.disconnect() }
         }
 
     /**
@@ -145,6 +182,15 @@ class AppUpdateRepository(
             catch (e: CancellationException) { throw e }
             catch (e: Exception) { Result.failure(e) }
         }
+        updateSelection?.let { selection ->
+            return@withContext try {
+                Result.success(downloadDiscovered(selection, info.downloadUrl,
+                    appContext.getExternalFilesDir("updates") ?: error("外部存储不可用"), MAX_APK_BYTES, onProgress))
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Result.failure(e) }
+        }
+        if (loadSettings().catalogUrl != null) return@withContext Result.failure(
+            IllegalStateException("Refresh the mirror before downloading"))
         // runCatching/use 的 lambda 不是 suspend，取不到 coroutineContext，
         // 在 withContext 的 suspend 作用域先捕获再往里传。
         val activeContext = coroutineContext
@@ -202,8 +248,20 @@ class AppUpdateRepository(
     }
 
     /** Q2-c03：列出远端 Release 里的资源包资产。只在用户显式点击「从 GitHub 获取」时调用。 */
-    suspend fun fetchPackAssets(): Result<List<GitHubReleaseParser.PackAsset>> =
-        checker.checkLatestPacks()
+    suspend fun fetchPackAssets(): Result<List<GitHubReleaseParser.PackAsset>> = try {
+        val epoch = sourceEpoch.get()
+        val source = currentSource()
+        val release = source.latestRelease()
+        requireCurrent(source, epoch)
+        if (release == null) { packSelection = null; Result.success(emptyList()) }
+        else {
+            val selection = Selection(source, release, epoch)
+            requireCurrent(selection)
+            packSelection = selection
+            Result.success(GitHubReleaseParser.parsePackAssets(release.canonicalBody()))
+        }
+    } catch (e: CancellationException) { throw e }
+    catch (e: Exception) { Result.failure(e) }
 
     /**
      * Q2-c03：把资源包资产下载到应用专属目录，随后交给
@@ -214,6 +272,15 @@ class AppUpdateRepository(
         asset: GitHubReleaseParser.PackAsset,
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
+        packSelection?.let { selection ->
+            return@withContext try {
+                Result.success(downloadDiscovered(selection, asset.downloadUrl,
+                    appContext.getExternalFilesDir("packs-download") ?: error("外部存储不可用"), MAX_PACK_BYTES, onProgress))
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { Result.failure(e) }
+        }
+        if (loadSettings().catalogUrl != null) return@withContext Result.failure(
+            IllegalStateException("Refresh the mirror before downloading"))
         val activeContext = coroutineContext
         runCatching {
             val dir = appContext.getExternalFilesDir("packs-download")
@@ -222,7 +289,7 @@ class AppUpdateRepository(
             val target = File(dir, asset.name)
             if (target.exists()) target.delete()
 
-            val connection = URL(asset.downloadUrl).openConnection() as HttpURLConnection
+            val connection = connectionFactory(asset.downloadUrl)
             try {
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 10_000
@@ -270,5 +337,7 @@ class AppUpdateRepository(
 
     private companion object {
         const val BUFFER_SIZE = 64 * 1024
+        const val MAX_APK_BYTES = 512L * 1024 * 1024
+        const val MAX_PACK_BYTES = 2L * 1024 * 1024 * 1024
     }
 }
