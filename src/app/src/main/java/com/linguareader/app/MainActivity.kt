@@ -3,7 +3,6 @@ package com.linguareader.app
 import android.app.Activity
 import android.content.res.Configuration
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -21,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,8 +45,8 @@ import com.linguareader.app.skin.AppSkinTheme
 import com.linguareader.app.skin.LanternAppearanceState
 import com.linguareader.app.skin.LocalLanternAppearance
 import com.linguareader.app.skin.SkinStore
-import com.linguareader.app.tts.SpeechReadiness
-import java.util.Locale
+import com.linguareader.app.tts.SingleWordSpeaker
+import com.linguareader.app.tts.createAndroidSingleWordSpeaker
 
 class MainActivity : ComponentActivity() {
     private val viewModel by viewModels<AppViewModel>()
@@ -156,7 +156,8 @@ private fun LinguaReaderApp(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val currentBook = state.currentBook
-    val speak = rememberEnglishSpeaker()
+    var speechFailure by remember { mutableStateOf<SingleWordSpeaker.Failure?>(null) }
+    val speak = rememberEnglishSpeaker { speechFailure = it }
     val snackbar = LocalAppSnackbar.current
 
     // ── 导航（P13 接线）──────────────────────────────────────────
@@ -309,6 +310,11 @@ private fun LinguaReaderApp(
         )
     }
 
+    // Keep pronunciation failures above lookup/review dialogs; the global Snackbar is behind them.
+    speechFailure?.let { failure ->
+        WordSpeechFailureDialog(failure = failure, onDismiss = { speechFailure = null })
+    }
+
     state.launchPrompt?.let { prompt ->
         LaunchPromptDialog(prompt = prompt, onDismiss = viewModel::dismissLaunchPrompt)
     }
@@ -333,35 +339,17 @@ private fun LinguaReaderApp(
 }
 
 @Composable
-private fun rememberEnglishSpeaker(): (String) -> Unit {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var engine by remember { mutableStateOf<TextToSpeech?>(null) }
-    // Q1-t13：`TextToSpeech` 的初始化在 onInit 回调里才完成，而实例构造完就能拿到。
-    // 初始化完成前的那次点击会被系统静默丢弃（首音消失），故用门控先记账、就绪后补播。
-    val readiness = remember { SpeechReadiness() }
-    DisposableEffect(context) {
-        lateinit var created: TextToSpeech
-        created = TextToSpeech(context) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                created.language = Locale.US
-                readiness.onReady()?.let { queued ->
-                    created.speak(queued, TextToSpeech.QUEUE_FLUSH, null, WORD_UTTERANCE_ID)
-                }
-            }
-        }
-        engine = created
-        onDispose {
-            created.stop()
-            created.shutdown()
-            engine = null
-            readiness.reset()
-        }
+private fun rememberEnglishSpeaker(
+    onFailure: (SingleWordSpeaker.Failure) -> Unit
+): (String) -> Unit {
+    val context = LocalContext.current
+    val currentFailure by rememberUpdatedState(onFailure)
+    val speaker = remember(context) {
+        createAndroidSingleWordSpeaker(context) { currentFailure(it) }
     }
-    return { text ->
-        if (text.isNotBlank() && readiness.request(text)) {
-            engine?.speak(text, TextToSpeech.QUEUE_FLUSH, null, WORD_UTTERANCE_ID)
-        }
+    DisposableEffect(speaker) {
+        speaker.start()
+        onDispose { speaker.close() }
     }
+    return remember(speaker) { speaker::speak }
 }
-
-private const val WORD_UTTERANCE_ID = "lingua-reader-word"

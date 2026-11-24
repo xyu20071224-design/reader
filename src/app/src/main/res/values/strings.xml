@@ -904,4 +904,10 @@
     <string name="update_hotfix_rollback">撤销热修复</string>
     <string name="update_hotfix_rolled_back">已撤销热修复。完全关闭并重新打开应用后恢复基础版本。</string>
     <string name="update_hotfix_restart">重启应用</string>
+
+    <!-- One-shot word and phrase speech failures. -->
+    <string name="tts_word_failure_title">发音暂不可用</string>
+    <string name="tts_word_unavailable">系统语音不可用，请在系统设置中检查文字转语音服务。</string>
+    <string name="tts_word_language_missing">缺少英语语音，请在系统文字转语音设置中安装英语语音。</string>
+    <string name="tts_word_playback_failed">发音失败，请稍后重试。</string>
 </resources>

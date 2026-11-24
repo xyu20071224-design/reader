@@ -913,4 +913,10 @@
     <string name="update_hotfix_rollback">Undo hotfix</string>
     <string name="update_hotfix_rolled_back">Hotfix removed. Close and reopen the app to return to the base version.</string>
     <string name="update_hotfix_restart">Restart app</string>
+
+    <!-- One-shot word and phrase speech failures. -->
+    <string name="tts_word_failure_title">Pronunciation unavailable</string>
+    <string name="tts_word_unavailable">System speech is unavailable. Check text-to-speech in system settings.</string>
+    <string name="tts_word_language_missing">An English voice is missing. Install one in system text-to-speech settings.</string>
+    <string name="tts_word_playback_failed">Could not play the pronunciation. Try again.</string>
 </resources>
