@@ -2039,6 +2039,19 @@
       "errors": 0,
       "skipped": 8
     },
-    "unique_device_methods": 7
+    "unique_device_methods": 7,
+    "github_issue_updates": [
+      {
+        "issue": 1,
+        "url": "https://github.com/xyu20071224-design/reader/issues/1#issuecomment-7157644084"
+      },
+      {
+        "issue": 2,
+        "url": "https://github.com/xyu20071224-design/reader/issues/2#issuecomment-7157644903"
+      }
+    ],
+    "branch_url": "https://github.com/xyu20071224-design/reader/tree/feat/server-distribution-integration-20261125",
+    "github_branch_published": true,
+    "github_issues_closed": false
   }
 }

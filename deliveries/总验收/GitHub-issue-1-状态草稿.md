@@ -7,3 +7,6 @@
 本issue仍有未满足或本轮未覆盖的真实验收条件：Q1-b02, Q1-b03, Q1-b04, Q1-b05, Q1-b06, Q1-t01, Q1-t03, Q1-t04, Q1-t05, Q1-t06, Q1-t09, Q1-t10, Q1-t12, Q1-t13。真实长书/金标准、授权服务、首音/韵律听感、国内已部署源和正式签名发布条件未冒充通过。保留issue打开，待相应真实验收补齐。
 
 本地详细记录在 deliveries/总验收/34项验收矩阵.md 与同名JSON；本候选尚未推送，发布前需将代码和可公开证据置于可访问提交。
+
+
+2026-11-25 补充：已将最新实际进度发布到 [issue 评论](https://github.com/xyu20071224-design/reader/issues/1#issuecomment-7157644084)，保持 issue 开放。完整代码与 CI 配置已发布到独立分支 `feat/server-distribution-integration-20261125`；本页上方是保留的前日草稿，最新代码和验收见 `deliveries/服务器分发合并/`。

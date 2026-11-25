@@ -311,7 +311,22 @@
   "publication": {
     "github_issues_closed": false,
     "formal_release": false,
-    "branch_push": "pending final delivery commit"
+    "branch_push": "published",
+    "user_authorized_public_push": true,
+    "github_issue_updates": [
+      {
+        "issue": 1,
+        "url": "https://github.com/xyu20071224-design/reader/issues/1#issuecomment-7157644084"
+      },
+      {
+        "issue": 2,
+        "url": "https://github.com/xyu20071224-design/reader/issues/2#issuecomment-7157644903"
+      }
+    ],
+    "first_published_commit": "c5dae85573ab4ad6fff23125cdd6aefa4e092a16",
+    "branch_url": "https://github.com/xyu20071224-design/reader/tree/feat/server-distribution-integration-20261125",
+    "workflow_scope_confirmed": true,
+    "main_unchanged": true
   },
   "remaining_conditions": [
     "真实配对长书和既有金标准",
