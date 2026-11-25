@@ -137,5 +137,8 @@ jobs:
       - name: 资源激活逻辑测试
         run: python3 deploy/packs/test_activate.py
 
+      - name: 只读词典导出契约测试
+        run: python3 -m unittest discover -s scripts/alignment-corpus -p 'test_*.py' -v
+
       - name: 安装脚本语法检查
         run: bash -n deploy/packs/install-ubuntu.sh

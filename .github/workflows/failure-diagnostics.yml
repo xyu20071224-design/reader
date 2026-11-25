@@ -10,6 +10,9 @@ on:
       - 'src/shared/build.gradle.kts'
       - 'src/shared/src/main/**'
       - 'src/shared/src/test/java/com/linguareader/shared/reader/ReaderBootstrap*'
+      - 'src/shared/src/test/java/com/linguareader/shared/alignment/AlignmentCorpus*'
+      - 'src/shared/src/test/java/com/linguareader/shared/alignment/Corpus*'
+      - 'src/shared/src/test/java/com/linguareader/shared/alignment/Reviewed*'
       - 'src/shared/src/test/resources/reader/*.js'
   workflow_dispatch:
 
@@ -22,7 +25,7 @@ concurrency:
 
 jobs:
   reader-bootstrap:
-    name: 阅读脚本快照 (${{ matrix.os }})
+    name: 快照与验收设施 (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -44,10 +47,16 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: 定向运行字符快照及其契约
+      - name: 定向运行快照与验收设施
         run: |
           chmod +x gradlew
-          ./gradlew :shared:test --tests 'com.linguareader.shared.reader.ReaderBootstrap*' --continue --stacktrace
+          ./gradlew :shared:test \
+            --tests 'com.linguareader.shared.reader.ReaderBootstrap*' \
+            --tests 'com.linguareader.shared.alignment.AlignmentCorpusInputsTest' \
+            --tests 'com.linguareader.shared.alignment.CorpusExecutionTest' \
+            --tests 'com.linguareader.shared.alignment.ReviewedGoldenRegressionTest' \
+            --tests 'com.linguareader.shared.alignment.CorpusEpubImporterTest' \
+            --continue --stacktrace
 
       - name: 保存实际字节与原始测试结果
         if: always()

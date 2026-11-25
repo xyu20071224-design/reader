@@ -56,6 +56,10 @@ val alignmentCorpusDirectory = alignmentCorpusLocation.orNull?.let { value ->
 } ?: alignmentRepositoryRoot.resolve("artifacts/alignment-corpus")
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    // Same bounded worker configuration as the locally verified full suite;
+    // real-book probes must not compete with multiple default-size workers.
+    maxHeapSize = "2g"
+    maxParallelForks = 1
     val writeReaderGolden = providers.environmentVariable("LR_WRITE_GOLDEN").getOrElse("")
     inputs.property("readerGoldenWriteMode", writeReaderGolden)
     outputs.upToDateWhen { writeReaderGolden != "1" }
@@ -84,6 +88,7 @@ tasks.register<JavaExec>("alignmentCorpusPreflight") {
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("com.linguareader.shared.alignment.AlignmentCorpusPreflight")
+    maxHeapSize = "2g"
     args("--corpus-root", alignmentCorpusDirectory.absolutePath)
     val selectedCase = providers.gradleProperty("alignmentCorpusCase").orNull
     val dictionaryOnly = providers.gradleProperty("alignmentDictionaryOnly").orNull
@@ -95,4 +100,40 @@ tasks.register<JavaExec>("alignmentCorpusPreflight") {
     }
     if (selectedCase != null) args("--case", selectedCase)
     if (dictionaryOnly == "true") args("--dictionary-only")
+}
+
+// Explicit local import only. No books or private translations are bundled in
+// the build, fetched from the network, or implicitly uploaded by this task.
+tasks.register<JavaExec>("importAlignmentCorpus") {
+    group = "verification"
+    description = "Import explicitly supplied local EPUBs into private acceptance inputs"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.linguareader.shared.alignment.CorpusEpubImporter")
+    maxHeapSize = "2g"
+    doFirst {
+        val requiredFiles = mapOf(
+            "--source" to "alignmentSourceEpub",
+            "--target" to "alignmentTargetEpub",
+            "--dictionary" to "alignmentEcdictTsv",
+            "--dictionary-metadata" to "alignmentEcdictMetadata"
+        )
+        requiredFiles.forEach { (argument, property) ->
+            val value = providers.gradleProperty(property).orNull
+            require(!value.isNullOrBlank()) { "Supply -P$property=<local file>" }
+            args(argument, alignmentRepositoryRoot.resolve(value).absolutePath)
+        }
+        val version = providers.gradleProperty("alignmentCorpusVersion").orNull
+        require(!version.isNullOrBlank()) { "Supply -PalignmentCorpusVersion=<material version>" }
+        args("--version", version, "--out", alignmentCorpusDirectory.absolutePath)
+        providers.gradleProperty("alignmentAiEpub").orNull?.let { value ->
+            require(value.isNotBlank()) { "alignmentAiEpub must not be blank" }
+            args("--ai", alignmentRepositoryRoot.resolve(value).absolutePath)
+        }
+        mapOf("--source-sha256" to "alignmentSourceSha256",
+            "--target-sha256" to "alignmentTargetSha256", "--ai-sha256" to "alignmentAiSha256")
+            .forEach { (argument, property) ->
+                providers.gradleProperty(property).orNull?.let { args(argument, it) }
+            }
+    }
 }

@@ -13,6 +13,24 @@ F01–F17 是必须执行的真实材料验收，缺材料时失败。加载器�
 
 运行真实验收仍用 `:shared:test --tests <类名>`，不得改成 Assume、排除用例或先 return。默认本地及 CI 在没有真实材料时会保留 17 个明确的输入失败。
 
+### 从本地 EPUB 准备完整材料
+
+在 `src/` 中显式调用（路径含空格时引号包住整个 `-P...=...` 参数）：
+
+```bash
+./gradlew :shared:importAlignmentCorpus \
+  -PalignmentSourceEpub=/private/books/english.epub \
+  -PalignmentTargetEpub=/private/books/chinese.epub \
+  -PalignmentEcdictTsv=/private/dictionary/ecdict.tsv \
+  -PalignmentEcdictMetadata=/private/dictionary/metadata.json \
+  -PalignmentCorpusVersion=local-reviewed-editions-v1 \
+  -PalignmentCorpusRoot=/private/materials
+```
+
+可追加 `alignmentAiEpub` 保存另一本未批准的 AI 译本；`alignmentSourceSha256`、`alignmentTargetSha256`、`alignmentAiSha256` 可锁定预期输入版本。输出目录已有清单时拒绝覆盖，重新导入请选择新目录。原文件只读，保留原始 ZIP 副本和逐项摘要；完整 OPF spine 依次导入，含 `linear=no`、重复条目和空结构章；声明条目缺失直接失败。XML 解析不访问外部实体/DTD/网络。
+
+该任务只准备输入，**不生成金标准或英中翻译记忆，不批准 AI 译文**。AI 书仅列入 `additionalBooks.unreviewed-ai-edition`；F02–F06 的独立翻译记录与 F10/F11 的金标准仍须单独提供。真实正文、原 ZIP、词典大文件与含正文的 XML 仅放私有目录或被 Git 忽略的 `artifacts/`，不要公开提交或上传。
+
 ## 清单 v1
 
 UTF-8 JSON（重复键拒绝）。顶层 `schemaVersion: 1`，`corpora` 对象与按需要提供的 `dictionary` 对象。示例见 `corpus-manifest.example.json`；其中占位摘要不能用于正式验收。
