@@ -234,9 +234,14 @@ internal object AlignmentCorpusInputs {
         val relative = text(declaration, "path").replace('\\', '/')
         check(!relative.startsWith('/') && ':' !in relative && relative.none { it.code < 32 } &&
             relative.split('/').none { it.isEmpty() || it == "." || it == ".." }) { "Unsafe relative path=$relative" }
-        val canonicalRoot = root.canonicalFile
-        val file = File(canonicalRoot, relative).canonicalFile
-        check(file.toPath().startsWith(canonicalRoot.toPath()) && file != canonicalRoot) { "Path escapes corpus root: $relative" }
+        // Resolve existing filesystem links before containment checks, including Windows links.
+        // File.canonicalFile alone did not resolve the out-of-root link in native Windows CI.
+        val realRoot = root.toPath().toRealPath()
+        val candidate = realRoot.resolve(relative)
+        check(java.nio.file.Files.isRegularFile(candidate)) { "Missing file: $candidate" }
+        val realFile = candidate.toRealPath()
+        check(realFile.startsWith(realRoot) && realFile != realRoot) { "Path escapes corpus root: $relative" }
+        val file = realFile.toFile()
         check(file.isFile) { "Missing file: $file" }
         check(digest(declaration, "sha256") == sha256(file)) { "SHA-256 mismatch: $relative" }
         return file

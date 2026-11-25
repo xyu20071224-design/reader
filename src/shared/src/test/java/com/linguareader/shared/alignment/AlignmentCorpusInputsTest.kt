@@ -97,6 +97,27 @@ class AlignmentCorpusInputsTest {
         f.save(); assertInvalid(f, "F12", "escapes corpus root")
     }
 
+    @Test fun symbolicDirectoryOutsideCorpusIsRejectedBeforeReadingItsChapter() {
+        val f = fixture()
+        val outside = temporary.newFolder("outside-directory")
+        val chapter = File(outside, "chapter.json").apply { writeText("{}") }
+        java.nio.file.Files.createSymbolicLink(File(f.root, "texts/external").toPath(), outside.toPath())
+        f.lotr.getJSONObject("source").getJSONArray("chapters").getJSONObject(0)
+            .put("path", "texts/external/chapter.json").put("sha256", AlignmentCorpusInputs.sha256(chapter))
+        f.save(); assertInvalid(f, "F12", "escapes corpus root")
+    }
+
+    @Test fun symbolicLinkInsideCorpusKeepsTheVerifiedRealFileAndLoadsNormally() {
+        val f = fixture()
+        val original = File(f.root, "texts/en-second.json")
+        java.nio.file.Files.createSymbolicLink(File(f.root, "texts/internal-link.json").toPath(), original.toPath())
+        val declaration = f.lotr.getJSONObject("source").getJSONArray("chapters").getJSONObject(0)
+            .put("path", "texts/internal-link.json")
+        f.save()
+        assertEquals(original.toPath().toRealPath(), AlignmentCorpusInputs.verifiedFile(f.root, declaration).toPath())
+        assertEquals(f.en, AlignmentCorpusInputs.load(f.root, "F12").english)
+    }
+
     @Test fun missingSingleDependencyAndFieldNameAreReported() {
         val f = fixture()
         f.manifest.remove("dictionary")
