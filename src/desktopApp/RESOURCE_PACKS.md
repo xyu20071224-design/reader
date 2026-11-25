@@ -15,12 +15,14 @@
 2026-11-25，macOS arm64、JDK 17、Gradle 8.11.1：
 
 - `:desktopApp:compileKotlin :desktopApp:test` 实际执行通过。
-- 原始 XML：37 tests / 0 failures / 0 errors / 0 skipped。其中仓库18、控制器11、GitHub适配3、原有桌面测试5。
+- 原始 XML：47 tests / 0 failures / 0 errors / 0 skipped。其中特定词边界10、仓库18、控制器11、GitHub适配3、原有桌面测试5。
 - 仓库测试用实际 JDBC SQLite 和 `.lrpack`：安装→重启→两词典切换→卸载回退→shared `DictionaryRepository.lookup`；损坏摘要、多余文件、路径穿越、错误 schema、未来应用版本、目录身份不符、降级、升级、取消及发布失败回滚、集合包、损坏登记表和音频版本拒绝。
 - 控制器测试用确定的协程门闩：构造零请求、显式下载/进度、取消重试、旧来源忽略取消仍不得回写、篡改条目拒绝、刷新失败清选择、GitHub元数据保留、取消提交与离线重开。
 - GitHub适配使用真实共享解析/传输代码和可控 HTTP 连接，核对来源过滤、正大小、原始摘要与失败临时文件清理；未访问真实 GitHub 资源包。
 
 首次完整执行因两个测试函数返回值被推断为非 void 而使仓库测试类初始化失败，已保存原 XML 并修正函数返回值。该初始化错误不是产品失败复现证据。随后完整37项通过。
+
+实际探针另复现了既有纯文本 Reader 取词右界错误：`I eat apples today.` 点 `apples` 返回带尾空格的 `apples `，使真实包词典查词无命中。先执行10项边界回归得到7失败，再仅把扫描和截取统一为右开区间，得到10项全过；完整桌面47项全过。覆盖行中/句末、文本首尾、空白/越界点击和既有两种撇号支持，并把取出的词实际送入包内 SQLite/shared lookup。原扫描规则未扩展成新分词器。红/绿 XML 与原算法快照保存在 `artifacts/desktop-packs/plain-word-boundary-{red,green}/`。
 
 原始日志与 XML 保存在执行副本 `artifacts/desktop-packs/`，不提交测试生成的词典包、SQLite、书籍、音频或日志。官方桌面构建依赖已按现有仓库配置下载；未下载 JCEF 浏览器内核。
 

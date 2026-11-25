@@ -187,13 +187,13 @@ private fun LookupCard(
     }
 }
 
-/** 点按处的单词（含撇号/连字符内的字母），偏移越界或非词返回 null。 */
-private fun wordAt(text: String, offset: Int): String? {
+/** 点按处的单词（连续字母与撇号），偏移越界或非字母返回 null。 */
+internal fun wordAt(text: String, offset: Int): String? {
     if (offset !in text.indices) return null
     if (!text[offset].isLetter()) return null
     var start = offset
     var end = offset
     while (start > 0 && (text[start - 1].isLetter() || text[start - 1] == '’' || text[start - 1] == '\'')) start--
-    while (end < text.length - 1 && (text[end].isLetter() || text[end] == '’' || text[end] == '\'')) end++
-    return text.substring(start, end + 1).takeIf { it.any(Char::isLetter) }
+    while (end < text.length && (text[end].isLetter() || text[end] == '’' || text[end] == '\'')) end++
+    return text.substring(start, end).takeIf { it.any(Char::isLetter) }
 }
