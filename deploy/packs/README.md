@@ -10,9 +10,9 @@
 # 设置 JAVA_HOME 为实际 JDK；不需要重新制作已有的、已验证的 .lrpack。
 node scripts/publish_packs.mjs dictionary --version 1.0.0 --out artifacts/ecdict-1.0.0.lrpack
 node scripts/publish_packs.mjs publish --root artifacts/packs-site \
-  --base-url https://62.234.28.97:8443 --pack artifacts/ecdict-1.0.0.lrpack
+  --base-url https://62.234.28.97:25447 --pack artifacts/ecdict-1.0.0.lrpack
 node deploy/packs/package.mjs --site artifacts/packs-site \
-  --base-url https://62.234.28.97:8443 --out artifacts/linguareader-packs-server.tar.gz
+  --base-url https://62.234.28.97:25447 --out artifacts/linguareader-packs-server.tar.gz
 ```
 
 已有包可重复 `--pack` 批量发布；每批同一 packId 只能出现一次。词典、音色、音频、集合包均检查 ZIP 路径/条目/解压量、CRC、清单大小/哈希、类型载荷引用；音频还检查当前管线与章节树，集合成员逐包核对身份。结构校验不替代 SQLite 词表模式、真实音频听感及应用端安装验收。
@@ -27,7 +27,7 @@ node deploy/packs/package.mjs --site artifacts/packs-site \
 
 当前只读检查发现 Ubuntu 24.04、现有 Nginx、80 上已有 ACME 站点映射 `/var/www/acme`；这些是安装前观察，不是安装成功记录。现有同步等服务必须保留。
 
-安装器要求现有 Nginx、Python 3.8+、curl、OpenSSL、ss、systemd；不执行 apt、不安装/升级 Nginx、不增改 80/443 站点、不停止其他服务、不修改 UFW/云安全组。必须使用已经从公网提供 HTTP-01 challenge 的 webroot；没有此映射时先由操作者配置，不能接管现有站点。8443 被其他服务占用、目标配置名不属于本工具、或已有部署目标不同，都会停止。
+安装器要求现有 Nginx、Python 3.8+、curl、OpenSSL、ss、systemd；不执行 apt、不安装/升级 Nginx、不增改 80/443 站点、不停止其他服务、不修改 UFW/云安全组。必须使用已经从公网提供 HTTP-01 challenge 的 webroot；没有此映射时先由操作者配置，不能接管现有站点。25447 被其他服务占用、目标配置名不属于本工具、或已有部署目标不同，都会停止。
 
 本地先生成可审阅配置（不应用）：
 
@@ -49,7 +49,7 @@ sudo bash stage/install-ubuntu.sh --host 62.234.28.97 \
   --existing-webroot /var/www/acme --owner ubuntu --bootstrap-certbot
 ```
 
-安装只管理本工具命名的 Nginx 8443 站点、续期 unit/timer 和独立 `/opt/linguareader-packs`。 私有 venv 的 bootstrap 仅从 `https://pypi.org/simple` 安装，使用 `--isolated --no-cache-dir`，并仅为该子进程设置 `PIP_CONFIG_FILE=/dev/null` 以禁用继承的全局/用户/环境配置；不修改系统 pip 配置。配置与命令行优先级依据 [pip 官方说明](https://pip.pypa.io/en/stable/topics/configuration/)。Certbot 环境和账号/证书配置也在该目录，避免使用或改动已有站点的 `/etc/letsencrypt` 账号和证书。若系统缺少 Python venv/ensurepip，需操作者先安装该依赖再重试；不会顺便安装其他服务。
+安装只管理本工具命名的 Nginx 25447 站点、续期 unit/timer 和独立 `/opt/linguareader-packs`。 私有 venv 的 bootstrap 仅从 `https://pypi.org/simple` 安装，使用 `--isolated --no-cache-dir`，并仅为该子进程设置 `PIP_CONFIG_FILE=/dev/null` 以禁用继承的全局/用户/环境配置；不修改系统 pip 配置。配置与命令行优先级依据 [pip 官方说明](https://pip.pypa.io/en/stable/topics/configuration/)。Certbot 环境和账号/证书配置也在该目录，避免使用或改动已有站点的 `/etc/letsencrypt` 账号和证书。若系统缺少 Python venv/ensurepip，需操作者先安装该依赖再重试；不会顺便安装其他服务。
 
 脚本会写入一个随机 challenge 并读取公网 HTTP-01 路径，结束删除该文件；不会覆盖别人的 challenge。Certbot 5.4+ 才支持 IP 的 webroot 模式，使用 `--preferred-profile shortlived --ip-address`，续期每 12 小时检查并在证书变更后校验/重载 Nginx。官方资料核对于 2026-11-25：[Let's Encrypt 的 Certbot IP 使用说明](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)、[Certbot CLI](https://eff-certbot.readthedocs.io/en/stable/man/certbot.html)、[短期/IP 证书正式可用说明](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)。证书约 160 小时有效，仍需在实际服务器执行续期演练并监控 timer，不能据配置文件生成成功声称续期正常。
 
@@ -59,9 +59,9 @@ Nginx reload 后只对本机连接尚未就绪（curl 7）在 10 秒总截止内
 
 ```sh
 python3 stage/activate.py activate --stage stage \
-  --root /srv/linguareader-packs/public --base-url https://62.234.28.97:8443
+  --root /srv/linguareader-packs/public --base-url https://62.234.28.97:25447
 python3 stage/activate.py check-http --root /srv/linguareader-packs/public \
-  --base-url https://62.234.28.97:8443 --full
+  --base-url https://62.234.28.97:25447 --full
 ```
 
 激活合并服务器现有目录，不用上传的旧目录覆盖服务器新增的其他包；版本历史、既有文件、包目录身份和全部上传文件都先核验。相同包重试不修改 index；失败阶段保留用于诊断。`check-http` 验证 TLS 信任、实际服务的目录字节、206/Content-Range 和首 100 字节；`--full` 另外逐包完整下载核对 SHA-256，可能消耗较多带宽。HTTP 校验在提交后执行，若失败，目录可能已激活，需检查实际状态，不能据退出码推断回滚。
@@ -69,11 +69,11 @@ python3 stage/activate.py check-http --root /srv/linguareader-packs/public \
 PowerShell 默认只在本地打包，不进行远程连接；显式部署入口复用相同工具，不接受或保存密码：
 
 ```powershell
-.\scripts\deploy_packs.ps1 -PackageOnly -JavaHome C:\实际JDK -Pack C:\实际包.lrpack -BaseUrl https://62.234.28.97:8443
+.\scripts\deploy_packs.ps1 -PackageOnly -JavaHome C:\实际JDK -Pack C:\实际包.lrpack -BaseUrl https://62.234.28.97:25447
 .\scripts\deploy_packs.ps1 -Deploy -Server ubuntu@62.234.28.97 -ExistingWebroot /var/www/acme -BootstrapCertbot -Pack C:\实际包.lrpack -JavaHome C:\实际JDK
 ```
 
-OpenSSH 和 sudo 仍由终端交互认证。上传校验失败不执行安装；安装/激活失败后保留独立远端 stage，不笼统声称“服务器未改”。远程脚本的本机 HTTP 通过也不替代独立外网 8443、手机获取/下载/中断续传/安装/重启离线使用验证。安全组或防火墙放行由操作者根据实际环境单独决定。
+OpenSSH 和 sudo 仍由终端交互认证。上传校验失败不执行安装；安装/激活失败后保留独立远端 stage，不笼统声称“服务器未改”。远程脚本的本机 HTTP 通过也不替代独立外网 25447、手机获取/下载/中断续传/安装/重启离线使用验证。安全组或防火墙放行由操作者根据实际环境单独决定。
 
 ## 可独立运行的本地测试
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Existing Nginx/HTTP-01 webroot only. Never modifies a firewall or an existing site.
-HOST='' WEBROOT='' OWNER="${SUDO_USER:-ubuntu}" PORT=8443
+HOST='' WEBROOT='' OWNER="${SUDO_USER:-ubuntu}" PORT=25447
 PUBLIC_ROOT='/srv/linguareader-packs/public'
 SERVICE_ROOT='/opt/linguareader-packs'
 BOOTSTRAP=0 CHECK=0

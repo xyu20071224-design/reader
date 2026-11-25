@@ -183,7 +183,7 @@ def apply_managed(changes, validate, reload, restore_runtime=lambda:None, before
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--host',required=True);p.add_argument('--port',type=int,default=8443)
+    p.add_argument('--host',required=True);p.add_argument('--port',type=int,default=25447)
     p.add_argument('--public-root',default='/srv/linguareader-packs/public');p.add_argument('--service-root',default='/opt/linguareader-packs')
     p.add_argument('--nginx-root',default='/etc/nginx');p.add_argument('--systemd-root',default='/etc/systemd/system')
     p.add_argument('--check-owned',action='store_true',help='Read-only validation of target names and ownership')

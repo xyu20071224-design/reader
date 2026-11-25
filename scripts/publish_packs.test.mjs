@@ -24,7 +24,7 @@ test('publishes verified immutable archive before independent catalogue',()=>fix
   const result=await publish({root,packs:[out]});
   const pack=result.packs[0];
   assert.equal(result.formatVersion,1);
-  assert.match(pack.urls[0],/^https:\/\/62\.234\.28\.97:8443\/packs\/files\/[0-9a-f]{64}\/ecdict\.lrpack$/);
+  assert.match(pack.urls[0],/^https:\/\/62\.234\.28\.97:25447\/packs\/files\/[0-9a-f]{64}\/ecdict\.lrpack$/);
   const target=path.join(root,'packs','files',pack.sha256,'ecdict.lrpack');
   assert.deepEqual(fs.readFileSync(target),fs.readFileSync(out));
   assert.equal(JSON.parse(fs.readFileSync(path.join(root,'packs/index.json'))).packs.length,1);

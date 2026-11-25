@@ -17,7 +17,7 @@ data class RemotePack(
 )
 
 object RemotePackCatalog {
-    const val DEFAULT_URL = "https://62.234.28.97:8443/packs/index.json"
+    const val DEFAULT_URL = "https://62.234.28.97:25447/packs/index.json"
     const val MAX_CATALOG_BYTES = 1024 * 1024
     const val MAX_PACK_BYTES = 2L * 1024 * 1024 * 1024
     private val safeName = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,150}\\.lrpack")

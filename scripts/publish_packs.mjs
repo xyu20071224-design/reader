@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_BASE_URL = 'https://62.234.28.97:8443';
+export const DEFAULT_BASE_URL = 'https://62.234.28.97:25447';
 export const AUDIO_PIPELINE_VERSION = 3; // Keep in sync with TtsPipelineContract.VERSION (tested).
 const packIdPattern = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const versionPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
