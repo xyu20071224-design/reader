@@ -1,0 +1,3 @@
+# Bootstrap golden resources are exact UTF-8 byte contracts on every platform.
+src/shared/src/test/resources/reader/default.js text eol=lf
+src/shared/src/test/resources/reader/night-scroll.js text eol=lf
