@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-25",
+  "codeCommit": "f5c01e479201e08c799f5de1a660b216257b80c0",
+  "branch": "feat/failure-repair-20261125",
+  "originalFailedMethods": 21,
+  "resolvedFailureMethods": 14,
+  "pendingIndependentInputMethods": 7,
+  "allIssuesClosed": false,
+  "localFinal": {
+    "shared": {
+      "tests": 1016,
+      "failures": 7,
+      "errors": 0,
+      "skipped": 8,
+      "failedMethods": [
+        "com.linguareader.shared.alignment.AiUncertainReasonProbe::whyUncertainOnPureAiCorpus",
+        "com.linguareader.shared.alignment.AiAlignerAcceptanceTest::measureBothEnginesOnBothInputForms",
+        "com.linguareader.shared.alignment.AiPureSentenceAlignProbe::measurePureSentenceAlignment",
+        "com.linguareader.shared.alignment.OraclePairRecallProbe::recallOnGoldenTruePairs",
+        "com.linguareader.shared.alignment.RealCorpusAcceptanceTest::measureOnLordsOfTheRings",
+        "com.linguareader.shared.alignment.AiTranslationAcceptanceProbe::measureOnAiTranslation",
+        "com.linguareader.shared.alignment.AlignedSetDiffProbe::diffAlignedSets"
+      ]
+    },
+    "app": {
+      "tests": 867,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 26,
+      "failedMethods": []
+    },
+    "desktopApp": {
+      "tests": 47,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedMethods": []
+    },
+    "lint": {
+      "Error": 0,
+      "Fatal": 0,
+      "Warning": 115
+    },
+    "inputReadOnly": {
+      "files": 261,
+      "changed": [],
+      "added": []
+    }
+  },
+  "publicCiFinal": {
+    "app": {
+      "tests": 867,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 26
+    },
+    "shared": {
+      "tests": 1016,
+      "failures": 17,
+      "errors": 0,
+      "skipped": 8
+    },
+    "lint": {
+      "Error": 0,
+      "Fatal": 0,
+      "Warning": 116
+    }
+  },
+  "publicCiSharedExpectedMissingInputs": 17,
+  "nativeFacilitiesPerPlatform": {
+    "tests": 51,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "nativeDesktopPerPlatform": {
+    "tests": 47,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "runs": {
+    "android": 45609619779,
+    "platform": 45609619784,
+    "facilities": 45609619686
+  },
+  "materials": {
+    "sourceSpine": 48,
+    "sourceParagraphs": 4069,
+    "sourceSentences": 13611,
+    "humanSpine": 37,
+    "humanParagraphs": 3940,
+    "humanSentences": 9300,
+    "aiSpine": 41,
+    "aiParagraphs": 3954,
+    "aiSentences": 12524,
+    "privateFiles": 261,
+    "mutatedFiles": 0,
+    "generatedTruth": false
+  },
+  "pythonExporter": {
+    "tests": 6,
+    "failures": 0
+  },
+  "cases": [
+    {
+      "id": "F01",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.AbComparisonProbe::sideBySideTermsComparison",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F02",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.AiAlignerAcceptanceTest::measureBothEnginesOnBothInputForms",
+      "status": "pending-independent-truth",
+      "reason": "需要原始英中AI翻译记录及独立审核配对"
+    },
+    {
+      "id": "F03",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.AiPureSentenceAlignProbe::measurePureSentenceAlignment",
+      "status": "pending-independent-truth",
+      "reason": "需要原始英中AI翻译记录及独立审核配对"
+    },
+    {
+      "id": "F04",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.AiTranslationAcceptanceProbe::measureOnAiTranslation",
+      "status": "pending-independent-truth",
+      "reason": "需要原始英中AI翻译记录及独立审核配对"
+    },
+    {
+      "id": "F05",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.AiUncertainReasonProbe::whyUncertainOnPureAiCorpus",
+      "status": "pending-independent-truth",
+      "reason": "需要原始英中AI翻译记录及独立审核配对"
+    },
+    {
+      "id": "F06",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.AlignedSetDiffProbe::diffAlignedSets",
+      "status": "pending-independent-truth",
+      "reason": "需要原始英中AI翻译记录及独立审核配对"
+    },
+    {
+      "id": "F07",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.BridgeCoverageProbe::measureGlossCoverageInTranslation",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F08",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.BridgeDiagnosisProbe::traceBridgeOnRealCorpus",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F09",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.IdfTraceProbe::traceOneSentenceAndIdfDistribution",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F10",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.OraclePairRecallProbe::recallOnGoldenTruePairs",
+      "status": "pending-independent-truth",
+      "reason": "需要与当前中英文版本绑定的独立金标准"
+    },
+    {
+      "id": "F11",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.RealCorpusAcceptanceTest::measureOnLordsOfTheRings",
+      "status": "pending-independent-truth",
+      "reason": "需要与当前中英文版本绑定的独立金标准"
+    },
+    {
+      "id": "F12",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.RealCorpusDiagnosisProbe::diagnoseRealCorpus",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F13",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.RealSpanDistributionProbe::measureSpanDistributionAndNumerals",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F14",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.RealVerifyFailureProbe::whyVerifyFailedOnRealCorpus",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F15",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.SentenceCountProbe::reconcileSentenceCount",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F16",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.TransliterationVerifyProbe::verifyTransliterationClaims",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F17",
+      "owner": "A",
+      "test": "com.linguareader.shared.alignment.V3OnDpPairsProbe::measureV3OnActualPairs",
+      "status": "verified-on-supplied-real-corpus",
+      "reason": "入口已修复；完整真实书籍实验执行通过，不代表整书对照准确率达标"
+    },
+    {
+      "id": "F18",
+      "owner": "B",
+      "test": "com.linguareader.app.uirender.ReaderShellRenderTest::settingsSheetBodyRenders",
+      "status": "verified-visual-baseline",
+      "reason": "依据现行设计校准旧图；正式全量及普通只读比较通过"
+    },
+    {
+      "id": "F19",
+      "owner": "B",
+      "test": "com.linguareader.app.uirender.SkinPickerRenderTest::pickerWithoutCustomSkin",
+      "status": "verified-visual-baseline",
+      "reason": "依据现行设计校准旧图；正式全量及普通只读比较通过"
+    },
+    {
+      "id": "F20",
+      "owner": "B",
+      "test": "com.linguareader.app.uirender.SkinPickerRenderTest::pickerWithCustomSkin",
+      "status": "verified-visual-baseline",
+      "reason": "依据现行设计校准旧图；正式全量及普通只读比较通过"
+    },
+    {
+      "id": "F21",
+      "owner": "C",
+      "test": "com.linguareader.shared.reader.ReaderBootstrapGoldenTest::bootstrapOutputIsStable",
+      "status": "verified-native-three-platform",
+      "reason": "原生三平台字节相等；两条精确资源路径固定LF"
+    }
+  ],
+  "limitations": [
+    "10项真实实验通过仅证明完整执行，不替代未取得的独立真值质量验收",
+    "AI译本中文分句map不是原始英中翻译记录",
+    "本轮原书与含正文XML仅本地保存，公开CI继续17项缺材料失败",
+    "未新增设备、正式签名、真实听感或外部整书服务验收"
+  ]
+}

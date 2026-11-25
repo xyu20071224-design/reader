@@ -2053,5 +2053,51 @@
     "branch_url": "https://github.com/xyu20071224-design/reader/tree/feat/server-distribution-integration-20261125",
     "github_branch_published": true,
     "github_issues_closed": false
+  },
+  "failure_repair_20261125": {
+    "code_snapshot": "f5c01e479201e08c799f5de1a660b216257b80c0",
+    "report": "deliveries/失败并发修复/执行记录.md",
+    "status": "原21失败14项对应实跑通过，7项缺独立真值；不改写原34项功能分类",
+    "local_shared": {
+      "tests": 1016,
+      "failures": 7,
+      "errors": 0,
+      "skipped": 8
+    },
+    "local_app": {
+      "tests": 867,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 26
+    },
+    "local_desktop": {
+      "tests": 47,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "public_ci_shared_per_platform": {
+      "tests": 1016,
+      "failures": 17,
+      "errors": 0,
+      "skipped": 8
+    },
+    "native_facilities_per_platform": {
+      "tests": 51,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "material_update": "真实英中配对书及AI EPUB已到位，完整私有导入；golden与独立AI配对仍缺，未生成或批准",
+    "remaining_cases": [
+      "F02",
+      "F03",
+      "F04",
+      "F05",
+      "F06",
+      "F10",
+      "F11"
+    ],
+    "issues_closed": false
   }
 }
