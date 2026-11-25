@@ -54,6 +54,7 @@ import java.io.File
 import java.net.URI
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.Locale
 import java.util.concurrent.ConcurrentSkipListSet
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -208,6 +209,7 @@ class LivePackServerInstrumentedTest {
                         if (snapshot.packs.remote.error != null) throw AssertionError(snapshot.packs.remote.error)
                         !snapshot.packs.installing && snapshot.packs.items.any { it.packId == "ecdict" && it.active }
                     }
+                    assertInstalledRow(viewModel)
                     assertTrue("Real download state must be observed", downloadSeen.get())
                     assertTrue("Real install state must be observed", installSeen.get())
                     assertTrue("A genuine intermediate percentage must be emitted", percentages.any { it in 1..99 })
@@ -266,6 +268,7 @@ class LivePackServerInstrumentedTest {
                     assertUntouchedRemoteState(viewModel)
                     openResourcePage()
                     compose.waitUntil(15_000) { viewModel.state.value.packs.items.any { it.packId == "ecdict" && it.active } }
+                    assertInstalledRow(viewModel)
                     val repository = PackRepository(context)
                     val source = requireNotNull(repository.dictionarySource())
                     assertTrue(source.canonicalPath.startsWith(repository.packsRoot.canonicalPath + File.separator))
@@ -358,6 +361,14 @@ class LivePackServerInstrumentedTest {
         compose.onNodeWithContentDescription(context.getString(R.string.storage_title)).performClick()
         compose.onNodeWithText(context.getString(R.string.storage_packs_manage)).performScrollTo().performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithText(context.getString(R.string.packs_title)).fetchSemanticsNodes().isNotEmpty() }
+    }
+    private fun assertInstalledRow(viewModel: AppViewModel) {
+        val item = viewModel.state.value.packs.items.single { it.packId == "ecdict" && it.active }
+        // Match PacksSheet.packDisplayName; UI labels remain resource-driven in either locale.
+        val name = if (Locale.getDefault().language.startsWith("zh")) item.nameZh.ifBlank { item.nameEn }
+            else item.nameEn.ifBlank { item.nameZh }
+        compose.onNodeWithText(name).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.packs_active)).assertIsDisplayed()
     }
     private fun remoteGeneration(viewModel: AppViewModel): Long {
         val repository = field(viewModel, "remotePacksRepository")
