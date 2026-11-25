@@ -1,3 +1,29 @@
+## 2026-11-25 桌面自定义复习设置
+
+**修复内容**
+
+- `src/desktopApp/src/main/kotlin/com/linguareader/desktop/SettingsPane.kt` 接入自定义复习设置，并支持纵向滚动。
+- `src/desktopApp/src/main/kotlin/com/linguareader/desktop/ReviewSettingsSection.kt` 将当前模式与自定义参数分别持久化。选择预设只更新 `review_mode`，已有 `review_mode_custom` JSON 保留。读取 `CUSTOM` 时显示自定义选项。
+- 自定义编辑支持目标保留率、首次延迟四档和每日提醒上限 1–10 次。草稿通过“保存并启用”写入，提供恢复默认与保存结果反馈。正常编辑保留原有最小间隔和提示驻留时长。
+
+**自动验证**
+
+- Windows JDK 17，使用仓库内工具链与缓存，Gradle 属性使用 `'-Pkotlin.compiler.execution.strategy=in-process'`。
+- `:desktopApp:test` 通过，共 10 项。其中新增 `src/desktopApp/src/test/kotlin/com/linguareader/desktop/ReviewSettingsTest.kt` 的 5 项覆盖自定义识别、遍历三种预设后保留原 JSON、跨实例重读、保存后调度生效以及缺失或损坏配置回退。
+- `:shared:test --tests com.linguareader.shared.data.ReviewModeTest --tests com.linguareader.shared.data.VocabularyTest` 通过，共 18 项。
+- Android 定向回归中，`com.linguareader.app.data.ReviewReminderPolicyTest` 4 项和 `com.linguareader.app.VocabularyScreenStateTest` 5 项通过。以上通过项均由测试 XML 核实，失败、错误和跳过均为 0。
+
+**桌面交互验证**
+
+- 使用 `toolchain/tmp/review-settings-smoke-20261125` 作为独立数据目录，启动 `:desktopApp:run` 两次。
+- 保存次日首次复习、每日 3 次、倍率约 0.6843，界面显示成功反馈。切到勤学预设后，自定义 JSON 与保存时逐字一致。
+- 返回自定义后参数恢复。复习页实际显示自定义倍率和 1440 分钟首次延迟。关闭应用并重启后，设置页仍选中自定义并恢复全部已编辑参数。
+
+**补充回归的限制**
+
+- Android 全量 `:app:testDebugUnitTest` 未完成。两次线程快照均位于 `src/app/src/test/java/com/linguareader/app/uirender/SheetMigrationRenderTest.kt:201` 的 `everyUpdatePhaseRenders`，停留在 `src/app/src/test/java/com/linguareader/app/uirender/ComposeRenderHarness.kt:50` 的 `ShadowLooper.idleMainLooper()`。终止本次测试进程前，Gradle 报告已执行 652 项、1 项失败、3 项跳过。
+- `com.linguareader.app.tts.CloudTtsSynthesizerTest.audioPackIsResolvedWithoutSynthesizing` 单独重跑仍失败，XML 定位到 `src/app/src/test/java/com/linguareader/app/tts/CloudTtsSynthesizerTest.kt:159` 的路径后缀断言。定向 Android 命令包含该用例，共 10 项、1 项失败。完整 XML 位于 `src/app/build/test-results/testDebugUnitTest/TEST-com.linguareader.app.tts.CloudTtsSynthesizerTest.xml`。
+
 ## 2026-10-04 译本对齐 V8：段级位置先验 + L3 护栏版本闸门 + 英方 2:1 拆单句落盘（五轮人工判定已完成）
 
 **背景**：用户主诉「句级对照准确率不是 100%」。基线体检（本机 XML 实测）：泛化集同节精度 0.766–0.857、残差几乎全是整节平移 Δ±1；魔戒 94 条金标准句级正确率约 70%；benchmark 点词命中 96.9%，其中 **29.3% 只能给整段兜底**。
