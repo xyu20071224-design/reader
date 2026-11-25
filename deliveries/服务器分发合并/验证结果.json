@@ -1,0 +1,324 @@
+{
+  "date": "2026-11-25",
+  "branch": "feat/server-distribution-integration-20261125",
+  "code_snapshot": "d468f30448be62fe32150e1cf1ad949d4aa6d516",
+  "previous_delivery": "b4850b6d06fe56cb26928569ddc7d31ea2b1331f",
+  "handoff": {
+    "base_commit": "b1040226f760070092f26f43f4a88316a380b19e",
+    "checksum_entries_verified": 34,
+    "source_files_replayed": 21,
+    "patch_sha256": "bc2b6999471a0713157c8406606d2fc6263d7f55c4b2157cbaf3363e8b8aecf1"
+  },
+  "server": {
+    "catalog": "https://62.234.28.97:25447/packs/index.json",
+    "public_tls_catalog_range_and_full_sha_verified": true,
+    "activation_idempotent": true,
+    "renewal_dry_run_and_hook": true,
+    "renewal_unit_result": "success",
+    "renewal_timer_enabled_active": true,
+    "certificate_expires_utc": "2026-12-01T22:11:31Z",
+    "original_config_hashes_and_services_unchanged": true,
+    "deployment_archive_sha256": "3f801403154700f3c498e7c29403018ab4639c621dcd1d396e88a6e564736e32",
+    "pack": {
+      "packId": "ecdict",
+      "version": "1.0.0",
+      "type": "dictionary",
+      "name": "ecdict-1.0.0.lrpack",
+      "minAppVersion": 1,
+      "bytes": 26738571,
+      "sha256": "1b1b119dadbfef93946c8ee2a491a8c85fe11b2b43e233b25bd3c04c41b0a7d0",
+      "urls": [
+        "https://62.234.28.97:25447/packs/files/1b1b119dadbfef93946c8ee2a491a8c85fe11b2b43e233b25bd3c04c41b0a7d0/ecdict-1.0.0.lrpack"
+      ]
+    }
+  },
+  "tests": {
+    "full_jvm": {
+      "app": {
+        "counts": {
+          "tests": 856,
+          "failures": 3,
+          "errors": 0,
+          "skipped": 26
+        },
+        "failures": [
+          "com.linguareader.app.uirender.ReaderShellRenderTest::settingsSheetBodyRenders",
+          "com.linguareader.app.uirender.SkinPickerRenderTest::pickerWithoutCustomSkin",
+          "com.linguareader.app.uirender.SkinPickerRenderTest::pickerWithCustomSkin"
+        ]
+      },
+      "shared": {
+        "counts": {
+          "tests": 967,
+          "failures": 17,
+          "errors": 0,
+          "skipped": 8
+        },
+        "failures": [
+          "com.linguareader.shared.alignment.V3OnDpPairsProbe::measureV3OnActualPairs",
+          "com.linguareader.shared.alignment.AiUncertainReasonProbe::whyUncertainOnPureAiCorpus",
+          "com.linguareader.shared.alignment.AiAlignerAcceptanceTest::measureBothEnginesOnBothInputForms",
+          "com.linguareader.shared.alignment.AiPureSentenceAlignProbe::measurePureSentenceAlignment",
+          "com.linguareader.shared.alignment.OraclePairRecallProbe::recallOnGoldenTruePairs",
+          "com.linguareader.shared.alignment.RealVerifyFailureProbe::whyVerifyFailedOnRealCorpus",
+          "com.linguareader.shared.alignment.RealCorpusAcceptanceTest::measureOnLordsOfTheRings",
+          "com.linguareader.shared.alignment.IdfTraceProbe::traceOneSentenceAndIdfDistribution",
+          "com.linguareader.shared.alignment.BridgeCoverageProbe::measureGlossCoverageInTranslation",
+          "com.linguareader.shared.alignment.AiTranslationAcceptanceProbe::measureOnAiTranslation",
+          "com.linguareader.shared.alignment.AlignedSetDiffProbe::diffAlignedSets",
+          "com.linguareader.shared.alignment.TransliterationVerifyProbe::verifyTransliterationClaims",
+          "com.linguareader.shared.alignment.AbComparisonProbe::sideBySideTermsComparison",
+          "com.linguareader.shared.alignment.RealSpanDistributionProbe::measureSpanDistributionAndNumerals",
+          "com.linguareader.shared.alignment.BridgeDiagnosisProbe::traceBridgeOnRealCorpus",
+          "com.linguareader.shared.alignment.RealCorpusDiagnosisProbe::diagnoseRealCorpus",
+          "com.linguareader.shared.alignment.SentenceCountProbe::reconcileSentenceCount"
+        ]
+      },
+      "lint": {
+        "Warning": 115,
+        "Information": 2
+      }
+    },
+    "same_failure_set_as_previous": {
+      "shared": {
+        "previous_failures": 17,
+        "current_failures": 17,
+        "added": [],
+        "removed": [],
+        "same_failure_set": true
+      },
+      "app": {
+        "previous_failures": 3,
+        "current_failures": 3,
+        "added": [],
+        "removed": [],
+        "same_failure_set": true
+      }
+    },
+    "android_remote_and_update": {
+      "tests": 51,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "final_caption_and_locale": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "final_port": {
+      "shared": {
+        "tests": 35,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "desktopApp": {
+        "tests": 47,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "node_tools": {
+      "tests": 17,
+      "failures": 0
+    },
+    "python_activation": {
+      "tests": 19,
+      "failures": 0
+    },
+    "bash_syntax": true,
+    "powershell_ast_errors": 0,
+    "powershell_package_only_paths": 2,
+    "android_live_unique_phases": 3,
+    "android_pack_lifecycle": 4,
+    "desktop_gui": {
+      "phases": 2,
+      "canvas_clicks": 21,
+      "real_file_chooser_selections": 3,
+      "http_attempts": 0,
+      "platform": "macOS plain text fallback only"
+    },
+    "lint": {
+      "errors": 0,
+      "warnings": 115
+    }
+  },
+  "android_device": {
+    "avd": "ReaderIssueVerify35",
+    "sdk": 35,
+    "restore_verified": true,
+    "stopped_after_acceptance": true,
+    "phase1": {
+      "stage": "complete",
+      "catalog": "https://62.234.28.97:25447/packs/index.json",
+      "originalNetwork": {
+        "wifi": true,
+        "data": true
+      },
+      "originalTransport": 1,
+      "originalNetworkId": "103",
+      "cutAt": 1056412,
+      "networkActuallyGone": true,
+      "firstSucceeded": false,
+      "partialLength": 1113756,
+      "bytes": 26738571,
+      "sha256": "1b1b119dadbfef93946c8ee2a491a8c85fe11b2b43e233b25bd3c04c41b0a7d0",
+      "failureClass": "java.net.SocketException",
+      "restoredNetworkId": "105",
+      "firstResumedProgress": 1121553,
+      "completeBytes": 26738571,
+      "completeSha256": "1b1b119dadbfef93946c8ee2a491a8c85fe11b2b43e233b25bd3c04c41b0a7d0",
+      "restoredNetwork": {
+        "wifi": true,
+        "data": true
+      },
+      "lastProgressAtCut": 1056412
+    },
+    "phase2": {
+      "stage": "installed",
+      "pid": 5859,
+      "catalog": "https://62.234.28.97:25447/packs/index.json",
+      "assetSha256": "1b1b119dadbfef93946c8ee2a491a8c85fe11b2b43e233b25bd3c04c41b0a7d0",
+      "percentages": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100
+      ],
+      "downloadSeen": true,
+      "installSeen": true,
+      "dictionaryPath": "/data/user/0/com.linguareader.app.verify/files/packs/dictionary/ecdict/1.0.0/dictionary/ecdict.sqlite"
+    },
+    "phase3": {
+      "stage": "offline-lookup-complete",
+      "pid": 6068,
+      "catalog": "https://62.234.28.97:25447/packs/index.json",
+      "resourceGeneration": 0,
+      "activeDictionaryPath": "/data/user/0/com.linguareader.app.verify/files/packs/dictionary/ecdict/1.0.0/dictionary/ecdict.sqlite",
+      "openedDatabasePath": "/data/user/0/com.linguareader.app.verify/files/packs/dictionary/ecdict/1.0.0/dictionary/ecdict.sqlite",
+      "appleContainsExpectedMeaning": true,
+      "builtInCopyCreated": false,
+      "activeNetworkPresent": false
+    }
+  },
+  "apk": {
+    "name": "LinguaReader-2.3.1-verify-server25447.apk",
+    "bytes": 60669486,
+    "sha256": "89f7d6de7e9413a5c53987210562c72aecdbf86ba135e6f6604a84bd97c02f76",
+    "package": "package: name='com.linguareader.app.verify' versionCode='26' versionName='2.3.1-verify' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'",
+    "purpose": "并存验证包，非正式发布，不用于原生补丁基础APK"
+  },
+  "publication": {
+    "github_issues_closed": false,
+    "formal_release": false,
+    "branch_push": "pending final delivery commit"
+  },
+  "remaining_conditions": [
+    "真实配对长书和既有金标准",
+    "授权服务整书翻译",
+    "真实首音和韵律听感",
+    "正式APK/原生补丁镜像及签名跨安装",
+    "GitHub不可达环境专项",
+    "Windows/JCEF及未覆盖设备矩阵"
+  ]
+}

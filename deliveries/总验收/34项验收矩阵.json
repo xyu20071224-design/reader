@@ -1647,7 +1647,18 @@
         "status": "部分实现",
         "basis": "2026-11-24：统一源/严格大小hash/来源UI及切换边界已集成；API23四处调用补修以0bfc27d集成 真实验收条件尚未满足，保留部分实现。 产品候选d76b547；完整证据及待验条件见deliveries/总验收/34项验收矩阵.md；代码状态不等于关闭issue。"
       },
-      "conclusion": "代码已实现，保留未验条件"
+      "conclusion": "代码已实现，保留未验条件",
+      "followup_2026_11_25": {
+        "real_resource_service": "https://62.234.28.97:25447/packs/index.json",
+        "result": "正常TLS、206/Range、完整SHA、Android真实断网续传/安装/离线VM查词、桌面离线词典消费已验",
+        "unfinished_conditions": [
+          "APK/原生热修复镜像真实发布与正式签名跨安装",
+          "GitHub不可达环境专项",
+          "Windows/JCEF未覆盖矩阵"
+        ],
+        "status": "部分实现",
+        "report": "deliveries/服务器分发合并/验收报告.md"
+      }
     },
     {
       "id": "Q2-c04a",
@@ -2011,5 +2022,23 @@
     "部分实现": 4
   },
   "github_published": false,
-  "github_issues_closed": false
+  "github_issues_closed": false,
+  "followup_2026_11_25": {
+    "report": "deliveries/服务器分发合并/验收报告.md",
+    "code_snapshot": "d468f30448be62fe32150e1cf1ad949d4aa6d516",
+    "details": "资源包源已部署并经公网与Android三相验收；Q2-c03仍部分实现，APK/补丁镜像、正式签名及GitHub不可达专项未完成。旧字段保留2026-11-24原始快照，最新补充以本字段和报告为准。",
+    "full_app": {
+      "tests": 856,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 26
+    },
+    "full_shared": {
+      "tests": 967,
+      "failures": 17,
+      "errors": 0,
+      "skipped": 8
+    },
+    "unique_device_methods": 7
+  }
 }

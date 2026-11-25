@@ -25,7 +25,7 @@ node deploy/packs/package.mjs --site artifacts/packs-site \
 
 ## 服务器安装：保留现有服务
 
-当前只读检查发现 Ubuntu 24.04、现有 Nginx、80 上已有 ACME 站点映射 `/var/www/acme`；这些是安装前观察，不是安装成功记录。现有同步等服务必须保留。
+本次目标为 Ubuntu 24.04、现有 Nginx，80 上已有 ACME 站点映射 `/var/www/acme`。2026-11-25 已在独立端口 25447 部署，实际验证记录见文末。现有同步等服务必须保留。
 
 安装器要求现有 Nginx、Python 3.8+、curl、OpenSSL、ss、systemd；不执行 apt、不安装/升级 Nginx、不增改 80/443 站点、不停止其他服务、不修改 UFW/云安全组。必须使用已经从公网提供 HTTP-01 challenge 的 webroot；没有此映射时先由操作者配置，不能接管现有站点。25447 被其他服务占用、目标配置名不属于本工具、或已有部署目标不同，都会停止。
 
@@ -83,4 +83,18 @@ python3 deploy/packs/test_activate.py
 bash -n deploy/packs/install-ubuntu.sh
 ```
 
-Node 测试需要 JAVA_HOME 指向 JDK 17。这些用例覆盖本地发布、跨进程竞争、上传损坏、激活幂等、目录事务、历史不可变、配置写失败/校验失败/重载失败回滚及 HTTP 响应验证；不把模拟 HTTP 或本地文件系统结果当作真实 Nginx/证书/手机验收。PowerShell 应另外在有 pwsh 的环境执行解析和 PackageOnly，当前 macOS 验证环境未提供 pwsh。
+Node 测试需要 JAVA_HOME 指向 JDK 17。这些用例覆盖本地发布、跨进程竞争、上传损坏、激活幂等、目录事务、历史不可变、配置写失败/校验失败/重载失败回滚及 HTTP 响应验证；不把模拟 HTTP 或本地文件系统结果当作真实 Nginx/证书/手机验收。
+
+## 2026-11-25 实际部署记录
+
+用户确认地址为 `62.234.28.97`，并指定使用 25000–26000 范围内端口；选用未占用的 25447。目录为 `https://62.234.28.97:25447/packs/index.json`。只发布 ECDICT 1.0.0：26,738,571 字节，SHA-256 `1b1b119dadbfef93946c8ee2a491a8c85fe11b2b43e233b25bd3c04c41b0a7d0`。服务器与独立 Mac 均通过正常 TLS 的目录、206/Content-Range 和完整下载摘要检查。
+
+首轮安装遇到 Nginx reload 后监听尚未就绪，配置已回滚；补入有界连接重试后安装成功。初始 8443 无公网可达性，随后按用户要求事务式迁至 25447，并更新客户端和发布器默认地址；本任务临时添加的 8443 UFW 规则已删除。没有更改现有端口范围规则或其他服务。
+
+Let’s Encrypt IP 证书实际签发，SAN 匹配目标 IP，当前有效期截止 2026-12-01 22:11:31 UTC。私有 Certbot 的续期 dry-run（含部署钩子）实际通过，专属 timer 已启用并运行。初始环境继承的 HTTP 依赖源已纠正；实际私有依赖经 HTTPS 重装，18 个 wheel 的文件名及 SHA-256 均与官方 PyPI 元数据匹配，系统 pip 配置未变。安装器后续默认固定官方 HTTPS PyPI。
+
+Nginx 主配置、原 ACME 和 transfer-page 配置的 SHA-256 与部署前一致；nginx、linguareader-sync、wptransfer-signal、wptransfer-config 均仍 active。原始日志、HTTP 响应、摘要和服务收据保存在 `artifacts/server-handoff-20261125/`。
+
+工具测试实际通过：Node 17 项、Python 19 项、Bash 语法检查。官方 PowerShell 7.7.0 mac-arm64 便携运行时经官方资产摘要及清单双重验证后，真实 AST 解析 0 错误；显式资源包与默认 ECDICT 的两条 PackageOnly 路径均通过，SSH/SCP 调用为 0，JAVA_HOME 恢复。未据此宣称 Windows PowerShell 5.1 或 PowerShell 远端 Deploy 已验证。
+
+Android API35 的真实断网续传、资源页下载安装、新进程离线包内词典查询三相已通过；原数据与网络恢复，无遮挡页面截图已核对。最终资源包生命周期另 4 项通过。验收详情、失败记录与边界见 `deliveries/服务器分发合并/验收报告.md`。
