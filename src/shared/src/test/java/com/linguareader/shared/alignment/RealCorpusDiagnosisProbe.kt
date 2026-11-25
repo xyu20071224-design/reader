@@ -1,6 +1,5 @@
 package com.linguareader.shared.alignment
 
-import java.io.File
 import kotlin.test.Test
 
 /**
@@ -20,19 +19,16 @@ class RealCorpusDiagnosisProbe {
 
     @Test
     fun diagnoseRealCorpus() {
-        val root = findRepoRoot()
-        val enChapters = loadEnglishChapters(root)
-        val zhChapters = loadChineseChapters(root)
+        val inputs = AlignmentCorpusInputs.requireCase("F12")
+        val enChapters = inputs.english
+        val zhChapters = inputs.chinese
         println("=== 语料装载 ===")
         println("  en: ${enChapters.size} 章 / ${enChapters.sumOf { it.paragraphs.size }} 段")
         println("  zh: ${zhChapters.size} 章 / ${zhChapters.sumOf { it.paragraphs.size }} 段")
-        if (enChapters.isEmpty() || zhChapters.isEmpty()) {
-            println("  !! 语料为空，跳过诊断")
-            return
-        }
 
         val source = BookSide.build(SideKind.SOURCE, enChapters)
         val target = BookSide.build(SideKind.TARGET, zhChapters)
+        CorpusExecution.requireSides(source, target)
         println("  en 句=${source.sentCount}  zh 句=${target.sentCount}")
 
         // ── 根因 2：繁简归一缺口 ─────────────────────────────────
@@ -176,50 +172,7 @@ class RealCorpusDiagnosisProbe {
     //  语料装载（与 TtsTextExtractor 同口径：叶级块 + 空白归一）
     // ──────────────────────────────────────────────────────────────
 
-    private fun findRepoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        while (dir != null) {
-            if (File(dir, "artifacts/lotr-book").isDirectory) return dir
-            dir = dir.parentFile
-        }
-        throw IllegalStateException("找不到仓库根（含 artifacts/lotr-book）：${System.getProperty("user.dir")}")
-    }
-
-    private fun loadEnglishChapters(root: File): List<AlignmentChapter> {
-        val metadata = File(root, "artifacts/lotr-book/metadata.json")
-        if (!metadata.isFile) return emptyList()
-        val json = org.json.JSONObject(metadata.readText())
-        val chapters = json.getJSONArray("chapters")
-        val out = ArrayList<AlignmentChapter>(chapters.length())
-        for (i in 0 until chapters.length()) {
-            val chapter = chapters.getJSONObject(i)
-            val title = chapter.optString("title", "")
-            val relative = chapter.optString("relativePath", "")
-            val file = File(root, "artifacts/lotr-book/$relative")
-            if (!file.isFile) continue
-            out.add(AlignmentChapter(title, leafBlocks(file)))
-        }
-        return out
-    }
-
-    private fun loadChineseChapters(root: File): List<AlignmentChapter> {
-        val dir = File(root, "artifacts/lotr-zh/OEBPS/Text")
-        if (!dir.isDirectory) return emptyList()
-        return dir.listFiles { file -> file.extension.lowercase() == "xhtml" }
-            ?.sortedBy { it.name }
-            ?.map { AlignmentChapter(it.nameWithoutExtension, leafBlocks(it)) }
-            ?: emptyList()
-    }
-
     /** 叶级块抽取：与 `TtsTextExtractor.BLOCK_SELECTOR` 同口径 + `\s+`→空格 + trim。 */
-    private fun leafBlocks(file: File): List<String> {
-        val document = org.jsoup.Jsoup.parse(file, "UTF-8")
-        val selector = com.linguareader.shared.alignment.RealCorpusDiagnosisProbe.BLOCK_SELECTOR
-        return document.select(selector)
-            .filter { candidate -> candidate.select(selector).all { it === candidate } }
-            .map { it.text().replace(Regex("\\s+"), " ").trim() }
-            .filter { it.isNotBlank() }
-    }
 
     private fun pct(v: Double): String = "${Math.round(v * 10000.0) / 100.0}%"
 

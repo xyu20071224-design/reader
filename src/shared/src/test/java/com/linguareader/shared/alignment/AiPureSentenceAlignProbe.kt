@@ -1,6 +1,5 @@
 package com.linguareader.shared.alignment
 
-import java.io.File
 import kotlin.test.Test
 
 /**
@@ -21,7 +20,7 @@ import kotlin.test.Test
  *
  * 用**真值 `es`/`zs` 直接构造 `AlignmentChapter`**（每句自己成一段，段界=句界），
  * 这样：
- * - 分句器完全不参与
+ * - 每句成段，减少段内分句干扰；BookSide 仍会调用分句器，不能把段界当成句界保证
  * - 章节/段落 identity 由构造给出
  * - 测到的就是「**段内句级对齐**」这个唯一需要算法的环节
  *
@@ -34,13 +33,8 @@ class AiPureSentenceAlignProbe {
 
     @Test
     fun measurePureSentenceAlignment() {
-        val root = findRepoRoot()
-        val file = File(root, "artifacts/ai-translation-memory-device.json")
-        if (!file.isFile) {
-            println("SKIP: ai-translation-memory-device.json 缺失")
-            return
-        }
-        val json = org.json.JSONObject(file.readText())
+        val inputs = AlignmentCorpusInputs.requireCase("F03")
+        val json = inputs.requireMemory()
         val pairs = json.getJSONArray("pairs")
 
         // 用真值 es/zs 构造：每句一段（段界 = 句界），章节数 = 1
@@ -53,7 +47,6 @@ class AiPureSentenceAlignProbe {
             val pair = pairs.getJSONObject(i)
             val en = pair.optString("es", "").trim()
             val zh = pair.optString("zs", "").trim()
-            if (en.isEmpty() || zh.isEmpty()) continue
             enSentences.add(en)
             zhSentences.add(zh)
             truthPairs.add(en to zh)
@@ -61,14 +54,11 @@ class AiPureSentenceAlignProbe {
         println("=== 用真值 es/zs 构造的纯净语料 ===")
         println("  句对数 = ${truthPairs.size}（每句一段，段界=句界）")
 
-        val ecdict = EcdictProvider.load(root)
-        if (ecdict == null) {
-            println("  SKIP: ecdict-sample.tsv 缺失")
-            return
-        }
+        val ecdict = inputs.requireDictionary()
         val enChapters = listOf(AlignmentChapter("ai-pure", enSentences))
         val zhChapters = listOf(AlignmentChapter("ai-pure-zh", zhSentences))
         val document = IndependentAligner().align(enChapters, zhChapters, ecdict)
+        CorpusExecution.requireDocument(document)
         println()
         println("  stats: ${document.stats.summaryLine()}")
         println("  三态：ALIGNED=${document.stats.alignedUnits} " +
@@ -81,15 +71,20 @@ class AiPureSentenceAlignProbe {
         println("=== 逐条对照（纯净语料，构造即真值）===")
         var exact = 0
         var wrong = 0
+        var unscorable = 0
+        var uncertainCorrect = 0
         var uncertain = 0
         var unaligned = 0
         val wrongSamples = ArrayList<String>(12)
         val uncertainSamples = ArrayList<String>(12)
         document.units.forEachIndexed { index, unit ->
-            val truth = truthPairs.getOrNull(index) ?: return@forEachIndexed
+            val expected = CorpusExecution.expectedTarget(unit.sourceText, truthPairs)
+            val truth = unit.sourceText to (expected ?: "<not fully covered by truth>")
             when (unit.status) {
                 AlignmentStatus.ALIGNED -> {
-                    if (normalize(unit.targetText) == normalize(truth.second)) {
+                    if (expected == null) {
+                        unscorable++
+                    } else if (normalize(unit.targetText) == normalize(truth.second)) {
                         exact++
                     } else {
                         wrong++
@@ -104,6 +99,7 @@ class AiPureSentenceAlignProbe {
                 }
                 AlignmentStatus.UNCERTAIN -> {
                     uncertain++
+                    if (expected != null && normalize(unit.targetText) == normalize(expected)) uncertainCorrect++
                     if (uncertainSamples.size < 12) {
                         val matches = normalize(unit.targetText) == normalize(truth.second)
                         uncertainSamples.add(
@@ -115,18 +111,16 @@ class AiPureSentenceAlignProbe {
                 AlignmentStatus.UNALIGNED -> unaligned++
             }
         }
+        println("  sentence metric: ${CorpusExecution.aiMetrics(document, enChapters, truthPairs).line()}")
         val total = document.units.size
         println("  单元总数 = $total")
         println("  ALIGNED 且精确正确 = $exact")
         println("  ALIGNED 但错误（**错标**）= $wrong")
+        println("  ALIGNED 未被完整真值覆盖（不能判对错）= $unscorable")
         println("  UNCERTAIN = $uncertain")
         println("  UNALIGNED = $unaligned")
-        if (total > 0) {
-            println("  **coverage = ${pct((exact + wrong).toDouble() / total)}**")
-            println("  **precision = ${pct(if (exact + wrong == 0) 1.0 else exact.toDouble() / (exact + wrong))}**")
-            println("  **falseAligned = $wrong**（红线应为 0）")
-            println("  UNCERTAIN 里候选正确的 = ${uncertainSamples.count { it.contains("候选正确") }}")
-        }
+        check(exact + wrong + unscorable + uncertain + unaligned == total) { "Unit accounting mismatch" }
+        println("  UNCERTAIN 里候选正确的（全量）= $uncertainCorrect")
         if (wrongSamples.isNotEmpty()) {
             println()
             println("  错标明细：")
@@ -154,15 +148,17 @@ class AiPureSentenceAlignProbe {
         val shuffledDoc = IndependentAligner().align(
             enChapters, listOf(AlignmentChapter("ai-pure-zh-shuffled", shuffledZh)), ecdict
         )
+        CorpusExecution.requireDocument(shuffledDoc)
         var shuffledCorrect = 0
         var shuffledAligned = 0
         shuffledDoc.units.forEachIndexed { index, unit ->
             if (unit.status != AlignmentStatus.ALIGNED) return@forEachIndexed
             shuffledAligned++
-            val truth = truthPairs.getOrNull(index) ?: return@forEachIndexed
+            val truth = unit.sourceText to (CorpusExecution.expectedTarget(unit.sourceText, truthPairs) ?: "<not fully covered by truth>")
             if (normalize(unit.targetText) == normalize(truth.second)) shuffledCorrect++
         }
-        println("  打乱后 ALIGNED = $shuffledAligned，其中正确 = $shuffledCorrect")
+        println("  打乱后 ALIGNED 单元 = $shuffledAligned，其中正确 = $shuffledCorrect")
+        println("  打乱后 sentence metric: ${CorpusExecution.aiMetrics(shuffledDoc, enChapters, truthPairs).line()}")
         println(
             "  → 若打乱后正确数明显下降，说明算法在用内容/锚点而非位置；" +
                 "若几乎不变，说明它只是在按位置蒙"
@@ -181,14 +177,4 @@ class AiPureSentenceAlignProbe {
         return builder.toString()
     }
 
-    private fun pct(v: Double): String = "${Math.round(v * 10000.0) / 100.0}%"
-
-    private fun findRepoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        while (dir != null) {
-            if (File(dir, "artifacts/lotr-book").isDirectory) return dir
-            dir = dir.parentFile
-        }
-        throw IllegalStateException("找不到仓库根")
-    }
 }

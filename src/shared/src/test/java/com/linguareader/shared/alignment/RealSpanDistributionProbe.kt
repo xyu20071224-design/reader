@@ -1,6 +1,5 @@
 package com.linguareader.shared.alignment
 
-import java.io.File
 import kotlin.test.Test
 
 /**
@@ -15,15 +14,12 @@ class RealSpanDistributionProbe {
 
     @Test
     fun measureSpanDistributionAndNumerals() {
-        val root = findRepoRoot()
-        val enChapters = loadEnglishChapters(root)
-        val zhChapters = loadChineseChapters(root)
-        if (enChapters.isEmpty() || zhChapters.isEmpty()) {
-            println("SKIP: 语料缺失")
-            return
-        }
+        val inputs = AlignmentCorpusInputs.requireCase("F13")
+        val enChapters = inputs.english
+        val zhChapters = inputs.chinese
         val source = BookSide.build(SideKind.SOURCE, enChapters)
         val target = BookSide.build(SideKind.TARGET, zhChapters)
+        CorpusExecution.requireSides(source, target)
 
         println("=== 语料 ===")
         println("  en 句=${source.sentCount}  zh 句=${target.sentCount}  " +
@@ -89,6 +85,7 @@ class RealSpanDistributionProbe {
         println()
         println("=== 问题 2：覆盖率分子口径验证 ===")
         val document = IndependentAligner().align(enChapters, zhChapters, null)
+        CorpusExecution.requireDocument(document)
         val alignedUnits = document.units.filter { it.status == AlignmentStatus.ALIGNED }
         val sumSpan = alignedUnits.sumOf { it.sourceSpanSize }
         println("  ALIGNED 单元数=${alignedUnits.size}")
@@ -120,50 +117,4 @@ class RealSpanDistributionProbe {
 
     private fun pct(v: Double): String = "${Math.round(v * 10000.0) / 100.0}%"
 
-    private fun findRepoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        while (dir != null) {
-            if (File(dir, "artifacts/lotr-book").isDirectory) return dir
-            dir = dir.parentFile
-        }
-        throw IllegalStateException("找不到仓库根")
-    }
-
-    private fun loadEnglishChapters(root: File): List<AlignmentChapter> {
-        val metadata = File(root, "artifacts/lotr-book/metadata.json")
-        if (!metadata.isFile) return emptyList()
-        val json = org.json.JSONObject(metadata.readText())
-        val chapters = json.getJSONArray("chapters")
-        val out = ArrayList<AlignmentChapter>(chapters.length())
-        for (i in 0 until chapters.length()) {
-            val chapter = chapters.getJSONObject(i)
-            val file = File(root, "artifacts/lotr-book/" + chapter.optString("relativePath", ""))
-            if (!file.isFile) continue
-            out.add(AlignmentChapter(chapter.optString("title", ""), leafBlocks(file)))
-        }
-        return out
-    }
-
-    private fun loadChineseChapters(root: File): List<AlignmentChapter> {
-        val dir = File(root, "artifacts/lotr-zh/OEBPS/Text")
-        if (!dir.isDirectory) return emptyList()
-        return dir.listFiles { file -> file.extension.lowercase() == "xhtml" }
-            ?.sortedBy { it.name }
-            ?.map { AlignmentChapter(it.nameWithoutExtension, leafBlocks(it)) }
-            ?: emptyList()
-    }
-
-    private fun leafBlocks(file: File): List<String> {
-        val document = org.jsoup.Jsoup.parse(file, "UTF-8")
-        return document.select(BLOCK_SELECTOR)
-            .filter { candidate -> candidate.select(BLOCK_SELECTOR).all { it === candidate } }
-            .map { it.text().replace(Regex("\\s+"), " ").trim() }
-            .filter { it.isNotBlank() }
-    }
-
-    private companion object {
-        const val BLOCK_SELECTOR =
-            "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, figcaption, pre, div, " +
-                "section, article, header, footer"
-    }
 }

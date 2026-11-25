@@ -1,6 +1,5 @@
 package com.linguareader.shared.alignment
 
-import java.io.File
 import kotlin.test.Test
 
 /**
@@ -26,16 +25,14 @@ class AiTranslationAcceptanceProbe {
 
     @Test
     fun measureOnAiTranslation() {
-        val root = findRepoRoot()
-        val file = File(root, "artifacts/ai-translation-memory-device.json")
-        if (!file.isFile) {
-            println("SKIP: ai-translation-memory-device.json 缺失")
-            return
-        }
-        val json = org.json.JSONObject(file.readText())
+        val inputs = AlignmentCorpusInputs.requireCase("F04")
+        val json = inputs.requireMemory()
         val enParagraphs = json.getJSONArray("enParagraphs").toStringList()
         val zhParagraphs = json.getJSONArray("zhParagraphs").toStringList()
         val pairs = json.getJSONArray("pairs")
+        val truthPairs = (0 until pairs.length()).map { i ->
+            pairs.getJSONObject(i).let { it.getString("es") to it.getString("zs") }
+        }
 
         println("=== AI 译本语料 ===")
         println("  en 段=${enParagraphs.size}  zh 段=${zhParagraphs.size}  真值句对=${pairs.length()}")
@@ -130,14 +127,11 @@ class AiTranslationAcceptanceProbe {
         // ── 第三步：跑引擎，用真值算 precision ─────────────────────
         println()
         println("=== 引擎实测（真 ECDICT）===")
-        val ecdict = EcdictProvider.load(root)
-        if (ecdict == null) {
-            println("  SKIP: ecdict-sample.tsv 缺失")
-            return
-        }
+        val ecdict = inputs.requireDictionary()
         val enChapters = listOf(AlignmentChapter("AI sample (en)", enParagraphs))
         val zhChapters = listOf(AlignmentChapter("AI sample (zh)", zhParagraphs))
         val document = IndependentAligner().align(enChapters, zhChapters, ecdict)
+        CorpusExecution.requireDocument(document)
         println("  stats: ${document.stats.summaryLine()}")
         println("  三态：ALIGNED=${document.stats.alignedUnits} " +
             "UNCERTAIN=${document.stats.uncertainUnits} " +
@@ -150,15 +144,18 @@ class AiTranslationAcceptanceProbe {
         println("  # | 状态 | 真值 zs | 算法 targetText | 判定")
         var exact = 0
         var wrong = 0
+        var unscorable = 0
         var unc = 0
         var unaligned = 0
         val wrongSamples = ArrayList<String>(10)
         document.units.forEachIndexed { index, unit ->
-            val truth = if (index < pairs.length()) pairs.getJSONObject(index) else null
-            val truthZh = truth?.optString("zs", "") ?: ""
+            val expected = CorpusExecution.expectedTarget(unit.sourceText, truthPairs)
+            val truthZh = expected ?: "<not fully covered by truth>"
             val verdict = when (unit.status) {
                 AlignmentStatus.ALIGNED -> {
-                    if (normalize(unit.targetText) == normalize(truthZh)) {
+                    if (expected == null) {
+                        unscorable++; "UNSCORABLE"
+                    } else if (normalize(unit.targetText) == normalize(truthZh)) {
                         exact++; "OK"
                     } else {
                         wrong++
@@ -179,17 +176,16 @@ class AiTranslationAcceptanceProbe {
                     "\"${unit.targetText.take(26)}\" | $verdict")
             }
         }
+        println("  sentence metric: ${CorpusExecution.aiMetrics(document, enChapters, truthPairs).line()}")
         val total = document.units.size
         println()
         println("  单元总数 = $total")
         println("  ALIGNED 且与真值**逐字相同** = $exact")
         println("  ALIGNED 但与真值不同（**错标**）= $wrong")
+        println("  ALIGNED 未被完整真值覆盖（不能判对错）= $unscorable")
         println("  UNCERTAIN = $unc")
         println("  UNALIGNED = $unaligned")
-        if (total > 0) {
-            println("  coverage = ${pct((exact + wrong).toDouble() / total)}")
-            println("  precision = ${pct(if (exact + wrong == 0) 1.0 else exact.toDouble() / (exact + wrong))}")
-        }
+        check(exact + wrong + unscorable + unc + unaligned == total) { "Unit accounting mismatch" }
         if (wrongSamples.isNotEmpty()) {
             println()
             println("  错标明细：")
@@ -209,17 +205,7 @@ class AiTranslationAcceptanceProbe {
         return builder.toString()
     }
 
-    private fun pct(v: Double): String = "${Math.round(v * 10000.0) / 100.0}%"
-
     private fun org.json.JSONArray.toStringList(): List<String> =
         (0 until length()).map { optString(it, "") }
 
-    private fun findRepoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        while (dir != null) {
-            if (File(dir, "artifacts/lotr-book").isDirectory) return dir
-            dir = dir.parentFile
-        }
-        throw IllegalStateException("找不到仓库根")
-    }
 }

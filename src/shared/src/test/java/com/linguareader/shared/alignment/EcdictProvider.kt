@@ -1,7 +1,6 @@
 package com.linguareader.shared.alignment
 
 import java.io.File
-import kotlin.test.Test
 
 /**
  * **真实 ECDICT Provider**：从 `src/app/src/main/assets/dictionary/ecdict.sqlite` 读词条。
@@ -10,8 +9,8 @@ import kotlin.test.Test
  *
  * `:shared` 的依赖白名单里没有 sqlite 驱动（`sqlite-jdbc` 只在 `:app` 的
  * `testImplementation` 里）。本任务的硬约束是「不新增第三方依赖」，所以这里改用
- * **预导出的词条文件**：`artifacts/alignment-eval/ecdict-sample.tsv`（由
- * [EcdictExportTest] 一次性导出，格式 `word \t gloss1|gloss2|...`）。
+ * **预导出的词条文件**：新验收通过 corpus-manifest.json 声明文件及摘要；由
+ * `scripts/alignment-corpus/export_ecdict.py` 离线只读导出，格式 `word \t gloss1|gloss2|...`。
  *
  * 这份导出是**测试夹具**，不是生产代码路径——生产环境由 `:app` 注入真 ECDICT。
  *
@@ -40,7 +39,7 @@ internal class EcdictProvider private constructor(
         /** 默认导出文件位置（相对仓库根）。 */
         const val EXPORT_RELATIVE_PATH = "artifacts/alignment-eval/ecdict-sample.tsv"
 
-        /** 载入导出文件；文件缺失返回 `null`（测试应 SKIP）。 */
+        /** 旧诊断入口保留兼容；F01–F17 必须使用清单与 [loadRequired]，不得靠 null 跳过。 */
         fun load(repoRoot: File): EcdictProvider? {
             val file = File(repoRoot, EXPORT_RELATIVE_PATH)
             if (!file.isFile) return null
@@ -58,6 +57,34 @@ internal class EcdictProvider private constructor(
                 }
             }
             return if (entries.isEmpty()) null else EcdictProvider(entries, lemmaOf)
+        }
+
+        /** Fail closed on missing/empty/corrupt exports, including invalid form references. */
+        fun loadRequired(file: File): EcdictProvider {
+            check(file.isFile) { "Missing ECDICT export: $file" }
+            val entries = LinkedHashMap<String, List<String>>()
+            val forms = LinkedHashMap<String, String>()
+            java.nio.file.Files.newBufferedReader(file.toPath(), Charsets.UTF_8).useLines { lines ->
+                lines.forEachIndexed { index, line ->
+                    val fields = line.split('\t')
+                    check(fields.size == 2 && fields.all(String::isNotBlank)) { "Invalid ECDICT line ${index + 1}" }
+                    val word = fields[0]
+                    check(word == word.lowercase() && word.none { it == '|' || it.code < 32 }) { "Invalid ECDICT word at ${index + 1}" }
+                    if (word.startsWith('>')) {
+                        val form = word.drop(1)
+                        check(form.isNotBlank() && '|' !in fields[1] && forms.putIfAbsent(form, fields[1]) == null) { "Invalid/duplicate ECDICT form at ${index + 1}" }
+                    } else {
+                        val glosses = fields[1].split('|')
+                        check(glosses.distinct().size == glosses.size && glosses.all { gloss ->
+                            gloss.length in 2..4 && gloss.all { it in '\u4E00'..'\u9FFF' }
+                        }) { "Invalid ECDICT glosses at ${index + 1}" }
+                        check(entries.putIfAbsent(word, glosses) == null) { "Duplicate ECDICT entry at ${index + 1}" }
+                    }
+                }
+            }
+            check(entries.isNotEmpty()) { "ECDICT export has no usable entries: $file" }
+            check(forms.values.all(entries::containsKey)) { "ECDICT form points to missing lemma" }
+            return EcdictProvider(entries, forms)
         }
 
         /**

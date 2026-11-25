@@ -1,6 +1,5 @@
 package com.linguareader.shared.alignment
 
-import java.io.File
 import kotlin.test.Test
 
 /**
@@ -15,17 +14,9 @@ class AlignedSetDiffProbe {
 
     @Test
     fun diffAlignedSets() {
-        val root = findRepoRoot()
-        val file = File(root, "artifacts/ai-translation-memory-device.json")
-        if (!file.isFile) {
-            println("SKIP: 语料缺失")
-            return
-        }
-        val ecdict = EcdictProvider.load(root) ?: run {
-            println("SKIP: 词典缺失")
-            return
-        }
-        val json = org.json.JSONObject(file.readText())
+        val inputs = AlignmentCorpusInputs.requireCase("F06")
+        val ecdict = inputs.requireDictionary()
+        val json = inputs.requireMemory()
         val pairs = json.getJSONArray("pairs")
         val truthEn = ArrayList<String>()
         val truthZh = ArrayList<String>()
@@ -33,7 +24,6 @@ class AlignedSetDiffProbe {
             val p = pairs.getJSONObject(i)
             val en = p.optString("es", "").trim()
             val zh = p.optString("zs", "").trim()
-            if (en.isEmpty() || zh.isEmpty()) continue
             truthEn.add(en)
             truthZh.add(zh)
         }
@@ -41,13 +31,20 @@ class AlignedSetDiffProbe {
         val zhChapters = listOf(AlignmentChapter("pure zh", truthZh))
 
         val docAi = AiTranslationAligner().align(enChapters, zhChapters, ecdict)
+        CorpusExecution.requireDocument(docAi)
         val docLegacy = IndependentAligner().align(enChapters, zhChapters, ecdict)
+        CorpusExecution.requireDocument(docLegacy)
 
         // 按英文句归一化文本建索引
         val aiByKey = HashMap<String, AlignedUnit>()
         docAi.units.forEach { aiByKey[normalize(it.sourceText)] = it }
         val legacyByKey = HashMap<String, AlignedUnit>()
         docLegacy.units.forEach { legacyByKey[normalize(it.sourceText)] = it }
+
+        check(aiByKey.size == docAi.units.size && legacyByKey.size == docLegacy.units.size) { "Duplicate source text makes set comparison ambiguous" }
+        val commonKeys = aiByKey.keys.intersect(legacyByKey.keys)
+        check(commonKeys.isNotEmpty()) { "No comparable source unit between engines" }
+        println("SET_COMPARISON ai=${aiByKey.size} legacy=${legacyByKey.size} common=${commonKeys.size}")
 
         // ── 差集 1：ai=UNCERTAIN 但 legacy=ALIGNED ─────────────────
         var aiUncertainLegacyAligned = 0
@@ -117,12 +114,4 @@ class AlignedSetDiffProbe {
     private fun fmt(v: Double): String =
         if (v == Double.MAX_VALUE) "inf" else String.format("%.3f", v)
 
-    private fun findRepoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        while (dir != null) {
-            if (File(dir, "artifacts/lotr-book").isDirectory) return dir
-            dir = dir.parentFile
-        }
-        throw IllegalStateException("找不到仓库根")
-    }
 }

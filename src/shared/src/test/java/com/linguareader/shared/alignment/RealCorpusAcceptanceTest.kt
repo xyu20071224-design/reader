@@ -1,6 +1,5 @@
 package com.linguareader.shared.alignment
 
-import java.io.File
 import kotlin.test.Test
 
 /**
@@ -26,28 +25,22 @@ class RealCorpusAcceptanceTest {
 
     @Test
     fun measureOnLordsOfTheRings() {
-        val root = findRepoRoot()
-        val enChapters = loadEnglishChapters(root)
-        val zhChapters = loadChineseChapters(root)
-        if (enChapters.isEmpty() || zhChapters.isEmpty()) {
-            println("SKIP: 语料缺失（需要 artifacts/lotr-book 与 artifacts/lotr-zh）")
-            return
-        }
-        val ecdict = EcdictProvider.load(root)
+        val inputs = AlignmentCorpusInputs.requireCase("F11")
+        val enChapters = inputs.english
+        val zhChapters = inputs.chinese
+        val ecdict = inputs.requireDictionary()
         println("=== 真实语料 ===")
         println("  en: ${enChapters.size} 章 / ${enChapters.sumOf { it.paragraphs.size }} 段")
         println("  zh: ${zhChapters.size} 章 / ${zhChapters.sumOf { it.paragraphs.size }} 段")
-        println(
-            "  词典：" + if (ecdict == null) "无（ecdict-sample.tsv 缺失）"
-            else "真 ECDICT（${ecdict.entryCount} 词条 / ${ecdict.lemmaCount} 词形）"
-        )
+        println("  真 ECDICT（${ecdict.entryCount} 词条 / ${ecdict.lemmaCount} 词形）")
 
         val started = System.nanoTime()
         val document = IndependentAligner().align(enChapters, zhChapters, ecdict)
+        CorpusExecution.requireDocument(document)
         val elapsed = (System.nanoTime() - started) / 1_000_000
 
         println()
-        println("=== 结果（${if (ecdict == null) "meaning = null" else "真 ECDICT"}）===")
+        println("=== 结果（真 ECDICT）===")
         println("  stats: ${document.stats.summaryLine()}")
         println("  elapsed = ${elapsed}ms")
         println("  三态：ALIGNED=${document.stats.alignedUnits} " +
@@ -64,9 +57,9 @@ class RealCorpusAcceptanceTest {
 
         println()
         println("=== 金标准重放 ===")
-        replayGolden(root, document)
+        replayGolden(inputs.requireGolden(), document)
 
-        // 崩不崩是底线：不抛异常即可。覆盖率不设断言（真实书上尚无已知正确值）。
+        // 非空执行与金标准错标红线均须通过；真实书覆盖率尚无已批准阈值。
         kotlin.test.assertTrue(
             document.units.isNotEmpty(),
             "真实语料上必须产出单元（不许静默丢句）"
@@ -75,20 +68,11 @@ class RealCorpusAcceptanceTest {
 
     // ──────────────────────────────────────────────────────────────
 
-    private fun replayGolden(root: File, document: AlignmentDocument) {
-        val goldenFile = File(root, "artifacts/alignment-eval/golden-samples.json")
-        if (!goldenFile.isFile) {
-            println("  SKIP: golden-samples.json 缺失")
-            return
-        }
-        val json = org.json.JSONObject(goldenFile.readText())
+    private fun replayGolden(json: org.json.JSONObject, document: AlignmentDocument) {
         val samples = json.getJSONArray("samples")
 
         // 用英文原句文本索引：单元 sourceText 与样本 en 做**归一化包含**匹配
-        val bySource = HashMap<String, AlignedUnit>()
-        document.units.forEach { unit ->
-            bySource.putIfAbsent(normalize(unit.sourceText), unit)
-        }
+        val bySource = document.units.groupBy { normalize(it.sourceText) }
 
         var positive = 0
         var positiveAligned = 0
@@ -154,6 +138,8 @@ class RealCorpusAcceptanceTest {
             }
         }
 
+        check(matched == samples.length()) { "Golden samples not fully replayed: $matched/${samples.length()}" }
+        check(badAligned == 0) { "Golden red line falseAligned=$badAligned (must be 0)" }
         println("  样本匹配：$matched/${samples.length()}")
         println("  人工正样本（level != MISS）：$positive，其中报 ALIGNED = $positiveAligned " +
             "(${pct(positiveAligned.toDouble() / positive.coerceAtLeast(1))})")
@@ -180,15 +166,17 @@ class RealCorpusAcceptanceTest {
     }
 
     /** 在单元里找对应的英文句（样本 en 是片段/整句，做归一化后双向包含匹配）。 */
-    private fun findUnit(bySource: Map<String, AlignedUnit>, english: String): AlignedUnit? {
+    private fun findUnit(bySource: Map<String, List<AlignedUnit>>, english: String): AlignedUnit? {
         val needle = normalize(english)
         if (needle.isEmpty()) return null
-        bySource[needle]?.let { return it }
-        // 片段匹配：样本 en 可能只是单元文本的一部分
-        for ((key, unit) in bySource) {
-            if (key.contains(needle) || needle.contains(key)) return unit
+        bySource[needle]?.let { units ->
+            check(units.size == 1) { "Ambiguous repeated golden source; independent location is required" }
+            return units.single()
         }
-        return null
+        // 片段匹配：样本 en 可能只是单元文本的一部分
+        val candidates = bySource.filterKeys { key -> key.contains(needle) || needle.contains(key) }.values.flatten()
+        check(candidates.size <= 1) { "Ambiguous golden source fragment; supply a uniquely locatable reviewed source" }
+        return candidates.singleOrNull()
     }
 
     private fun normalize(text: String): String {
@@ -205,54 +193,4 @@ class RealCorpusAcceptanceTest {
 
     private fun pct(v: Double): String = "${Math.round(v * 10000.0) / 100.0}%"
 
-    // ──────────────────────────────────────────────────────────────
-    //  语料装载（口径与 TtsTextExtractor 一致）
-    // ──────────────────────────────────────────────────────────────
-
-    private fun findRepoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        while (dir != null) {
-            if (File(dir, "artifacts/lotr-book").isDirectory) return dir
-            dir = dir.parentFile
-        }
-        throw IllegalStateException("找不到仓库根：${System.getProperty("user.dir")}")
-    }
-
-    private fun loadEnglishChapters(root: File): List<AlignmentChapter> {
-        val metadata = File(root, "artifacts/lotr-book/metadata.json")
-        if (!metadata.isFile) return emptyList()
-        val json = org.json.JSONObject(metadata.readText())
-        val chapters = json.getJSONArray("chapters")
-        val out = ArrayList<AlignmentChapter>(chapters.length())
-        for (i in 0 until chapters.length()) {
-            val chapter = chapters.getJSONObject(i)
-            val file = File(root, "artifacts/lotr-book/" + chapter.optString("relativePath", ""))
-            if (!file.isFile) continue
-            out.add(AlignmentChapter(chapter.optString("title", ""), leafBlocks(file)))
-        }
-        return out
-    }
-
-    private fun loadChineseChapters(root: File): List<AlignmentChapter> {
-        val dir = File(root, "artifacts/lotr-zh/OEBPS/Text")
-        if (!dir.isDirectory) return emptyList()
-        return dir.listFiles { file -> file.extension.lowercase() == "xhtml" }
-            ?.sortedBy { it.name }
-            ?.map { AlignmentChapter(it.nameWithoutExtension, leafBlocks(it)) }
-            ?: emptyList()
-    }
-
-    private fun leafBlocks(file: File): List<String> {
-        val document = org.jsoup.Jsoup.parse(file, "UTF-8")
-        return document.select(BLOCK_SELECTOR)
-            .filter { candidate -> candidate.select(BLOCK_SELECTOR).all { it === candidate } }
-            .map { it.text().replace(Regex("\\s+"), " ").trim() }
-            .filter { it.isNotBlank() }
-    }
-
-    private companion object {
-        const val BLOCK_SELECTOR =
-            "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, figcaption, pre, div, " +
-                "section, article, header, footer"
-    }
 }

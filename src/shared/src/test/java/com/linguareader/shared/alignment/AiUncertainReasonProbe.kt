@@ -1,6 +1,5 @@
 package com.linguareader.shared.alignment
 
-import java.io.File
 import kotlin.test.Test
 
 /**
@@ -13,13 +12,8 @@ class AiUncertainReasonProbe {
 
     @Test
     fun whyUncertainOnPureAiCorpus() {
-        val root = findRepoRoot()
-        val file = File(root, "artifacts/ai-translation-memory-device.json")
-        if (!file.isFile) {
-            println("SKIP: 语料缺失")
-            return
-        }
-        val json = org.json.JSONObject(file.readText())
+        val inputs = AlignmentCorpusInputs.requireCase("F05")
+        val json = inputs.requireMemory()
         val pairs = json.getJSONArray("pairs")
         val enSentences = ArrayList<String>()
         val zhSentences = ArrayList<String>()
@@ -28,34 +22,32 @@ class AiUncertainReasonProbe {
             val pair = pairs.getJSONObject(i)
             val en = pair.optString("es", "").trim()
             val zh = pair.optString("zs", "").trim()
-            if (en.isEmpty() || zh.isEmpty()) continue
             enSentences.add(en)
             zhSentences.add(zh)
             truthPairs.add(en to zh)
         }
-        val ecdict = EcdictProvider.load(root) ?: run {
-            println("SKIP: 词典缺失")
-            return
-        }
+        val ecdict = inputs.requireDictionary()
         val document = IndependentAligner().align(
             listOf(AlignmentChapter("ai-pure", enSentences)),
             listOf(AlignmentChapter("ai-pure-zh", zhSentences)),
             ecdict
         )
 
+        CorpusExecution.requireDocument(document)
         println("=== 纯净 AI 语料：所有非 ALIGNED 单元的原因 ===")
         println("  ${document.stats.summaryLine()}")
         println()
         document.units.forEachIndexed { index, unit ->
             if (unit.status == AlignmentStatus.ALIGNED) return@forEachIndexed
-            val truth = truthPairs.getOrNull(index) ?: return@forEachIndexed
+            val expected = CorpusExecution.expectedTarget(unit.sourceText, truthPairs)
+            val truth = unit.sourceText to (expected ?: "<not fully covered by truth>")
             val candidateMatches = normalize(unit.targetText) == normalize(truth.second)
             val hasText = unit.targetText.isNotEmpty()
             println("--- #$index ${unit.status} ${unit.skipReason ?: ""} ---")
             println("    en       = \"${truth.first.take(56)}\"")
             println("    truth zs = \"${truth.second.take(40)}\"")
             println("    got      = \"${unit.targetText.take(40)}\"")
-            println("    候选${if (candidateMatches) "**正确**" else if (hasText) "错误" else "为空"}")
+            println("    候选${if (expected == null) "无法完整评估" else if (candidateMatches) "**正确**" else if (hasText) "错误" else "为空"}")
             println("    z=${fmt(unit.evidence.lengthDeviation)} " +
                 "drift=${fmt(unit.evidence.positionDrift)} " +
                 "verify=${fmt(unit.evidence.verifyScore)}")
@@ -95,12 +87,4 @@ class AiUncertainReasonProbe {
     private fun fmt(v: Double): String =
         if (v == Double.MAX_VALUE) "inf" else String.format("%.3f", v)
 
-    private fun findRepoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        while (dir != null) {
-            if (File(dir, "artifacts/lotr-book").isDirectory) return dir
-            dir = dir.parentFile
-        }
-        throw IllegalStateException("找不到仓库根")
-    }
 }

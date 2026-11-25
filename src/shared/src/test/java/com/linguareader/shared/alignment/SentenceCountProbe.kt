@@ -1,7 +1,6 @@
 package com.linguareader.shared.alignment
 
 import com.linguareader.shared.tts.SentenceSplitter
-import java.io.File
 import kotlin.test.Test
 
 /**
@@ -16,9 +15,9 @@ class SentenceCountProbe {
 
     @Test
     fun reconcileSentenceCount() {
-        val root = findRepoRoot()
-        val zhChapters = loadChineseChapters(root)
-        val enChapters = loadEnglishChapters(root)
+        val inputs = AlignmentCorpusInputs.requireCase("F15")
+        val zhChapters = inputs.chinese
+        val enChapters = inputs.english
         println("=== 中文句数口径 ===")
         reconcile("zh", zhChapters)
         println()
@@ -78,50 +77,4 @@ class SentenceCountProbe {
             "${side.sentCount - sideLangUnit}")
     }
 
-    private fun findRepoRoot(): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
-        while (dir != null) {
-            if (File(dir, "artifacts/lotr-book").isDirectory) return dir
-            dir = dir.parentFile
-        }
-        throw IllegalStateException("找不到仓库根")
-    }
-
-    private fun loadEnglishChapters(root: File): List<AlignmentChapter> {
-        val metadata = File(root, "artifacts/lotr-book/metadata.json")
-        if (!metadata.isFile) return emptyList()
-        val json = org.json.JSONObject(metadata.readText())
-        val chapters = json.getJSONArray("chapters")
-        val out = ArrayList<AlignmentChapter>(chapters.length())
-        for (i in 0 until chapters.length()) {
-            val chapter = chapters.getJSONObject(i)
-            val file = File(root, "artifacts/lotr-book/" + chapter.optString("relativePath", ""))
-            if (!file.isFile) continue
-            out.add(AlignmentChapter(chapter.optString("title", ""), leafBlocks(file)))
-        }
-        return out
-    }
-
-    private fun loadChineseChapters(root: File): List<AlignmentChapter> {
-        val dir = File(root, "artifacts/lotr-zh/OEBPS/Text")
-        if (!dir.isDirectory) return emptyList()
-        return dir.listFiles { file -> file.extension.lowercase() == "xhtml" }
-            ?.sortedBy { it.name }
-            ?.map { AlignmentChapter(it.nameWithoutExtension, leafBlocks(it)) }
-            ?: emptyList()
-    }
-
-    private fun leafBlocks(file: File): List<String> {
-        val document = org.jsoup.Jsoup.parse(file, "UTF-8")
-        return document.select(BLOCK_SELECTOR)
-            .filter { candidate -> candidate.select(BLOCK_SELECTOR).all { it === candidate } }
-            .map { it.text().replace(Regex("\\s+"), " ").trim() }
-            .filter { it.isNotBlank() }
-    }
-
-    private companion object {
-        const val BLOCK_SELECTOR =
-            "p, li, h1, h2, h3, h4, h5, h6, blockquote, td, figcaption, pre, div, " +
-                "section, article, header, footer"
-    }
 }
