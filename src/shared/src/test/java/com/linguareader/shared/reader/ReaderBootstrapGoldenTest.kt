@@ -5,7 +5,15 @@ import com.linguareader.shared.data.ReaderTheme
 import com.linguareader.shared.data.ReaderFont
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
+import java.security.MessageDigest
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 /**
  * `bootstrap()` 的**金标准快照**（P4 拆分阅读页注入脚本的安全网）。
@@ -48,38 +56,114 @@ class ReaderBootstrapGoldenTest {
 
     @Test
     fun bootstrapOutputIsStable() {
-        // 基线存在 src/shared/src/test/resources/reader/，是**入库的长期契约**。
-        // 需要重建基线时设环境变量 LR_WRITE_GOLDEN=1，跑一次会把当前输出写回去
-        // （只有确认脚本改动是有意的才这么做，否则等于把 bug 固化成基线）。
         val writeMode = System.getenv("LR_WRITE_GOLDEN") == "1"
-
+        val outDir = File("build/reader-bootstrap-golden").apply { check(isDirectory || mkdirs()) }
+        val environment = captureEnvironment(outDir)
+        val failures = mutableListOf<String>()
         for ((name, prefs, pages) in cases) {
             val page = pages[0] as Int
             val actual = snapshotOf(prefs, page)
-            val resource = "reader/" + name + ".js"
-            val stream = javaClass.classLoader?.getResourceAsStream(resource)
-
-            if (writeMode || stream == null) {
-                val outDir = File("build/reader-bootstrap-golden")
-                outDir.mkdirs()
-                File(outDir, name + ".js").writeText(actual)
-                println("GOLDEN_WRITTEN=" + name + " len=" + actual.length + " (copy to src/shared/src/test/resources/reader/)")
-            } else {
-                val expected = stream.bufferedReader().use { it.readText() }
-                assertEquals(
-                    "[" + name + "] bootstrap() 输出与基线不一致——拆分脚本时必须逐字节相同。" +
-                        "若这是有意的改动，设 LR_WRITE_GOLDEN=1 重建基线并说明原因。",
-                    expected,
-                    actual
-                )
+            val resource = "reader/$name.js"
+            val expected = javaClass.classLoader?.getResourceAsStream(resource)?.use { it.readBytes() }
+            val checked = checkSnapshot(name, expected, actual.toByteArray(Charsets.UTF_8), writeMode, outDir)
+            val sourcePath = "src/shared/src/test/resources/$resource"
+            val head = git(outDir, "$name.git-head.js", "show", "HEAD:$sourcePath")
+            val root = environment.optString("gitRoot")
+            val worktree = if (root.isNotEmpty()) File(root, sourcePath).takeIf { it.isFile }?.readBytes() else null
+            if (worktree != null) File(outDir, "$name.worktree.js").writeBytes(worktree)
+            checked.put("resourceUrl", javaClass.classLoader?.getResource(resource)?.toString() ?: JSONObject.NULL)
+                .put("parameters", prefs.toString()).put("page", page)
+                .put("gitHead", head.second).put("gitHeadBytes", metrics(head.first))
+                .put("worktreeBytes", metrics(worktree))
+            File(outDir, "$name.metadata.json").writeText(checked.toString(2), Charsets.UTF_8)
+            for (failure in checked.getJSONArray("failures")) failures += failure.toString()
+            if (actual.length !in 40_000..120_000) {
+                failures += "[$name] bootstrap length outside 40000..120000: ${actual.length}"
             }
-
-            assertEquals(
-                "[" + name + "] bootstrap 长度应在合理区间",
-                true,
-                actual.length in 40_000..120_000
-            )
+            println("BOOTSTRAP_SNAPSHOT=$name ${checked.getJSONObject("actual")} errors=${checked.getJSONArray("failures")} diagnostics=${outDir.absolutePath}")
         }
+        // Compare every case before failing, so Windows also provides the second snapshot's raw bytes.
+        assertEquals("Exact UTF-8 snapshot verification failed; inspect ${outDir.absolutePath}", emptyList<String>(), failures)
+    }
+
+    /** No trim, newline/locale conversion, or missing-reference generation is permitted in verification. */
+    private fun checkSnapshot(name: String, expected: ByteArray?, actual: ByteArray, writeMode: Boolean, outDir: File): JSONObject {
+        val failures = mutableListOf<String>()
+        File(outDir, "$name.actual.js").writeBytes(actual)
+        val reference = File(outDir, "$name.expected.js")
+        if (expected != null) reference.writeBytes(expected) else reference.delete()
+        if (expected == null) failures += "[$name] Missing committed reference reader/$name.js"
+        else if (!expected.contentEquals(actual)) failures += "[$name] Raw UTF-8 bytes differ: expected=${expected.size}, actual=${actual.size}"
+        val candidate = File(outDir, "$name.js")
+        if (writeMode) {
+            candidate.writeBytes(actual)
+            failures += "[$name] LR_WRITE_GOLDEN generated a candidate for review; this is not a passing verification"
+        } else candidate.delete()
+        val differences = JSONArray()
+        if (expected != null) for (i in 0 until maxOf(expected.size, actual.size)) {
+            if (expected.getOrNull(i) != actual.getOrNull(i)) {
+                differences.put(JSONObject().put("offset", i)
+                    .put("expected", expected.getOrNull(i)?.toInt()?.and(255) ?: JSONObject.NULL)
+                    .put("actual", actual.getOrNull(i)?.toInt()?.and(255) ?: JSONObject.NULL))
+                if (differences.length() == 16) break
+            }
+        }
+        return JSONObject().put("name", name).put("writeMode", writeMode).put("comparison", "raw UTF-8 bytes; no normalization")
+            .put("expected", metrics(expected)).put("actual", metrics(actual)).put("firstDifferences", differences)
+            .put("failures", JSONArray(failures))
+    }
+
+    private fun metrics(bytes: ByteArray?): Any {
+        if (bytes == null) return JSONObject.NULL
+        var crlf = 0; var lf = 0; var cr = 0
+        bytes.forEachIndexed { i, byte ->
+            if (byte == 10.toByte()) { if (i > 0 && bytes[i - 1] == 13.toByte()) crlf++ else lf++ }
+            if (byte == 13.toByte() && bytes.getOrNull(i + 1) != 10.toByte()) cr++
+        }
+        val utf8 = runCatching { Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).length }.getOrNull()
+        return JSONObject().put("bytes", bytes.size).put("sha256", MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) })
+            .put("crlf", crlf).put("loneLf", lf).put("loneCr", cr).put("utf8Valid", utf8 != null)
+            .put("utf16Length", utf8 ?: JSONObject.NULL)
+            .put("utf8Bom", bytes.size >= 3 && bytes[0] == 0xef.toByte() && bytes[1] == 0xbb.toByte() && bytes[2] == 0xbf.toByte())
+    }
+
+    private fun captureEnvironment(outDir: File): JSONObject {
+        val data = JSONObject().put("defaultCharset", Charset.defaultCharset().name()).put("locale", Locale.getDefault().toLanguageTag())
+            .put("lineSeparatorBytes", JSONArray(System.lineSeparator().toByteArray(Charsets.UTF_8).map { it.toInt() and 255 }))
+        val properties = JSONObject()
+        for (key in listOf("os.name", "os.version", "os.arch", "java.version", "java.runtime.version", "java.vendor", "file.encoding", "native.encoding", "sun.jnu.encoding", "user.language", "user.country", "user.dir"))
+            properties.put(key, System.getProperty(key) ?: JSONObject.NULL)
+        data.put("properties", properties)
+        val root = git(outDir, "git-root.txt", "rev-parse", "--show-toplevel")
+        data.put("gitRootCommand", root.second).put("gitRoot", root.first?.toString(Charsets.UTF_8)?.trimEnd('\r', '\n') ?: "")
+        val commands = JSONObject()
+        for (key in listOf("core.autocrlf", "core.eol")) commands.put(key, git(outDir, "$key.txt", "config", "--show-origin", "--get", key).second)
+        val paths = cases.map { "src/shared/src/test/resources/reader/${it.first}.js" }.toTypedArray()
+        commands.put("eol", git(outDir, "git-eol.txt", "ls-files", "--eol", "--", *paths).second)
+        commands.put("attributes", git(outDir, "git-attributes.txt", "check-attr", "--all", "--", *paths).second)
+        commands.put("head", git(outDir, "git-head.txt", "rev-parse", "HEAD").second)
+        data.put("git", commands)
+        File(outDir, "environment.json").writeText(data.toString(2), Charsets.UTF_8)
+        return data
+    }
+
+    /** Read-only diagnostics only; missing Git is recorded and never changes snapshot comparison. */
+    private fun git(outDir: File, name: String, vararg args: String): Pair<ByteArray?, JSONObject> {
+        val output = File(outDir, name); val error = File(outDir, "$name.stderr.txt")
+        val metadata = JSONObject().put("args", JSONArray(args.toList()))
+        return try {
+            val process = ProcessBuilder(listOf("git") + args).redirectOutput(output).redirectError(error).start()
+            val finished = process.waitFor(5, TimeUnit.SECONDS)
+            if (!finished) { process.destroyForcibly(); process.waitFor(5, TimeUnit.SECONDS) }
+            val exit = if (process.isAlive) -1 else process.exitValue()
+            metadata.put("exit", exit).put("timeout", !finished)
+                .put("stderr", error.takeIf { it.isFile }?.readText(Charsets.UTF_8)?.take(4096) ?: "")
+            val bytes = output.takeIf { exit == 0 && it.isFile }?.readBytes()
+            if (bytes == null) output.delete()
+            if (!name.endsWith(".js")) metadata.put("stdout", bytes?.toString(Charsets.UTF_8) ?: "")
+            bytes to metadata
+        } catch (failure: Exception) { metadata.put("error", failure.toString()); null to metadata }
     }
 
     @Test
