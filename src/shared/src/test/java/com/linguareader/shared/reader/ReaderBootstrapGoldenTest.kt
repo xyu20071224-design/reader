@@ -4,6 +4,9 @@ import com.linguareader.shared.data.ReaderPreferences
 import com.linguareader.shared.data.ReaderTheme
 import com.linguareader.shared.data.ReaderFont
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,6 +14,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -164,6 +168,51 @@ class ReaderBootstrapGoldenTest {
             if (!name.endsWith(".js")) metadata.put("stdout", bytes?.toString(Charsets.UTF_8) ?: "")
             bytes to metadata
         } catch (failure: Exception) { metadata.put("error", failure.toString()); null to metadata }
+    }
+
+    @Test
+    fun missingReferenceFailsInsteadOfGeneratingAPassingBaseline() = diagnosticDirectory { directory ->
+        val actual = "missing reference\n".toByteArray(Charsets.UTF_8)
+        val report = checkSnapshot("missing", null, actual, false, directory)
+        assertEquals(1, report.getJSONArray("failures").length())
+        assertTrue(report.getJSONArray("failures").getString(0).contains("Missing committed reference"))
+        assertFalse(File(directory, "missing.js").exists())
+        assertFalse(File(directory, "missing.expected.js").exists())
+        assertArrayEquals(actual, File(directory, "missing.actual.js").readBytes())
+    }
+
+    @Test
+    fun explicitGenerationProducesAReviewCandidateAndNeverAPassingVerification() = diagnosticDirectory { directory ->
+        val bytes = "same bytes\n".toByteArray(Charsets.UTF_8)
+        val report = checkSnapshot("candidate", bytes, bytes, true, directory)
+        assertEquals(1, report.getJSONArray("failures").length())
+        assertTrue(report.getJSONArray("failures").getString(0).contains("not a passing verification"))
+        assertArrayEquals(bytes, File(directory, "candidate.js").readBytes())
+        assertArrayEquals(bytes, File(directory, "candidate.expected.js").readBytes())
+    }
+
+    @Test
+    fun rawNewlinesBomAndTrailingWhitespaceAreNotNormalized() = diagnosticDirectory { directory ->
+        val actual = "line\n".toByteArray(Charsets.UTF_8)
+        val references = listOf("line\r\n".toByteArray(Charsets.UTF_8),
+            byteArrayOf(0xef.toByte(), 0xbb.toByte(), 0xbf.toByte()) + actual,
+            "line \n".toByteArray(Charsets.UTF_8))
+        val reports = references.mapIndexed { i, expected -> checkSnapshot("raw-$i", expected, actual, false, directory) }
+        for ((index, report) in reports.withIndex()) {
+            assertEquals(1, report.getJSONArray("failures").length())
+            assertTrue(report.getJSONArray("firstDifferences").length() > 0)
+            assertArrayEquals(references[index], File(directory, "raw-$index.expected.js").readBytes())
+            assertArrayEquals(actual, File(directory, "raw-$index.actual.js").readBytes())
+        }
+        assertEquals(1, reports[0].getJSONObject("expected").getInt("crlf"))
+        assertEquals(0, reports[0].getJSONObject("actual").getInt("crlf"))
+        assertTrue(reports[1].getJSONObject("expected").getBoolean("utf8Bom"))
+        assertFalse(reports[1].getJSONObject("actual").getBoolean("utf8Bom"))
+    }
+
+    private fun diagnosticDirectory(block: (File) -> Unit) {
+        val directory = Files.createTempDirectory("reader-bootstrap-contract-").toFile()
+        try { block(directory) } finally { directory.deleteRecursively() }
     }
 
     @Test
