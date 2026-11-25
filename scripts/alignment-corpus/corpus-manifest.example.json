@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "corpora": {
+    "lotr": {
+      "version": "REPLACE_WITH_CORPUS_VERSION",
+      "source": {
+        "language": "en",
+        "version": "REPLACE_WITH_TEXT_EDITION",
+        "paragraphCount": 1,
+        "sentenceCount": 1,
+        "textSha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256",
+        "chapters": [
+          {
+            "id": "en-chapter-1",
+            "title": "REPLACE_WITH_CHAPTER_TITLE",
+            "path": "books/en/chapter-1.xhtml",
+            "sha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256",
+            "format": "html",
+            "paragraphCount": 1,
+            "sentenceCount": 1
+          }
+        ]
+      },
+      "target": {
+        "language": "zh",
+        "version": "REPLACE_WITH_TEXT_EDITION",
+        "paragraphCount": 1,
+        "sentenceCount": 1,
+        "textSha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256",
+        "chapters": [
+          {
+            "id": "zh-chapter-1",
+            "title": "REPLACE_WITH_CHAPTER_TITLE",
+            "path": "books/zh/chapter-1.xhtml",
+            "sha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256",
+            "format": "html",
+            "paragraphCount": 1,
+            "sentenceCount": 1
+          }
+        ]
+      },
+      "golden": {
+        "version": "REPLACE_WITH_REVIEW_VERSION",
+        "approvedBy": "REPLACE_WITH_INDEPENDENT_REVIEWER",
+        "method": "independent-review",
+        "corpusVersion": "REPLACE_WITH_CORPUS_VERSION",
+        "sourceTextSha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256",
+        "targetTextSha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256",
+        "path": "golden/golden-samples.json",
+        "sha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256"
+      }
+    },
+    "ai-translation": {
+      "version": "REPLACE_WITH_CORPUS_VERSION",
+      "source": {
+        "language": "en",
+        "version": "REPLACE_WITH_TEXT_EDITION",
+        "paragraphCount": 1,
+        "sentenceCount": 1,
+        "textSha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256"
+      },
+      "target": {
+        "language": "zh",
+        "version": "REPLACE_WITH_TEXT_EDITION",
+        "paragraphCount": 1,
+        "sentenceCount": 1,
+        "textSha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256"
+      },
+      "memory": {
+        "path": "ai/ai-translation-memory-device.json",
+        "sha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256"
+      },
+      "truth": {
+        "version": "REPLACE_WITH_REVIEW_VERSION",
+        "approvedBy": "REPLACE_WITH_INDEPENDENT_REVIEWER",
+        "method": "independent-review",
+        "corpusVersion": "REPLACE_WITH_CORPUS_VERSION",
+        "sourceTextSha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256",
+        "targetTextSha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256"
+      }
+    }
+  },
+  "dictionary": {
+    "path": "dictionary/ecdict.tsv",
+    "sha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256",
+    "metadata": {
+      "path": "dictionary/metadata.json",
+      "sha256": "REPLACE_WITH_AUDITED_LOWERCASE_SHA256"
+    }
+  }
+}
