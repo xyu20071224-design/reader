@@ -225,6 +225,7 @@ private fun LinguaReaderApp(
                     onReaderThemeChanged = onReaderThemeChanged,
                     onLoadRemotePacks = viewModel::loadRemotePacks,
                     onInstallRemotePack = viewModel::installRemotePack,
+                    onCancelRemotePacks = viewModel::cancelRemotePacks,
                     onImport = viewModel::importBook,
                     onOpen = viewModel::openBook,
                     onDelete = viewModel::deleteBook,

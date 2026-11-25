@@ -3,7 +3,7 @@ package com.linguareader.app.packs
 import com.linguareader.shared.packs.InstalledPack
 import com.linguareader.shared.packs.PackPayload
 import com.linguareader.shared.packs.PackType
-import com.linguareader.shared.update.GitHubReleaseParser
+import com.linguareader.shared.packs.RemotePack
 
 /**
  * 未被登记表认领的残留（第四轮审查 7-9）。
@@ -148,10 +148,14 @@ fun InstalledPack.toUiItem(active: Boolean, bookTitle: String?): PackUiItem = Pa
     }
 )
 
-/** Q2-c03：GitHub Releases 资源包获取状态；离线优先不变——不点就不联网。 */
+enum class RemotePackOrigin { SERVER, GITHUB }
+
+/** Resource discovery is explicit; merely opening this page never starts a request. */
 data class RemotePacksState(
+    val origin: RemotePackOrigin = RemotePackOrigin.SERVER,
+    val downloadPercent: Int? = null,
     val loading: Boolean = false,
-    val assets: List<GitHubReleaseParser.PackAsset> = emptyList(),
+    val assets: List<RemotePack> = emptyList(),
     val error: String? = null,
     /** 正在下载的资产名；非空时其它下载按钮禁用。 */
     val downloading: String? = null,

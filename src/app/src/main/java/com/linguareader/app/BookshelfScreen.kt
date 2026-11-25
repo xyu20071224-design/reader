@@ -142,8 +142,9 @@ internal fun BookshelfScreen(
     /** 资源包（7-9）：清理未登记目录 / `.tmp` 残留。 */
     onCleanPackResiduals: () -> Unit = {},
     /** Q2-c03：从 GitHub Releases 获取资源包。 */
-    onLoadRemotePacks: () -> Unit = {},
-    onInstallRemotePack: (com.linguareader.shared.update.GitHubReleaseParser.PackAsset) -> Unit = {},
+    onLoadRemotePacks: (Boolean) -> Unit = {},
+    onInstallRemotePack: (com.linguareader.shared.packs.RemotePack) -> Unit = {},
+    onCancelRemotePacks: () -> Unit = {},
     onLoadGlossary: suspend (String) -> BookGlossary,
     onAddGlossary: suspend (String, String, String) -> BookGlossary,
     onUpdateGlossary: suspend (String, GlossaryEntry) -> BookGlossary,
@@ -531,6 +532,7 @@ internal fun BookshelfScreen(
             onCleanResiduals = onCleanPackResiduals,
             onLoadRemotePacks = onLoadRemotePacks,
             onInstallRemotePack = onInstallRemotePack,
+            onCancelRemotePacks = onCancelRemotePacks,
             onDismiss = { showPacksSheet = false }
         )
     }

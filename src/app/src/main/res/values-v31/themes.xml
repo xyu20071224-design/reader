@@ -1,0 +1,10 @@
+<resources>
+    <!-- Keep API 31 splash attributes out of the API 23 resource variant. Both variants
+         inherit the same window, status-bar and navigation-bar colors. -->
+    <style name="Theme.LinguaReader" parent="Base.Theme.LinguaReader.Light">
+        <item name="android:windowSplashScreenBackground">#F7F3EA</item>
+    </style>
+    <style name="Theme.LinguaReader.Dark" parent="Base.Theme.LinguaReader.Dark">
+        <item name="android:windowSplashScreenBackground">#171717</item>
+    </style>
+</resources>

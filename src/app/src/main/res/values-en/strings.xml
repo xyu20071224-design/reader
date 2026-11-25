@@ -451,9 +451,9 @@
     <string name="storage_packs_manage">Manage packs</string>
     <!-- Resource packs (.lrpack: dictionary / audiobook audio / voices) -->
     <string name="packs_remote_title">Get from GitHub</string>
-    <string name="packs_remote_hint">Download resource packs from the project\'s latest GitHub Release. Not needed offline — nothing connects until you tap.</string>
-    <string name="packs_remote_empty">The release has no .lrpack assets.</string>
-    <string name="packs_remote_load">Fetch online packs</string>
+    <string name="packs_remote_hint">Fetch only when you choose to. Retry interrupted downloads to resume, or import a local package.</string>
+    <string name="packs_remote_empty">No compatible packages are available from this source.</string>
+    <string name="packs_remote_load">Get from server</string>
     <string name="packs_remote_loading">Fetching…</string>
     <string name="packs_remote_failed">Fetch failed: %1$s</string>
     <string name="packs_remote_none_yet">Nothing fetched yet.</string>
@@ -928,4 +928,9 @@
     <string name="update_source_invalid">Enter a valid HTTPS mirror catalog file URL.</string>
     <string name="notice_word_remove_failed">Could not remove the entry. Please try again.</string>
     <string name="reader_alignment_sense_source">Highlighted meaning from %1$s</string>
+    <string name="packs_remote_github">Get from GitHub (backup)</string>
+    <string name="packs_remote_source_github">Current list: GitHub</string>
+    <string name="packs_remote_source_server">Current list: resource server</string>
+    <string name="packs_remote_progress">%1$d%%</string>
+    <string name="packs_remote_fetch_error">Could not load the resource catalog. Please retry later.</string>
 </resources>

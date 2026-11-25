@@ -55,7 +55,9 @@ import com.linguareader.app.packs.PackRepository
 import com.linguareader.app.packs.PackUiItem
 import com.linguareader.app.packs.PackUiState
 import com.linguareader.app.packs.RemotePacksState
-import com.linguareader.shared.update.GitHubReleaseParser
+import com.linguareader.app.packs.RemotePackOrigin
+import com.linguareader.app.packs.RemotePacksRepository
+import com.linguareader.shared.packs.RemotePack
 import com.linguareader.app.packs.toUiItem
 import com.linguareader.app.tts.MultiVoiceSupport
 import com.linguareader.app.tts.TtsAudioCache
@@ -317,6 +319,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var updateCheckJob: Job? = null
     private var remotePackJob: Job? = null
     private var remotePackDownloadJob: Job? = null
+    private val remotePackOperationVersion = java.util.concurrent.atomic.AtomicLong()
+    private val remotePacksRepository = RemotePacksRepository(
+        File(application.cacheDir, "remote-packs"),
+        RemotePacksRepository.CatalogServer(BuildConfig.VERSION_CODE)
+    )
     private var packRefreshJob: Job? = null
     private val releaseSourceVersion = java.util.concurrent.atomic.AtomicLong()
     private val releaseHistoryRepository = AppReleaseHistoryRepository(application, updateRepository,
@@ -669,26 +676,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * 只在用户点了「获取在线资源包」时联网；失败原因留在 `remote.error` 上，
      * 不弹对话框（可重试，且不打断正在看的包列表）。
      */
-    fun loadRemotePacks() {
-        if (mutableState.value.packs.remote.loading) return
-        val sourceVersion = releaseSourceVersion.get()
+    fun loadRemotePacks(useGitHub: Boolean = false) {
+        val packsState = mutableState.value.packs
+        if (packsState.remote.loading || packsState.remote.downloading != null || packsState.installing) return
+        val origin = if (useGitHub) RemotePackOrigin.GITHUB else RemotePackOrigin.SERVER
+        val operation = remotePackOperationVersion.incrementAndGet()
+        mutableState.update { it.copy(packs = it.packs.copy(
+            remote = RemotePacksState(origin = origin, loading = true)
+        )) }
         remotePackJob = viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(
-                packs = mutableState.value.packs.copy(
-                    remote = mutableState.value.packs.remote.copy(loading = true, error = null)
-                )
-            )
-            val result = updateRepository.fetchPackAssets()
-            if (sourceVersion != releaseSourceVersion.get()) return@launch
-            mutableState.value = mutableState.value.copy(
-                packs = mutableState.value.packs.copy(
-                    remote = result.fold(
-                        onSuccess = { RemotePacksState(assets = it, fetched = true) },
-                        onFailure = { RemotePacksState(error = it.message ?: "获取失败") }
-                    )
-                )
-            )
+            val result = remotePacksRepository.load(origin)
+            if (operation != remotePackOperationVersion.get()) return@launch
+            mutableState.update { it.copy(packs = it.packs.copy(remote = result.fold(
+                onSuccess = { assets -> RemotePacksState(origin = origin, assets = assets, fetched = true) },
+                onFailure = { error -> RemotePacksState(origin = origin,
+                    error = error.message ?: string(R.string.packs_remote_fetch_error)) }
+            ))) }
         }
+    }
+
+    fun cancelRemotePacks() {
+        remotePackOperationVersion.incrementAndGet()
+        remotePackJob?.cancel()
+        remotePackDownloadJob?.cancel()
+        remotePackJob = null
+        remotePackDownloadJob = null
+        val previous = mutableState.value.packs.remote
+        if (previous.loading) remotePacksRepository.invalidate()
+        mutableState.update { it.copy(packs = it.packs.copy(remote =
+            if (previous.loading) RemotePacksState(origin = previous.origin)
+            else previous.copy(downloading = null, downloadPercent = null, error = null)
+        )) }
     }
 
     /**
@@ -697,31 +715,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
      * 复用 [installPack]：安装中的禁用、成功提示、失败对话框、词典包换源都在那里，
      * 这里只负责「下载到本地文件」这一步。
      */
-    fun installRemotePack(asset: GitHubReleaseParser.PackAsset) {
-        if (mutableState.value.packs.remote.downloading != null) return
-        val sourceVersion = releaseSourceVersion.get()
+    fun installRemotePack(asset: RemotePack) {
+        val current = mutableState.value.packs
+        if (current.installing || current.remote.loading || current.remote.downloading != null ||
+            asset !in current.remote.assets) return
+        val operation = remotePackOperationVersion.incrementAndGet()
+        mutableState.update { it.copy(packs = it.packs.copy(remote = it.packs.remote.copy(
+            downloading = asset.name, downloadPercent = null, error = null
+        ))) }
         remotePackDownloadJob = viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(
-                packs = mutableState.value.packs.copy(
-                    remote = mutableState.value.packs.remote.copy(
-                        downloading = asset.name,
-                        error = null
-                    )
-                )
-            )
-            val outcome = updateRepository.downloadPack(asset) { _, _ -> }
-            if (sourceVersion != releaseSourceVersion.get()) {
-                outcome.getOrNull()?.delete()
+            var lastPercent = -1
+            val outcome = remotePacksRepository.download(asset) { downloaded, total ->
+                val percent = if (total > 0) (downloaded.coerceAtMost(total) * 100 / total).toInt() else -1
+                if (percent != lastPercent && operation == remotePackOperationVersion.get()) {
+                    lastPercent = percent
+                    mutableState.update {
+                        if (operation != remotePackOperationVersion.get()) it else it.copy(
+                            packs = it.packs.copy(remote = it.packs.remote.copy(
+                                downloadPercent = percent.takeIf { value -> value >= 0 }
+                            ))
+                        )
+                    }
+                }
+            }
+            if (operation != remotePackOperationVersion.get()) {
                 return@launch
             }
-            mutableState.value = mutableState.value.copy(
-                packs = mutableState.value.packs.copy(
-                    remote = mutableState.value.packs.remote.copy(
-                        downloading = null,
-                        error = outcome.exceptionOrNull()?.message
-                    )
-                )
-            )
+            mutableState.update { it.copy(packs = it.packs.copy(remote = it.packs.remote.copy(
+                downloading = null, downloadPercent = null, error = outcome.exceptionOrNull()?.message
+            ))) }
             outcome.getOrNull()?.let { file -> installPack(Uri.fromFile(file)) }
         }
     }
@@ -1036,12 +1058,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         releaseSourceVersion.incrementAndGet()
         updateCheckJob?.cancel()
         updateJob?.cancel()
-        remotePackJob?.cancel()
-        remotePackDownloadJob?.cancel()
         updateCheckJob = null
         updateJob = null
-        remotePackJob = null
-        remotePackDownloadJob = null
         mutableReleaseHistory.value = ReleaseHistoryUiState(releaseHistoryRepository.loadLocal(
             updateRepository.nativeStatus().loadedRevision))
         mutableState.update { state -> state.copy(
@@ -1049,8 +1067,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 catalogUrl = updateRepository.loadSettings().catalogUrl,
                 phase = AppUpdatePhase.IDLE, info = null, downloadedApk = null,
                 progress = 0, error = null
-            ),
-            packs = state.packs.copy(remote = RemotePacksState())
+            )
         ) }
     }
 

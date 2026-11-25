@@ -39,7 +39,8 @@ import com.linguareader.app.packs.PackUiItem
 import com.linguareader.app.packs.PackUiState
 import com.linguareader.app.skin.LocalDesignTokens
 import com.linguareader.shared.packs.PackType
-import com.linguareader.shared.update.GitHubReleaseParser
+import com.linguareader.shared.packs.RemotePack
+import com.linguareader.app.packs.RemotePackOrigin
 
 /** 资源包文件选择器的 MIME 白名单（`.lrpack` 是 zip，但各家文件管理器报的 MIME 不一）。 */
 private val PACK_MIME_TYPES = arrayOf(
@@ -75,9 +76,10 @@ internal fun PacksSheet(
     /** 7-9：清理未登记目录 / `.tmp` 残留。 */
     onCleanResiduals: () -> Unit,
     /** Q2-c03：从 GitHub Releases 拉取可用资源包列表（用户显式触发，离线时不点即可）。 */
-    onLoadRemotePacks: () -> Unit,
+    onLoadRemotePacks: (Boolean) -> Unit,
     /** Q2-c03：下载并安装选中的远端资源包。 */
-    onInstallRemotePack: (GitHubReleaseParser.PackAsset) -> Unit,
+    onInstallRemotePack: (RemotePack) -> Unit,
+    onCancelRemotePacks: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -98,7 +100,8 @@ internal fun PacksSheet(
             onUninstallRequest = { uninstallCandidate = it },
             onCleanResiduals = onCleanResiduals,
             onLoadRemotePacks = onLoadRemotePacks,
-            onInstallRemotePack = onInstallRemotePack
+            onInstallRemotePack = onInstallRemotePack,
+            onCancelRemotePacks = onCancelRemotePacks
         )
     }
 
@@ -132,8 +135,9 @@ internal fun PacksContent(
     onVerify: (String) -> Unit,
     onUninstallRequest: (PackUiItem) -> Unit,
     onCleanResiduals: () -> Unit,
-    onLoadRemotePacks: () -> Unit,
-    onInstallRemotePack: (GitHubReleaseParser.PackAsset) -> Unit
+    onLoadRemotePacks: (Boolean) -> Unit,
+    onInstallRemotePack: (RemotePack) -> Unit,
+    onCancelRemotePacks: () -> Unit = {}
 ) {
     val t = LocalDesignTokens.current
 
@@ -246,9 +250,22 @@ internal fun PacksContent(
             text = stringResource(
                 if (state.remote.loading) R.string.packs_remote_loading else R.string.packs_remote_load
             ),
-            onClick = onLoadRemotePacks,
-            enabled = !state.remote.loading && state.remote.downloading == null
+            onClick = { onLoadRemotePacks(false) },
+            enabled = !state.remote.loading && state.remote.downloading == null && !state.installing
         )
+        LinguaTextButton(
+            text = stringResource(R.string.packs_remote_github),
+            onClick = { onLoadRemotePacks(true) },
+            enabled = !state.remote.loading && state.remote.downloading == null && !state.installing
+        )
+        if (state.remote.loading || state.remote.downloading != null) {
+            LinguaTextButton(text = stringResource(R.string.common_cancel), onClick = onCancelRemotePacks)
+        }
+        if (state.remote.fetched) {
+            Text(text = stringResource(if (state.remote.origin == RemotePackOrigin.GITHUB)
+                R.string.packs_remote_source_github else R.string.packs_remote_source_server),
+                style = t.typography.caption, color = t.colors.inkFaint)
+        }
         state.remote.error?.let { error ->
             Spacer(Modifier.height(PacksHintGap))
             Text(
@@ -278,6 +295,12 @@ internal fun PacksContent(
                             style = t.typography.label,
                             color = t.colors.inkFaint
                         )
+                    }
+                    if (state.remote.downloading == asset.name) {
+                        state.remote.downloadPercent?.let { percent ->
+                            Text(text = stringResource(R.string.packs_remote_progress, percent),
+                                style = t.typography.caption, color = t.colors.inkFaint)
+                        }
                     }
                 }
                 LinguaTextButton(

@@ -417,8 +417,8 @@ class SettingsSheetRenderTest {
     }
 
     private companion object {
-        /** `GitHubReleaseParser.PackAsset` 的构造在 :shared 里，夹具只取名字与大小。 */
-        fun GitHubAsset(name: String, bytes: Long) = com.linguareader.shared.update.GitHubReleaseParser.PackAsset(
+        /** `RemotePack` 的构造在 :shared 里，夹具只取名字与大小。 */
+        fun GitHubAsset(name: String, bytes: Long) = com.linguareader.shared.packs.RemotePack(
             name = name,
             downloadUrl = "https://example.invalid/" + name,
             bytes = bytes
