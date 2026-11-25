@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import shlex
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -104,6 +105,45 @@ class ConfigTests(unittest.TestCase):
             original(file,record)
         with patch.object(c,'replace',side_effect=fail):self.assertRaises(OSError,c.apply_managed,modified,lambda:None,lambda:None,lambda:restored.append(True))
         self.assertEqual(before,{p:p.read_bytes() for p in before});self.assertEqual([True],restored)
+    def health_clock(self, codes, body='ok\n'):
+        elapsed=[0.0];calls=[];sleeps=[]
+        def run(command,**kwargs):
+            calls.append(kwargs);code=codes[min(len(calls)-1,len(codes)-1)]
+            return subprocess.CompletedProcess(command,code,stdout=body,stderr='connection refused\n' if code else '')
+        def sleep(value):elapsed[0]+=value;sleeps.append(value)
+        return run,lambda:elapsed[0],sleep,calls,sleeps
+    def test_health_retries_connection_refusal_then_confirms_actual_success(self):
+        run,clock,sleep,calls,sleeps=self.health_clock([7,7,0])
+        with contextlib.redirect_stderr(io.StringIO()),contextlib.redirect_stdout(io.StringIO()):c.wait_for_health(['curl'],1,run,clock,sleep)
+        self.assertEqual(3,len(calls));self.assertEqual([0.25,0.25],sleeps)
+    def test_health_does_not_retry_http_tls_dns_timeout_or_wrong_body(self):
+        for code in [22,35,60,6,28]:
+            run,clock,sleep,calls,sleeps=self.health_clock([code])
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(subprocess.CalledProcessError) as failure:c.wait_for_health(['curl'],1,run,clock,sleep)
+            self.assertEqual(code,failure.exception.returncode);self.assertEqual(1,len(calls));self.assertEqual([],sleeps)
+        run,clock,sleep,calls,sleeps=self.health_clock([0],'wrong service')
+        self.assertRaisesRegex(ValueError,'health response mismatch',c.wait_for_health,['curl'],1,run,clock,sleep)
+        self.assertEqual(1,len(calls));self.assertEqual([],sleeps)
+    def test_health_deadline_still_restores_old_configuration(self):
+        changes=self.changes();c.apply_managed(changes,lambda:None,lambda:None);before={p:p.read_bytes() for p,r in changes.items() if r[0]=='file'}
+        modified={p:(r[0],r[1]+'\n# candidate' if r[0]=='file' else r[1],r[2]) for p,r in changes.items()}
+        run,clock,sleep,calls,sleeps=self.health_clock([7]);order=[]
+        def reload():c.wait_for_health(['curl'],0.5,run,clock,sleep)
+        timer=self.root/'systemd/linguareader-packs-renew.timer'
+        def before_restore():self.assertIn('# candidate',timer.read_text());order.append('timer')
+        def after_restore():self.assertEqual(before,{p:p.read_bytes() for p in before});order.append('runtime')
+        with contextlib.redirect_stderr(io.StringIO()):self.assertRaises(TimeoutError,c.apply_managed,modified,lambda:None,reload,after_restore,before_restore)
+        self.assertEqual(['timer','runtime'],order);self.assertEqual(2,len(calls));self.assertEqual(0.5,clock())
+    def test_timer_recovery_preserves_the_preexisting_enabled_and_active_states(self):
+        for attempted in [False,True]:
+            for enabled,active in [(False,False),(True,False),(False,True),(True,True)]:
+                commands=[]
+                c.restore_timer_state(enabled,active,attempted,lambda args,**kwargs:commands.append(args))
+                expected=[]
+                if attempted and not active:expected.append(['systemctl','stop',c.SERVICE])
+                if attempted and not enabled:expected.append(['systemctl','disable',c.SERVICE])
+                self.assertEqual(expected,commands)
     def test_certbot_bootstrap_pins_tls_source_and_disables_inherited_config_and_cache(self):
         script=(HERE/'install-ubuntu.sh').read_text()
         command=next(line.strip() for line in script.splitlines() if 'certbot/bin/python" -m pip ' in line)

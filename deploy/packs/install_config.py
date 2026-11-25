@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
+import sys
 
 MARKER = '# Managed by LinguaReader packs v1'
 SERVICE = 'linguareader-packs-renew.timer'
@@ -132,7 +134,33 @@ def replace(file, record):
         temporary.unlink(missing_ok=True)
 
 
-def apply_managed(changes, validate, reload, restore_runtime=lambda:None):
+def wait_for_health(command, timeout=10.0, runner=subprocess.run, clock=time.monotonic, sleeper=time.sleep):
+    """Nginx reload is asynchronous. Retry only local connection failure, never TLS/HTTP errors."""
+    deadline=clock()+timeout
+    while True:
+        remaining=deadline-clock()
+        if remaining<=0:raise TimeoutError('Dedicated listener was not ready within '+str(timeout)+' seconds')
+        result=runner(command,check=False,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=remaining)
+        if result.returncode==0:
+            require(result.stdout=='ok\n','Dedicated health response mismatch')
+            print(result.stdout,end='');return
+        if result.stderr:print(result.stderr,end='',file=sys.stderr)
+        if result.returncode!=7:
+            raise subprocess.CalledProcessError(result.returncode,command,output=result.stdout,stderr=result.stderr)
+        remaining=deadline-clock()
+        if remaining<=0:raise TimeoutError('Dedicated listener was not ready within '+str(timeout)+' seconds')
+        print('Waiting for dedicated TLS listener (connection not ready)',file=sys.stderr)
+        sleeper(min(0.25,remaining))
+
+
+def restore_timer_state(was_enabled, was_active, attempted_enable, runner=subprocess.run):
+    if not attempted_enable:return
+    # Run while the candidate unit file still exists, so disable can remove its wants link.
+    if not was_active:runner(['systemctl','stop',SERVICE],check=True)
+    if not was_enabled:runner(['systemctl','disable',SERVICE],check=True)
+
+
+def apply_managed(changes, validate, reload, restore_runtime=lambda:None, before_restore_runtime=lambda:None):
     # All ownership checks run before the first write. No other site is ever modified.
     old = {file:snapshot(file,record) for file,record in changes.items()}
     written = []
@@ -142,6 +170,8 @@ def apply_managed(changes, validate, reload, restore_runtime=lambda:None):
         validate(); reload()
     except BaseException as initial:
         failures=[]
+        try:before_restore_runtime()
+        except BaseException as error:failures.append(str(error))
         for file in reversed(written):
             try:replace(file,old[file])
             except BaseException as error:failures.append(str(error))
@@ -172,17 +202,19 @@ def main():
     run=lambda *args:subprocess.run(args,check=True)
     was_enabled=subprocess.run(['systemctl','is-enabled','--quiet',SERVICE]).returncode==0
     was_active=subprocess.run(['systemctl','is-active','--quiet',SERVICE]).returncode==0
+    attempted_enable=False
     def validate():
         run('nginx','-t');run('systemd-analyze','verify',str(Path(a.systemd_root)/'linguareader-packs-renew.service'),str(Path(a.systemd_root)/'linguareader-packs-renew.timer'))
     def reload():
-        run('systemctl','daemon-reload');run('systemctl','reload','nginx');run('systemctl','enable','--now',SERVICE)
-        run('curl','--fail','--silent','--show-error','--connect-timeout','5','--max-time','20','--noproxy','*','--connect-to',f'{a.host}:{a.port}:127.0.0.1:{a.port}',f'https://{a.host}:{a.port}/health')
+        nonlocal attempted_enable
+        run('systemctl','daemon-reload');run('systemctl','reload','nginx')
+        attempted_enable=True
+        run('systemctl','enable','--now',SERVICE)
+        wait_for_health(('curl','--fail','--silent','--show-error','--connect-timeout','1','--max-time','2','--noproxy','*','--connect-to',f'{a.host}:{a.port}:127.0.0.1:{a.port}',f'https://{a.host}:{a.port}/health'))
     def restore():
         run('systemctl','daemon-reload')
-        if not was_active:subprocess.run(['systemctl','stop',SERVICE],check=False)
-        if not was_enabled:subprocess.run(['systemctl','disable',SERVICE],check=False)
         run('nginx','-t');run('systemctl','reload','nginx')
-    apply_managed(changes,validate,reload,restore)
+    apply_managed(changes,validate,reload,restore,lambda:restore_timer_state(was_enabled,was_active,attempted_enable))
     print('Installed dedicated TLS configuration; original port 80/443 sites were not changed')
 
 

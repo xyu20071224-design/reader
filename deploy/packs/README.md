@@ -53,7 +53,7 @@ sudo bash stage/install-ubuntu.sh --host 62.234.28.97 \
 
 脚本会写入一个随机 challenge 并读取公网 HTTP-01 路径，结束删除该文件；不会覆盖别人的 challenge。Certbot 5.4+ 才支持 IP 的 webroot 模式，使用 `--preferred-profile shortlived --ip-address`，续期每 12 小时检查并在证书变更后校验/重载 Nginx。官方资料核对于 2026-11-25：[Let's Encrypt 的 Certbot IP 使用说明](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)、[Certbot CLI](https://eff-certbot.readthedocs.io/en/stable/man/certbot.html)、[短期/IP 证书正式可用说明](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)。证书约 160 小时有效，仍需在实际服务器执行续期演练并监控 timer，不能据配置文件生成成功声称续期正常。
 
-配置写入有归属检查和失败回滚；证书签发先于 TLS 配置切换。`nginx -t`、unit 校验、重载或本机 TLS health 失败会恢复原配置。若回滚本身遇到磁盘错误，会明确报告需检查；不会继续显示成功。孤立的 Certbot 环境/已签证书可保留以便恢复，不删除其他服务证书。
+Nginx reload 后只对本机连接尚未就绪（curl 7）在 10 秒总截止内重试，HTTP/TLS/证书错误立即失败。回滚先恢复本次更改的 timer 启用/运行状态，再还原 unit 文件，避免悬挂的 wants 链接。配置写入有归属检查和失败回滚；证书签发先于 TLS 配置切换。`nginx -t`、unit 校验、重载或本机 TLS health 失败会恢复原配置。若回滚本身遇到磁盘错误，会明确报告需检查；不会继续显示成功。孤立的 Certbot 环境/已签证书可保留以便恢复，不删除其他服务证书。
 
 ## 激活与真实校验（服务器仅需 Python 3）
 
