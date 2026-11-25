@@ -3,14 +3,15 @@ package com.linguareader.app
 import android.Manifest
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.Bitmap
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.Process
 import android.os.SystemClock
 import android.telephony.TelephonyManager
-import androidx.annotation.RequiresApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -22,6 +23,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import com.linguareader.app.data.DictionaryRepository
 import com.linguareader.app.data.WordLookup
@@ -66,7 +68,7 @@ import java.util.concurrent.atomic.AtomicReference
  * livePackAvdName=ReaderIssueVerify35. No fake connection, TLS trust override or SSH is used.
  * Phase 2 leaves a private recovery marker for phase 3; phase 3 always restores it, even on failure.
  */
-@RequiresApi(29)
+@SdkSuppress(minSdkVersion = 29)
 @RunWith(AndroidJUnit4::class)
 class LivePackServerInstrumentedTest {
     @get:Rule val compose = createEmptyComposeRule()
@@ -82,9 +84,15 @@ class LivePackServerInstrumentedTest {
         assertVerifyEmulator()
         withNetworkPermissions {
             val original = radios()
+            val originalNetwork = requireNotNull(connectivity.activeNetwork)
+            val originalCapabilities = requireNotNull(connectivity.getNetworkCapabilities(originalNetwork))
+            val originalTransport = listOf(NetworkCapabilities.TRANSPORT_WIFI, NetworkCapabilities.TRANSPORT_CELLULAR)
+                .single { originalCapabilities.hasTransport(it) }
+            assertTrue("Begin with a validated Internet connection", originalCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
             val directory = File(context.cacheDir, "live-pack-phase1-${UUID.randomUUID()}")
             val evidence = JSONObject().put("stage", "started").put("catalog", RemotePackCatalog.DEFAULT_URL)
-                .put("originalNetwork", original.json())
+                .put("originalNetwork", original.json()).put("originalTransport", originalTransport)
+                .put("originalNetworkId", originalNetwork.toString())
             val cutAt = AtomicLong(-1)
             val disconnected = AtomicBoolean(false)
             try {
@@ -122,6 +130,9 @@ class LivePackServerInstrumentedTest {
 
                 setRadios(original)
                 awaitNetwork(true)
+                // A cellular default can appear before Wi-Fi has reconnected. Starting a new
+                // transfer there races the actual Wi-Fi takeover and tests a second outage.
+                evidence.put("restoredNetworkId", awaitValidatedTransport(originalTransport))
                 val firstResumedProgress = AtomicLong(-1)
                 val complete = runBlocking {
                     withTimeout(120_000) {
@@ -210,6 +221,7 @@ class LivePackServerInstrumentedTest {
                         !snapshot.packs.installing && snapshot.packs.items.any { it.packId == "ecdict" && it.active }
                     }
                     assertInstalledRow(viewModel)
+                    writeScreenshot("phase2-installed")
                     assertTrue("Real download state must be observed", downloadSeen.get())
                     assertTrue("Real install state must be observed", installSeen.get())
                     assertTrue("A genuine intermediate percentage must be emitted", percentages.any { it in 1..99 })
@@ -269,6 +281,7 @@ class LivePackServerInstrumentedTest {
                     openResourcePage()
                     compose.waitUntil(15_000) { viewModel.state.value.packs.items.any { it.packId == "ecdict" && it.active } }
                     assertInstalledRow(viewModel)
+                    writeScreenshot("phase3-offline-installed")
                     val repository = PackRepository(context)
                     val source = requireNotNull(repository.dictionarySource())
                     assertTrue(source.canonicalPath.startsWith(repository.packsRoot.canonicalPath + File.separator))
@@ -341,6 +354,19 @@ class LivePackServerInstrumentedTest {
         assertEquals("The real default network did not reach the requested state", present, connectivity.activeNetwork != null)
     }
 
+    private fun awaitValidatedTransport(transport: Int): String {
+        val deadline = SystemClock.uptimeMillis() + 30_000
+        while (SystemClock.uptimeMillis() < deadline) {
+            val network = connectivity.activeNetwork
+            val capabilities = network?.let(connectivity::getNetworkCapabilities)
+            if (network != null && capabilities != null && capabilities.hasTransport(transport) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return network.toString()
+            SystemClock.sleep(100)
+        }
+        throw AssertionError("Original Internet transport did not reconnect and validate")
+    }
+
     private fun requireRealEcdict(pack: RemotePack) {
         assertEquals("ecdict", pack.packId)
         assertEquals(PackType.DICTIONARY, pack.type)
@@ -359,7 +385,7 @@ class LivePackServerInstrumentedTest {
     }
     private fun openResourcePage() {
         compose.onNodeWithContentDescription(context.getString(R.string.storage_title)).performClick()
-        compose.onNodeWithText(context.getString(R.string.storage_packs_manage)).performScrollTo().performClick()
+        compose.onNodeWithText(context.getString(R.string.storage_packs_manage)).assertIsDisplayed().performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithText(context.getString(R.string.packs_title)).fetchSemanticsNodes().isNotEmpty() }
     }
     private fun assertInstalledRow(viewModel: AppViewModel) {
@@ -526,6 +552,17 @@ class LivePackServerInstrumentedTest {
     private fun writeEvidence(name: String, value: JSONObject) {
         val directory = File(context.getExternalFilesDir(null), "live-pack-server").apply { mkdirs() }
         File(directory, "$name.json").writeText(value.toString(2))
+    }
+    private fun writeScreenshot(name: String) {
+        val window = requireNotNull(instrumentation.uiAutomation.rootInActiveWindow)
+        assertEquals("The real app window must be foreground and unobstructed", context.packageName, window.packageName?.toString())
+        val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        try {
+            val directory = File(context.getExternalFilesDir(null), "live-pack-server").apply { mkdirs() }
+            File(directory, "$name.png").outputStream().use {
+                assertTrue(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it))
+            }
+        } finally { screenshot.recycle() }
     }
     private companion object {
         val BUILTIN_NAMES = listOf("ecdict-v2.sqlite", "ecdict-v2.sqlite-wal", "ecdict-v2.sqlite-shm", "ecdict-v2.sqlite-journal")
