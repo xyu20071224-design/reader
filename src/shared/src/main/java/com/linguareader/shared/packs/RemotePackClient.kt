@@ -19,6 +19,7 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.charset.CodingErrorAction
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.zip.ZipFile
 import kotlin.coroutines.coroutineContext
 
 /** Explicit HTTPS catalog/download actions. TLS trust remains the platform default. */
@@ -64,7 +65,10 @@ class RemotePackClient(
                 val key = pack.sha256 ?: hash("${pack.downloadUrl}\n${pack.name}\n${pack.bytes}".toByteArray())
                 withTransferLock(root, key) {
                     val target = child(root, "$key-${pack.name}")
-                    if (pack.sha256 != null && validFile(target, pack)) return@withTransferLock target
+                    if (pack.sha256 != null && validFile(target, pack)) {
+                        verifyCatalogIdentity(target, pack)
+                        return@withTransferLock target
+                    }
                     // Without a digest there is no partial/cache reuse or cross-mirror append.
                     val partial = if (pack.sha256 != null) child(root, "$key.part")
                         else File.createTempFile("remote-", ".part", root)
@@ -75,6 +79,7 @@ class RemotePackClient(
                             try {
                                 downloadFrom(pack, url, partial, onProgress)
                                 if (!validFile(partial, pack)) throw InvalidDownload("资源包大小或 SHA-256 校验失败")
+                                verifyCatalogIdentity(partial, pack)
                                 coroutineContext.ensureActive()
                                 // Same-directory rename publishes only a complete, verified file.
                                 check(partial.renameTo(target)) { "无法保存下载的资源包" }
@@ -191,6 +196,43 @@ class RemotePackClient(
 
     private fun child(root: File, name: String): File = File(root, name).also {
         check(it.canonicalFile == it.absoluteFile) { "资源下载路径包含符号链接" }
+    }
+
+    /** Bind catalog metadata to the bounded manifest; payload/SafeZip verification remains with the installer. */
+    private suspend fun verifyCatalogIdentity(file: File, pack: RemotePack) {
+        if (pack.packId == null && pack.type == null) return
+        try {
+            ZipFile(file).use { zip ->
+                val entry = zip.getEntry(PackManifest.FILE_NAME) ?: throw InvalidDownload("资源包缺少清单")
+                // Same 1 MiB bound as PackRepository's existing manifest reader; shared cannot depend on app.
+                val limit = RemotePackCatalog.MAX_CATALOG_BYTES
+                if (entry.isDirectory || entry.size > limit) throw InvalidDownload("资源包清单过大或不合法")
+                val output = ByteArrayOutputStream()
+                zip.getInputStream(entry).use { input ->
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        coroutineContext.ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (output.size().toLong() + count > limit) throw InvalidDownload("资源包清单过大")
+                        output.write(buffer, 0, count)
+                    }
+                }
+                val decoder = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                val manifest = PackManifest.parse(decoder.decode(ByteBuffer.wrap(output.toByteArray())).toString())
+                if ((pack.packId != null && manifest.packId != pack.packId) ||
+                    (pack.version != null && manifest.version != pack.version) ||
+                    (pack.type != null && manifest.type != pack.type) || manifest.minAppVersion != pack.minAppVersion)
+                    throw InvalidDownload("资源包清单身份与目录声明不符")
+                val limits = PackLimits.of(manifest.type)
+                if (pack.bytes > limits.maxSourceBytes || zip.size() > limits.maxEntries ||
+                    !PackValidator.validateManifest(manifest, Int.MAX_VALUE).ok)
+                    throw InvalidDownload("资源包清单不符合现有安装契约")
+            }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (invalid: InvalidDownload) { throw invalid }
+        catch (_: Exception) { throw InvalidDownload("无法验证资源包清单") }
     }
 
     private suspend fun validFile(file: File, pack: RemotePack): Boolean {

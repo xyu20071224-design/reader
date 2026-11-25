@@ -2,6 +2,7 @@ package com.linguareader.shared.packs
 
 import org.json.JSONObject
 import java.net.URI
+import java.util.Locale
 
 data class RemotePack(
     val name: String,
@@ -75,7 +76,7 @@ object RemotePackCatalog {
                 packId, version, type, minimum
             )
             validate(pack)
-            require(names.add(pack.name.lowercase())) { "资源目录包含重复文件名" }
+            require(names.add(pack.name.lowercase(Locale.ROOT))) { "资源目录包含重复文件名" }
             pack.takeIf { minimum <= appVersion }
         }
     }
