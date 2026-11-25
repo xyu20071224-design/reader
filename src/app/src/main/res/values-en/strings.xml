@@ -450,7 +450,7 @@
     <string name="storage_store_packs">Resource packs</string>
     <string name="storage_packs_manage">Manage packs</string>
     <!-- Resource packs (.lrpack: dictionary / audiobook audio / voices) -->
-    <string name="packs_remote_title">Get from GitHub</string>
+    <string name="packs_remote_title">Get resource packs</string>
     <string name="packs_remote_hint">Fetch only when you choose to. Retry interrupted downloads to resume, or import a local package.</string>
     <string name="packs_remote_empty">No compatible packages are available from this source.</string>
     <string name="packs_remote_load">Get from server</string>

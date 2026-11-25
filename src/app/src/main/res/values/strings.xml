@@ -445,7 +445,7 @@
     <string name="storage_store_packs">资源包</string>
     <string name="storage_packs_manage">管理资源包</string>
     <!-- 资源包（.lrpack：词典 / 听书音频 / 音色） -->
-    <string name="packs_remote_title">从 GitHub 获取</string>
+    <string name="packs_remote_title">获取在线资源包</string>
     <string name="packs_remote_hint">点击后从资源服务器获取；下载中断后可重试续传，也可继续使用本地导入。</string>
     <string name="packs_remote_empty">此来源暂无兼容的资源包。</string>
     <string name="packs_remote_load">从服务器获取</string>

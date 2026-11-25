@@ -75,7 +75,7 @@ internal fun PacksSheet(
     onVerify: (String) -> Unit,
     /** 7-9：清理未登记目录 / `.tmp` 残留。 */
     onCleanResiduals: () -> Unit,
-    /** Q2-c03：从 GitHub Releases 拉取可用资源包列表（用户显式触发，离线时不点即可）。 */
+    /** 显式获取服务器目录，或由用户选择 GitHub 备用；进入页面不发起请求。 */
     onLoadRemotePacks: (Boolean) -> Unit,
     /** Q2-c03：下载并安装选中的远端资源包。 */
     onInstallRemotePack: (RemotePack) -> Unit,
