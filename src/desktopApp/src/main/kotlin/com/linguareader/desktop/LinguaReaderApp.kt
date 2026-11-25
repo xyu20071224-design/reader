@@ -13,6 +13,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -92,16 +93,12 @@ fun main(args: Array<String>) {
     val library = LibraryRepository(context)
     val ttsState = mutableStateOf(TtsPlaybackState())
     val engine = createDesktopTtsEngine(context, library) { ttsState.value = it }
-    // 词典找不到时不阻塞书架/复习：阅读屏给提示，查词不可用。
-    val dictionary: DictionaryDatabase? = DesktopDictionaryDatabase.resolve(home)?.let {
-        runCatching { DesktopDictionaryDatabase.open(it) }.getOrNull()
-    }
 
     application {
         Window(onCloseRequest = ::exitApplication, title = "语境阅读 · 桌面版") {
             LinguaReaderTheme {
                 AppScaffold(
-                    context, vocabulary, library, engine, ttsState, dictionary, home,
+                    context, vocabulary, library, engine, ttsState, home,
                     onReady = if (guiSmoke) {
                         {
                             println(
@@ -124,6 +121,7 @@ private enum class Pane(val label: String) {
     Review("复习"),
     Listening("听书"),
     Vocabulary("生词本"),
+    Packs("资源包"),
     Settings("设置")
 }
 
@@ -143,7 +141,6 @@ fun AppScaffold(
     library: LibraryRepository,
     engine: TtsPlaybackEngine,
     ttsState: androidx.compose.runtime.MutableState<TtsPlaybackState>,
-    dictionary: DictionaryDatabase?,
     home: File,
     /** 首帧就绪回调（--guismoke 用）：窗口真正渲染出来后执行。 */
     onReady: (() -> Unit)? = null
@@ -159,6 +156,15 @@ fun AppScaffold(
     val reviewPrefs = remember { context.prefs("review_settings") }
     val syncScope = rememberCoroutineScope()
     val sync = remember { DesktopSyncController(context, library, vocabulary, home, syncScope) }
+    val packRepository = remember(home) { DesktopPackRepository(home) }
+    val packs = remember(packRepository) {
+        DesktopPackController(packRepository, syncScope, context.prefs("pack_catalog"))
+    }
+    val packState by packs.state.collectAsState()
+    val packDictionary = remember(packRepository) { DesktopPackDictionary(packRepository) }
+    val dictionary: DictionaryDatabase? = remember(packState.registry) {
+        packDictionary.takeIf { it.available() }
+    }
 
     Scaffold { padding ->
         if (reading != null) {
@@ -201,6 +207,7 @@ fun AppScaffold(
                         Pane.Review -> ReviewPane(vocabulary, reviewPrefs)
                         Pane.Listening -> ListeningPane(context, library, engine, ttsState)
                         Pane.Vocabulary -> VocabularyPane(vocabulary)
+                        Pane.Packs -> PacksPane(packs)
                         Pane.Settings -> SettingsPane(reviewPrefs, home, sync)
                     }
                 }

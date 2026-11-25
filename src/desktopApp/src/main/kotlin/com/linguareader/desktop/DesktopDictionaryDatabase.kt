@@ -15,7 +15,7 @@ import java.util.Properties
  * M1 已双引擎对账）。只读：连接属性 open_mode=1（sqlite-jdbc 不解析 URI 后缀，
  * known-pitfalls §26）。
  */
-class DesktopDictionaryDatabase(private val connection: Connection) : DictionaryDatabase {
+class DesktopDictionaryDatabase(private val connection: Connection) : DictionaryDatabase, AutoCloseable {
     override fun lemmaCandidates(form: String): List<String> =
         connection.prepareStatement(DictionarySql.LEMMA_CANDIDATES).use { ps ->
             ps.setString(1, form)
@@ -39,7 +39,7 @@ class DesktopDictionaryDatabase(private val connection: Connection) : Dictionary
             }
         }
 
-    fun close() = connection.close()
+    override fun close() = connection.close()
 
     companion object {
         /**
@@ -63,6 +63,21 @@ class DesktopDictionaryDatabase(private val connection: Connection) : Dictionary
             val props = Properties().apply { setProperty("open_mode", "1") }
             val connection = DriverManager.getConnection("jdbc:sqlite:${dictionary.absolutePath}", props)
             return DesktopDictionaryDatabase(connection)
+        }
+
+        /** A valid hash cannot make an unrelated SQLite schema usable as a dictionary. */
+        fun validateSchema(dictionary: File) {
+            require(dictionary.isFile && dictionary.length() > 0) { "词典包词库文件缺失" }
+            try {
+                open(dictionary).use { db ->
+                    db.connection.createStatement().use { statement ->
+                        statement.executeQuery("SELECT word, phonetic, translation, definition FROM entries LIMIT 0").close()
+                        statement.executeQuery("SELECT form, lemma FROM forms LIMIT 0").close()
+                    }
+                }
+            } catch (error: java.sql.SQLException) {
+                throw IllegalArgumentException("词典包表结构不兼容：${error.message}", error)
+            }
         }
     }
 }

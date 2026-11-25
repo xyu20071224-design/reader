@@ -96,7 +96,7 @@ fun ReadingPane(
         HorizontalDivider()
 
         if (dictionary == null) {
-            Text("未找到离线词典。把 ecdict.sqlite 放到数据目录 dictionary/ 下（或 -Dlr.dict 指定）后重启。")
+            Text("未找到离线词典。请返回书架，在资源包页面导入并启用词典包。")
         } else {
             Text(
                 "点按任意单词查词并收藏。${if (status.isNotBlank()) status else ""}",

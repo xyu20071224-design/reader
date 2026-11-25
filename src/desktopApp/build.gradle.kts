@@ -27,6 +27,7 @@ dependencies {
     // 刀5 起 DesktopAppContext 自己也编译期用 org.json（叶子模块，无撞类风险），升为 implementation。
     implementation("org.json:json:20240303")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    implementation("org.jsoup:jsoup:1.18.3")
 
     // 桌面听书：JVM 无内置 MP3 解码，mp3spi（JavaZoom）提供 SPI，javax.sound 直接吃 MP3。
     implementation("com.googlecode.soundlibs:mp3spi:1.9.5.4")
@@ -39,6 +40,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test:2.1.10")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 }
 
 // M2 起默认入口是桌面 UI 主程序；探针用 -PmainClass=... 切换（配置期读取）。
