@@ -65,6 +65,7 @@ class SkinPickerRenderTest {
         }
         if (VisualBaseline.isUpdateMode()) {
             VisualBaseline.generate(name, bmp)
+            org.junit.Assert.fail("generation only; rerun without mode")
         } else {
             val result = VisualBaseline.compare(name, bmp)
             val summary = VisualBaseline.describe(name, result)
