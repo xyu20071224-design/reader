@@ -39,26 +39,21 @@ jobs:
       # Gradle 的仓库列表把阿里云镜像放在最前（仓库既定配置，不改），镜像是 CDN，
       # 偶发 502 会让整次解析失败（2026-09-20 windows job 实测）。故对每条 Gradle
       # 命令做有限重试，而不是改仓库配置或放宽断言。
-      - name: 共享内核单测
+      - name: 共享内核与桌面单测
         run: |
-          chmod +x gradlew || true
-          ok=0
-          for i in 1 2 3; do
-            if ./gradlew :shared:test --stacktrace; then ok=1; break; fi
-            echo "第 $i 次失败（可能是镜像 502），15 秒后重试"
-            sleep 15
-          done
-          [ "$ok" = "1" ]
+          chmod +x gradlew
+          ./gradlew :shared:test :desktopApp:test --continue --stacktrace
 
-      - name: 桌面壳单测
-        run: |
-          ok=0
-          for i in 1 2 3; do
-            if ./gradlew :desktopApp:test --stacktrace; then ok=1; break; fi
-            echo "第 $i 次失败，15 秒后重试"
-            sleep 15
-          done
-          [ "$ok" = "1" ]
+      - name: 上传本轮单测证据
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-test-evidence-${{ runner.os }}
+          path: |
+            src/shared/build/test-results/test/**
+            src/desktopApp/build/test-results/test/**
+            src/shared/build/reader-bootstrap-golden/**
+          if-no-files-found: warn
 
       # 用 ::error 注解输出失败用例名：注解可通过 check-runs API 匿名读取，
       # 而 job 日志需要 token。诊断步骤自身永不失败（exit 0）。

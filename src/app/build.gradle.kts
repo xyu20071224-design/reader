@@ -118,6 +118,12 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            // The complete native-rendering suite was verified with a 2 GiB
+            // worker. Keep one worker so CI memory use is bounded and repeatable.
+            it.maxHeapSize = "2g"
+            it.maxParallelForks = 1
+        }
     }
 
     lint {

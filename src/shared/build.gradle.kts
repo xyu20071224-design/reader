@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("org.jetbrains.kotlin.jvm")
 }
@@ -35,4 +37,30 @@ dependencies {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+}
+
+// Test inputs are separate from the repository marker. Missing external material
+// is reported by the acceptance tests, rather than by Gradle before JUnit runs.
+val alignmentCodeRepositoryRoot = rootProject.projectDir.parentFile
+val alignmentRepositoryRoot = providers.systemProperty("linguareader.repoRoot").orNull?.let { value ->
+    val candidate = File(value)
+    if (candidate.isAbsolute) candidate else alignmentCodeRepositoryRoot.resolve(value)
+} ?: alignmentCodeRepositoryRoot
+val alignmentCorpusLocation = providers.gradleProperty("alignmentCorpusRoot")
+    .orElse(providers.systemProperty("linguareader.corpusRoot"))
+val alignmentCorpusDirectory = alignmentCorpusLocation.orNull?.let { value ->
+    val candidate = File(value)
+    if (candidate.isAbsolute) candidate else alignmentRepositoryRoot.resolve(value)
+} ?: alignmentRepositoryRoot.resolve("artifacts/alignment-corpus")
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    systemProperty("linguareader.repoRoot", alignmentRepositoryRoot.absolutePath)
+    if (alignmentCorpusLocation.isPresent) {
+        systemProperty("linguareader.corpusRoot", alignmentCorpusDirectory.absolutePath)
+    }
+    inputs.property("alignmentRepositoryLocation", alignmentRepositoryRoot.absolutePath)
+    inputs.property("alignmentCorpusLocation", alignmentCorpusDirectory.absolutePath)
+    inputs.files(fileTree(alignmentCorpusDirectory))
+        .withPropertyName("alignmentCorpusFiles")
+        .withPathSensitivity(org.gradle.api.tasks.PathSensitivity.RELATIVE)
 }

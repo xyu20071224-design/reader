@@ -35,10 +35,23 @@ jobs:
 
       - name: 运行单元测试
         # :app 的 JVM 单测 + :shared 的纯逻辑单测一起跑（桌面迁移 M1 起，见根目录 迁移方案-桌面Windows版.md）
-        run: ./gradlew testDebugUnitTest :shared:test --stacktrace
+        run: ./gradlew :app:testDebugUnitTest :shared:test --continue --stacktrace
+
+      - name: 上传本轮 JVM 与视觉验收证据
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-evidence
+          path: |
+            src/app/build/test-results/testDebugUnitTest/**
+            src/shared/build/test-results/test/**
+            src/app/build/ui-render-probe/**
+            src/shared/build/reader-bootstrap-golden/**
+          if-no-files-found: warn
 
       # :shared 存在的唯一意义是「零 Android 依赖」，这条红线由 CI 机械执法（src/shared/README.md 规则 1）
       - name: :shared 纯净性检查
+        if: ${{ !cancelled() }}
         run: |
           if grep -rE '^import (android|androidx)\.' shared/src/main; then
             echo "::error :::shared 不得 import android.*/androidx.*（见 src/shared/README.md 规则 1）"
@@ -49,6 +62,7 @@ jobs:
       # 任一侧 bump 忘改另一侧只会「响亮失败」（找不到目录/拒装），但没人希望踩。
       # 键派生的一致性子由 :shared 的 AudioPackGeneratorContractTest 对拍（上面那步已跑）。
       - name: 朗读管线版本两侧一致（Kotlin ↔ Python 生成器）
+        if: ${{ !cancelled() }}
         run: |
           kt=$(grep -oE 'VERSION[[:space:]]*=[[:space:]]*[0-9]+' shared/src/main/java/com/linguareader/shared/tts/TtsPipelineContract.kt | grep -oE '[0-9]+' | head -1)
           py=$(grep -oE '^PIPELINE_VERSION[[:space:]]*=[[:space:]]*[0-9]+' ../scripts/build_audio_pack.py | grep -oE '[0-9]+' | head -1)
@@ -79,12 +93,8 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      # 首轮先观察不阻断：开发机是离线环境（lint-gradle 依赖不在本地缓存里），
-      # 这一步的真实结果只能由 CI 跑出来。等 CI 跑过一轮、确认 error 数为 0
-      # （或据报告补好 src/app/lint-baseline.xml）之后，删掉 continue-on-error
-      # 这一行，lint 即成为硬门禁。lint 配置见 src/app/build.gradle.kts 的 lint{}。
+      # 2026-11-25 本地及 CI 已实际通过（0 errors）；后续错误必须阻断。
       - name: 运行 Android Lint
-        continue-on-error: true
         run: ./gradlew :app:lintDebug --stacktrace
 
       - name: 上传 lint 报告

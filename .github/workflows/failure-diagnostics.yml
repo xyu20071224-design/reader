@@ -1,0 +1,59 @@
+name: Failure Diagnostics
+
+on:
+  push:
+    branches: ['feat/failure-repair-20261125']
+    paths:
+      - '.github/workflows/failure-diagnostics.yml'
+      - '.gitattributes'
+      - 'src/shared/build.gradle.kts'
+      - 'src/shared/src/main/**'
+      - 'src/shared/src/test/java/com/linguareader/shared/reader/ReaderBootstrap*'
+      - 'src/shared/src/test/resources/reader/*.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reader-bootstrap:
+    name: 阅读脚本快照 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: src
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: 定向运行字符快照及其契约
+        run: |
+          chmod +x gradlew
+          ./gradlew :shared:test --tests 'com.linguareader.shared.reader.ReaderBootstrap*' --continue --stacktrace
+
+      - name: 保存实际字节与原始测试结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-bootstrap-${{ runner.os }}
+          path: |
+            src/shared/build/reader-bootstrap-golden/**
+            src/shared/build/test-results/test/**
+          if-no-files-found: warn
