@@ -26,7 +26,8 @@ import java.io.File
  * - [DIFF_RATIO_THRESHOLD]：差异像素占比上限（默认 0.5%）；
  * - [DIFF_DELTA_THRESHOLD]：单像素通道差值超过多少才算「不同」（默认 12/255）。
  *
- * 两者同时超限才判红 —— 避免「大面积 1/255 抖动」和「少数点大变化」互相误伤。
+ * 先按通道阈值统计不同像素，再按占比判红；最大通道差仅用于诊断，
+ * 避免「大面积 1/255 抖动」和「少数点大变化」互相误伤。
  *
  * ## 基线怎么建
  *
@@ -36,8 +37,8 @@ import java.io.File
  * ```
  * 
  * 基线落在 `src/app/src/test/resources/visual-baseline/<name>.png`（**要提交入库**）。
- * 没设这个变量且基线不存在时，测试会**建基线并跳过断言**并在输出里明确标注 ——
- * 这样第一次跑不会红，但也不会假装通过。
+ * [compare] 始终只读；缺图或解码失败必须判红。经人工审阅后，测试夹具才能在显式
+ * 更新模式调用 [generate]。生成不是验收；必须退出更新模式后重新执行普通比对。
  *
  * ## 覆盖不到什么
  *
@@ -64,15 +65,16 @@ object VisualBaseline {
         val baselineMissing: Boolean,
         val diffPixels: Int,
         val totalPixels: Int,
-        val worstDelta: Int
+        val worstDelta: Int,
+        val baselineError: String? = null
     ) {
         val diffRatio: Double get() = if (totalPixels == 0) 0.0 else diffPixels.toDouble() / totalPixels
-        val passed: Boolean get() = baselineMissing ||
-            (diffRatio <= DIFF_RATIO_THRESHOLD && worstDelta <= 255)
+        val passed: Boolean get() = !baselineMissing && baselineError == null &&
+            diffRatio <= DIFF_RATIO_THRESHOLD
     }
 
     /**
-     * 把 [actual] 与基线比对。基线不存在时：更新模式下写入并按「新建基线」返回。
+     * 只读比对。更新环境变量也不会让本方法创建或覆盖参考图。
      *
      * @return 比对结果；[Result.passed] 为 false 时调用方应让测试失败并打印差异摘要
      */
@@ -80,14 +82,13 @@ object VisualBaseline {
         val file = File(BASELINE_DIR, "$name.png")
 
         if (!file.isFile) {
-            file.parentFile?.mkdirs()
-            file.outputStream().use { actual.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            println("VISUAL_BASELINE_CREATED " + name + " -> " + file.absolutePath)
-            return Result(baselineMissing = true, diffPixels = 0, totalPixels = 0, worstDelta = 0)
+            return Result(baselineMissing = true, diffPixels = 0, totalPixels = 0, worstDelta = 0,
+                baselineError = "参考图不存在：${file.absolutePath}")
         }
 
         val baseline = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
-            ?: return Result(baselineMissing = true, diffPixels = 0, totalPixels = 0, worstDelta = 0)
+            ?: return Result(baselineMissing = false, diffPixels = 0, totalPixels = 0, worstDelta = 0,
+                baselineError = "参考图无法解码：${file.absolutePath}")
 
         // 尺寸不一致 = 布局塌了，直接判红（比逐像素比对更早发现问题）
         require(baseline.width == actual.width && baseline.height == actual.height) {
@@ -113,11 +114,6 @@ object VisualBaseline {
             }
         }
 
-        if (isUpdateMode()) {
-            file.outputStream().use { actual.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            println("VISUAL_BASELINE_UPDATED " + name + " -> " + file.absolutePath)
-        }
-
         return Result(
             baselineMissing = false,
             diffPixels = diff,
@@ -126,16 +122,35 @@ object VisualBaseline {
         )
     }
 
+    /** 仅显式调用才写图；不返回 passed，也不把旧图损坏/尺寸差异冒充普通验收成功。 */
+    fun generate(name: String, actual: Bitmap): File {
+        check(isUpdateMode()) { "生成参考图必须显式设置 UPDATE_VISUAL_BASELINE=1 或 updateVisualBaseline=true" }
+        val file = File(BASELINE_DIR, "$name.png")
+        val directory = checkNotNull(file.parentFile)
+        check(directory.isDirectory || directory.mkdirs()) { "无法创建参考图目录" }
+        val temporary = File.createTempFile("visual-", ".png.tmp", directory)
+        try {
+            temporary.outputStream().use {
+                check(actual.compress(Bitmap.CompressFormat.PNG, 100, it)) { "参考图 PNG 编码失败" }
+                it.fd.sync()
+            }
+            java.nio.file.Files.move(temporary.toPath(), file.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        } finally { temporary.delete() }
+        println("VISUAL_BASELINE_GENERATED $name -> ${file.absolutePath} (generation only; not compared)")
+        return file
+    }
+
     /** 人能读的差异摘要（测试失败时打印）。 */
     fun describe(name: String, r: Result): String = buildString {
         appendLine("[" + name + "] 视觉回归")
-        if (r.baselineMissing) {
-            appendLine("  基线不存在，已按当前渲染新建（下次跑开始比对）")
+        if (r.baselineError != null) {
+            appendLine("  验收失败：${r.baselineError}；普通比对不会自动生成或覆盖参考图")
             return@buildString
         }
         appendLine("  差异像素：" + r.diffPixels + " / " + r.totalPixels +
             "（" + String.format(java.util.Locale.ROOT, "%.3f%%", r.diffRatio * 100) + "，阈值 0.500%）")
-        appendLine("  最大通道差：" + r.worstDelta + "（阈值 " + DIFF_DELTA_THRESHOLD + "）")
+        appendLine("  最大通道差：" + r.worstDelta + "（像素计差阈值 " + DIFF_DELTA_THRESHOLD + "，非独立失败条件）")
         appendLine("  若变化是有意的：设 UPDATE_VISUAL_BASELINE=1 重跑以更新基线，并在提交信息里说明")
     }
 }

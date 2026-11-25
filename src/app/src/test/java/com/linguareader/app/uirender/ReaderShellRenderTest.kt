@@ -57,7 +57,7 @@ import java.io.File
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], qualifiers = "w411dp-h891dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "en-rUS-w411dp-h891dp-xxhdpi")
 class ReaderShellRenderTest {
 
     /**
@@ -251,9 +251,13 @@ class ReaderShellRenderTest {
 
     /** 与视觉基线比对（P8）。基线在 src/app/src/test/resources/visual-baseline/。 */
     private fun assertAgainstBaseline(name: String, bmp: android.graphics.Bitmap) {
-        val result = VisualBaseline.compare(name, bmp)
-        val summary = VisualBaseline.describe(name, result)
-        println(summary)
-        org.junit.Assert.assertTrue(summary, result.passed)
+        if (VisualBaseline.isUpdateMode()) {
+            VisualBaseline.generate(name, bmp)
+        } else {
+            val result = VisualBaseline.compare(name, bmp)
+            val summary = VisualBaseline.describe(name, result)
+            println(summary)
+            org.junit.Assert.assertTrue(summary, result.passed)
+        }
     }
 }

@@ -35,7 +35,7 @@ import org.robolectric.annotation.GraphicsMode
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], qualifiers = "w411dp-h891dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "en-rUS-w411dp-h891dp-xxhdpi")
 class SkinPickerRenderTest {
 
     private fun tokensOf(dark: Boolean): DesignTokens =
@@ -63,10 +63,14 @@ class SkinPickerRenderTest {
                 }
             }
         }
-        val result = VisualBaseline.compare(name, bmp)
-        val summary = VisualBaseline.describe(name, result)
-        println(summary)
-        assertTrue(summary, result.passed)
+        if (VisualBaseline.isUpdateMode()) {
+            VisualBaseline.generate(name, bmp)
+        } else {
+            val result = VisualBaseline.compare(name, bmp)
+            val summary = VisualBaseline.describe(name, result)
+            println(summary)
+            assertTrue(summary, result.passed)
+        }
     }
 
     @Test
