@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/failure-diagnostics.yml'
       - '.gitattributes'
+      - 'src/settings.gradle.kts'
       - 'src/shared/build.gradle.kts'
       - 'src/shared/src/main/**'
       - 'src/shared/src/test/java/com/linguareader/shared/reader/ReaderBootstrap*'

@@ -1,9 +1,12 @@
 pluginManagement {
     repositories {
-        // Mirrors first: some networks block the upstream repos (403/reset).
-        maven("https://maven.aliyun.com/repository/gradle-plugin")
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
+        // Domestic developer networks need mirrors. GitHub-hosted runners use
+        // upstream directly: a mirror 502 disables resolution before fallback.
+        if (providers.environmentVariable("GITHUB_ACTIONS").orNull != "true") {
+            maven("https://maven.aliyun.com/repository/gradle-plugin")
+            maven("https://maven.aliyun.com/repository/google")
+            maven("https://maven.aliyun.com/repository/public")
+        }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -13,8 +16,10 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/public")
+        if (providers.environmentVariable("GITHUB_ACTIONS").orNull != "true") {
+            maven("https://maven.aliyun.com/repository/google")
+            maven("https://maven.aliyun.com/repository/public")
+        }
         google()
         mavenCentral()
         maven("https://jitpack.io")
