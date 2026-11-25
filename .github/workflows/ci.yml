@@ -96,3 +96,36 @@ jobs:
             src/app/build/reports/lint-results-debug.html
             src/app/build/reports/lint-results-debug.xml
           if-no-files-found: warn
+
+  resource-tools:
+    name: 资源发布工具检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17（temurin）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 安装 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 安装 Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: 资源发布与归档测试
+        run: node --test scripts/publish_packs.test.mjs deploy/packs/package.test.mjs
+
+      - name: 资源激活逻辑测试
+        run: python3 deploy/packs/test_activate.py
+
+      - name: 安装脚本语法检查
+        run: bash -n deploy/packs/install-ubuntu.sh
