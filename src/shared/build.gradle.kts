@@ -43,24 +43,56 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 // is reported by the acceptance tests, rather than by Gradle before JUnit runs.
 val alignmentCodeRepositoryRoot = rootProject.projectDir.parentFile
 val alignmentRepositoryRoot = providers.systemProperty("linguareader.repoRoot").orNull?.let { value ->
+    require(value.isNotBlank()) { "linguareader.repoRoot must not be blank" }
     val candidate = File(value)
     if (candidate.isAbsolute) candidate else alignmentCodeRepositoryRoot.resolve(value)
 } ?: alignmentCodeRepositoryRoot
 val alignmentCorpusLocation = providers.gradleProperty("alignmentCorpusRoot")
     .orElse(providers.systemProperty("linguareader.corpusRoot"))
 val alignmentCorpusDirectory = alignmentCorpusLocation.orNull?.let { value ->
+    require(value.isNotBlank()) { "alignmentCorpusRoot / linguareader.corpusRoot must not be blank" }
     val candidate = File(value)
     if (candidate.isAbsolute) candidate else alignmentRepositoryRoot.resolve(value)
 } ?: alignmentRepositoryRoot.resolve("artifacts/alignment-corpus")
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    val writeReaderGolden = providers.environmentVariable("LR_WRITE_GOLDEN").getOrElse("")
+    inputs.property("readerGoldenWriteMode", writeReaderGolden)
+    outputs.upToDateWhen { writeReaderGolden != "1" }
+    outputs.doNotCacheIf("Reference generation must actually execute") { writeReaderGolden == "1" }
     systemProperty("linguareader.repoRoot", alignmentRepositoryRoot.absolutePath)
     if (alignmentCorpusLocation.isPresent) {
         systemProperty("linguareader.corpusRoot", alignmentCorpusDirectory.absolutePath)
     }
     inputs.property("alignmentRepositoryLocation", alignmentRepositoryRoot.absolutePath)
     inputs.property("alignmentCorpusLocation", alignmentCorpusDirectory.absolutePath)
-    inputs.files(fileTree(alignmentCorpusDirectory))
+    inputs.files(provider {
+        // An incorrect root without the manifest must not recursively fingerprint
+        // an unrelated directory. JUnit reports the missing manifest explicitly.
+        if (alignmentCorpusDirectory.resolve("corpus-manifest.json").isFile)
+            fileTree(alignmentCorpusDirectory) else files()
+    })
         .withPropertyName("alignmentCorpusFiles")
         .withPathSensitivity(org.gradle.api.tasks.PathSensitivity.RELATIVE)
+}
+
+// An explicit, read-only material check. It never replaces the real tests or
+// runs the alignment algorithm, and is deliberately not a dependency of check.
+tasks.register<JavaExec>("alignmentCorpusPreflight") {
+    group = "verification"
+    description = "Validate external alignment inputs without running the algorithm"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.linguareader.shared.alignment.AlignmentCorpusPreflight")
+    args("--corpus-root", alignmentCorpusDirectory.absolutePath)
+    val selectedCase = providers.gradleProperty("alignmentCorpusCase").orNull
+    val dictionaryOnly = providers.gradleProperty("alignmentDictionaryOnly").orNull
+    require(dictionaryOnly == null || dictionaryOnly == "true") {
+        "alignmentDictionaryOnly, when supplied, must be true"
+    }
+    require(selectedCase == null || dictionaryOnly == null) {
+        "Select either alignmentCorpusCase or alignmentDictionaryOnly"
+    }
+    if (selectedCase != null) args("--case", selectedCase)
+    if (dictionaryOnly == "true") args("--dictionary-only")
 }

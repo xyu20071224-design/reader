@@ -123,6 +123,14 @@ android {
             // worker. Keep one worker so CI memory use is bounded and repeatable.
             it.maxHeapSize = "2g"
             it.maxParallelForks = 1
+            val environmentMode = providers.environmentVariable("UPDATE_VISUAL_BASELINE").getOrElse("")
+            val propertyMode = providers.systemProperty("updateVisualBaseline").getOrElse("")
+            val generating = environmentMode == "1" || propertyMode == "true"
+            it.systemProperty("updateVisualBaseline", propertyMode)
+            it.inputs.property("visualBaselineEnvironmentMode", environmentMode)
+            it.inputs.property("visualBaselinePropertyMode", propertyMode)
+            it.outputs.upToDateWhen { !generating }
+            it.outputs.doNotCacheIf("Reference generation must actually execute") { generating }
         }
     }
 

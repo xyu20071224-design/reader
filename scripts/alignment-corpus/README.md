@@ -9,6 +9,8 @@ F01–F17 是必须执行的真实材料验收，缺材料时失败。加载器�
 - 固定入口为 `<corpusRoot>/corpus-manifest.json`。加载测试只读取该目录，诊断写 stdout，JUnit XML 写 `shared/build/test-results/test`。不要把输出目录设在 corpusRoot 内。
 - `AlignmentCorpusPreflight` 是 test runtime classpath 上可选的离线主类。参数 `--corpus-root <目录>` 检查全部 17 项；追加 `--case F02` 检查单项；追加 `--dictionary-only` 仅核对词典。预检不执行算法、不等同于验收通过。失败退出 1；各项依赖详见 JSON 汇总。
 
+在 `src/` 中可用 `./gradlew :shared:alignmentCorpusPreflight -PalignmentCorpusRoot=<目录>` 调用；追加 `-PalignmentCorpusCase=F02` 检查单项，或追加 `-PalignmentDictionaryOnly=true` 只检查词典。该可选任务不替代 `check` 中的真实验收。仓库根、语料根显式传空值会直接报错，不能悄悄采用默认目录。
+
 运行真实验收仍用 `:shared:test --tests <类名>`，不得改成 Assume、排除用例或先 return。默认本地及 CI 在没有真实材料时会保留 17 个明确的输入失败。
 
 ## 清单 v1
