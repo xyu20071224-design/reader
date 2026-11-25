@@ -11,8 +11,10 @@ internal object CorpusExecution {
     fun requireDocument(document: AlignmentDocument) {
         check(document.units.isNotEmpty() && document.stats.sourceSentenceTotal > 0) { "Alignment produced no evaluable source sentence" }
         check(document.units.all { it.sourceSpanSize > 0 }) { "Invalid source span" }
-        check(document.stats.alignedUnits + document.stats.uncertainUnits + document.stats.unalignedUnits == document.units.size) {
-            "Status statistics do not account for all units"
+        check(document.stats.alignedUnits == document.units.count { it.status == AlignmentStatus.ALIGNED } &&
+            document.stats.uncertainUnits == document.units.count { it.status == AlignmentStatus.UNCERTAIN } &&
+            document.stats.unalignedUnits == document.units.count { it.status == AlignmentStatus.UNALIGNED }) {
+            "Status statistics do not account for actual unit statuses"
         }
         println("CORPUS_EXECUTED units=${document.units.size} sourceDenominator=${document.stats.sourceSentenceTotal}")
     }
@@ -38,17 +40,17 @@ internal object CorpusExecution {
 
     /** Exact complete sources, including contiguous N:1 truth pairs; never compare by unit ordinal. */
     fun expectedTarget(sourceText: String, pairs: List<Pair<String, String>>): String? {
-        val needle = AlignmentCorpusInputs.matchText(sourceText)
+        val needle = ReviewedSpanLocator.key(sourceText)
         if (needle.isEmpty()) return null
         val matches = ArrayList<String>()
         for (from in pairs.indices) {
-            val english = StringBuilder()
-            val chinese = StringBuilder()
+            val english = ArrayList<String>()
+            val chinese = ArrayList<String>()
             for (to in from until pairs.size) {
-                english.append(AlignmentCorpusInputs.matchText(pairs[to].first))
-                chinese.append(pairs[to].second)
-                if (english.toString() == needle) matches.add(chinese.toString())
-                if (english.length >= needle.length || !needle.startsWith(english.toString())) break
+                english.addAll(ReviewedSpanLocator.key(pairs[to].first))
+                chinese.add(pairs[to].second)
+                if (english == needle) matches.add(chinese.joinToString(" "))
+                if (english.size >= needle.size || english != needle.take(english.size)) break
             }
         }
         check(matches.size <= 1) { "Ambiguous truth for complete source text" }
@@ -56,25 +58,27 @@ internal object CorpusExecution {
     }
 
     fun aiMetrics(document: AlignmentDocument, source: List<AlignmentChapter>, pairs: List<Pair<String, String>>): AiMetrics {
-        requireDocument(document)
         check(pairs.isNotEmpty()) { "No AI truth pairs evaluated" }
-        val side = BookSide.build(SideKind.SOURCE, source)
-        val denominator = side.sentLangUnit.count { it }
-        check(denominator > 0 && document.stats.sourceSentenceTotal == denominator) { "AI sentence denominator mismatch" }
-        var aligned = 0
-        var correct = 0
-        var wrong = 0
-        var unscorable = 0
-        document.units.filter { it.status == AlignmentStatus.ALIGNED }.forEach { unit ->
-            aligned += unit.sourceSpanSize
+        val projection = CorpusPositionProjection.source(document, source)
+        val denominator = projection.side.sentLangUnit.count { it }
+        check(denominator > 0) { "AI input has no language sentences" }
+        val aligned = LinkedHashSet<Int>()
+        val correct = LinkedHashSet<Int>()
+        val wrong = LinkedHashSet<Int>()
+        val unscorable = LinkedHashSet<Int>()
+        projection.units.filter { it.unit.status == AlignmentStatus.ALIGNED }.forEach { positioned ->
+            val unit = positioned.unit
+            val actual = positioned.source.indices.filter { projection.side.sentLangUnit[it] }
+            check(actual.none(aligned::contains)) { "Duplicate aligned source coverage" }
+            aligned.addAll(actual)
             val truth = expectedTarget(unit.sourceText, pairs)
             when {
-                truth == null -> unscorable += unit.sourceSpanSize
-                AlignmentCorpusInputs.matchText(truth) == AlignmentCorpusInputs.matchText(unit.targetText) -> correct += unit.sourceSpanSize
-                else -> wrong += unit.sourceSpanSize
+                truth == null -> unscorable.addAll(actual)
+                ReviewedSpanLocator.sameText(truth, unit.targetText) -> correct.addAll(actual)
+                else -> wrong.addAll(actual)
             }
         }
-        check(aligned <= denominator && aligned == document.stats.sourceSentencesAligned) { "AI aligned sentence accounting mismatch" }
-        return AiMetrics(denominator, aligned, correct, wrong, unscorable)
+        check(aligned.size == document.stats.sourceSentencesAligned) { "AI aligned sentence accounting mismatch" }
+        return AiMetrics(denominator, aligned.size, correct.size, wrong.size, unscorable.size)
     }
 }

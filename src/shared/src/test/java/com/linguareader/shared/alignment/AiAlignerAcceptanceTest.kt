@@ -53,7 +53,7 @@ class AiAlignerAcceptanceTest {
         }
         // 真值：英文句 → 正确的中文句（用归一化文本匹配，支持合并句）
         val truthTargetOf = LinkedHashMap<String, String>()
-        for (i in truthEn.indices) truthTargetOf[normalize(truthEn[i])] = truthZh[i]
+        for (i in truthEn.indices) truthTargetOf[truthEn[i]] = truthZh[i]
 
         val targetMetrics = ArrayList<CorpusExecution.AiMetrics>()
         val ai = AiTranslationAligner()
@@ -97,18 +97,6 @@ class AiAlignerAcceptanceTest {
         println("  ${document.stats.summaryLine()}")
         println("  ${metrics.line()}")
         return metrics
-    }
-
-    private fun normalize(text: String): String {
-        val builder = StringBuilder(text.length)
-        for (c in text) {
-            when {
-                c in 'A'..'Z' -> builder.append(c + 32)
-                c in 'a'..'z' || c in '0'..'9' -> builder.append(c)
-                c in '\u4E00'..'\u9FFF' -> builder.append(c)
-            }
-        }
-        return builder.toString()
     }
 
 }

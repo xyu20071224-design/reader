@@ -34,34 +34,24 @@ class OraclePairRecallProbe {
 
         // 读金标准：取 approved.zh（真值译文），在 target 里定位它
         val json = inputs.requireGolden()
-        val samples = json.getJSONArray("samples")
+        val reviews = ReviewedGoldenEvaluator.reviews(json, source, target)
 
         println()
         println("=== 在真值配对上的 V1 recall（送分题）===")
         val recalls = ArrayList<Double>(128)
         var located = 0
         var termsEmpty = 0
-        var noApproved = 0
         val examples = ArrayList<String>(10)
 
-        for (i in 0 until samples.length()) {
-            val sample = samples.getJSONObject(i)
-            val approved = sample.optJSONObject("approved") ?: run { noApproved++; null } ?: continue
-            val level = approved.optString("level", "")
-            if (level == "MISS") continue
-            val approvedZh = approved.optString("zh", "")
-            val english = sample.optString("en", "")
-            if (approvedZh.isEmpty() || english.isEmpty()) continue
-
-            // 在 target 里定位这段真值译文（用归一化后的前 20 字匹配）
-            val zhIndex = locate(target, approvedZh)
-            if (zhIndex < 0) continue
-            // 在 source 里定位英文句
-            val enIndex = locateEnglish(source, english)
-            if (enIndex < 0) continue
+        for (review in reviews) {
+            if (review.level == "MISS") continue
+            val targetSpan = requireNotNull(review.target)
+            val level = review.level
+            val english = ReviewedSpanLocator.text(source, review.source)
             located++
-
-            val score = verify.score(enIndex, 1, zhIndex, 1)
+            val score = scoreReviewed(review, verify::score)
+            println("GOLDEN_PAIR sourceFrom=${review.source.from} sourceSpan=${review.source.size} " +
+                "targetFrom=${targetSpan.from} targetSpan=${targetSpan.size} level=$level")
             if (!score.available) {
                 termsEmpty++
                 continue
@@ -77,7 +67,7 @@ class OraclePairRecallProbe {
             }
         }
         recalls.sort()
-        println("  金标准样本总数=${samples.length()}  无 approved 字段=$noApproved")
+        println("  金标准样本总数=${reviews.size}（完整span唯一定位，无前缀降级）")
         println("  成功定位两侧的真值对=$located  terms(E)=∅ 的=$termsEmpty")
         check(located > 0 && recalls.isNotEmpty()) { "No evaluable golden pair: located=$located available=${recalls.size}" }
         println("  V1 available 的真值对=${recalls.size}")
@@ -98,41 +88,10 @@ class OraclePairRecallProbe {
         println("    若这个数仍很低，说明 ECDICT 释义与文学译本措辞确实对不上（词典能力上限）。")
     }
 
-    private fun locate(target: BookSide, zhText: String): Int {
-        val needle = normalizeForMatch(zhText).take(30)
-        if (needle.length < 8) return -1
-        for (t in 0 until target.sentCount) {
-            if (normalizeForMatch(target.sentText[t]).contains(needle)) return t
-        }
-        // 退一步：用前 12 字
-        val shorter = needle.take(12)
-        if (shorter.length < 8) return -1
-        for (t in 0 until target.sentCount) {
-            if (normalizeForMatch(target.sentText[t]).contains(shorter)) return t
-        }
-        return -1
-    }
-
-    private fun locateEnglish(source: BookSide, english: String): Int {
-        val needle = normalizeForMatch(english)
-        if (needle.length < 10) return -1
-        for (s in 0 until source.sentCount) {
-            val hay = normalizeForMatch(source.sentText[s])
-            if (hay == needle || hay.contains(needle) || needle.contains(hay)) return s
-        }
-        return -1
-    }
-
-    private fun normalizeForMatch(text: String): String {
-        val builder = StringBuilder(text.length)
-        for (c in text) {
-            when {
-                c in 'A'..'Z' -> builder.append(c + 32)
-                c in 'a'..'z' || c in '0'..'9' -> builder.append(c)
-                c in '\u4E00'..'\u9FFF' -> builder.append(c)
-            }
-        }
-        return builder.toString()
+    internal fun <T> scoreReviewed(review: ReviewedGoldenEvaluator.Review,
+        score: (Int, Int, Int, Int) -> T): T {
+        val target = requireNotNull(review.target) { "MISS is not a scored oracle pair" }
+        return score(review.source.from, review.source.size, target.from, target.size)
     }
 
     private fun q(sorted: List<Double>, p: Double): Double =

@@ -29,8 +29,8 @@ class CorpusExecutionTest {
     }
 
     @Test fun missingTruthCannotBeSilentlyCountedAsCorrectOrJudgedByOrdinal() {
-        val document = document(unit("Only a fragment", pairs[0].second, span = 1))
-        val metrics = CorpusExecution.aiMetrics(document, source, pairs)
+        val document = document(unit(pairs[0].first, pairs[0].second, span = 1))
+        val metrics = CorpusExecution.aiMetrics(document, source, listOf(pairs[1]))
         assertEquals(1, metrics.unscorableAligned)
         assertEquals(0, metrics.falseAligned) // Unscorable is distinct from a proven wrong translation.
         assertFailsWith<IllegalStateException> { metrics.assertApprovedAiTargets() }
@@ -55,11 +55,37 @@ class CorpusExecutionTest {
         assertFailsWith<IllegalStateException> { CorpusExecution.expectedTarget(pairs[0].first, listOf(pairs[0], pairs[0])) }
     }
 
+    @Test fun firstSentenceCannotClaimTwoSentenceCoverageByForgingSpanAndStatistics() {
+        val forged = document(unit(pairs[0].first, pairs[0].second, span = 2))
+        assertFailsWith<IllegalStateException> { CorpusExecution.aiMetrics(forged, source, pairs).assertApprovedAiTargets() }
+    }
+
+    @Test fun duplicateFirstSentenceCannotStandInForTheMissingSecondSentence() {
+        val forged = document(unit(pairs[0].first, pairs[0].second), unit(pairs[0].first, pairs[0].second))
+        assertFailsWith<IllegalStateException> { CorpusExecution.aiMetrics(forged, source, pairs).assertApprovedAiTargets() }
+    }
+
+    @Test fun completeTextMustAgreeWithItsRealParagraphAndSentenceIndex() {
+        val misplaced = unit(pairs[0].first, pairs[0].second).copy(sourceIndexInParagraph = 1)
+        assertFailsWith<IllegalStateException> { CorpusExecution.aiMetrics(document(misplaced), source, pairs) }
+        val fragment = unit("An apple", pairs[0].second)
+        assertFailsWith<IllegalStateException> { CorpusExecution.aiMetrics(document(fragment), source, pairs) }
+        val changedWordBoundary = unit("Ana pple rests here.", pairs[0].second)
+        assertFailsWith<IllegalStateException> { CorpusExecution.aiMetrics(document(changedWordBoundary), source, pairs) }
+    }
+
     private fun unit(english: String, chinese: String, span: Int = 1) = AlignedUnit(
-        AlignmentStatus.ALIGNED, sourceChapter = 0, sourceParagraph = english,
+        AlignmentStatus.ALIGNED, sourceChapter = 0, sourceParagraph = pairs[0].first,
         sourceText = english, targetText = chinese, sourceSpanSize = span
     )
-    private fun document(vararg units: AlignedUnit) = AlignmentDocument(1, "handwritten-evaluator-fixture", units = units.toList(),
-        stats = AlignmentStats(sourceSentenceTotal = 2, targetSentenceTotal = 2,
-            sourceSentencesAligned = units.sumOf { it.sourceSpanSize }, alignedUnits = units.size))
+    private fun document(vararg units: AlignedUnit): AlignmentDocument {
+        // A one-sentence ALIGNED output still explicitly accounts for the other real sentence.
+        val all = units.toList() + if (units.sumOf { it.sourceSpanSize } == 1) listOf(AlignedUnit(
+            AlignmentStatus.UNALIGNED, 0, sourceParagraph = pairs[1].first, sourceText = pairs[1].first,
+            skipReason = AlignmentSkipReason.VERIFY_FAILED)) else emptyList()
+        return AlignmentDocument(1, "handwritten-evaluator-fixture", units = all,
+            stats = AlignmentStats(sourceSentenceTotal = 2, targetSentenceTotal = 2,
+                sourceSentencesAligned = units.sumOf { it.sourceSpanSize }, alignedUnits = units.size,
+                unalignedUnits = all.size - units.size))
+    }
 }
