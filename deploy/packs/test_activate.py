@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -103,6 +104,11 @@ class ConfigTests(unittest.TestCase):
             original(file,record)
         with patch.object(c,'replace',side_effect=fail):self.assertRaises(OSError,c.apply_managed,modified,lambda:None,lambda:None,lambda:restored.append(True))
         self.assertEqual(before,{p:p.read_bytes() for p in before});self.assertEqual([True],restored)
+    def test_certbot_bootstrap_pins_tls_source_and_disables_inherited_config_and_cache(self):
+        script=(HERE/'install-ubuntu.sh').read_text()
+        command=next(line.strip() for line in script.splitlines() if 'certbot/bin/python" -m pip ' in line)
+        self.assertEqual(['PIP_CONFIG_FILE=/dev/null','$SERVICE_ROOT/certbot/bin/python','-m','pip','--isolated','--no-cache-dir','install','--index-url','https://pypi.org/simple','certbot>=5.4,<6'],shlex.split(command))
+        self.assertNotIn('--trusted-host',command)
     def test_render_rejects_port_path_and_host_injection(self):
         for host in ['a;touch /tmp/x','999.999.999.999','[::1]']:
             self.assertRaises(ValueError,c.configuration,host,8443,'/srv/public','/opt/service','/etc/nginx','/etc/systemd/system')

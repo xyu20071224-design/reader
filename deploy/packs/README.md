@@ -49,7 +49,7 @@ sudo bash stage/install-ubuntu.sh --host 62.234.28.97 \
   --existing-webroot /var/www/acme --owner ubuntu --bootstrap-certbot
 ```
 
-安装只管理本工具命名的 Nginx 8443 站点、续期 unit/timer 和独立 `/opt/linguareader-packs`。Certbot 环境和账号/证书配置也在该目录，避免使用或改动已有站点的 `/etc/letsencrypt` 账号和证书。若系统缺少 Python venv/ensurepip，需操作者先安装该依赖再重试；不会顺便安装其他服务。
+安装只管理本工具命名的 Nginx 8443 站点、续期 unit/timer 和独立 `/opt/linguareader-packs`。 私有 venv 的 bootstrap 仅从 `https://pypi.org/simple` 安装，使用 `--isolated --no-cache-dir`，并仅为该子进程设置 `PIP_CONFIG_FILE=/dev/null` 以禁用继承的全局/用户/环境配置；不修改系统 pip 配置。配置与命令行优先级依据 [pip 官方说明](https://pip.pypa.io/en/stable/topics/configuration/)。Certbot 环境和账号/证书配置也在该目录，避免使用或改动已有站点的 `/etc/letsencrypt` 账号和证书。若系统缺少 Python venv/ensurepip，需操作者先安装该依赖再重试；不会顺便安装其他服务。
 
 脚本会写入一个随机 challenge 并读取公网 HTTP-01 路径，结束删除该文件；不会覆盖别人的 challenge。Certbot 5.4+ 才支持 IP 的 webroot 模式，使用 `--preferred-profile shortlived --ip-address`，续期每 12 小时检查并在证书变更后校验/重载 Nginx。官方资料核对于 2026-11-25：[Let's Encrypt 的 Certbot IP 使用说明](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)、[Certbot CLI](https://eff-certbot.readthedocs.io/en/stable/man/certbot.html)、[短期/IP 证书正式可用说明](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)。证书约 160 小时有效，仍需在实际服务器执行续期演练并监控 timer，不能据配置文件生成成功声称续期正常。
 

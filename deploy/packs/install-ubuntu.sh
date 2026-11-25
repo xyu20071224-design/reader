@@ -63,7 +63,7 @@ CERTBOT="$SERVICE_ROOT/certbot/bin/certbot"
 if [[ ! -x "$CERTBOT" ]]; then
   ((BOOTSTRAP)) || { echo 'Use --bootstrap-certbot to create the isolated Certbot environment';exit 1; }
   python3 -m venv "$SERVICE_ROOT/certbot"
-  "$SERVICE_ROOT/certbot/bin/python" -m pip install 'certbot>=5.4,<6'
+  PIP_CONFIG_FILE=/dev/null "$SERVICE_ROOT/certbot/bin/python" -m pip --isolated --no-cache-dir install --index-url https://pypi.org/simple 'certbot>=5.4,<6'
 fi
 VERSION_OUTPUT="$("$CERTBOT" --version)"
 printf '%s\n' "$VERSION_OUTPUT"
