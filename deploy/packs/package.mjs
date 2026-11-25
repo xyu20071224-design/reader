@@ -27,7 +27,7 @@ export async function packageDeployment({site,out,baseUrl=DEFAULT_BASE_URL}) {
     const files=[];function walk(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const f=path.join(dir,entry.name);if(entry.isDirectory())walk(f);else if(entry.isFile())files.push(f);else throw new Error('Invalid staged file');}}walk(stage);
     const sums=[];for(const file of files.sort())sums.push(`${await digest(file)}  ${path.relative(stage,file).split(path.sep).join('/')}`);
     fs.writeFileSync(path.join(stage,'SHA256SUMS'),sums.join('\n')+'\n');
-    const result=spawnSync('tar',['-czf',temporary,'-C',stage,'.'],{encoding:'utf8'});if(result.error||result.status!==0)throw new Error(result.error?.message||result.stderr||'tar failed');
+    const result=spawnSync('tar',['-czf',temporary,'-C',stage,'.'],{encoding:'utf8',env:{...process.env,COPYFILE_DISABLE:'1'}});if(result.error||result.status!==0)throw new Error(result.error?.message||result.stderr||'tar failed');
     const fd=fs.openSync(temporary,'r');try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}fs.renameSync(temporary,path.resolve(out));
     return {archive:path.resolve(out),sha256:await digest(path.resolve(out)),baseUrl:base.origin,packs:catalog.packs.length};
   } finally {fs.rmSync(stage,{recursive:true,force:true});if(fs.existsSync(temporary))fs.unlinkSync(temporary);}

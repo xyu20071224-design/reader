@@ -9,7 +9,7 @@ import {packageDeployment} from './package.mjs';
 const here=path.dirname(new URL(import.meta.url).pathname);
 async function fixture(fn){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lr-package-'));try{const database=path.join(dir,'database'),license=path.join(dir,'license'),pack=path.join(dir,'ecdict.lrpack');fs.writeFileSync(database,'fixture');fs.writeFileSync(license,'MIT');await createDictionary({database,license,out:pack});await fn({dir,database,license,pack});}finally{fs.rmSync(dir,{recursive:true,force:true});}}
 function python(...args){return spawnSync('python3',[path.join(here,'activate.py'),...args],{encoding:'utf8'});}
-function extract(archive,directory){fs.mkdirSync(directory);const r=spawnSync('tar',['-xzf',archive,'-C',directory],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);}
+function extract(archive,directory){fs.mkdirSync(directory);const r=spawnSync('python3',['-c',"import tarfile,sys; t=tarfile.open(sys.argv[1]); assert all((m.isfile() or m.isdir()) and not m.name.startswith('/') and '..' not in m.name.split('/') for m in t.getmembers()); t.extractall(sys.argv[2],**({'filter':'data'} if hasattr(tarfile,'data_filter') else {}))",archive,directory],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);}
 
 test('Node publication, authenticated packaging and Python activation agree on identity/history and retries',()=>fixture(async({dir,pack,database,license})=>{
  const site=path.join(dir,'site'),server=path.join(dir,'server'),archive=path.join(dir,'upload.tar.gz');await publish({root:server,packs:[pack]});
@@ -26,4 +26,10 @@ test('packaging refuses a wrong target, broken object and tampered metadata whil
  const site=path.join(dir,'site'),archive=path.join(dir,'upload.tar.gz'),catalog=await publish({root:site,packs:[pack]});await packageDeployment({site,out:archive});const before=fs.readFileSync(archive);
  await assert.rejects(packageDeployment({site,out:archive,baseUrl:'https://different.test'}),/target differs/);assert.deepEqual(fs.readFileSync(archive),before);
  const p=catalog.packs[0],object=path.join(site,'packs/files',p.sha256,p.name);fs.writeFileSync(object,'modified');await assert.rejects(packageDeployment({site,out:archive}),/Invalid source object/);assert.deepEqual(fs.readFileSync(archive),before);
+}));
+
+test('failed archive activation keeps the previous complete package and leaves no temporary output',()=>fixture(async({dir,pack})=>{
+ const site=path.join(dir,'site'),archive=path.join(dir,'upload.tar.gz');await publish({root:site,packs:[pack]});await packageDeployment({site,out:archive});const before=fs.readFileSync(archive),rename=fs.renameSync;
+ try{fs.renameSync=(source,target)=>{if(target===archive)throw new Error('injected archive rename failure');return rename(source,target);};await assert.rejects(packageDeployment({site,out:archive}),/injected/);}finally{fs.renameSync=rename;}
+ assert.deepEqual(fs.readFileSync(archive),before);assert.deepEqual(fs.readdirSync(dir).filter(n=>n.startsWith('upload.tar.gz.')),[]);
 }));

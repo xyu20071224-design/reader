@@ -102,13 +102,13 @@ function validateManifest(m, actual) {
     for(const member of m.bundle.members) {requireThat(object(member)&&['dictionary','voice','audio'].includes(member.type)&&id(member.packId)&&version(member.version)&&!ids.has(member.packId)&&!paths.has(member.path),'Invalid or duplicate bundle member');ref(member.path);requireThat(member.path.endsWith('.lrpack'),'Bundle member is not an lrpack');ids.add(member.packId);paths.add(member.path);}
   }
   if(m.type==='audio') {
-    const a=m.audio;requireThat(object(a)&&text(a.bookId)&&text(a.engineTag)&&text(a.voice)&&a.pipelineVersion===AUDIO_PIPELINE_VERSION&&Array.isArray(a.chapters)&&a.chapters.length>0,'Invalid audio payload/pipeline');
+    const a=m.audio;requireThat(object(a)&&text(a.bookId)&&a.bookId===a.bookId.trim()&&text(a.engineTag)&&a.engineTag===a.engineTag.trim()&&text(a.voice)&&a.voice===a.voice.trim()&&a.pipelineVersion===AUDIO_PIPELINE_VERSION&&Array.isArray(a.chapters)&&a.chapters.length>0,'Invalid audio payload/pipeline');
     const voice=(!a.voice || ['.','..'].includes(a.voice) || /[\\/\0]/.test(a.voice))?'h-'+hashText(a.voice).slice(0,16):a.voice;
     const segment='e'+hashText(a.engineTag).slice(0,8)+'~v'+a.pipelineVersion+'~'+voice;
     const grouped=new Map();
     for(const [p,f] of declared)if(p.startsWith('audio/')) {
       const parts=p.split('/');requireThat(parts.length===4&&/^\d+$/.test(parts[1])&&parts[2]===segment&&/^s\d+-\d+\.mp3$/.test(parts[3]),'Audio path does not match engine/voice/pipeline');
-      const index=Number(parts[1]);if(!grouped.has(index))grouped.set(index,[]);grouped.get(index).push(parts.slice(2).join('/')+':'+f.sha256);
+      const index=Number(parts[1]);requireThat(integer(index,0,2147483647)&&parts[1]===String(index),'Audio chapter directory is not canonical');if(!grouped.has(index))grouped.set(index,[]);grouped.get(index).push(parts.slice(2).join('/')+':'+f.sha256);
     }
     const seen=new Set();for(const c of a.chapters){requireThat(object(c)&&integer(c.index,0,2147483647)&&integer(c.files,1)&&shaPattern.test(c.treeSha256)&&!seen.has(c.index),'Invalid or duplicate audio chapter');seen.add(c.index);const rows=grouped.get(c.index);requireThat(rows&&rows.length===c.files&&hashText(rows.sort().join('\n'))===c.treeSha256,'Audio chapter tree mismatch');}
     requireThat(seen.size===grouped.size,'Undeclared audio chapter');

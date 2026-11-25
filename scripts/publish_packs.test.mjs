@@ -155,3 +155,11 @@ test('cross-process publishers do not lose updates; a rejected contender can ret
   const contender=await child(two).done;assert.notEqual(contender.code,0);assert.match(contender.output,/locked/);assert.equal((await first.done).code,0);
   await publish({root,packs:[two]});assert.deepEqual(JSON.parse(indexBytes(root)).packs.map(p=>p.packId),['one','two']);
 }));
+
+test('audio trimming and chapter directory spelling match the actual installer contract',()=>temporary(async dir=>{
+  for(const [engine,voice,folder] of [[' mimo ','room','0'],['mimo',' room ','0'],['mimo','room','00']]){
+    const segment='e'+sha(engine).slice(0,8)+'~v'+AUDIO_PIPELINE_VERSION+'~'+voice,relative=segment+'/s0-0.mp3',file='audio/'+folder+'/'+relative,payloads={[file]:Buffer.from('audio')};
+    const m={...manifest('audio-contract','1.0.0',payloads),type:'audio',audio:{bookId:'book',engineTag:engine,voice,pipelineVersion:AUDIO_PIPELINE_VERSION,chapters:[{index:0,files:1,treeSha256:sha(relative+':'+sha(payloads[file]))}]}};delete m.dictionary;
+    assert.throws(()=>inspectPack(rawPack(dir,m,payloads)),/audio|Audio/);
+  }
+}));
